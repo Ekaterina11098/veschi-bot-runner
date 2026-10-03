@@ -1,0 +1,115 @@
+"""Execute private source while keeping business output out of public logs."""
+import asyncio, contextlib, os, subprocess, sys, tempfile
+from pathlib import Path
+
+ROOT=Path(__file__).resolve().parent
+SOURCE=ROOT/"private-source"
+
+def execute(label, args, optional=False):
+    print(label, flush=True)
+    with tempfile.TemporaryFile() as log:
+        result=subprocess.run([sys.executable]+args,cwd=SOURCE,stdout=log,stderr=subprocess.STDOUT)
+    if result.returncode and not optional:
+        raise RuntimeError("Private task failed")
+    if result.returncode:
+        print("Optional source unavailable; missing data stays marked unavailable.",flush=True)
+
+def hidden(function):
+    with tempfile.TemporaryFile(mode="w+",encoding="utf-8") as log:
+        with contextlib.redirect_stdout(log),contextlib.redirect_stderr(log):
+            return function()
+
+def notify(text, advertising=False):
+    import requests
+    token=os.environ.get("ADVERTISING_TELEGRAM_BOT_TOKEN" if advertising else "TELEGRAM_BOT_TOKEN")
+    chat=os.environ.get("TELEGRAM_ALLOWED_CHAT_ID")
+    if advertising:
+        from advertising_agent.notify import db
+        chats=db("GET","advertising_telegram_chat",params={"is_active":"eq.true","select":"chat_id","limit":2}) or []
+        if len(chats)!=1:
+            raise RuntimeError("Advertising destination unavailable")
+        chat=chats[0]["chat_id"]
+    if not token or not chat:
+        raise RuntimeError("Notification settings unavailable")
+    r=requests.post("https://api.telegram.org/bot"+token+"/sendMessage",json={"chat_id":chat,"text":text},timeout=(5,20))
+    if not r.ok or r.json().get("ok") is not True:
+        raise RuntimeError("Notification delivery failed")
+
+def reviews():
+    from wildberries import get_unanswered_feedbacks,get_unanswered_questions
+    from review_inbox_cache import save_inbox
+    feedbacks=get_unanswered_feedbacks(take=100)
+    questions=get_unanswered_questions(take=100)
+    save_inbox("feedbacks",feedbacks)
+    save_inbox("questions",questions)
+    notify("📩 Утренняя проверка WB: отзывы без ответа — "+str(len(feedbacks))+
+           ", вопросы без ответа — "+str(len(questions))+
+           ". Данные обновлены в Streamlit; ответы публикуются после вашего подтверждения.")
+
+def queue():
+    from review_queue import process_due
+    import process_telegram_jobs as jobs
+    # Stock retries run here using the existing atomic claim, without dispatching
+    # another private-repository Actions job.
+    jobs.runtime_state.dispatch_due_stock=lambda: {"status":"handled_by_public_runner"}
+    process_due(limit=10)
+    asyncio.run(jobs.main())
+    claim=jobs.db("POST","/rpc/claim_stock_retry",payload={"p_key":"stock-retry"})
+    if claim:
+        success=False
+        try:
+            os.environ["AUTO_STOCK_RETRY"]="true"
+            execute("Validate stock logic",["-m","unittest","discover","-s","tests"])
+            execute("Run deferred stock verification",["auto_stock_runner.py"])
+            success=True
+        finally:
+            # Only finish the original claim. The private writer may have saved a
+            # new retry, which must remain intact.
+            jobs.db("POST","/rpc/finish_stock_retry_dispatch",
+                    payload={"p_claim":claim["claim"],"p_success":success})
+
+def main(task):
+    if task not in {"reviews","advertising","stock","analytics","finance","queue","probe"}:
+        raise ValueError("Unknown task")
+    for key,value in list(os.environ.items()):
+        if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","MOYSKLAD_")):
+            os.environ[key]=value.strip()
+    os.environ["WB_FEEDBACK_TOKEN"]=os.environ.get("WB_FEEDBACK_TOKEN") or os.environ.get("WB_TOKEN_1","")
+    os.chdir(SOURCE)
+    sys.path.insert(0,str(SOURCE))
+    if task=="probe":
+        execute("Validate private source",["-m","py_compile","auto_stock.py","process_review_queue.py",
+              "process_telegram_jobs.py","advertising_agent/notify.py"])
+        print("Source and runtime verified. No marketplace calls or messages.")
+    elif task=="reviews":
+        hidden(reviews)
+    elif task=="queue":
+        hidden(queue)
+    elif task=="advertising":
+        execute("Validate advertising logic",["-m","unittest","discover","-s","tests","-p","test_advertising_decision_engine.py"])
+        execute("Validate product economics",["-m","unittest","discover","-s","tests","-p","test_sku_economics.py"])
+        execute("Collect advertising context",["advertising_agent/collect_ip.py"])
+        execute("Refresh economics from cache",["advertising_agent/sku_economics.py","--refresh-from-cache"],optional=True)
+        execute("Build recommendations",["advertising_agent/decision_engine.py"])
+        execute("Send advertising report",["advertising_agent/notify.py"])
+    elif task=="stock":
+        execute("Validate stock logic",["-m","unittest","discover","-s","tests"])
+        os.environ["AUTO_STOCK_RETRY"]=os.environ.get("REQUESTED_RETRY","false")
+        execute("Allocate and verify stock",["auto_stock_runner.py"])
+    elif task=="analytics":
+        execute("Refresh daily supporting analytics",["analytics/collect.py"])
+    elif task=="finance":
+        execute("Refresh daily product economics",["advertising_agent/sku_economics.py"])
+    print("Task complete.",flush=True)
+
+if __name__=="__main__":
+    task=sys.argv[1] if len(sys.argv)>1 else "probe"
+    try:
+        main(task)
+    except Exception as exc:
+        print("Task failed: "+type(exc).__name__+". Business output is kept private.",flush=True)
+        try:
+            hidden(lambda: notify("⚠️ Задание «"+task+"» в новом GitHub не завершено. Проверьте статус запуска; отсутствующие данные не считаются нулевыми.",task in {"advertising","finance"}))
+        except Exception:
+            print("Failure notification unavailable.",flush=True)
+        raise SystemExit(1)

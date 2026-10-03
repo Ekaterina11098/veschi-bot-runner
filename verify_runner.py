@@ -13,6 +13,16 @@ def request(url, headers=None, body=None):
         return json.load(response)
 
 def main():
+    for name in ("SUPABASE_URL", "SUPABASE_SECRET_KEY", "ADVERTISING_TELEGRAM_BOT_TOKEN", "WB_TOKEN_1"):
+        os.environ[name] = os.getenv(name, "").strip()
+    url = os.environ["SUPABASE_URL"]
+    if not url.startswith("https://") or any(c.isspace() for c in url):
+        print("SUPABASE_URL must be a plain https project URL without spaces.")
+        return 1
+    token = os.environ["ADVERTISING_TELEGRAM_BOT_TOKEN"]
+    if any(c.isspace() for c in token) or ":" not in token:
+        print("ADVERTISING_TELEGRAM_BOT_TOKEN has an invalid format.")
+        return 1
     for key in ("SUPABASE_URL", "SUPABASE_SECRET_KEY", "ADVERTISING_TELEGRAM_BOT_TOKEN", "WB_TOKEN_1"):
         if not os.getenv(key):
             print("Missing required setting: " + key)

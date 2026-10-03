@@ -17,10 +17,6 @@ def main():
         if not os.getenv(key):
             print("Missing required setting: " + key)
             return 1
-    if not Path("private-source/advertising_agent/notify.py").is_file():
-        print("Private source verification failed.")
-        return 1
-    print("Private source access verified.")
     key = os.environ["SUPABASE_SECRET_KEY"]
     headers = {"apikey": key}
     if not key.startswith("sb_secret_"):

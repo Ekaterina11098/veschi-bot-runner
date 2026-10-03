@@ -14,13 +14,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Read private source
-        uses: actions/checkout@v4
-        with:
-          repository: Ekaterina11098/VESCHI_AI
-          token: ${{ secrets.SOURCE_READ_TOKEN }}
-          path: private-source
-          persist-credentials: false
       - name: Verify settings and send advertising test
         run: python verify_runner.py
         env:
@@ -28,3 +21,14 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
           WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+  source-access:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read private source
+        uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: main
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false

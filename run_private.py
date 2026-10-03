@@ -29,6 +29,8 @@ def save_diagnostic(label, text):
 def execute(label, args, optional=False):
     print(label, flush=True)
     child_env=dict(os.environ)
+    if args==['auto_stock_runner.py']:
+        child_env['AUTO_STOCK_MAX_SECONDS']='2400'
     if args[:2]==["-m","unittest"]:
         # Unit tests must never inherit live credentials or install live DB hooks.
         for name in list(child_env):

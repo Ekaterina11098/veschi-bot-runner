@@ -28,8 +28,14 @@ def save_diagnostic(label, text):
 
 def execute(label, args, optional=False):
     print(label, flush=True)
+    child_env=dict(os.environ)
+    if args[:2]==["-m","unittest"]:
+        # Unit tests must never inherit live credentials or install live DB hooks.
+        for name in list(child_env):
+            if name.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","MOYSKLAD_","AUTO_STOCK_")):
+                child_env.pop(name)
     with tempfile.TemporaryFile() as log:
-        result=subprocess.run([sys.executable]+args,cwd=SOURCE,stdout=log,stderr=subprocess.STDOUT)
+        result=subprocess.run([sys.executable]+args,cwd=SOURCE,env=child_env,stdout=log,stderr=subprocess.STDOUT)
         if result.returncode:
             log.seek(0)
             save_diagnostic(label,log.read().decode("utf-8",errors="replace"))

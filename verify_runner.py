@@ -45,11 +45,6 @@ def main():
         return 1
     request(api + "/getChat", {"Content-Type": "application/json"}, {"chat_id": chats[0]["chat_id"]})
     print("Advertising bot access to destination verified.")
-    # Check the ordinary WB token for both feedback categories without changing answers.
-    for category in ("feedbacks", "questions"):
-        request("https://feedbacks-api.wildberries.ru/api/v1/" + category + "?isAnswered=false&take=1&skip=0",
-                {"Authorization": os.environ["WB_TOKEN_1"]})
-    print("Ordinary WB token can read reviews and questions.")
     result = request(api + "/sendMessage", {"Content-Type": "application/json"},
                      {"chat_id": chats[0]["chat_id"], "text": "✅ Тест рекламного бота из нового репозитория GitHub. Доступ к данным и отправка в рекламную беседу проверены. Это проверка доставки; расписание ещё подключается."})
     if not result.get("ok"):

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 SCHEDULES = {"45 4 * * *": "reviews", "27 7,11,15,19 * * *": "advertising",
              "30 13 * * *": "stock", "17 4 * * *": "analytics", "0 7 * * *": "finance",
-             "3-59/5 * * * *": "queue"}
+             "3-59/5 * * * *": "queue", "3-58/5 * * * *": "queue"}
 TASKS = {"reviews", "advertising", "stock", "analytics", "finance", "queue", "probe"}
 
 def database(table, params):

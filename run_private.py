@@ -80,7 +80,15 @@ def main(task):
     if task=="probe":
         execute("Validate private source",["-m","py_compile","auto_stock.py","process_review_queue.py",
               "process_telegram_jobs.py","advertising_agent/notify.py"])
-        print("Source and runtime verified. No marketplace calls or messages.")
+        execute("Validate stock safeguards",["-m","unittest","discover","-s","tests"])
+        import select_task
+        hidden(select_task.queue_due)
+        import requests
+        for slug in ("telegram-webhook","stock-retry-dispatch"):
+            r=requests.post(os.environ["SUPABASE_URL"].rstrip("/")+"/functions/v1/"+slug,json={},timeout=(5,20))
+            if r.status_code!=401:
+                raise RuntimeError("Unauthenticated webhook was not rejected")
+        print("Source, safeguards, queue access and webhook authentication verified.")
     elif task=="reviews":
         hidden(reviews)
     elif task=="queue":

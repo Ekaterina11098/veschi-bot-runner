@@ -5,10 +5,34 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 SOURCE=ROOT/"private-source"
 
+def save_diagnostic(label, text):
+    """Diagnostics stay in the existing protected backend, never public artifacts."""
+    try:
+        import requests
+        from datetime import datetime, timedelta, timezone
+        for name,value in os.environ.items():
+            if name.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","MOYSKLAD_")) and len(value)>=6:
+                text=text.replace(value,"[redacted]")
+        key=os.environ["SUPABASE_SECRET_KEY"]
+        headers={"apikey":key,"Content-Type":"application/json","Prefer":"resolution=merge-duplicates"}
+        if not key.startswith("sb_secret_"):
+            headers["Authorization"]="Bearer "+key
+        now=datetime.now(timezone.utc)
+        response=requests.post(os.environ["SUPABASE_URL"].rstrip("/")+"/rest/v1/telegram_api_cache?on_conflict=cache_key",
+            headers=headers,json={"cache_key":"runner:diagnostic:"+os.environ.get("GITHUB_RUN_ID","manual"),
+            "payload":{"stage":label,"log":text[-20000:]},"updated_at":now.isoformat(),
+            "expires_at":(now+timedelta(days=1)).isoformat()},timeout=(5,20))
+        response.raise_for_status()
+    except Exception:
+        pass
+
 def execute(label, args, optional=False):
     print(label, flush=True)
     with tempfile.TemporaryFile() as log:
         result=subprocess.run([sys.executable]+args,cwd=SOURCE,stdout=log,stderr=subprocess.STDOUT)
+        if result.returncode:
+            log.seek(0)
+            save_diagnostic(label,log.read().decode("utf-8",errors="replace"))
     if result.returncode and not optional:
         raise RuntimeError("Private task failed")
     if result.returncode:
@@ -115,6 +139,9 @@ if __name__=="__main__":
     try:
         main(task)
     except Exception as exc:
+        import traceback
+        if str(exc)!="Private task failed":
+            save_diagnostic(task,traceback.format_exc())
         print("Task failed: "+type(exc).__name__+". Business output is kept private.",flush=True)
         try:
             hidden(lambda: notify("⚠️ Задание «"+task+"» в новом GitHub не завершено. Проверьте статус запуска; отсутствующие данные не считаются нулевыми.",task in {"advertising","finance"}))

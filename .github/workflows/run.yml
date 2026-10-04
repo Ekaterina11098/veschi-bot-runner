@@ -12,7 +12,6 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: '45 4 * * *'
     - cron: '27 7,11,15,19 * * *'
     - cron: '17 4 * * *'
     - cron: '0 7 * * *'

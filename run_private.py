@@ -68,13 +68,9 @@ def notify(text, advertising=False):
         raise RuntimeError("Notification delivery failed")
 
 def reviews():
-    from wildberries import get_unanswered_feedbacks,get_unanswered_questions
-    from review_inbox_cache import save_inbox
-    feedbacks=get_unanswered_feedbacks(take=100)
-    questions=get_unanswered_questions(take=100)
-    save_inbox("feedbacks",feedbacks)
-    save_inbox("questions",questions)
-    notify("📩 Утренняя проверка WB: отзывы без ответа — "+str(len(feedbacks))+
+    from refresh_review_inbox import refresh
+    feedbacks,questions=refresh()
+    notify("📩 Проверка WB: отзывы без ответа — "+str(len(feedbacks))+
            ", вопросы без ответа — "+str(len(questions))+
            ". Данные обновлены в Streamlit; ответы публикуются после вашего подтверждения.")
 

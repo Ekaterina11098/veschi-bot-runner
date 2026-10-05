@@ -127,6 +127,7 @@ def main(task):
         execute("Collect advertising context",["advertising_agent/collect_ip.py"])
         execute("Refresh economics from cache",["advertising_agent/sku_economics.py","--refresh-from-cache"],optional=True)
         execute("Build recommendations",["advertising_agent/decision_engine.py"])
+        execute("Refresh advertising experiments",["advertising_agent/experiments.py"])
         execute("Send advertising report",["advertising_agent/notify.py"])
     elif task=="stock":
         execute("Validate stock logic",["-m","unittest","discover","-s","tests"])

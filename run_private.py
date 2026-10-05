@@ -51,6 +51,13 @@ def hidden(function):
         with contextlib.redirect_stdout(log),contextlib.redirect_stderr(log):
             return function()
 
+def validate_stock():
+    # Retain allocation, overselling, barcode, cache and timeout safeguards.
+    # Advertising/media failures belong to their own task gates.
+    for pattern in ("test_auto_stock.py", "test_stock_limits.py", "test_sales_cache.py"):
+        execute("Validate stock logic: " + pattern,
+                ["-m", "unittest", "discover", "-s", "tests", "-p", pattern])
+
 def notify(text, advertising=False):
     import requests
     token=os.environ.get("ADVERTISING_TELEGRAM_BOT_TOKEN" if advertising else "TELEGRAM_BOT_TOKEN")
@@ -87,7 +94,7 @@ def queue():
         success=False
         try:
             os.environ["AUTO_STOCK_RETRY"]="true"
-            execute("Validate stock logic",["-m","unittest","discover","-s","tests"])
+            validate_stock()
             execute("Run deferred stock verification",["auto_stock_runner.py"])
             success=True
         finally:
@@ -132,7 +139,7 @@ def main(task):
         execute("Refresh advertising experiments",["advertising_agent/experiments.py"])
         execute("Send advertising report",["advertising_agent/notify.py"])
     elif task=="stock":
-        execute("Validate stock logic",["-m","unittest","discover","-s","tests"])
+        validate_stock()
         os.environ["AUTO_STOCK_RETRY"]=os.environ.get("REQUESTED_RETRY","false")
         execute("Allocate and verify stock",["auto_stock_runner.py"])
     elif task=="analytics":

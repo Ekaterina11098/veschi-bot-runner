@@ -123,6 +123,7 @@ def main(task):
         hidden(queue)
     elif task=="advertising":
         execute("Validate advertising logic",["-m","unittest","discover","-s","tests","-p","test_advertising_decision_engine.py"])
+        execute("Validate advertising experiments",["-m","unittest","discover","-s","tests","-p","test_advertising_experiments.py"])
         execute("Validate product economics",["-m","unittest","discover","-s","tests","-p","test_sku_economics.py"])
         execute("Collect advertising context",["advertising_agent/collect_ip.py"])
         execute("Refresh economics from cache",["advertising_agent/sku_economics.py","--refresh-from-cache"],optional=True)

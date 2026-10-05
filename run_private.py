@@ -19,7 +19,7 @@ def save_diagnostic(label, text):
             headers["Authorization"]="Bearer "+key
         now=datetime.now(timezone.utc)
         response=requests.post(os.environ["SUPABASE_URL"].rstrip("/")+"/rest/v1/telegram_api_cache?on_conflict=cache_key",
-            headers=headers,json={"cache_key":"runner:diagnostic:"+os.environ.get("GITHUB_RUN_ID","manual"),
+            headers=headers,json={"cache_key":"runner:diagnostic:"+os.environ.get("GITHUB_RUN_ID","manual")+":"+os.environ.get("TASK","manual"),
             "payload":{"stage":label,"log":text[-20000:]},"updated_at":now.isoformat(),
             "expires_at":(now+timedelta(days=1)).isoformat()},timeout=(5,20))
         response.raise_for_status()
@@ -81,15 +81,19 @@ def reviews():
            ", вопросы без ответа — "+str(len(questions))+
            ". Данные обновлены в Streamlit; ответы публикуются после вашего подтверждения.")
 
-def queue():
+def review_queue():
     from review_queue import process_due
-    import process_telegram_jobs as jobs
-    # Stock retries run here using the existing atomic claim, without dispatching
-    # another private-repository Actions job.
-    jobs.runtime_state.dispatch_due_stock=lambda: {"status":"handled_by_public_runner"}
     process_due(limit=10)
+
+def telegram_queue():
+    import process_telegram_jobs as jobs
+    # Stock retries have their own worker and stock concurrency group.
+    jobs.runtime_state.dispatch_due_stock=lambda: {"status":"handled_by_public_runner"}
     asyncio.run(jobs.main())
-    claim=jobs.db("POST","/rpc/claim_stock_retry",payload={"p_key":"stock-retry"})
+
+def stock_retry():
+    from wb_runtime_state import db
+    claim=db("POST","/rpc/claim_stock_retry",payload={"p_key":"stock-retry"})
     if claim:
         success=False
         try:
@@ -100,11 +104,22 @@ def queue():
         finally:
             # Only finish the original claim. The private writer may have saved a
             # new retry, which must remain intact.
-            jobs.db("POST","/rpc/finish_stock_retry_dispatch",
+            db("POST","/rpc/finish_stock_retry_dispatch",
                     payload={"p_claim":claim["claim"],"p_success":success})
 
+def queue():
+    # Compatibility for older workflow callers; every component gets a process.
+    failed = False
+    for task in ("review_queue", "telegram_queue", "stock_retry"):
+        result = subprocess.run([sys.executable, str(ROOT/"run_private.py"), task],
+                                env={**os.environ, "TASK":task})
+        failed = failed or bool(result.returncode)
+    if failed:
+        raise RuntimeError("Private task failed")
+
 def main(task):
-    if task not in {"reviews","advertising","stock","analytics","finance","queue","probe"}:
+    if task not in {"reviews","advertising","stock","analytics","finance","queue","probe",
+                    "review_queue","telegram_queue","stock_retry"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
         if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","MOYSKLAD_")):
@@ -128,6 +143,12 @@ def main(task):
         hidden(reviews)
     elif task=="queue":
         hidden(queue)
+    elif task=="review_queue":
+        hidden(review_queue)
+    elif task=="telegram_queue":
+        hidden(telegram_queue)
+    elif task=="stock_retry":
+        hidden(stock_retry)
     elif task=="advertising":
         execute("Validate advertising logic",["-m","unittest","discover","-s","tests","-p","test_advertising_decision_engine.py"])
         execute("Validate advertising experiments",["-m","unittest","discover","-s","tests","-p","test_advertising_experiments.py"])

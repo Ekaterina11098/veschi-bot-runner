@@ -26,6 +26,7 @@ jobs:
       run: ${{ steps.select.outputs.run }}
       task: ${{ steps.select.outputs.task }}
       group: ${{ steps.select.outputs.group }}
+      matrix: ${{ steps.select.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,13 +40,18 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
   run:
+    name: ${{ matrix.task }}
     needs: select
     if: needs.select.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
     concurrency:
-      group: bot-${{ needs.select.outputs.group }}
+      group: bot-${{ matrix.group }}
       cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@v4
         with:
@@ -65,7 +71,7 @@ jobs:
       - name: Execute private task
         run: python run_private.py "$TASK"
         env:
-          TASK: ${{ needs.select.outputs.task }}
+          TASK: ${{ matrix.task }}
           REQUESTED_RETRY: ${{ inputs.retry || 'false' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

@@ -1,0 +1,76 @@
+"""Failure injection tests; never use live credentials or marketplace APIs."""
+import json
+import os
+import tempfile
+import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+import run_private as runner
+import select_task as selector
+
+
+class IsolationTests(unittest.TestCase):
+    def test_failed_queue_lookup_does_not_hide_other_due_work(self):
+        with patch.object(selector, "database", side_effect=[
+                RuntimeError("reviews unavailable"), [{"feedback_id":"approved"}],
+                [{"payload":{"pending":True,"due":0}}]]):
+            work = selector.queue_work()
+        self.assertEqual([item["task"] for item in work],
+                         ["telegram_queue","review_queue","stock_retry"])
+        self.assertEqual(len({item["group"] for item in work}), 3)
+
+    def test_idle_queue_has_no_workers(self):
+        with patch.object(selector, "database", return_value=[]):
+            self.assertEqual(selector.queue_work(), [])
+
+    def test_stock_retry_waits_for_due_time(self):
+        with patch.object(selector, "database", side_effect=[[],[],
+                [{"payload":{"pending":True,"due":float("inf")}}]]):
+            self.assertEqual(selector.queue_work(), [])
+
+    def test_stock_writers_share_lock_but_commands_are_independent(self):
+        self.assertEqual(selector.GROUPS["stock"], selector.GROUPS["stock_retry"])
+        self.assertNotEqual(selector.GROUPS["stock"], selector.GROUPS["telegram_queue"])
+        self.assertEqual(selector.GROUPS["finance"], selector.GROUPS["advertising"])
+
+    def test_dispatch_output_contains_matrix(self):
+        with tempfile.NamedTemporaryFile() as output:
+            with patch.dict(os.environ, {"GITHUB_EVENT_NAME":"workflow_dispatch",
+                    "REQUESTED_TASK":"stock","GITHUB_OUTPUT":output.name}):
+                selector.main()
+            with open(output.name) as saved:
+                values = dict(line.rstrip().split("=",1) for line in saved)
+        self.assertEqual(json.loads(values["matrix"]), {"include":[
+            {"task":"stock","group":"stock-and-commands"}]})
+
+    def test_legacy_queue_runs_siblings_after_failure(self):
+        with patch.object(runner.subprocess, "run", side_effect=[
+                SimpleNamespace(returncode=1),SimpleNamespace(returncode=0),
+                SimpleNamespace(returncode=0)]) as run:
+            with self.assertRaises(RuntimeError):
+                runner.queue()
+        self.assertEqual([call.args[0][-1] for call in run.call_args_list],
+                         ["review_queue","telegram_queue","stock_retry"])
+
+    def test_failed_stock_retry_finishes_original_claim_as_failed(self):
+        db = Mock(side_effect=[{"claim":"original"},True])
+        with patch.dict("sys.modules", {"wb_runtime_state":SimpleNamespace(db=db)}), \
+                patch.object(runner, "validate_stock", side_effect=RuntimeError("failed")), \
+                patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(RuntimeError):
+                runner.stock_retry()
+        self.assertEqual(db.call_args.kwargs["payload"],
+                         {"p_claim":"original","p_success":False})
+
+    def test_idle_stock_retry_never_validates_or_writes(self):
+        with patch.dict("sys.modules", {"wb_runtime_state":SimpleNamespace(db=Mock(return_value=None))}), \
+                patch.object(runner, "execute") as execute, \
+                patch.object(runner, "validate_stock") as validate:
+            runner.stock_retry()
+        execute.assert_not_called()
+        validate.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

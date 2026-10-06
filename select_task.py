@@ -6,11 +6,23 @@ from zoneinfo import ZoneInfo
 SCHEDULES = {"45 4 * * *": "reviews", "27 7,11,15,19 * * *": "advertising",
              "30 13 * * *": "stock", "17 4 * * *": "analytics", "0 7 * * *": "finance",
              "3-59/5 * * * *": "queue", "3-58/5 * * * *": "queue"}
-TASKS = {"reviews", "advertising", "stock", "analytics", "finance", "queue", "probe"}
+TASKS = {"reviews", "advertising", "stock", "analytics", "finance", "queue", "probe", "agent"}
 GROUPS = {"stock": "stock-and-commands", "stock_retry": "stock-and-commands",
           "telegram_queue": "telegram-commands", "review_queue": "review-replies",
           "advertising": "advertising-and-finance", "finance": "advertising-and-finance",
-          "advertising_report_retry": "advertising-and-finance"}
+          "advertising_report_retry": "advertising-and-finance", "agent":"advertising-agent-conversations"}
+
+def agent_due():
+    now=datetime.now(timezone.utc).isoformat()
+    checks=(
+        ("advertising_agent_jobs",{"attempts":"lt.4","or":f"(and(status.in.(pending,ready),retry_at.lte.{now}),and(status.eq.running,lease_until.lte.{now}))"}),
+        ("advertising_agent_watches",{"status":"eq.active","next_check_at":"lte."+now}),
+        ("advertising_agent_actions",{"or":"(status.eq.submitted,and(status.eq.executed,receipt->>notification_pending.eq.true))"}),
+    )
+    try:
+        return any(database(table,{"select":"id","limit":"1",**params}) for table,params in checks)
+    except Exception:
+        return True
 
 def evening_target_date(now=None):
     local=(now or datetime.now(timezone.utc)).astimezone(ZoneInfo("Europe/Moscow"))
@@ -71,6 +83,8 @@ def queue_work():
             due = True
         if due:
             work.append({"task":task, "group":GROUPS[task]})
+    if agent_due():
+        work.append({"task":"agent","group":GROUPS["agent"]})
     return work+evening_recovery_work()
 
 def queue_due():

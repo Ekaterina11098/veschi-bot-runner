@@ -11,7 +11,7 @@ def save_diagnostic(label, text):
         import requests
         from datetime import datetime, timedelta, timezone
         for name,value in os.environ.items():
-            if name.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","MOYSKLAD_")) and len(value)>=6:
+            if name.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","MOYSKLAD_","OPENAI_")) and len(value)>=6:
                 text=text.replace(value,"[redacted]")
         key=os.environ["SUPABASE_SECRET_KEY"]
         headers={"apikey":key,"Content-Type":"application/json","Prefer":"resolution=merge-duplicates"}
@@ -34,7 +34,7 @@ def execute(label, args, optional=False):
     if args[:2]==["-m","unittest"]:
         # Unit tests must never inherit live credentials or install live DB hooks.
         for name in list(child_env):
-            if name.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","MOYSKLAD_","AUTO_STOCK_")):
+            if name.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","MOYSKLAD_","AUTO_STOCK_","OPENAI_")):
                 child_env.pop(name)
     with tempfile.TemporaryFile() as log:
         result=subprocess.run([sys.executable]+args,cwd=SOURCE,env=child_env,stdout=log,stderr=subprocess.STDOUT)
@@ -119,10 +119,10 @@ def queue():
 
 def main(task):
     if task not in {"reviews","advertising","stock","analytics","finance","queue","probe",
-                    "review_queue","telegram_queue","stock_retry","advertising_report_retry"}:
+                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
-        if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","MOYSKLAD_")):
+        if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","MOYSKLAD_","OPENAI_")):
             os.environ[key]=value.strip()
     os.environ["WB_FEEDBACK_TOKEN"]=os.environ.get("WB_FEEDBACK_TOKEN") or os.environ.get("WB_TOKEN_1","")
     os.chdir(SOURCE)
@@ -139,6 +139,8 @@ def main(task):
             if r.status_code!=401:
                 raise RuntimeError("Unauthenticated webhook was not rejected")
         print("Source, safeguards, queue access and webhook authentication verified.")
+    elif task=="agent":
+        execute("Process advertising conversations",["-m","advertising_agent.conversation"])
     elif task=="reviews":
         hidden(reviews)
     elif task=="queue":
@@ -186,7 +188,7 @@ if __name__=="__main__":
         print("Task failed: "+type(exc).__name__+". Business output is kept private.",flush=True)
         try:
             # Failed evening delivery is retried by the queue; do not spam the chat.
-            if task!="advertising_report_retry":
+            if task not in {"advertising_report_retry","agent"}:
                 hidden(lambda: notify("⚠️ Задание «"+task+"» в новом GitHub не завершено. Проверьте статус запуска; отсутствующие данные не считаются нулевыми.",task in {"advertising","finance"}))
         except Exception:
             print("Failure notification unavailable.",flush=True)

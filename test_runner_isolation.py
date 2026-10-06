@@ -12,6 +12,16 @@ import select_task as selector
 
 
 class IsolationTests(unittest.TestCase):
+    def setUp(self):
+        guard=patch.object(selector,"agent_due",return_value=False)
+        guard.start()
+        self.addCleanup(guard.stop)
+
+    def test_agent_is_independent_of_stock_and_finance(self):
+        self.assertNotEqual(selector.GROUPS["agent"],selector.GROUPS["stock"])
+        self.assertNotEqual(selector.GROUPS["agent"],selector.GROUPS["finance"])
+        with patch.object(selector,"agent_due",return_value=True),patch.object(selector,"database",return_value=[]),patch.object(selector,"evening_recovery_work",return_value=[]):
+            self.assertEqual(selector.queue_work(),[{"task":"agent","group":"advertising-agent-conversations"}])
     def test_failed_queue_lookup_does_not_hide_other_due_work(self):
         with patch.object(selector, "evening_recovery_work", return_value=[]), patch.object(selector, "database", side_effect=[
                 RuntimeError("reviews unavailable"), [{"feedback_id":"approved"}],

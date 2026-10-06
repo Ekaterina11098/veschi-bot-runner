@@ -1,0 +1,59 @@
+name: Connect conversational advertising agent
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/advertising-agent-setup.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-advertising-agent-conversations
+  cancel-in-progress: false
+  queue: max
+jobs:
+  connect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: main
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install runtime
+        run: pip install requests==2.32.5 python-dotenv > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Validate webhook routing
+        run: |
+          if node --test private-source/tests/test_advertising_webhook.mjs > "$RUNNER_TEMP/webhook-tests.log" 2>&1; then
+            echo 'Webhook routing verified.'
+          else
+            echo 'Webhook routing validation failed.'
+            exit 1
+          fi
+      - name: Connect and verify privately
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Validate conversational logic', ['-m','unittest','discover','-s','tests','-p','test_advertising_conversation.py'])
+          run_private.execute('Install webhook and verify read-only model tools', ['-m','advertising_agent.conversation','--setup','--smoke'])
+          PY
+        env:
+          TASK: agent-setup
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ADVERTISING_AI_MODEL: ${{ vars.ADVERTISING_AI_MODEL || 'gpt-4o-mini' }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}

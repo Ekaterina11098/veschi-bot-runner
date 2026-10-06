@@ -1,0 +1,38 @@
+name: Verify requested finance calculation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/verify-finance.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: bot-advertising-and-finance
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 0a552f88f416a7bb74776818a9d804c60f198918
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install finance runtime
+        run: pip install requests==2.32.5
+      - name: Verify finance privately
+        run: |
+          python -c "from run_private import execute; execute('Verify requested finance calculation', ['-m', 'advertising_agent.sku_profit_check'])"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}

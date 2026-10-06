@@ -1,0 +1,38 @@
+name: Restore missing evening advertising report
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/restore-evening.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: bot-advertising-and-finance
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: main
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install read-only reporting runtime
+        run: pip install requests==2.32.5
+      - name: Restore evening delivery from saved data
+        run: python run_private.py advertising_report_retry
+        env:
+          TASK: advertising_report_retry
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}

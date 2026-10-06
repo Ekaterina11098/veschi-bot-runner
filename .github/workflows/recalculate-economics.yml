@@ -1,0 +1,37 @@
+name: Recalculate corrected economics from cached data
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recalculate-economics.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  recalculate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: bot-advertising-and-finance
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: f0c63efacc36fe9ab36df72cd425fd4e132d471a
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install economics runtime
+        run: pip install requests==2.32.5
+      - name: Recalculate cached economics privately
+        run: |
+          python -c "from run_private import execute; execute('Refresh corrected cached economics', ['advertising_agent/sku_economics.py', '--refresh-from-cache'], optional=True); execute('Rebuild corrected recommendations', ['advertising_agent/decision_engine.py']); execute('Refresh experiment decisions', ['advertising_agent/experiments.py'])"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

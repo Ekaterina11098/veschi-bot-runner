@@ -119,7 +119,7 @@ def queue():
 
 def main(task):
     if task not in {"reviews","advertising","stock","analytics","finance","queue","probe",
-                    "review_queue","telegram_queue","stock_retry"}:
+                    "review_queue","telegram_queue","stock_retry","advertising_report_retry"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
         if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","MOYSKLAD_")):
@@ -159,6 +159,12 @@ def main(task):
         execute("Analyze low CTR photos",["advertising_agent/photo_ctr_analysis.py"],optional=True)
         execute("Refresh advertising experiments",["advertising_agent/experiments.py"])
         execute("Send advertising report",["advertising_agent/notify.py"])
+    elif task=="advertising_report_retry":
+        import select_task
+        target=select_task.evening_target_date()
+        if target:
+            os.environ["ADVERTISING_EVENING_RECOVERY_DATE"]=target
+            execute("Restore missing evening advertising report",["advertising_agent/notify.py"])
     elif task=="stock":
         validate_stock()
         os.environ["AUTO_STOCK_RETRY"]=os.environ.get("REQUESTED_RETRY","false")
@@ -179,7 +185,9 @@ if __name__=="__main__":
             save_diagnostic(task,traceback.format_exc())
         print("Task failed: "+type(exc).__name__+". Business output is kept private.",flush=True)
         try:
-            hidden(lambda: notify("⚠️ Задание «"+task+"» в новом GitHub не завершено. Проверьте статус запуска; отсутствующие данные не считаются нулевыми.",task in {"advertising","finance"}))
+            # Failed evening delivery is retried by the queue; do not spam the chat.
+            if task!="advertising_report_retry":
+                hidden(lambda: notify("⚠️ Задание «"+task+"» в новом GitHub не завершено. Проверьте статус запуска; отсутствующие данные не считаются нулевыми.",task in {"advertising","finance"}))
         except Exception:
             print("Failure notification unavailable.",flush=True)
         raise SystemExit(1)

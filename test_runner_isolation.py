@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -12,7 +13,7 @@ import select_task as selector
 
 class IsolationTests(unittest.TestCase):
     def test_failed_queue_lookup_does_not_hide_other_due_work(self):
-        with patch.object(selector, "database", side_effect=[
+        with patch.object(selector, "evening_recovery_work", return_value=[]), patch.object(selector, "database", side_effect=[
                 RuntimeError("reviews unavailable"), [{"feedback_id":"approved"}],
                 [{"payload":{"pending":True,"due":0}}]]):
             work = selector.queue_work()
@@ -21,11 +22,11 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(len({item["group"] for item in work}), 3)
 
     def test_idle_queue_has_no_workers(self):
-        with patch.object(selector, "database", return_value=[]):
+        with patch.object(selector, "evening_recovery_work", return_value=[]), patch.object(selector, "database", return_value=[]):
             self.assertEqual(selector.queue_work(), [])
 
     def test_stock_retry_waits_for_due_time(self):
-        with patch.object(selector, "database", side_effect=[[],[],
+        with patch.object(selector, "evening_recovery_work", return_value=[]), patch.object(selector, "database", side_effect=[[],[],
                 [{"payload":{"pending":True,"due":float("inf")}}]]):
             self.assertEqual(selector.queue_work(), [])
 
@@ -43,6 +44,34 @@ class IsolationTests(unittest.TestCase):
                 values = dict(line.rstrip().split("=",1) for line in saved)
         self.assertEqual(json.loads(values["matrix"]), {"include":[
             {"task":"stock","group":"stock-and-commands"}]})
+
+    def test_evening_recovery_window_includes_next_morning(self):
+        for at,expected in (("2026-10-05T19:29:00+00:00",None),
+                            ("2026-10-05T19:30:00+00:00",None),
+                            ("2026-10-05T20:00:00+00:00","2026-10-05"),
+                            ("2026-10-06T05:10:00+00:00","2026-10-05"),
+                            ("2026-10-06T06:00:00+00:00",None)):
+            self.assertEqual(selector.evening_target_date(datetime.fromisoformat(at)),expected)
+
+    def test_missing_evening_marker_enqueues_only_advertising_recovery(self):
+        at=datetime.fromisoformat("2026-10-06T05:10:00+00:00")
+        with patch.object(selector,"database",return_value=[]):
+            self.assertEqual(selector.evening_recovery_work(at),[{
+                "task":"advertising_report_retry","group":"advertising-and-finance"}])
+
+    def test_completed_evening_is_not_repeated(self):
+        at=datetime.fromisoformat("2026-10-06T05:10:00+00:00")
+        with patch.object(selector,"database",return_value=[{
+                "payload":{"date":"2026-10-05","complete":True}}]):
+            self.assertEqual(selector.evening_recovery_work(at),[])
+
+    def test_incomplete_delivery_and_backend_failure_are_retried(self):
+        at=datetime.fromisoformat("2026-10-06T05:10:00+00:00")
+        with patch.object(selector,"database",return_value=[{
+                "payload":{"date":"2026-10-05","complete":False}}]):
+            self.assertEqual(len(selector.evening_recovery_work(at)),1)
+        with patch.object(selector,"database",side_effect=RuntimeError("offline")):
+            self.assertEqual(len(selector.evening_recovery_work(at)),1)
 
     def test_legacy_queue_runs_siblings_after_failure(self):
         with patch.object(runner.subprocess, "run", side_effect=[

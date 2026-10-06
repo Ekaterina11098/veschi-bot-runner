@@ -1,6 +1,7 @@
 """Select work without calling marketplace APIs or logging operational data."""
 import json, os, time, urllib.request, urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 SCHEDULES = {"45 4 * * *": "reviews", "27 7,11,15,19 * * *": "advertising",
              "30 13 * * *": "stock", "17 4 * * *": "analytics", "0 7 * * *": "finance",
@@ -8,7 +9,32 @@ SCHEDULES = {"45 4 * * *": "reviews", "27 7,11,15,19 * * *": "advertising",
 TASKS = {"reviews", "advertising", "stock", "analytics", "finance", "queue", "probe"}
 GROUPS = {"stock": "stock-and-commands", "stock_retry": "stock-and-commands",
           "telegram_queue": "telegram-commands", "review_queue": "review-replies",
-          "advertising": "advertising-and-finance", "finance": "advertising-and-finance"}
+          "advertising": "advertising-and-finance", "finance": "advertising-and-finance",
+          "advertising_report_retry": "advertising-and-finance"}
+
+def evening_target_date(now=None):
+    local=(now or datetime.now(timezone.utc)).astimezone(ZoneInfo("Europe/Moscow"))
+    if local.hour<9:
+        return (local.date()-timedelta(days=1)).isoformat()
+    # Give the normal 22:30 collection time to finish; fallback starts at 23:00.
+    if (local.hour,local.minute)>=(23,0):
+        return local.date().isoformat()
+    return None
+
+def evening_recovery_work(now=None):
+    target=evening_target_date(now)
+    if not target:
+        return []
+    try:
+        rows=database("telegram_api_cache",{"select":"payload","limit":"1",
+                      "cache_key":"eq.advertising:last_evening_report"})
+        state=rows[0].get("payload") if rows else {}
+        if state and state.get("date")==target and state.get("complete"):
+            return []
+    except Exception:
+        # The serialized delivery worker rechecks its marker before sending.
+        pass
+    return [{"task":"advertising_report_retry","group":GROUPS["advertising_report_retry"]}]
 
 def database(table, params):
     key=os.environ["SUPABASE_SECRET_KEY"].strip()
@@ -45,7 +71,7 @@ def queue_work():
             due = True
         if due:
             work.append({"task":task, "group":GROUPS[task]})
-    return work
+    return work+evening_recovery_work()
 
 def queue_due():
     return bool(queue_work())

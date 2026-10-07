@@ -42,3 +42,5 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
 
 # Verify all cabinet and section states using the repository-root page.
+
+# Validate real application routing, populated finance graphs and all empty-source screens.

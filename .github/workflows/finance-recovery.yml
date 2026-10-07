@@ -49,3 +49,5 @@ jobs:
 # Include obsolete-cache guards in final verification.
 
 # Verify orders-based DRR target and buyout informational display.
+
+# Verify order-based price-test budgets.

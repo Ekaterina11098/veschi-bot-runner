@@ -29,12 +29,14 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install runtime
-        run: pip install requests==2.32.5 > "$RUNNER_TEMP/dependencies.log" 2>&1
+        run: pip install requests==2.32.5 python-dotenv > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Inspect privately
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Inspect finance source privately', ['-m','advertising_agent.finance_recovery'])
+          for pattern in ('test_sku_economics.py','test_profit_math.py','test_sku_profit_check.py','test_advertising_decision_engine.py'):
+              run_private.execute('Validate finance and advertising calculations', ['-m','unittest','discover','-s','tests','-p',pattern])
+          run_private.execute('Verify saved report parsing without new WB requests', ['-m','advertising_agent.finance_recovery','--validate-saved'])
           PY
         env:
           TASK: finance-recovery

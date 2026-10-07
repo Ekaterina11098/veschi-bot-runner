@@ -1,0 +1,43 @@
+name: Recover IP finance calculation
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/finance-recovery.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-advertising-and-finance
+  cancel-in-progress: false
+  queue: max
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: main
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime
+        run: pip install requests==2.32.5 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Inspect privately
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Inspect finance source privately', ['-m','advertising_agent.finance_recovery'])
+          PY
+        env:
+          TASK: finance-recovery
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}

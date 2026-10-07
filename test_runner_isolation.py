@@ -16,6 +16,9 @@ class IsolationTests(unittest.TestCase):
         guard=patch.object(selector,"agent_due",return_value=False)
         guard.start()
         self.addCleanup(guard.stop)
+        guard=patch.object(selector,"business_due",return_value=False)
+        guard.start()
+        self.addCleanup(guard.stop)
 
     def test_agent_is_independent_of_stock_and_finance(self):
         self.assertNotEqual(selector.GROUPS["agent"],selector.GROUPS["stock"])
@@ -86,11 +89,17 @@ class IsolationTests(unittest.TestCase):
     def test_legacy_queue_runs_siblings_after_failure(self):
         with patch.object(runner.subprocess, "run", side_effect=[
                 SimpleNamespace(returncode=1),SimpleNamespace(returncode=0),
-                SimpleNamespace(returncode=0)]) as run:
+                SimpleNamespace(returncode=0),SimpleNamespace(returncode=0)]) as run:
             with self.assertRaises(RuntimeError):
                 runner.queue()
         self.assertEqual([call.args[0][-1] for call in run.call_args_list],
-                         ["review_queue","telegram_queue","stock_retry"])
+                         ["review_queue","telegram_queue","stock_retry","business_agent"])
+
+    def test_business_agents_have_their_own_worker_group(self):
+        with patch.object(selector,"business_due",return_value=True),patch.object(selector,"database",return_value=[]),patch.object(selector,"evening_recovery_work",return_value=[]):
+            self.assertEqual(selector.queue_work(),[{"task":"business_agent","group":"business-agent-conversations"}])
+        self.assertNotEqual(selector.GROUPS['business_agent'],selector.GROUPS['stock'])
+        self.assertNotEqual(selector.GROUPS['business_agent'],selector.GROUPS['agent'])
 
     def test_failed_stock_retry_finishes_original_claim_as_failed(self):
         db = Mock(side_effect=[{"claim":"original"},True])

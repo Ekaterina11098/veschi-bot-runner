@@ -45,3 +45,5 @@ jobs:
           WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
 
 # Verify current calculation version and operation conservation.
+
+# Include obsolete-cache guards in final verification.

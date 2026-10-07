@@ -34,8 +34,9 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_sku_economics.py','test_profit_math.py','test_sku_profit_check.py','test_advertising_decision_engine.py','test_advertising_experiments.py','test_advertising_conversation.py'):
+          for pattern in ('test_sku_economics.py','test_profit_math.py','test_sku_profit_check.py','test_advertising_decision_engine.py','test_advertising_experiments.py','test_advertising_conversation.py','test_advertising_sales_report.py'):
               run_private.execute('Validate finance and advertising calculations', ['-m','unittest','discover','-s','tests','-p',pattern])
+          run_private.execute('Verify IP sales report from complete cached sources', ['-c', "from unittest.mock import patch; from advertising_agent import sales_report as s; from advertising_agent import agent_store as store; p=patch.object(s,'refresh',side_effect=RuntimeError('Validation uses cached data only')); p.start(); r=s.report(); store.cache_set('advertising:sales_report_probe',r,ttl_days=7); print('Scoped sales report verified'); p.stop()"])
           run_private.execute('Verify saved report parsing without new WB requests', ['-m','advertising_agent.finance_recovery','--validate-saved'])
           PY
         env:

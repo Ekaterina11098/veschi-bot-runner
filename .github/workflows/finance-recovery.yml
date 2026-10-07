@@ -65,3 +65,5 @@ jobs:
 # Verify cabinet-wide pricing scope and full result rendering.
 
 # Verify one full-cabinet sales read without narrowing recommendations.
+
+# Verify final historical trend routing and complete price evidence.

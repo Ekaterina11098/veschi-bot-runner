@@ -34,7 +34,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_sku_economics.py','test_profit_math.py','test_sku_profit_check.py','test_advertising_decision_engine.py','test_advertising_experiments.py','test_advertising_conversation.py','test_advertising_sales_report.py','test_ip_price_policy.py'):
+          for pattern in ('test_sku_economics.py','test_profit_math.py','test_sku_profit_check.py','test_advertising_decision_engine.py','test_advertising_experiments.py','test_advertising_conversation.py','test_advertising_sales_report.py','test_ip_price_policy.py','test_price_loss_guard.py'):
               run_private.execute('Validate finance and advertising calculations', ['-m','unittest','discover','-s','tests','-p',pattern])
           run_private.execute('Verify IP sales report from complete cached sources', ['-c', "from unittest.mock import patch; from advertising_agent import sales_report as s; from advertising_agent import agent_store as store; p=patch.object(s,'refresh',side_effect=RuntimeError('Validation uses cached data only')); p.start(); r=s.report(); store.cache_set('advertising:sales_report_probe',r,ttl_days=7); print('Scoped sales report verified'); p.stop()"])
           run_private.execute('Verify IP price policy with cached data only', ['-c', "from advertising_agent.price_policy import assess; from advertising_agent import agent_store as store; r=assess(collect_sources=False); store.cache_set('advertising:price_policy_probe',r,ttl_days=7); print('IP price policy read-only verified')"])

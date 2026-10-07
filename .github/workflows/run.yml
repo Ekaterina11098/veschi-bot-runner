@@ -78,6 +78,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
           ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ADVERTISING_AI_MODEL: ${{ vars.ADVERTISING_AI_MODEL || 'gpt-4o-mini' }}
           WB_FEEDBACK_TOKEN: ${{ secrets.WB_FEEDBACK_TOKEN || secrets.WB_TOKEN_1 }}

@@ -62,3 +62,5 @@ jobs:
           ADVERTISING_AI_MODEL: ${{ vars.ADVERTISING_AI_MODEL || 'gpt-4o-mini' }}
 
 # Reconnect China bot after Telegram token setup, 2026-10-07.
+
+# Verify bulk-check routing and missing-stock guards.

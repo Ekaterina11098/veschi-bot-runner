@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-price-history-validation
+  group: bot-price-history-final-validation
   cancel-in-progress: false
   queue: max
 jobs:

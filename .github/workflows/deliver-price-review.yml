@@ -1,0 +1,43 @@
+name: Deliver authorized IP price review document
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/deliver-price-review.yml'
+permissions:
+  contents: read
+concurrency:
+  group: deliver-ip-price-review-20261007
+  cancel-in-progress: false
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: main
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime
+        run: pip install requests==2.32.5 python-dotenv > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Deliver requested document privately
+        run: |
+          python - <<'PY'
+          import run_private
+          script = "import os,base64,hashlib,io\nfrom datetime import datetime,timezone\nimport requests\nfrom advertising_agent import agent_store as store\nKEY=\"advertising:document_delivery:ip_price_review_20261007\"\ndocument=store.cache_get(KEY)\nif not document:raise RuntimeError(\"Document missing\")\nif document.get(\"status\")==\"sent\":\n    print(\"Document already delivered\")\nelif document.get(\"status\")!=\"ready\":\n    raise RuntimeError(\"Delivery requires status review\")\nelse:\n    chats=store.db(\"GET\",\"advertising_telegram_chat\",params={\"is_active\":\"eq.true\",\"select\":\"chat_id,chat_title\",\"limit\":2}) or []\n    if len(chats)!=1 or chats[0][\"chat_title\"]!=document[\"expected_chat_title\"]:\n        raise RuntimeError(\"Registered recipient mismatch\")\n    raw=base64.b64decode(document[\"base64\"],validate=True)\n    if hashlib.sha256(raw).hexdigest()!=document[\"sha256\"]:raise RuntimeError(\"Document digest mismatch\")\n    document[\"status\"]=\"sending\"\n    store.cache_set(KEY,document,ttl_days=7)\n    token=os.environ[\"ADVERTISING_TELEGRAM_BOT_TOKEN\"]\n    response=requests.post(\"https://api.telegram.org/bot\"+token+\"/sendDocument\",\n        data={\"chat_id\":str(chats[0][\"chat_id\"]),\"caption\":document[\"caption\"]},\n        files={\"document\":(document[\"filename\"],io.BytesIO(raw),\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\")},\n        timeout=(10,60))\n    try:result=response.json()\n    except ValueError:result={}\n    if not response.ok or result.get(\"ok\") is not True:\n        document[\"status\"]=\"failed\"\n        document[\"http_status\"]=response.status_code\n        store.cache_set(KEY,document,ttl_days=7)\n        raise RuntimeError(\"Telegram document delivery failed\")\n    message=result[\"result\"]\n    document.pop(\"base64\",None)\n    document.update(status=\"sent\",message_id=message[\"message_id\"],telegram_file_id=message[\"document\"][\"file_id\"],sent_at=datetime.now(timezone.utc).isoformat())\n    store.cache_set(KEY,document,ttl_days=30)\n    print(\"Document delivery confirmed\")\n"
+          run_private.execute('Deliver authorized price review to registered IP bot chat',['-c',script])
+          PY
+        env:
+          TASK: deliver-ip-price-review
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}

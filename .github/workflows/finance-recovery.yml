@@ -69,3 +69,5 @@ jobs:
 # Verify final historical trend routing and complete price evidence.
 
 # Reuse cabinet finance and identical source reads during history analysis.
+
+# Verify price-band noise cannot hide the latest meaningful transition.

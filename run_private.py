@@ -119,7 +119,7 @@ def queue():
 
 def main(task):
     if task not in {"reviews","advertising","stock","analytics","finance","queue","probe",
-                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent"}:
+                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
         if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","OPENAI_")):
@@ -175,6 +175,11 @@ def main(task):
         execute("Allocate and verify stock",["auto_stock_runner.py"])
     elif task=="analytics":
         execute("Refresh daily supporting analytics",["analytics/collect.py"])
+    elif task=="finance_retry":
+        import select_task
+        # Recheck after acquiring the shared finance/advertising lock.
+        if select_task.finance_retry_work():
+            execute("Retry deferred product economics",["advertising_agent/sku_economics.py"])
     elif task=="finance":
         execute("Refresh daily product economics",["advertising_agent/sku_economics.py"])
     print("Task complete.",flush=True)

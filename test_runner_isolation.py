@@ -13,6 +13,9 @@ import select_task as selector
 
 class IsolationTests(unittest.TestCase):
     def setUp(self):
+        guard=patch.object(selector,"finance_retry_work",return_value=[])
+        guard.start()
+        self.addCleanup(guard.stop)
         guard=patch.object(selector,"agent_due",return_value=False)
         guard.start()
         self.addCleanup(guard.stop)
@@ -119,6 +122,27 @@ class IsolationTests(unittest.TestCase):
         execute.assert_not_called()
         validate.assert_not_called()
 
+class FinanceRetryTests(unittest.TestCase):
+    def test_retry_waits_for_wb_cooldown_and_uses_shared_lock(self):
+        row = {"status": "deferred", "collected_at": "2026-10-07T07:19:39+00:00",
+               "detail": "Finance API 429; retry_after=650"}
+        with patch.object(selector, "database", return_value=[row]):
+            self.assertEqual(selector.finance_retry_work(datetime.fromisoformat("2026-10-07T07:30:00+00:00")), [])
+            work = selector.finance_retry_work(datetime.fromisoformat("2026-10-07T07:32:00+00:00"))
+            self.assertEqual(work, [{"task": "finance_retry", "group": selector.GROUPS["finance"]}])
+            self.assertEqual(selector.finance_retry_work(datetime.fromisoformat("2026-10-08T07:32:00+00:00")), [])
+
+    def test_completed_or_unknown_state_does_not_retry(self):
+        for rows in ([], [{"status": "complete"}], [{"status": "partial"}], [{"status": "error"}]):
+            with patch.object(selector, "database", return_value=rows):
+                self.assertEqual(selector.finance_retry_work(), [])
+        with patch.object(selector, "database", side_effect=RuntimeError("offline")):
+            self.assertEqual(selector.finance_retry_work(), [])
+
+    def test_queued_retry_rechecks_state_before_request(self):
+        with patch.object(selector, "finance_retry_work", return_value=[]), patch.object(runner.os, "chdir"), patch.object(runner, "execute") as execute:
+            runner.main("finance_retry")
+        execute.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

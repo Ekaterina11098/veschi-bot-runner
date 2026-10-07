@@ -67,3 +67,5 @@ jobs:
 # Verify one full-cabinet sales read without narrowing recommendations.
 
 # Verify final historical trend routing and complete price evidence.
+
+# Reuse cabinet finance and identical source reads during history analysis.

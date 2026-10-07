@@ -71,3 +71,5 @@ jobs:
 # Reuse cabinet finance and identical source reads during history analysis.
 
 # Verify price-band noise cannot hide the latest meaningful transition.
+
+# Verify historical coverage summary and cached price reads.

@@ -1,0 +1,45 @@
+name: Free WB sources
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/wb-free-sources.yml']
+  schedule:
+    - cron: '47 4 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: wb-free-sources
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: main
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Validate and collect
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Validate free WB sources',['-m','unittest','discover','-s','tests','-p','test_wb_sources.py'])
+          run_private.execute('Collect scoped free WB sources',['-m','analytics.wb_sources'])
+          PY
+        env:
+          TASK: wb-free-sources
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

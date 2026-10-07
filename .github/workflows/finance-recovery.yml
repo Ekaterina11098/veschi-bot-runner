@@ -57,3 +57,5 @@ jobs:
 # Validate rounded break-even regression after final source update.
 
 # Verify final independently scoped IP pricing rules.
+
+# Validate manual seller-price tracking separately from buyer-price changes.

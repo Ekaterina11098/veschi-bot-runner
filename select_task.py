@@ -1,5 +1,5 @@
 """Select work without calling marketplace APIs or logging operational data."""
-import json, os, time, urllib.request, urllib.parse
+import json, os, re, time, urllib.request, urllib.parse
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -10,7 +10,7 @@ TASKS = {"reviews", "advertising", "stock", "analytics", "finance", "queue", "pr
 GROUPS = {"stock": "stock-and-commands", "stock_retry": "stock-and-commands",
           "telegram_queue": "telegram-commands", "review_queue": "review-replies",
           "advertising": "advertising-and-finance", "finance": "advertising-and-finance",
-          "advertising_report_retry": "advertising-and-finance", "agent":"advertising-agent-conversations",
+          "advertising_report_retry": "advertising-and-finance", "finance_retry": "advertising-and-finance", "agent":"advertising-agent-conversations",
           "business_agent":"business-agent-conversations"}
 
 def business_due():
@@ -66,6 +66,27 @@ def database(table, params):
     with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=20) as r:
         return json.load(r)
 
+def finance_retry_work(now=None):
+    now = now or datetime.now(timezone.utc)
+    try:
+        rows = database("analytics_snapshots", {
+            "source": "eq.finance_ip_daily_summary", "cabinet": "eq.token_2",
+            "select": "status,collected_at,detail", "order": "collected_at.desc", "limit": "1"})
+        if not rows or rows[0].get("status") != "deferred":
+            return []
+        row = rows[0]
+        observed = datetime.fromisoformat(row["collected_at"].replace("Z", "+00:00"))
+        if observed.astimezone(ZoneInfo("Europe/Moscow")).date() != now.astimezone(ZoneInfo("Europe/Moscow")).date():
+            return []
+        match = re.search(r"Finance API 429; retry_after=(\d+)", row.get("detail") or "")
+        delay = max(60, int(match[1])) if match else 900
+        if now < observed + timedelta(seconds=delay + 60):
+            return []
+        return [{"task": "finance_retry", "group": GROUPS["finance_retry"]}]
+    except Exception:
+        # Missing cooldown state must not generate another marketplace request.
+        return []
+
 def queue_work():
     now=datetime.now(timezone.utc).isoformat()
     checks = (
@@ -96,7 +117,7 @@ def queue_work():
         work.append({"task":"agent","group":GROUPS["agent"]})
     if business_due():
         work.append({"task":"business_agent","group":GROUPS["business_agent"]})
-    return work+evening_recovery_work()
+    return work+evening_recovery_work()+finance_retry_work()
 
 def queue_due():
     return bool(queue_work())

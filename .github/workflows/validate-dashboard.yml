@@ -1,0 +1,40 @@
+name: Validate cabinet dashboard
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/validate-dashboard.yml'
+permissions:
+  contents: read
+concurrency:
+  group: validate-cabinet-dashboard
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: main
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install UI test runtime
+        run: pip install streamlit pandas requests python-dotenv > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Check cabinet isolation and UI
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Verify isolated cabinet dashboard',['-m','unittest','discover','-s','tests','-p','test_cabinet_dashboard.py'])
+          run_private.execute('Verify modified pages compile',['-m','py_compile','cabinet_dashboard.py','pages/01_Кабинеты.py','manager.py','pages/02_Реклама.py'])
+          PY
+        env:
+          TASK: dashboard-validation

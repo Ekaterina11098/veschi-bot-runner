@@ -51,3 +51,5 @@ jobs:
 # Verify orders-based DRR target and buyout informational display.
 
 # Verify order-based price-test budgets.
+
+# Validate rounded break-even regression after final source update.

@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-advertising-and-finance
+  group: bot-finance-parser-validation
   cancel-in-progress: false
   queue: max
 jobs:

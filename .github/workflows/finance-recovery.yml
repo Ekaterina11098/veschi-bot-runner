@@ -61,3 +61,5 @@ jobs:
 # Validate manual seller-price tracking separately from buyer-price changes.
 
 # Validate live preconditions and positive-profit reductions together.
+
+# Verify cabinet-wide pricing scope and full result rendering.

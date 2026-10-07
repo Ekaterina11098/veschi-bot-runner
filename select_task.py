@@ -71,10 +71,15 @@ def finance_retry_work(now=None):
     try:
         rows = database("analytics_snapshots", {
             "source": "eq.finance_ip_daily_summary", "cabinet": "eq.token_2",
-            "select": "status,collected_at,detail", "order": "collected_at.desc", "limit": "1"})
-        if not rows or rows[0].get("status") != "deferred":
+            "select": "status,collected_at,detail", "order": "collected_at.desc", "limit": "20"})
+        # Cache refreshes can append a partial summary while a WB cooldown is
+        # pending. They do not cancel the last deferred collection. A completed
+        # collection or a later processing error does stop automatic retries.
+        if not rows or rows[0].get("status") in {"complete", "error"}:
             return []
-        row = rows[0]
+        row = next((item for item in rows if item.get("status") == "deferred"), None)
+        if row is None:
+            return []
         observed = datetime.fromisoformat(row["collected_at"].replace("Z", "+00:00"))
         if observed.astimezone(ZoneInfo("Europe/Moscow")).date() != now.astimezone(ZoneInfo("Europe/Moscow")).date():
             return []
@@ -143,3 +148,4 @@ if __name__=="__main__":
     except Exception as exc:
         print("Task selection failed: "+type(exc).__name__)
         raise SystemExit(1)
+

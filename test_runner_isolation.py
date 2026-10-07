@@ -123,6 +123,18 @@ class IsolationTests(unittest.TestCase):
         validate.assert_not_called()
 
 class FinanceRetryTests(unittest.TestCase):
+    def test_partial_cache_refresh_does_not_hide_pending_retry(self):
+        rows=[{"status":"partial", "collected_at":"2026-10-07T07:45:27+00:00"},
+              {"status":"deferred", "collected_at":"2026-10-07T07:43:23+00:00",
+               "detail":"Finance API 429; retry_after=42800"}]
+        with patch.object(selector,"database",return_value=rows):
+            self.assertEqual(selector.finance_retry_work(datetime.fromisoformat("2026-10-07T19:37:00+00:00")),[])
+            self.assertEqual(selector.finance_retry_work(datetime.fromisoformat("2026-10-07T19:38:00+00:00")),
+                             [{"task":"finance_retry","group":selector.GROUPS["finance"]}])
+            for status in ("complete","error"):
+                rows.insert(0,{"status":status})
+                self.assertEqual(selector.finance_retry_work(datetime.fromisoformat("2026-10-07T19:38:00+00:00")),[])
+                rows.pop(0)
     def test_retry_waits_for_wb_cooldown_and_uses_shared_lock(self):
         row = {"status": "deferred", "collected_at": "2026-10-07T07:19:39+00:00",
                "detail": "Finance API 429; retry_after=650"}
@@ -146,3 +158,4 @@ class FinanceRetryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

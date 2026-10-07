@@ -34,7 +34,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_sku_economics.py','test_profit_math.py','test_sku_profit_check.py','test_advertising_decision_engine.py'):
+          for pattern in ('test_sku_economics.py','test_profit_math.py','test_sku_profit_check.py','test_advertising_decision_engine.py','test_advertising_experiments.py','test_advertising_conversation.py'):
               run_private.execute('Validate finance and advertising calculations', ['-m','unittest','discover','-s','tests','-p',pattern])
           run_private.execute('Verify saved report parsing without new WB requests', ['-m','advertising_agent.finance_recovery','--validate-saved'])
           PY
@@ -47,3 +47,5 @@ jobs:
 # Verify current calculation version and operation conservation.
 
 # Include obsolete-cache guards in final verification.
+
+# Verify orders-based DRR target and buyout informational display.

@@ -1,0 +1,62 @@
+name: Connect isolated business agents
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/business-agents-setup.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent-conversations
+  cancel-in-progress: false
+  queue: max
+jobs:
+  connect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: main
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install runtime
+        run: pip install requests==2.32.5 python-dotenv > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Validate queue and scopes
+        run: |
+          python -m unittest discover -s . -p test_runner_isolation.py
+          if node --test private-source/tests/test_business_webhook.mjs > "$RUNNER_TEMP/business-webhook-tests.log" 2>&1; then
+            echo 'Business webhook routing verified.'
+          else
+            echo 'Business webhook routing failed.'
+            exit 1
+          fi
+      - name: Connect and verify privately
+        run: |
+          python - <<'PY'
+          import run_private
+          for pattern in ('test_china_agent.py','test_business_agents.py','test_advertising_conversation.py'):
+              run_private.execute('Validate isolated agent logic', ['-m','unittest','discover','-s','tests','-p',pattern])
+          run_private.execute('Connect data and Telegram; verify model without sending messages', ['-m','business_agents.setup'])
+          PY
+        env:
+          TASK: business-agents-setup
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ADVERTISING_AI_MODEL: ${{ vars.ADVERTISING_AI_MODEL || 'gpt-4o-mini' }}

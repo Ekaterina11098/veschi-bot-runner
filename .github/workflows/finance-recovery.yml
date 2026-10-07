@@ -63,3 +63,5 @@ jobs:
 # Validate live preconditions and positive-profit reductions together.
 
 # Verify cabinet-wide pricing scope and full result rendering.
+
+# Verify one full-cabinet sales read without narrowing recommendations.

@@ -10,7 +10,16 @@ TASKS = {"reviews", "advertising", "stock", "analytics", "finance", "queue", "pr
 GROUPS = {"stock": "stock-and-commands", "stock_retry": "stock-and-commands",
           "telegram_queue": "telegram-commands", "review_queue": "review-replies",
           "advertising": "advertising-and-finance", "finance": "advertising-and-finance",
-          "advertising_report_retry": "advertising-and-finance", "agent":"advertising-agent-conversations"}
+          "advertising_report_retry": "advertising-and-finance", "agent":"advertising-agent-conversations",
+          "business_agent":"business-agent-conversations"}
+
+def business_due():
+    now=datetime.now(timezone.utc).isoformat()
+    try:
+        return bool(database("business_agent_jobs",{"select":"id","limit":"1","attempts":"lt.4",
+            "or":f"(and(status.eq.pending,retry_at.lte.{now}),and(status.eq.running,lease_until.lte.{now}))"}))
+    except Exception:
+        return True
 
 def agent_due():
     now=datetime.now(timezone.utc).isoformat()
@@ -85,6 +94,8 @@ def queue_work():
             work.append({"task":task, "group":GROUPS[task]})
     if agent_due():
         work.append({"task":"agent","group":GROUPS["agent"]})
+    if business_due():
+        work.append({"task":"business_agent","group":GROUPS["business_agent"]})
     return work+evening_recovery_work()
 
 def queue_due():

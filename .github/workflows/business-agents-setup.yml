@@ -60,3 +60,5 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ADVERTISING_AI_MODEL: ${{ vars.ADVERTISING_AI_MODEL || 'gpt-4o-mini' }}
+
+# Reconnect China bot after Telegram token setup, 2026-10-07.

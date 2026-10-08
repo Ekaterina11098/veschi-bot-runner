@@ -119,7 +119,7 @@ def queue():
 
 def main(task):
     if task not in {"reviews","advertising","stock","analytics","finance","queue","probe",
-                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry"}:
+                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
         if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","OPENAI_")):
@@ -158,6 +158,7 @@ def main(task):
         execute("Validate advertising experiments",["-m","unittest","discover","-s","tests","-p","test_advertising_experiments.py"])
         execute("Validate product economics",["-m","unittest","discover","-s","tests","-p","test_sku_economics.py"])
         execute("Collect advertising context",["advertising_agent/collect_ip.py"])
+        execute("Review complete advertising costs and historical conversion",["-m","analytics.campaign_review"],optional=True)
         execute("Refresh economics from cache",["advertising_agent/sku_economics.py","--refresh-from-cache"],optional=True)
         execute("Build recommendations",["advertising_agent/decision_engine.py"])
         execute("Analyze low CTR photos",["advertising_agent/photo_ctr_analysis.py"],optional=True)
@@ -175,6 +176,9 @@ def main(task):
         execute("Allocate and verify stock",["auto_stock_runner.py"])
     elif task=="analytics":
         execute("Refresh daily supporting analytics",["analytics/collect.py"])
+    elif task=="advertising_research":
+        execute("Validate free advertising sources",["-m","unittest","discover","-s","tests","-p","test_wb_sources.py"])
+        execute("Analyze IP and OOO campaigns without WB changes",["-m","analytics.campaign_review"])
     elif task=="finance_retry":
         import select_task
         # Recheck after acquiring the shared finance/advertising lock.
@@ -200,3 +204,4 @@ if __name__=="__main__":
         except Exception:
             print("Failure notification unavailable.",flush=True)
         raise SystemExit(1)
+

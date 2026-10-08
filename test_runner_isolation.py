@@ -22,6 +22,9 @@ class IsolationTests(unittest.TestCase):
         guard=patch.object(selector,"business_due",return_value=False)
         guard.start()
         self.addCleanup(guard.stop)
+        guard=patch.object(selector,'research_work',return_value=[])
+        guard.start()
+        self.addCleanup(guard.stop)
 
     def test_agent_is_independent_of_stock_and_finance(self):
         self.assertNotEqual(selector.GROUPS["agent"],selector.GROUPS["stock"])
@@ -158,4 +161,5 @@ class FinanceRetryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

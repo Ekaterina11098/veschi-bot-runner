@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: wb-free-sources
+  group: advertising-and-finance
   cancel-in-progress: false
 jobs:
   collect:
@@ -34,7 +34,8 @@ jobs:
           python - <<'PY'
           import run_private
           run_private.execute('Validate free WB sources',['-m','unittest','discover','-s','tests','-p','test_wb_sources.py'])
-          run_private.execute('Collect scoped free WB sources',['-m','analytics.wb_sources'])
+          run_private.execute('Validate historical comparison',['-m','unittest','discover','-s','tests','-p','test_campaign_review.py'])
+          run_private.execute('Review IP and OOO campaigns',['-m','analytics.campaign_review'])
           PY
         env:
           TASK: wb-free-sources
@@ -43,3 +44,4 @@ jobs:
           WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
           WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+

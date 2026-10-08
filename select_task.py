@@ -11,7 +11,15 @@ GROUPS = {"stock": "stock-and-commands", "stock_retry": "stock-and-commands",
           "telegram_queue": "telegram-commands", "review_queue": "review-replies",
           "advertising": "advertising-and-finance", "finance": "advertising-and-finance",
           "advertising_report_retry": "advertising-and-finance", "finance_retry": "advertising-and-finance", "agent":"advertising-agent-conversations",
-          "business_agent":"business-agent-conversations"}
+          "business_agent":"business-agent-conversations","advertising_research":"advertising-and-finance"}
+
+def research_work():
+    try:
+        rows=database('telegram_api_cache',{'cache_key':'eq.advertising:research_request','select':'payload','limit':'1',
+            'expires_at':'gt.'+datetime.now(timezone.utc).isoformat()})
+        return [{'task':'advertising_research','group':GROUPS['advertising_research']}] if rows and rows[0].get('payload',{}).get('pending') else []
+    except Exception:
+        return []
 
 def business_due():
     now=datetime.now(timezone.utc).isoformat()
@@ -122,7 +130,7 @@ def queue_work():
         work.append({"task":"agent","group":GROUPS["agent"]})
     if business_due():
         work.append({"task":"business_agent","group":GROUPS["business_agent"]})
-    return work+evening_recovery_work()+finance_retry_work()
+    return work+evening_recovery_work()+finance_retry_work()+research_work()
 
 def queue_due():
     return bool(queue_work())
@@ -148,4 +156,5 @@ if __name__=="__main__":
     except Exception as exc:
         print("Task selection failed: "+type(exc).__name__)
         raise SystemExit(1)
+
 

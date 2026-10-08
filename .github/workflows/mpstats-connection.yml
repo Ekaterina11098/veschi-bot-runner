@@ -32,6 +32,7 @@ jobs:
           python - <<'PY'
           import run_private
           run_private.execute('Validate MPSTATS connection check',['-m','unittest','discover','-s','tests','-p','test_mpstats_probe.py'])
+          run_private.execute('Validate advertising agent read access',['-m','unittest','discover','-s','tests','-p','test_advertising_conversation.py'])
           run_private.execute('Discover MPSTATS data capabilities',['-m','analytics.mpstats_probe'])
           PY
         env:

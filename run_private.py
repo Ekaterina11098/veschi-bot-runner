@@ -11,7 +11,7 @@ def save_diagnostic(label, text):
         import requests
         from datetime import datetime, timedelta, timezone
         for name,value in os.environ.items():
-            if name.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","OPENAI_")) and len(value)>=6:
+            if name.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","OPENAI_","MPSTATS_")) and len(value)>=6:
                 text=text.replace(value,"[redacted]")
         key=os.environ["SUPABASE_SECRET_KEY"]
         headers={"apikey":key,"Content-Type":"application/json","Prefer":"resolution=merge-duplicates"}
@@ -34,7 +34,7 @@ def execute(label, args, optional=False):
     if args[:2]==["-m","unittest"]:
         # Unit tests must never inherit live credentials or install live DB hooks.
         for name in list(child_env):
-            if name.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","AUTO_STOCK_","OPENAI_")):
+            if name.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","AUTO_STOCK_","OPENAI_","MPSTATS_")):
                 child_env.pop(name)
     with tempfile.TemporaryFile() as log:
         result=subprocess.run([sys.executable]+args,cwd=SOURCE,env=child_env,stdout=log,stderr=subprocess.STDOUT)
@@ -122,7 +122,7 @@ def main(task):
                     "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
-        if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","OPENAI_")):
+        if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","OPENAI_","MPSTATS_")):
             os.environ[key]=value.strip()
     os.environ["WB_FEEDBACK_TOKEN"]=os.environ.get("WB_FEEDBACK_TOKEN") or os.environ.get("WB_TOKEN_1","")
     os.chdir(SOURCE)

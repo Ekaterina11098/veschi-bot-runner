@@ -1,0 +1,41 @@
+name: MPSTATS connection check
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/mpstats-connection.yml']
+permissions:
+  contents: read
+concurrency:
+  group: mpstats-connection-check
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: main
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Validate and check MPSTATS access
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Validate MPSTATS connection check',['-m','unittest','discover','-s','tests','-p','test_mpstats_probe.py'])
+          run_private.execute('Discover MPSTATS data capabilities',['-m','analytics.mpstats_probe'])
+          PY
+        env:
+          TASK: mpstats-connection
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}

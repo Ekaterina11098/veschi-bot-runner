@@ -1,11 +1,14 @@
 name: Scheduled bot tasks
 on:
+  push:
+    branches: [main]
+    paths: ['daily_data_bootstrap.json']
   workflow_dispatch:
     inputs:
       task:
         description: Task to run
         type: choice
-        options: [probe, reviews, advertising, stock, queue, analytics, finance, agent]
+        options: [probe, reviews, advertising, stock, queue, analytics, finance, agent, daily]
         default: probe
       retry:
         description: Deferred stock retry

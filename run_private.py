@@ -118,7 +118,7 @@ def queue():
         raise RuntimeError("Private task failed")
 
 def main(task):
-    if task not in {"reviews","advertising","stock","analytics","finance","queue","probe",
+    if task not in {"daily_context","reviews","advertising","stock","analytics","finance","queue","probe",
                     "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research","mpstats_recovery","analytics_recovery"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
@@ -175,7 +175,12 @@ def main(task):
         os.environ["AUTO_STOCK_RETRY"]=os.environ.get("REQUESTED_RETRY","false")
         execute("Allocate and verify stock",["auto_stock_runner.py"])
     elif task=="analytics":
-        execute("Refresh daily supporting analytics",["analytics/collect.py"])
+        execute("Prepare shared completed-day analytics and stock demand",["-m","analytics.daily_prepare"])
+    elif task=="daily_context":
+        execute("Validate shared daily windows",["-m","unittest","discover","-s","tests","-p","test_daily_data.py"])
+        execute("Collect complete advertising and price history",["-m","analytics.campaign_review"],optional=True)
+        execute("Prepare advertising daily context from shared data",["advertising_agent/collect_ip.py"])
+        execute("Refresh economics from daily cache",["advertising_agent/sku_economics.py","--refresh-from-cache"],optional=True)
     elif task=="analytics_recovery":
         execute("Recover missing exact-period analytics",["-m","analytics.data_recovery"])
     elif task=="mpstats_recovery":

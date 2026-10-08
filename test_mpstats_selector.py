@@ -17,7 +17,7 @@ class RecoverySelectorTests(unittest.TestCase):
         for now,due in ((datetime(2026,10,8,6,tzinfo=timezone.utc),False),(datetime(2026,10,9,6,tzinfo=timezone.utc),True)):
             with patch.object(selector,'database',side_effect=[[{'payload':{'requests':[],'planned_day':'2026-10-08'}}],[]]):
                 self.assertEqual(bool(selector.mpstats_work(now)),due)
-    def test_missing_connection_state_does_not_start_a_worker(self):
+    def test_missing_state_initializes_the_daily_plan_after_seven_moscow(self):
         with patch.object(selector,'database',return_value=[]):
-            self.assertEqual(selector.mpstats_work(),[])
+            self.assertEqual(selector.mpstats_work(datetime(2026,10,8,6,tzinfo=timezone.utc)),[{'task':'mpstats_recovery','group':'mpstats-data'}])
 if __name__=='__main__':unittest.main()

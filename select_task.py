@@ -4,10 +4,10 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 SCHEDULES = {"45 4 * * *": "reviews", "27 7,11,15,19 * * *": "advertising",
-             "30 13 * * *": "stock", "17 4 * * *": "analytics", "0 7 * * *": "finance",
+             "30 13 * * *": "stock", "17 4 * * *": "daily", "0 7 * * *": "finance",
              "3-59/5 * * * *": "queue", "3-58/5 * * * *": "queue"}
-TASKS = {"reviews", "advertising", "stock", "analytics", "finance", "queue", "probe", "agent"}
-GROUPS = {"stock": "stock-and-commands", "stock_retry": "stock-and-commands",
+TASKS = {"daily", "daily_context", "reviews", "advertising", "stock", "analytics", "finance", "queue", "probe", "agent"}
+GROUPS = {"daily_context": "advertising-and-finance", "stock": "stock-and-commands", "stock_retry": "stock-and-commands",
           "telegram_queue": "telegram-commands", "review_queue": "review-replies",
           "advertising": "advertising-and-finance", "finance": "advertising-and-finance",
           "advertising_report_retry": "advertising-and-finance", "finance_retry": "advertising-and-finance", "agent":"advertising-agent-conversations",
@@ -28,13 +28,17 @@ def mpstats_work(now=None):
     now=now or datetime.now(timezone.utc)
     try:
         rows=database('telegram_api_cache',{'cache_key':'eq.mpstats:gap_requests:v1','select':'payload','limit':'1'})
-        if not rows:return []
-        state=rows[0]['payload']
+        state=rows[0]['payload'] if rows else {}
         pause=database('telegram_api_cache',{'cache_key':'eq.mpstats:cooldown','expires_at':'gt.'+now.isoformat(),'select':'payload','limit':'1'})
         if pause:return []
         if state.get('next_retry_at') and now<datetime.fromisoformat(state['next_retry_at']):return []
         local=now.astimezone(ZoneInfo('Europe/Moscow'))
         due=bool(state.get('requests') or state.get('normalization_pending')) or (local.hour>=7 and state.get('planned_day')!=str(local.date()))
+        if not due:
+            stock=database('telegram_api_cache',{'cache_key':'like.mpstats:stock-request:%',
+                'expires_at':'gt.'+now.isoformat(),'select':'payload,updated_at','limit':'3'}) or []
+            due=any(row.get('payload',{}).get('mpstats_requests') and
+                    row.get('updated_at','')>state.get('last_stock_ingested_at','') for row in stock)
         if not due:
             requests=database('telegram_api_cache',{'cache_key':'like.analytics:recovery:%',
                 'expires_at':'gt.'+now.isoformat(),'select':'payload,updated_at','order':'updated_at.desc','limit':'1'}) or []
@@ -181,11 +185,14 @@ def queue_due():
 def main():
     if os.getenv("GITHUB_EVENT_NAME")=="workflow_dispatch":
         task=os.getenv("REQUESTED_TASK") or "probe"
+    elif os.getenv("GITHUB_EVENT_NAME")=="push":
+        task="daily"
     else:
         task=SCHEDULES.get(os.getenv("EVENT_SCHEDULE"))
     if task not in TASKS:
         raise ValueError("Unknown task")
-    work = queue_work() if task == "queue" else [{"task":task,"group":GROUPS.get(task,task)}]
+    work = ([{"task":name,"group":GROUPS.get(name,name)} for name in ("analytics","daily_context","finance")]
+            if task == "daily" else queue_work() if task == "queue" else [{"task":task,"group":GROUPS.get(task,task)}])
     run=bool(work)
     with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as f:
         f.write(f"task={task}\nrun={str(run).lower()}\n")

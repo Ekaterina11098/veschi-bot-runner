@@ -118,7 +118,7 @@ def queue():
         raise RuntimeError("Private task failed")
 
 def main(task):
-    if task not in {"daily_context","reviews","advertising","stock","analytics","finance","queue","probe",
+    if task not in {"daily_validation","daily_context","reviews","advertising","stock","analytics","finance","queue","probe",
                     "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research","mpstats_recovery","analytics_recovery"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
@@ -127,7 +127,13 @@ def main(task):
     os.environ["WB_FEEDBACK_TOKEN"]=os.environ.get("WB_FEEDBACK_TOKEN") or os.environ.get("WB_TOKEN_1","")
     os.chdir(SOURCE)
     sys.path.insert(0,str(SOURCE))
-    if task=="probe":
+    if task=="daily_validation":
+        execute("Compile completed-day modules",["-m","compileall","-q","analytics","advertising_agent","stock_daily_data.py","stock_mpstats.py","tg_agent_new.py"])
+        for pattern in ("test_daily_data.py","test_advertising_decision_engine.py","test_advertising_experiments.py",
+                        "test_sku_economics.py","test_wb_sources.py","test_analytics_warehouse.py","test_finance_daily.py",
+                        "test_auto_stock.py","test_stock_limits.py","test_sales_cache.py","test_mpstats*.py"):
+            execute("Validate daily data: "+pattern,["-m","unittest","discover","-s","tests","-p",pattern])
+    elif task=="probe":
         execute("Validate private source",["-m","py_compile","auto_stock.py","process_review_queue.py",
               "process_telegram_jobs.py","advertising_agent/notify.py"])
         execute("Validate stock safeguards",["-m","unittest","discover","-s","tests"])
@@ -214,7 +220,7 @@ if __name__=="__main__":
         print("Task failed: "+type(exc).__name__+". Business output is kept private.",flush=True)
         try:
             # Failed evening delivery is retried by the queue; do not spam the chat.
-            if task not in {"advertising_report_retry","agent","business_agent","mpstats_recovery"}:
+            if task not in {"daily_validation","advertising_report_retry","agent","business_agent","mpstats_recovery"}:
                 hidden(lambda: notify("⚠️ Задание «"+task+"» в новом GitHub не завершено. Проверьте статус запуска; отсутствующие данные не считаются нулевыми.",task in {"advertising","finance"}))
         except Exception:
             print("Failure notification unavailable.",flush=True)

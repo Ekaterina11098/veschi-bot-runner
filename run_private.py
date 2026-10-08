@@ -119,7 +119,7 @@ def queue():
 
 def main(task):
     if task not in {"reviews","advertising","stock","analytics","finance","queue","probe",
-                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research"}:
+                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research","mpstats_recovery"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
         if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","OPENAI_","MPSTATS_")):
@@ -176,6 +176,9 @@ def main(task):
         execute("Allocate and verify stock",["auto_stock_runner.py"])
     elif task=="analytics":
         execute("Refresh daily supporting analytics",["analytics/collect.py"])
+    elif task=="mpstats_recovery":
+        execute("Validate MPSTATS source recovery",["-m","unittest","discover","-s","tests","-p","test_mpstats*.py"])
+        execute("Recover missing analytics through MPSTATS",["-m","analytics.mpstats_gaps"])
     elif task=="advertising_research":
         execute("Validate free advertising sources",["-m","unittest","discover","-s","tests","-p","test_wb_sources.py"])
         execute("Analyze IP and OOO campaigns without WB changes",["-m","analytics.campaign_review"])
@@ -199,7 +202,7 @@ if __name__=="__main__":
         print("Task failed: "+type(exc).__name__+". Business output is kept private.",flush=True)
         try:
             # Failed evening delivery is retried by the queue; do not spam the chat.
-            if task not in {"advertising_report_retry","agent","business_agent"}:
+            if task not in {"advertising_report_retry","agent","business_agent","mpstats_recovery"}:
                 hidden(lambda: notify("⚠️ Задание «"+task+"» в новом GitHub не завершено. Проверьте статус запуска; отсутствующие данные не считаются нулевыми.",task in {"advertising","finance"}))
         except Exception:
             print("Failure notification unavailable.",flush=True)

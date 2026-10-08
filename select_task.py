@@ -11,7 +11,22 @@ GROUPS = {"stock": "stock-and-commands", "stock_retry": "stock-and-commands",
           "telegram_queue": "telegram-commands", "review_queue": "review-replies",
           "advertising": "advertising-and-finance", "finance": "advertising-and-finance",
           "advertising_report_retry": "advertising-and-finance", "finance_retry": "advertising-and-finance", "agent":"advertising-agent-conversations",
-          "business_agent":"business-agent-conversations","advertising_research":"advertising-and-finance"}
+          "business_agent":"business-agent-conversations","advertising_research":"advertising-and-finance","mpstats_recovery":"mpstats-data"}
+
+def mpstats_work(now=None):
+    now=now or datetime.now(timezone.utc)
+    try:
+        rows=database('telegram_api_cache',{'cache_key':'eq.mpstats:gap_requests:v1','select':'payload','limit':'1'})
+        if not rows:return []
+        state=rows[0]['payload']
+        pause=database('telegram_api_cache',{'cache_key':'eq.mpstats:cooldown','expires_at':'gt.'+now.isoformat(),'select':'payload','limit':'1'})
+        if pause:return []
+        if state.get('next_retry_at') and now<datetime.fromisoformat(state['next_retry_at']):return []
+        local=now.astimezone(ZoneInfo('Europe/Moscow'))
+        due=bool(state.get('requests')) or (local.hour>=7 and state.get('planned_day')!=str(local.date()))
+        return [{'task':'mpstats_recovery','group':GROUPS['mpstats_recovery']}] if due else []
+    except Exception:
+        return []
 
 def research_work():
     try:
@@ -130,7 +145,7 @@ def queue_work():
         work.append({"task":"agent","group":GROUPS["agent"]})
     if business_due():
         work.append({"task":"business_agent","group":GROUPS["business_agent"]})
-    return work+evening_recovery_work()+finance_retry_work()+research_work()
+    return work+evening_recovery_work()+finance_retry_work()+research_work()+mpstats_work()
 
 def queue_due():
     return bool(queue_work())

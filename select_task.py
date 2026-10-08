@@ -11,7 +11,18 @@ GROUPS = {"stock": "stock-and-commands", "stock_retry": "stock-and-commands",
           "telegram_queue": "telegram-commands", "review_queue": "review-replies",
           "advertising": "advertising-and-finance", "finance": "advertising-and-finance",
           "advertising_report_retry": "advertising-and-finance", "finance_retry": "advertising-and-finance", "agent":"advertising-agent-conversations",
-          "business_agent":"business-agent-conversations","advertising_research":"advertising-and-finance","mpstats_recovery":"mpstats-data"}
+          "business_agent":"business-agent-conversations","advertising_research":"advertising-and-finance","mpstats_recovery":"mpstats-data","analytics_recovery":"advertising-and-finance"}
+
+def recovery_work(now=None):
+    now=now or datetime.now(timezone.utc)
+    try:
+        rows=database('telegram_api_cache',{'cache_key':'like.analytics:recovery:%',
+            'payload->>status':'eq.pending','expires_at':'gt.'+now.isoformat(),
+            'select':'payload','order':'updated_at.asc','limit':'20'}) or []
+        return [{'task':'analytics_recovery','group':GROUPS['analytics_recovery']}] if any(
+            r['payload'].get('next_retry_at') and now>=datetime.fromisoformat(r['payload']['next_retry_at']) for r in rows) else []
+    except Exception:return []
+
 
 def mpstats_work(now=None):
     now=now or datetime.now(timezone.utc)
@@ -24,6 +35,11 @@ def mpstats_work(now=None):
         if state.get('next_retry_at') and now<datetime.fromisoformat(state['next_retry_at']):return []
         local=now.astimezone(ZoneInfo('Europe/Moscow'))
         due=bool(state.get('requests') or state.get('normalization_pending')) or (local.hour>=7 and state.get('planned_day')!=str(local.date()))
+        if not due:
+            requests=database('telegram_api_cache',{'cache_key':'like.analytics:recovery:%',
+                'expires_at':'gt.'+now.isoformat(),'select':'payload,updated_at','order':'updated_at.desc','limit':'1'}) or []
+            due=bool(requests and requests[0]['payload'].get('mpstats_requests') and
+                requests[0]['updated_at']>state.get('last_recovery_ingested_at',''))
         return [{'task':'mpstats_recovery','group':GROUPS['mpstats_recovery']}] if due else []
     except Exception:
         return []
@@ -157,7 +173,7 @@ def queue_work():
         work.append({"task":"agent","group":GROUPS["agent"]})
     if business_due():
         work.append({"task":"business_agent","group":GROUPS["business_agent"]})
-    return work+evening_recovery_work()+finance_retry_work()+research_work()+mpstats_work()
+    return work+evening_recovery_work()+finance_retry_work()+research_work()+mpstats_work()+recovery_work()
 
 def queue_due():
     return bool(queue_work())

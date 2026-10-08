@@ -119,7 +119,7 @@ def queue():
 
 def main(task):
     if task not in {"reviews","advertising","stock","analytics","finance","queue","probe",
-                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research","mpstats_recovery"}:
+                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research","mpstats_recovery","analytics_recovery"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
         if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","OPENAI_","MPSTATS_")):
@@ -176,6 +176,8 @@ def main(task):
         execute("Allocate and verify stock",["auto_stock_runner.py"])
     elif task=="analytics":
         execute("Refresh daily supporting analytics",["analytics/collect.py"])
+    elif task=="analytics_recovery":
+        execute("Recover missing exact-period analytics",["-m","analytics.data_recovery"])
     elif task=="mpstats_recovery":
         execute("Validate MPSTATS source recovery",["-m","unittest","discover","-s","tests","-p","test_mpstats*.py"])
         execute("Recover missing analytics through MPSTATS",["-m","analytics.mpstats_gaps"])

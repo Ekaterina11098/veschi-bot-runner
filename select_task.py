@@ -23,7 +23,7 @@ def mpstats_work(now=None):
         if pause:return []
         if state.get('next_retry_at') and now<datetime.fromisoformat(state['next_retry_at']):return []
         local=now.astimezone(ZoneInfo('Europe/Moscow'))
-        due=bool(state.get('requests')) or (local.hour>=7 and state.get('planned_day')!=str(local.date()))
+        due=bool(state.get('requests') or state.get('normalization_pending')) or (local.hour>=7 and state.get('planned_day')!=str(local.date()))
         return [{'task':'mpstats_recovery','group':GROUPS['mpstats_recovery']}] if due else []
     except Exception:
         return []

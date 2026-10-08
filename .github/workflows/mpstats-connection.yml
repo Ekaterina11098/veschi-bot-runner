@@ -35,6 +35,7 @@ jobs:
           run_private.execute('Validate advertising agent read access',['-m','unittest','discover','-s','tests','-p','test_advertising_conversation.py'])
           run_private.execute('Validate MPSTATS gap reads',['-m','unittest','discover','-s','tests','-p','test_mpstats*.py'])
           run_private.execute('Collect additional MPSTATS data',['-m','analytics.mpstats_gaps'])
+          run_private.execute('Verify recovered data and price analysis',['-m','analytics.mpstats_recovery','--verify'])
           PY
         env:
           TASK: mpstats-connection

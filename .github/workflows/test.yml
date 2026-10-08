@@ -13,4 +13,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m unittest -v test_runner_isolation.py test_mpstats_selector.py
+      - run: python -m unittest -v test_runner_isolation.py test_mpstats_selector.py test_finance_daily_selector.py
+

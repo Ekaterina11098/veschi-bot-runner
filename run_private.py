@@ -186,9 +186,14 @@ def main(task):
         import select_task
         # Recheck after acquiring the shared finance/advertising lock.
         if select_task.finance_retry_work():
-            execute("Retry deferred product economics",["advertising_agent/sku_economics.py"])
+            execute("Resume saved daily Finance cursors",["-m","analytics.finance_daily"])
+            execute("Build product economics from complete daily reports",["advertising_agent/sku_economics.py"],optional=True)
     elif task=="finance":
-        execute("Refresh daily product economics",["advertising_agent/sku_economics.py"])
+        execute("Validate daily Finance top-up",["-m","unittest","discover","-s","tests","-p","test_finance_daily.py"])
+        execute("Validate SKU economics",["-m","unittest","discover","-s","tests","-p","test_sku_economics.py"])
+        execute("Validate China daily Finance integration",["-m","unittest","discover","-s","tests","-p","test_china_sales_demand.py"])
+        execute("Collect missing daily Finance reports",["-m","analytics.finance_daily"])
+        execute("Build product economics from complete daily reports",["advertising_agent/sku_economics.py"],optional=True)
     print("Task complete.",flush=True)
 
 if __name__=="__main__":
@@ -207,4 +212,5 @@ if __name__=="__main__":
         except Exception:
             print("Failure notification unavailable.",flush=True)
         raise SystemExit(1)
+
 

@@ -92,6 +92,18 @@ def database(table, params):
 def finance_retry_work(now=None):
     now = now or datetime.now(timezone.utc)
     try:
+        daily = database("telegram_api_cache", {
+            "cache_key":"in.(finance:daily:token_1:v1,finance:daily:token_2:v1,finance:daily:token_3:v1)",
+            "select":"payload","limit":"3"}) or []
+        daily = [item for item in daily if isinstance(item.get("payload"),dict)]
+        for item in daily:
+            state = item.get("payload") or {}
+            if state.get("status") in {"pending", "running"} and state.get("next_retry_at"):
+                retry_at = datetime.fromisoformat(state["next_retry_at"].replace("Z", "+00:00"))
+                if now >= retry_at:
+                    return [{"task":"finance_retry","group":GROUPS["finance_retry"]}]
+        if daily:
+            return []
         rows = database("analytics_snapshots", {
             "source": "eq.finance_ip_daily_summary", "cabinet": "eq.token_2",
             "select": "status,collected_at,detail", "order": "collected_at.desc", "limit": "20"})
@@ -171,5 +183,6 @@ if __name__=="__main__":
     except Exception as exc:
         print("Task selection failed: "+type(exc).__name__)
         raise SystemExit(1)
+
 
 

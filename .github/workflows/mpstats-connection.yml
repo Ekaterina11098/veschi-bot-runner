@@ -1,4 +1,4 @@
-name: MPSTATS connection check
+name: MPSTATS excluded-products recovery check
 on:
   workflow_dispatch:
   push:

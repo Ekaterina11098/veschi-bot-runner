@@ -75,11 +75,16 @@ def notify(text, advertising=False):
         raise RuntimeError("Notification delivery failed")
 
 def reviews():
-    from refresh_review_inbox import refresh
-    feedbacks,questions=refresh()
-    notify("📩 Проверка WB: отзывы без ответа — "+str(len(feedbacks))+
-           ", вопросы без ответа — "+str(len(questions))+
-           ". Данные обновлены в Streamlit; ответы публикуются после вашего подтверждения.")
+    from refresh_review_inbox import refresh_all
+    results=refresh_all()
+    names={'token_1':'ООО','token_2':'ИП','token_3':'Китай'}
+    lines=['📩 Проверка отзывов и вопросов']
+    for cabinet,result in results.items():
+        counts=result['counts']
+        lines.append(names[cabinet]+': отзывы — '+str(counts.get('feedbacks','не получены'))+
+                     ', вопросы — '+str(counts.get('questions','не получены'))+
+                     ('. Проверка неполная; повтор сохранён.' if result['errors'] else '. Данные обновлены.'))
+    notify('\n'.join(lines))
 
 def review_queue():
     from review_queue import process_due
@@ -119,7 +124,7 @@ def queue():
 
 def main(task):
     if task not in {"daily_validation","daily_context","reviews","advertising","stock","analytics","finance","queue","probe",
-                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research","mpstats_recovery","analytics_recovery","budget_retry"}:
+                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research","mpstats_recovery","analytics_recovery","budget_retry","review_inbox_retry"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
         if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","OPENAI_","MPSTATS_")):
@@ -153,6 +158,9 @@ def main(task):
         hidden(reviews)
     elif task=="queue":
         hidden(queue)
+    elif task=="review_inbox_retry":
+        from refresh_review_inbox import refresh_all
+        hidden(refresh_all)
     elif task=="review_queue":
         hidden(review_queue)
     elif task=="telegram_queue":
@@ -236,6 +244,3 @@ if __name__=="__main__":
         except Exception:
             print("Failure notification unavailable.",flush=True)
         raise SystemExit(1)
-
-
-

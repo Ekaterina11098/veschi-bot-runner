@@ -13,6 +13,22 @@ GROUPS = {"daily_context": "advertising-and-finance", "stock": "stock-and-comman
           "advertising_report_retry": "advertising-and-finance", "finance_retry": "advertising-and-finance", "agent":"advertising-agent-conversations",
           "business_agent":"business-agent-conversations","advertising_research":"advertising-and-finance","mpstats_recovery":"mpstats-data","analytics_recovery":"advertising-and-finance","budget_retry":"advertising-and-finance"}
 
+def review_inbox_work(now=None):
+    try:
+        now=now or datetime.now(timezone.utc)
+        local=now.astimezone(ZoneInfo('Europe/Moscow'))
+        if (local.hour,local.minute)<(7,45):return []
+        rows=database('telegram_api_cache',{'cache_key':'like.reviews:refresh-state:%','select':'payload','limit':'3'}) or []
+        states=[r.get('payload') or {} for r in rows]
+        due=len(states)<3
+        for state in states:
+            retry=state.get('next_retry_at')
+            if retry:
+                due=due or now>=datetime.fromisoformat(retry)
+            elif not state.get('observed_at') or datetime.fromisoformat(state['observed_at']).astimezone(ZoneInfo('Europe/Moscow')).date()!=local.date():due=True
+        return [{'task':'review_inbox_retry','group':'review-replies'}] if due else []
+    except Exception:return []
+
 def budget_work(now=None):
     now=now or datetime.now(timezone.utc)
     try:
@@ -193,7 +209,7 @@ def queue_work():
         work.append({"task":"agent","group":GROUPS["agent"]})
     if business_due():
         work.append({"task":"business_agent","group":GROUPS["business_agent"]})
-    return work+evening_recovery_work()+finance_retry_work()+research_work()+mpstats_work()+recovery_work()+budget_work()
+    return work+review_inbox_work()+evening_recovery_work()+finance_retry_work()+research_work()+mpstats_work()+recovery_work()+budget_work()
 
 def queue_due():
     return bool(queue_work())
@@ -222,7 +238,3 @@ if __name__=="__main__":
     except Exception as exc:
         print("Task selection failed: "+type(exc).__name__)
         raise SystemExit(1)
-
-
-
-

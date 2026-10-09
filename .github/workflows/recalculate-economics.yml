@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: f0c63efacc36fe9ab36df72cd425fd4e132d471a
+          ref: a6173a4cacdc6016cf4ecaa2a8d965b359215e9a
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -31,7 +31,7 @@ jobs:
         run: pip install requests==2.32.5
       - name: Recalculate cached economics privately
         run: |
-          python -c "from run_private import execute; execute('Refresh corrected cached economics', ['advertising_agent/sku_economics.py', '--refresh-from-cache'], optional=True); execute('Rebuild corrected recommendations', ['advertising_agent/decision_engine.py']); execute('Refresh experiment decisions', ['advertising_agent/experiments.py'])"
+          python -c "from run_private import execute; execute('Validate MPStats provisional economics', ['-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_mpstats_economics.py']); execute('Validate experiment journal coverage', ['-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_experiment_journal_coverage.py']); execute('Validate experiment checkpoint delivery', ['-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_experiment_delivery.py']); execute('Refresh corrected cached economics', ['advertising_agent/sku_economics.py', '--refresh-from-cache'], optional=True); execute('Rebuild corrected recommendations', ['advertising_agent/decision_engine.py']); execute('Refresh experiment decisions', ['advertising_agent/experiments.py'])"
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

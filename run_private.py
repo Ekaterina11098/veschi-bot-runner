@@ -237,10 +237,7 @@ if __name__=="__main__":
         if str(exc)!="Private task failed":
             save_diagnostic(task,traceback.format_exc())
         print("Task failed: "+type(exc).__name__+". Business output is kept private.",flush=True)
-        try:
-            # Failed evening delivery is retried by the queue; do not spam the chat.
-            if task not in {"daily_validation","advertising_report_retry","agent","business_agent","mpstats_recovery"}:
-                hidden(lambda: notify("⚠️ Задание «"+task+"» в новом GitHub не завершено. Проверьте статус запуска; отсутствующие данные не считаются нулевыми.",task in {"advertising","finance"}))
-        except Exception:
-            print("Failure notification unavailable.",flush=True)
+        # Generic runner failures are technical diagnostics, not owner actions.
+        # Keep the failure in Actions and Supabase; existing queues retry due work.
+        # Business notifications asking for an actual decision remain unchanged.
         raise SystemExit(1)

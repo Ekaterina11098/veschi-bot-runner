@@ -1,4 +1,4 @@
-name: MPSTATS recovery with full queue coverage
+name: MPSTATS alternate expense report verification
 on:
   workflow_dispatch:
   push:

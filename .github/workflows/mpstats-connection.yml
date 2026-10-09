@@ -1,4 +1,4 @@
-name: MPSTATS excluded-products recovery check
+name: MPSTATS recovery with full queue coverage
 on:
   workflow_dispatch:
   push:

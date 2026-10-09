@@ -1,4 +1,4 @@
-name: MPSTATS alternate expense report verification
+name: MPSTATS prioritized expense report verification
 on:
   workflow_dispatch:
   push:

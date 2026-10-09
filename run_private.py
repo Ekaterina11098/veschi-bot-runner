@@ -131,7 +131,7 @@ def main(task):
         execute("Compile completed-day modules",["-m","compileall","-q","analytics","advertising_agent","stock_daily_data.py","stock_mpstats.py","tg_agent_new.py"])
         for pattern in ("test_daily_data.py","test_advertising_decision_engine.py","test_advertising_experiments.py",
                         "test_sku_economics.py","test_wb_sources.py","test_analytics_warehouse.py","test_finance_daily.py",
-                        "test_auto_stock.py","test_stock_limits.py","test_sales_cache.py","test_mpstats*.py"):
+                        "test_auto_stock.py","test_stock_limits.py","test_sales_cache.py","test_mpstats*.py","test_source_collection_policy.py"):
             execute("Validate daily data: "+pattern,["-m","unittest","discover","-s","tests","-p",pattern])
     elif task=="probe":
         execute("Validate private source",["-m","py_compile","auto_stock.py","process_review_queue.py",
@@ -196,9 +196,14 @@ def main(task):
     elif task=="analytics_recovery":
         execute("Recover missing exact-period analytics",["-m","analytics.data_recovery"])
     elif task=="mpstats_recovery":
+        execute("Validate source collection priority",["-m","unittest","discover","-s","tests","-p","test_source_collection_policy.py"])
         execute("Validate MPSTATS source recovery",["-m","unittest","discover","-s","tests","-p","test_mpstats*.py"])
         execute("Recover missing analytics through MPSTATS",["-m","analytics.mpstats_gaps"])
     elif task=="advertising_research":
+        import select_task
+        if select_task.finance_retry_work() or select_task.budget_work():
+            print("WB-only finance/budget work has priority; optional review remains queued.",flush=True)
+            return
         execute("Validate free advertising sources",["-m","unittest","discover","-s","tests","-p","test_wb_sources.py"])
         execute("Analyze IP and OOO campaigns without WB changes",["-m","analytics.campaign_review"])
     elif task=="finance_retry":

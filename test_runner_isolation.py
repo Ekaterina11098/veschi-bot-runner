@@ -13,6 +13,9 @@ import select_task as selector
 
 class IsolationTests(unittest.TestCase):
     def setUp(self):
+        guard=patch.object(selector,"review_inbox_work",return_value=[])
+        guard.start()
+        self.addCleanup(guard.stop)
         guard=patch.object(selector,"finance_retry_work",return_value=[])
         guard.start()
         self.addCleanup(guard.stop)
@@ -161,6 +164,27 @@ class FinanceRetryTests(unittest.TestCase):
         with patch.object(selector, "finance_retry_work", return_value=[]), patch.object(runner.os, "chdir"), patch.object(runner, "execute") as execute:
             runner.main("finance_retry")
         execute.assert_not_called()
+
+class ReviewInboxSelectorTests(unittest.TestCase):
+    def test_before_morning_does_not_query(self):
+        with patch.object(selector,'database') as db:
+            self.assertEqual(selector.review_inbox_work(datetime.fromisoformat('2026-10-09T04:44:00+00:00')),[])
+            db.assert_not_called()
+    def test_missing_states_are_initialized(self):
+        with patch.object(selector,'database',return_value=[]):
+            self.assertEqual(selector.review_inbox_work(datetime.fromisoformat('2026-10-09T08:00:00+00:00')),[{'task':'review_inbox_retry','group':'review-replies'}])
+    def test_complete_today_waits_and_due_retry_runs(self):
+        rows=[{'payload':{'observed_at':'2026-10-09T07:00:00+00:00'}} for _ in range(3)]
+        at=datetime.fromisoformat('2026-10-09T08:00:00+00:00')
+        with patch.object(selector,'database',return_value=rows):
+            self.assertEqual(selector.review_inbox_work(at),[])
+            rows[0]['payload']['next_retry_at']='2026-10-09T09:00:00+00:00'
+            self.assertEqual(selector.review_inbox_work(at),[])
+            rows[0]['payload']['next_retry_at']='2026-10-09T07:59:00+00:00'
+            self.assertEqual(len(selector.review_inbox_work(at)),1)
+    def test_database_failure_is_safe(self):
+        with patch.object(selector,'database',side_effect=RuntimeError('offline')):
+            self.assertEqual(selector.review_inbox_work(datetime.fromisoformat('2026-10-09T08:00:00+00:00')),[])
 
 if __name__ == "__main__":
     unittest.main()

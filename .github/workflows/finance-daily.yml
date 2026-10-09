@@ -28,6 +28,16 @@ jobs:
           python-version: '3.12'
       - name: Install runtime
         run: pip install requests==2.32.5 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Check dedicated OOO Finance credential
+        run: |
+          python - <<'PY'
+          import os
+          if not os.environ.get("WB_FINANCE_TOKEN_1", "").strip():
+              raise SystemExit("Dedicated OOO Finance credential is missing")
+          print("Dedicated Finance credential is configured; API access is verified by collection.")
+          PY
+        env:
+          WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
       - name: Verify and collect daily Finance
         run: python run_private.py finance
         env:

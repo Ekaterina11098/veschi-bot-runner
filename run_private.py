@@ -119,7 +119,7 @@ def queue():
 
 def main(task):
     if task not in {"daily_validation","daily_context","reviews","advertising","stock","analytics","finance","queue","probe",
-                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research","mpstats_recovery","analytics_recovery"}:
+                    "review_queue","telegram_queue","stock_retry","advertising_report_retry","agent","business_agent","finance_retry","advertising_research","mpstats_recovery","analytics_recovery","budget_retry"}:
         raise ValueError("Unknown task")
     for key,value in list(os.environ.items()):
         if key.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","OPENAI_","MPSTATS_")):
@@ -187,6 +187,12 @@ def main(task):
         execute("Collect complete advertising and price history",["-m","analytics.campaign_review"],optional=True)
         execute("Prepare advertising daily context from shared data",["advertising_agent/collect_ip.py"])
         execute("Refresh economics from daily cache",["advertising_agent/sku_economics.py","--refresh-from-cache"],optional=True)
+    elif task=="budget_retry":
+        from advertising_agent import collect_ip
+        token=os.environ.get("WB_TOKEN_2")
+        if not token:raise RuntimeError("WB_TOKEN_2 is missing")
+        _,active_ids,_,_=collect_ip.campaign_index(token)
+        collect_ip.collect_campaign_budgets(token,active_ids)
     elif task=="analytics_recovery":
         execute("Recover missing exact-period analytics",["-m","analytics.data_recovery"])
     elif task=="mpstats_recovery":
@@ -225,5 +231,6 @@ if __name__=="__main__":
         except Exception:
             print("Failure notification unavailable.",flush=True)
         raise SystemExit(1)
+
 
 

@@ -11,7 +11,23 @@ GROUPS = {"daily_context": "advertising-and-finance", "stock": "stock-and-comman
           "telegram_queue": "telegram-commands", "review_queue": "review-replies",
           "advertising": "advertising-and-finance", "finance": "advertising-and-finance",
           "advertising_report_retry": "advertising-and-finance", "finance_retry": "advertising-and-finance", "agent":"advertising-agent-conversations",
-          "business_agent":"business-agent-conversations","advertising_research":"advertising-and-finance","mpstats_recovery":"mpstats-data","analytics_recovery":"advertising-and-finance"}
+          "business_agent":"business-agent-conversations","advertising_research":"advertising-and-finance","mpstats_recovery":"mpstats-data","analytics_recovery":"advertising-and-finance","budget_retry":"advertising-and-finance"}
+
+def budget_work(now=None):
+    now=now or datetime.now(timezone.utc)
+    try:
+        rows=database('analytics_snapshots',{'source':'eq.advertising_campaign_budgets',
+            'cabinet':'eq.token_2','select':'payload','order':'collected_at.desc','limit':'1'}) or []
+        payload=rows[0].get('payload') if rows else None
+        if not isinstance(payload,dict) or not payload.get('campaign_ids'):
+            return []
+        deadline=payload.get('next_retry_at')
+        if deadline and now<datetime.fromisoformat(deadline.replace('Z','+00:00')):
+            return []
+        return [{'task':'budget_retry','group':GROUPS['budget_retry']}]
+    except Exception:
+        return []
+
 
 def recovery_work(now=None):
     now=now or datetime.now(timezone.utc)
@@ -177,7 +193,7 @@ def queue_work():
         work.append({"task":"agent","group":GROUPS["agent"]})
     if business_due():
         work.append({"task":"business_agent","group":GROUPS["business_agent"]})
-    return work+evening_recovery_work()+finance_retry_work()+research_work()+mpstats_work()+recovery_work()
+    return work+evening_recovery_work()+finance_retry_work()+research_work()+mpstats_work()+recovery_work()+budget_work()
 
 def queue_due():
     return bool(queue_work())
@@ -206,6 +222,7 @@ if __name__=="__main__":
     except Exception as exc:
         print("Task selection failed: "+type(exc).__name__)
         raise SystemExit(1)
+
 
 
 

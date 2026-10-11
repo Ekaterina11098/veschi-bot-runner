@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: issue-10-stock-read-only
+  group: issue-10-pending-finance-identifiers
   cancel-in-progress: false
 jobs:
   verify:

@@ -1,4 +1,4 @@
-name: Issue 10 latest completed IP comparison without notifications
+name: Issue 10 final financial distinction and bid-history regression
 on:
   push:
     branches: [main]
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 68ec56d172a832d1f8df5a8facd2bf75832557f1
+          ref: 8dfaa754cbad9e5647defc7f22788c789d124622
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -125,7 +125,8 @@ jobs:
           python - <<'PY'
           import run_private
           run_private.execute('Latest complete IP period; saved MPStats first',['-m','analytics.ip_sku_complete_review'])
-          run_private.execute('Two distinct profits and completed investigations',['-m','analytics.ip_completed_investigations'])
+          script="import os\nfrom analytics.ip_completed_investigations import run\nos.environ['IP_REVIEW_ID']='11059'\nrun()\nos.environ.pop('IP_REVIEW_ID')\nrun()"
+          run_private.execute('Frozen and latest completed periods; source limitations explicit',['-c',script])
           PY
       - uses: actions/upload-artifact@v4
         if: always()

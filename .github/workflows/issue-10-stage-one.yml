@@ -1,4 +1,4 @@
-name: Issue 10 compact IP investigation cache and safe search pacing
+name: Issue 10 latest completed IP comparison without notifications
 on:
   push:
     branches: [main]
@@ -104,27 +104,28 @@ jobs:
           log=Path(os.environ['RUNNER_TEMP'])/'private-tests.log'
           if log.exists():run_private.save_diagnostic('stage-one regression',log.read_text())
           PY
-      - name: Read only demonstrated MPStats search gaps with shared Retry-After
+      - name: Refresh operational inventory and composition without notifications
         env:
-          TASK: ip-query-gap-batches
+          TASK: ip-current-stock-read-only
           WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          script = "import time\nfrom analytics.ip_query_gap_batches import run\nfor batch in range(3):\n    if not run():break\n    time.sleep(7)"
-          run_private.execute('Bounded exact query gaps only; stop immediately on cooldown',['-c',script])
+          run_private.execute('Current IP stock and campaign configuration; no buyer bulk or Telegram',['-m','advertising_agent.run_stock_availability'])
           PY
-      - name: Complete cached investigations and render protected report
+      - name: Recalculate latest seven completed days from saved sources
         env:
-          TASK: ip-completed-investigations
+          TASK: ip-latest-completed-review
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Two profits; archived attribution lineage; no Telegram',['-m','analytics.ip_completed_investigations'])
+          run_private.execute('Latest complete IP period; saved MPStats first',['-m','analytics.ip_sku_complete_review'])
+          run_private.execute('Two distinct profits and completed investigations',['-m','analytics.ip_completed_investigations'])
           PY
       - uses: actions/upload-artifact@v4
         if: always()

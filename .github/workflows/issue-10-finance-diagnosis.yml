@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install requests==2.32.5 python-dotenv aiogram > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow streamlit openai > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Verify and read proven China postclick gap only
         env:
           TASK: issue-10-china-postclick-gap
@@ -109,4 +109,21 @@ jobs:
           import os
           from pathlib import Path
           print((Path(os.environ['RUNNER_TEMP'])/'composition-diagnosis.json').read_text())
+          PY
+      - name: Audit current protected financial coverage without source calls
+        env:
+          TASK: issue-10-cached-coverage-audit
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,run_private
+          run_private.execute('Audit current cached finance coverage',['-m','analytics.stage_one','--summary-path',os.environ['RUNNER_TEMP']+'/stage-one-status.json'])
+          PY
+      - name: Print current coverage flags only
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          print((Path(os.environ['RUNNER_TEMP'])/'stage-one-status.json').read_text())
           PY

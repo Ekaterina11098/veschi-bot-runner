@@ -176,6 +176,9 @@ def main(task):
         execute("Refresh economics from cache",["advertising_agent/sku_economics.py","--refresh-from-cache"],optional=True)
         execute("Build recommendations",["advertising_agent/decision_engine.py"])
         execute("Analyze low CTR photos",["advertising_agent/photo_ctr_analysis.py"],optional=True)
+        execute("Validate model visibility",["-m","unittest","discover","-s","tests","-p","test_model_visibility.py"],optional=True)
+        execute("Validate search-query provenance",["-m","unittest","discover","-s","tests","-p","test_model_query_visibility.py"],optional=True)
+        execute("Diagnose Regina visibility from cached data",["-m","advertising_agent.run_model_visibility"],optional=True)
         execute("Refresh advertising experiments",["advertising_agent/experiments.py"])
         execute("Send advertising report",["advertising_agent/notify.py"])
     elif task=="advertising_report_retry":

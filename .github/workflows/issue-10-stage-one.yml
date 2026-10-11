@@ -1,4 +1,4 @@
-name: Issue 10 complete IP search investigations and regression
+name: Issue 10 compact IP investigation cache and safe search pacing
 on:
   push:
     branches: [main]
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 61b80ef6c64aa7eebe066009ab416a0238f6a19a
+          ref: 68ec56d172a832d1f8df5a8facd2bf75832557f1
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -113,7 +113,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          script = "from analytics.ip_query_gap_batches import run\nfor batch in range(12):\n    if not run():break"
+          script = "import time\nfrom analytics.ip_query_gap_batches import run\nfor batch in range(3):\n    if not run():break\n    time.sleep(7)"
           run_private.execute('Bounded exact query gaps only; stop immediately on cooldown',['-c',script])
           PY
       - name: Complete cached investigations and render protected report

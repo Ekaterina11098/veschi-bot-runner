@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-mpstats-data
+  group: issue-10-stock-read-only
   cancel-in-progress: false
 jobs:
   verify:

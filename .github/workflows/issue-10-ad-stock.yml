@@ -4,8 +4,6 @@ on:
     branches: [main]
     paths: ['.github/workflows/issue-10-ad-stock.yml']
   workflow_dispatch:
-  schedule:
-    - cron: '0 7 * * *'
 permissions:
   contents: read
 concurrency:
@@ -22,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 2207832ccbf0dcc321dc7ba4422576884ad509de
+          ref: 058cd23a491091be9d866261f9655a5abbfae972
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -42,38 +40,10 @@ jobs:
               run_private.execute('Validate stock and scoped finance '+pattern,['-m','unittest','discover','-s','tests','-p',pattern])
           print('Stock/movement/lifecycle and finance period cache tests passed.')
           PY
-      - name: Install ordinary browser runtime for read-only buyer diagnosis
-        run: python -m playwright install --with-deps chromium > "$RUNNER_TEMP/browser.log" 2>&1
-      - name: Diagnose seller restrictions and buyer regions including Moscow
-        env:
-          TASK: issue-10-buyer-diagnostics
-          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: |
-          python - <<'PY'
-          import run_private
-          run_private.execute('Read protected buyer and seller pilot diagnostics',['-m','advertising_agent.run_buyer_availability'])
-          run_private.execute('Read exact native saleable inventory gap',['-m','analytics.stock_sellable_gap'])
-          script="""
-          import json
-          from pathlib import Path
-          from datetime import datetime,timezone
-          from advertising_agent.stock_availability import fresh
-          from advertising_agent.run_stock_availability import store_cache,cache
-          evidence=json.loads(Path('docs/evidence/issue-10-buyer-pilot-20261011.json').read_text())
-          if fresh(evidence,datetime.now(timezone.utc)):
-              state=cache('advertising:buyer_availability:token_2:v1') or {}
-              state[str(evidence['nm_id'])]=evidence
-              store_cache('advertising:buyer_availability:token_2:v1',state)
-          """
-          run_private.execute('Preserve authorized current UI proof without claiming API readback',['-c',script])
-          print('Regional diagnostics saved privately; includes Moscow. No purchase or WB writes.')
-          PY
       - name: Pilot exact Raye SKU before all-active campaign rollout
         env:
           TASK: issue-10-stock-pilot
-          STOCK_NOTIFY: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
+          STOCK_NOTIFY: 'false'
           ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
           WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
@@ -103,5 +73,5 @@ jobs:
               main()
           """
           run_private.execute('Roll out only after actual pilot sources pass',['-c',script])
-          print('Protected stock pilot/coverage saved. No WB writes; Telegram enabled only for daily scheduled actionable decisions.')
+          print('Protected stock pilot/coverage saved. No WB writes or Telegram.')
           PY

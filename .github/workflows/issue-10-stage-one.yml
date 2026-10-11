@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 3be773baa055fe04783af6d60aa0448ba8ef2b2c
+          ref: b5b8d5484b028265b24015da8a8ccc40e2205a1a
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -138,9 +138,11 @@ jobs:
           def priority(r):
               if r['key'] not in financial:return 5
               if r['cabinet']=='token_3' and r['tool']=='wbbidder_campaign_stats':return 0
-              if r['tool']=='lk_wb_card_table':return 1
-              if r['tool']=='lk_wb_card_orders':return 2
-              return 3
+              if r['cabinet']=='token_3' and r['tool']=='lk_wb_card_table':return 1
+              if r['cabinet']=='token_1' and r['tool']=='lk_wb_card_table':return 2
+              if r['tool']=='lk_wb_card_table':return 3
+              if r['tool']=='lk_wb_card_orders':return 4
+              return 4
           state['requests']=sorted(state.get('requests',[]),key=priority)
           database('POST','telegram_api_cache',body=dict(cache_key=gaps.REQUEST_KEY,payload=state,
               expires_at=(now+timedelta(days=365)).isoformat()),params={'on_conflict':'cache_key'})

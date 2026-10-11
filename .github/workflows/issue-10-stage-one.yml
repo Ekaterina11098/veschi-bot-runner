@@ -1,4 +1,4 @@
-name: Issue 10 complete cache catalog regression and final two-period review
+name: Issue 10 finish MPStats catalog pagination and both financial periods
 on:
   push:
     branches: [main]
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: issue-10-stock-read-only
+  group: bot-mpstats-data
   cancel-in-progress: false
 jobs:
   verify:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 7373e08612ea6f8a3577b304ab79e99e159a0ba1
+          ref: 06609d26fa61329465b64ddb019f73792d60fa26
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -103,6 +103,17 @@ jobs:
           from pathlib import Path
           log=Path(os.environ['RUNNER_TEMP'])/'private-tests.log'
           if log.exists():run_private.save_diagnostic('stage-one regression',log.read_text())
+          PY
+      - name: Complete only retained missing MPStats catalog page
+        env:
+          TASK: ip-final-catalog-page
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('No duplicate first page; fill exact remaining IP catalog scope',['-m','analytics.ip_financial_period_recovery'])
           PY
       - name: Refresh operational inventory and composition without notifications
         env:

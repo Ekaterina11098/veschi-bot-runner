@@ -62,7 +62,10 @@ jobs:
                   if method!='GET' or not url.startswith('https://seller-analytics-api.wildberries.ru/api/v1/warehouse_remains'):raise ValueError('Unexpected stock report request')
                   return _fetch_transport(method,url,token,params=params,body=body,max_retry_wait=0)
               collector.fetch=stock_report_read
-              collector.warehouse_stocks('token_2',token)
+              try:
+                  collector.warehouse_stocks('token_2',token)
+              except RuntimeError as deferred:
+                  save('advertising_stock_fbo_deferred',dict(reason=str(deferred),quantity=None))
           warehouses=wb('GET','https://marketplace-api.wildberries.ru/api/v3/warehouses')
           save('advertising_stock_fbs_warehouses_probe',warehouses)
           if not isinstance(warehouses,list):raise ValueError('Invalid warehouse list')

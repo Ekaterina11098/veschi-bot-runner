@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 0e7a0d8d41a9736128c94d7921e25d664183ebe2
+          ref: a3193b9a30e4424643d1a3cf91e09b55d6c75c49
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -132,7 +132,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Audit configured IP SKUs with cached MPStats economics',['-m','analytics.ip_campaign_audit'])
+          run_private.execute('Audit configured IP SKUs with cached MPStats economics',['-m','analytics.ip_sku_complete_review'])
           print('Protected IP campaign audit saved; no WB requests or Telegram.')
           PY
       - uses: actions/upload-artifact@v4

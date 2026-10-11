@@ -1,4 +1,4 @@
-name: Issue 10 final IP data audit regression and report
+name: Issue 10 IP independent profit regression and settlement gap
 on:
   push:
     branches: [main]
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-mpstats-data
+  group: issue-10-stock-read-only
   cancel-in-progress: false
 jobs:
   verify:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: f9419f8ffb62a6ba50b2e363a229178e68c5dc83
+          ref: 69cc30505eb2fdaf30335b97663b1da8421fee01
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -104,16 +104,31 @@ jobs:
           log=Path(os.environ['RUNNER_TEMP'])/'private-tests.log'
           if log.exists():run_private.save_diagnostic('stage-one regression',log.read_text())
           PY
-      - name: Complete only missing MPStats tape pages and render frozen audit
+      - name: Recover only proven settlement identifier gap after primary source audit
         env:
-          TASK: issue-10-ip-audit-final
-          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          TASK: ip-finance-identifiers
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Validate exact missing tape pages',['-m','analytics.ip_attribution_tape_complete'])
-          run_private.execute('Render protected frozen pilot audit and diagnostic recommendations',['-m','analytics.ip_data_audit_report'])
-          print('Full regression and protected audit report complete; WB and Telegram not accessed.')
+          run_private.execute('Proven financial identifiers gap; existing cursor and Retry-After',['-m','analytics.ip_finance_identifier_gap'])
           PY
+      - name: Complete cached investigations and render protected report
+        env:
+          TASK: ip-completed-investigations
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Two profits; archived attribution lineage; no Telegram',['-m','analytics.ip_completed_investigations'])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ip-regression-flags
+          path: ${{ runner.temp }}/stage-one-tests.json
+          if-no-files-found: error
+          retention-days: 7

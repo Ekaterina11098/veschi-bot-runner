@@ -1,4 +1,4 @@
-name: Issue 10 completed IP investigations and two profit types
+name: Issue 10 latest completed IP financial sources
 on:
   push:
     branches: [main]
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: issue-10-stock-read-only
+  group: bot-mpstats-data
   cancel-in-progress: false
 jobs:
   verify:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: ad9b17cc9ed78066579299f06404dad17c325480
+          ref: f752bbe8972ae43741f539d8cfddbaf7cf2a554b
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -30,14 +30,15 @@ jobs:
       - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Validate recovered evidence and bounded raw lineage
         env:
-          TASK: ip-completed-investigations
+          TASK: ip-financial-period-recovery
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_ip_completed_investigations.py','test_ip_investigation_sources.py','test_profit_math.py','test_mpstats_economics.py'):
+          for pattern in ('test_ip_investigation_sources.py','test_regina_query_gap.py'):
               run_private.execute('Evidence and safety regression '+pattern,['-m','unittest','discover','-s','tests','-p',pattern])
-          run_private.execute('Complete saved all-campaign IP investigations',['-m','analytics.ip_completed_investigations'])
+          run_private.execute('Recover only missing exact MPStats query detail',['-m','analytics.ip_financial_period_recovery'])
           print('Bounded lineage audit and evidence regressions passed; private results saved.')
           PY

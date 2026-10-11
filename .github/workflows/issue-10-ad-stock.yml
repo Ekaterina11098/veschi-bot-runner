@@ -22,14 +22,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 418ba7b207aa395b8ac1e57f093ec1b947520533
+          ref: 31accf09de05ca9bf4e9ab4f14125a29d476d76b
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow streamlit openai > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow streamlit openai playwright > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Test stock availability and execution lifecycle before rollout
         env:
           TASK: issue-10-stock-tests
@@ -42,6 +42,8 @@ jobs:
               run_private.execute('Validate stock and scoped finance '+pattern,['-m','unittest','discover','-s','tests','-p',pattern])
           print('Stock/movement/lifecycle and finance period cache tests passed.')
           PY
+      - name: Install ordinary browser runtime for read-only buyer diagnosis
+        run: python -m playwright install --with-deps chromium > "$RUNNER_TEMP/browser.log" 2>&1
       - name: Diagnose seller restrictions and buyer regions including Moscow
         env:
           TASK: issue-10-buyer-diagnostics

@@ -1,0 +1,39 @@
+name: Regina diagnostic verification
+on:
+  push:
+    paths:
+      - '.github/workflows/regina-diagnostic-verification.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: main
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate Regina diagnostic code
+        run: |
+          cd private-source
+          python -m py_compile advertising_agent/model_visibility.py advertising_agent/run_model_visibility.py
+          python -m unittest discover -s tests -p 'test_model_visibility.py'
+          python -m unittest discover -s tests -p 'test_model_query_visibility.py'
+      - name: Run read-only diagnosis without exposing business output
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          cd private-source
+          python -m advertising_agent.run_model_visibility > /dev/null

@@ -1,4 +1,4 @@
-name: Issue 10 expired operational stock evidence refresh
+name: Issue 10 pending FBO report and cached stock verification
 on:
   push:
     branches: [main]
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: c492d0499f4a8beb090cd347a9a643d8fb26c3d2
+          ref: d04b3be8cbd8eef97391f7e8082f2810c0d67aec
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false

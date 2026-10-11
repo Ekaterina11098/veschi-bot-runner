@@ -1,4 +1,4 @@
-name: Issue 10 technical IP data lineage audit
+name: Issue 10 final IP data audit regression and report
 on:
   push:
     branches: [main]
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: issue-10-stock-read-only
+  group: bot-mpstats-data
   cancel-in-progress: false
 jobs:
   verify:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 6bd4b805b8bedb2c200d701084518051dd9161e7
+          ref: f9419f8ffb62a6ba50b2e363a229178e68c5dc83
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -104,114 +104,16 @@ jobs:
           log=Path(os.environ['RUNNER_TEMP'])/'private-tests.log'
           if log.exists():run_private.save_diagnostic('stage-one regression',log.read_text())
           PY
-      - name: Refresh only expired exact active composition after saved sources
+      - name: Complete only missing MPStats tape pages and render frozen audit
         env:
-          TASK: issue-10-ip-configuration-gap
-          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          TASK: issue-10-ip-audit-final
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          script = """
-          import os
-          from datetime import datetime,timezone
-          from advertising_agent.run_stock_availability import active_configuration,cache,RAW
-          state=cache(RAW) or {}
-          cfg,ids=active_configuration(state,os.environ['WB_TOKEN_2'],datetime.now(timezone.utc))
-          assert cfg['complete'] is True and cfg['data']['scope']=='all_active'
-          print('Exact active configuration ready; read-only operational gap, buyer checks disabled')
-          """
-          run_private.execute('Expired composition gap only; existing Retry-After guard',['-c',script])
+          run_private.execute('Validate exact missing tape pages',['-m','analytics.ip_attribution_tape_complete'])
+          run_private.execute('Render protected frozen pilot audit and diagnostic recommendations',['-m','analytics.ip_data_audit_report'])
+          print('Full regression and protected audit report complete; WB and Telegram not accessed.')
           PY
-      - name: Audit saved raw lineage and regenerate current pilot with unchanged safety
-        env:
-          TASK: issue-10-ip-data-lineage
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: |
-          python - <<'PY'
-          import run_private
-          run_private.execute('Technical raw data matrix; no live business sources',['-m','analytics.ip_data_quality_audit'])
-          print('Protected technical lineage audit and unchanged recommendations saved.')
-          PY
-      - name: Produce full protected per-SKU analytical report and verify shop formula separately
-        env:
-          TASK: issue-10-ip-full-review-artifact
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: |
-          python - <<'PY'
-          import run_private
-          script = """
-          import json,math,html
-          from datetime import datetime,timezone,timedelta
-          
-          from analytics.stage_one import read
-          from analytics.collect import database
-          r=read('analytics_snapshots',dict(source='eq.ip_sku_complete_review',cabinet='eq.token_2',select='payload',order='id.desc',limit=1))[0]['payload'][0]
-          esc=lambda v:html.escape(str(v))
-          def val(v):
-              if v is None:return 'неизвестно'
-              if type(v) is float:return format(v,'.2f')
-              return esc(v)
-          def table(headers,rows):
-              return '<div class="scroll"><table><thead><tr>'+''.join('<th>'+esc(x)+'</th>' for x in headers)+'</tr></thead><tbody>'+''.join('<tr>'+''.join('<td>'+val(x)+'</td>' for x in row)+'</tr>' for row in rows)+'</tbody></table></div>'
-          parts=['<!doctype html><html lang="ru"><meta charset="utf-8"><title>ИП — полный анализ рекламных SKU</title><style>body{font:15px system-ui;margin:32px;line-height:1.5;color:#142034;max-width:1500px}h1,h2{color:#173f64}.scroll{overflow:auto}table{border-collapse:collapse;font-size:13px;margin:18px 0}th,td{border:1px solid #ccd5df;padding:7px;vertical-align:top}th{background:#eaf1f8;position:sticky;top:0}td:first-child{white-space:nowrap}details{margin:12px 0}pre{white-space:pre-wrap;background:#f3f5f8;padding:16px}.note{padding:16px;background:#fff6df}</style><h1>ИП — анализ каждого SKU × РК</h1>']
-          parts+=['<p>Период: '+esc(r['period_from'])+' — '+esc(r['period_to'])+'. Сформирован: '+esc(r['observed_at'])+' (UTC). Состав кампаний: '+esc(r['configuration_observed_at'])+' (UTC).</p>',
-          '<p class="note">Каждая текущая пара SKU × РК включена ровно один раз. Магазинная прибыль и расходы не суммируются повторно между РК и не подменяют прибыль рекламы. Неизвестно ≠ 0. Физический FBO не доказывает покупательскую доступность. WB не изменялся, Telegram не отправлялся.</p>']
-          parts.append(table(['РК','Текущих SKU','Требуют изменений','Изменения не требуются','Оценка не завершена'],[[c['campaign_id'],c['current_sku_count'],c['groups']['Требуют изменений'],c['groups']['Изменения не требуются'],c['groups']['Оценка не завершена']] for c in r['campaigns']]))
-          finance_checks=[]
-          for c in sorted(r['campaigns'],key=lambda x:(x['campaign_id']!=40428689,x['campaign_id'])):
-              parts.append('<h2>РК '+str(c['campaign_id'])+'</h2>')
-              t=c['totals'] or {}
-              parts.append(table(['Расход','Заказы всего','Оборот заказов','Постклик в итогах, шт.','Постклик в итогах, ₽','ДРР РК, %','Прибыль рекламы РК'],[[t.get('ac_spending_sum'),t.get('ac_orders'),t.get('ac_orders_sum'),t.get('ac_orders_associated'),t.get('ac_orders_sum_associated'),c['campaign_drr_pct'],c['campaign_net_profit']]]))
-              parts.append('<p>Постклик входит в итог, повторно не прибавляется. Отсутствующие связи исходного SKU и ID заказа не распределяются предположительно.</p>')
-              ad=[];fin=[];stock=[]
-              for p in c['rows']:
-                  f=p['facts'];e=p['shop_economics'];source=p.get('filtered_advertising_detail') or {};assoc=(source.get('filtered_totals') or {})
-                  ad.append([p['article'],p['nm_id'],p['group'],f.get('views'),f.get('clicks'),f.get('ctr_pct'),f.get('cr_pct'),f.get('spend'),f.get('direct_orders'),f.get('direct_turnover'),f.get('direct_drr_pct'),assoc.get('ac_orders_associated'),assoc.get('ac_orders_sum_associated'),f.get('full_drr_pct'),f.get('entry_net_profit')])
-                  keys=('cost_per_unit','cogs','seller_revenue','commission','delivery','tax_reserve','advertising_spend','sale_rows','return_rows','mpstats_for_pay','net_profit')
-                  fin.append([p['article']]+[e.get(k) for k in keys])
-                  required=('mpstats_for_pay','cogs','tax_reserve','net_profit','seller_revenue')
-                  known=all(type(e.get(k)) in (int,float) and math.isfinite(e[k]) for k in required)
-                  check=None if not known else abs(e['net_profit']-(e['mpstats_for_pay']-e['cogs']-e['tax_reserve']))<=.021 and abs(e['tax_reserve']-max(e['seller_revenue'],0)*.15)<=.021
-                  finance_checks.append(dict(campaign_id=c['campaign_id'],nm_id=p['nm_id'],formula_verified=check,source_components_present=p['finance_components_present']))
-                  q=f.get('current_stock') or {};saved=f.get('saved_stock') or {};mov=(f.get('movement') or {}).get('quantities') or {}
-                  stock.append([p['article'],q.get('fbo'),q.get('fbs'),q.get('msk'),saved.get('fbo'),saved.get('fbs'),saved.get('msk'),mov.get('to_buyers'),mov.get('returns'),f.get('buyer_status'),', '.join(map(str,f.get('other_active_campaign_ids') or [])),json.dumps(f.get('stock_source_times'),ensure_ascii=False)])
-              parts.append('<h3>Реклама и группы</h3><p>«Постклик фильтра» — значение, возвращённое MPStats для параметра nm_id. Это отдельное наблюдение источника; без проверки происхождения заказа оно не превращается в подтверждённый постклик исходного SKU.</p>')
-              parts.append(table(['Артикул','WB nmID','Группа','Показы','Клики','CTR %','CR прямых %','Расход ₽','Прямые заказы','Прямой оборот ₽','Прямой ДРР %','Постклик фильтра, шт.','Постклик фильтра, ₽','Полный ДРР %','Чистая прибыль рекламы ₽'],ad))
-              parts.append('<h3>Финансовые составляющие магазина — контекст отдельно от рекламной прибыли</h3><p>Формула MPStats: for_pay − себестоимость нетто − налоговый резерв 15%. Реклама, комиссия и остальные сообщённые удержания уже внутри for_pay и повторно не вычитаются. Общая полнота расходов кабинета остаётся отдельным ограничением источника; эти значения не доказывают прибыль рекламы.</p>')
-              parts.append(table(['Артикул','Себестоимость ед. ₽','Себестоимость нетто ₽','Оборот продавца нетто ₽','Комиссия MPStats ₽','Логистика ₽','Налог 15% ₽','Реклама SKU во всём магазине ₽','Продажи/выкупы, шт.','Возвраты, шт.','MPStats for_pay ₽','Результат магазина ₽'],fin))
-              parts.append('<h3>Остатки, движение и пересечения</h3><p>Сохранённое значение — исходное наблюдение, если срок годности истёк, в текущем значении остаётся «неизвестно». Товары к покупателям и возвращающиеся не прибавляются к доступным. Поступления и даты возвратов источник не подтвердил; возврат не гарантирован.</p>')
-              parts.append(table(['Артикул','Текущий FBO','Текущий FBS','Текущий МСК','Сохранённый FBO','Сохранённый FBS','Сохранённый МСК','К покупателям','Возвращаются','Покупка в Москве','Активные РК','Время источников UTC'],stock))
-              parts.append('<h3>Решение, пробелы и выполненные попытки по каждому SKU</h3>')
-              for p in c['rows']:
-                  parts.append('<details><summary>'+esc(p['article'])+' — '+esc(p['group'])+'</summary>')
-                  if p['actions']:
-                      for a in p['actions']:parts.append('<p>'+esc(a['reason'])+' → '+esc(a['action'])+' → Проверка: '+esc(a['criterion'])+'</p>')
-                  else:parts.append('<p>Подтверждённого изменения параметров рекламы пока нет; автоматическое масштабирование запрещено при неизвестной экономике точки входа.</p>')
-                  parts.append('<p>Не хватает: '+esc('; '.join(p['missing']))+'</p><p>Попытки: '+esc('; '.join(p['attempts']))+'</p>')
-                  source=p.get('filtered_advertising_detail') or {}
-                  if source:parts.append('<p>Новый точный SKU-отчёт: '+esc(source.get('source_request_key'))+'; snapshot '+esc(source.get('source_snapshot_id'))+'; проверено '+esc(source.get('observed_at'))+'; явные семь дат, нули взяты из источника.</p>')
-                  if p.get('postclick_drr_bound'):parts.append('<p>Математическая нижняя граница полного ДРР: '+val(p['postclick_drr_bound']['minimum_full_drr_pct'])+'%. Это граница при максимальном возможном обороте; фактическое распределение постклика не выполнено.</p>')
-                  parts.append('<p>Ограничение: '+esc(p['source_limitation'])+'</p><p>Следующий шаг: '+esc(p['next_step'])+'</p><pre>'+esc(json.dumps(dict(experiments=p['facts'].get('experiment_history'),buyer_source=p['facts'].get('buyer_source'),movement=p['facts'].get('movement'),change_diagnostics=p.get('saved_change_diagnostics'),diagnostics_reason=p.get('missing_diagnostics_reason'),cached_wb=p.get('supplemental_cached_wb')),ensure_ascii=False,indent=2))+'</pre></details>')
-              parts.append('<details><summary>Связки, цвета, настройки, бюджет и исторические товары</summary><pre>'+esc(json.dumps({k:c.get(k) for k in ('linked_groups','model_comparisons','configuration','budget','historical_only')},ensure_ascii=False,indent=2))+'</pre></details>')
-          parts.append('<h2>Реестр проверенных источников</h2><pre>'+esc(json.dumps(r['source_attempt_ledger'],ensure_ascii=False,indent=2))+'</pre>')
-          parts.append('<p>Для завершения рекламной прибыли требуется источник связи рекламного заказа с исходным SKU, купленным SKU и финансовым выкупом/возвратом. Для Москвы по 471/541 ожидается поддержка WB; обход 403 и массовый опрос отключены. Проверка ограничений цены, СПП, фото, спроса и экспериментов остаётся обязательной до признания группы «Изменения не требуются».</p></html>')
-          checks=dict(checked_pairs=len(finance_checks),formula_verified=sum(x['formula_verified'] is True for x in finance_checks),formula_failed=[x for x in finance_checks if x['formula_verified'] is False],formula_unknown=sum(x['formula_verified'] is None for x in finance_checks))
-          artifact=dict(html=''.join(parts),report_observed_at=r['observed_at'],financial_validation=checks,counts={k:r[k] for k in ('campaign_count','pair_count','unique_sku_count','groups','partition_verified')})
-          database('POST','telegram_api_cache',body=dict(cache_key='analytics:ip_review_artifact:v1',payload=artifact,expires_at=(datetime.now(timezone.utc)+timedelta(days=365)).isoformat()),params={'on_conflict':'cache_key'})
-          print(json.dumps(dict(protected_full_report_saved=True,**checks,telegram_sent=False,wb_writes_enabled=False)))
-          
-          """
-          run_private.execute('Full analytical report without WB requests or Telegram',['-c',script])
-          print('Protected complete per-SKU report and finance verification saved.')
-          PY
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ip-regression-flags
-          path: ${{ runner.temp }}/stage-one-tests.json
-          if-no-files-found: error
-          retention-days: 7

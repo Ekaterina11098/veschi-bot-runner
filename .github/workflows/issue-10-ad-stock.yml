@@ -12,7 +12,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 0addec7882f8e9297114deeb99b164672ce79b12
+          ref: 398759630d869fc1046f859e62d71e4c4db404ad
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -51,27 +51,36 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Pilot Raye stock and movement',['-m','advertising_agent.run_stock_availability','--target'])
           script="""
-          import os,sys
-          from advertising_agent.run_stock_availability import read,SOURCE,store_cache,cache
-          rows=read('analytics_snapshots',dict(source='eq.'+SOURCE,cabinet='eq.token_2',select='payload',order='id.desc',limit=1)) or []
-          report=rows[0]['payload'][0] if rows else {}
-          passed=report.get('stock_checks_complete') and report.get('campaign_scope_complete')
+          import os,sys,time,hashlib
+          from datetime import datetime,timezone
+          from advertising_agent.run_stock_availability import main,read,SOURCE,store_cache,cache,AD
+          from advertising_agent.stock_availability import TARGET_NM,TARGET_CAMPAIGN
           gate_key='advertising:stock_pilot_gate:token_2:v2'
-          if passed:store_cache(gate_key,dict(passed=True,nm_id=432727735,campaign_id=40428689,observed_at=report.get('observed_at')))
-          if not passed and not (cache(gate_key) or {}).get('passed'):
-              print('Pilot source evidence pending; initial rollout waits for verified inventory.')
-              if os.environ.get('STOCK_NOTIFY')=='true':
-                  from advertising_agent.run_stock_availability import main
-                  sys.argv=['stock','--target','--notify']
-                  main()
-          else:
-              from advertising_agent.run_stock_availability import main
-              sys.argv=['stock']+(['--notify'] if os.environ.get('STOCK_NOTIFY')=='true' else [])
+          passed=(cache(gate_key) or {}).get('passed') is True
+          if passed:
+              # The pilot is already verified. Do not spend a second configuration
+              # request just to repeat it before a full-scope read.
+              key='wb-pause:'+hashlib.sha256((os.environ['WB_TOKEN_2']+'advert-api.wildberries.ru'+'/api/advert/v2/adverts').encode()).hexdigest()
+              deadline=time.monotonic()+3700
+              while True:
+                  rows=read('telegram_api_cache',dict(cache_key='eq.'+key,expires_at='gt.'+datetime.now(timezone.utc).isoformat(),select='payload',limit=1)) or []
+                  remaining=max(0,float(rows[0]['payload'].get('until',0))-time.time()+2) if rows else 0
+                  if remaining<=0:break
+                  if time.monotonic()+remaining>deadline:raise RuntimeError('WB deferred retry exceeds one bounded cooldown')
+                  time.sleep(min(60,remaining))
+              sys.argv=['stock']
               main()
+          else:
+              sys.argv=['stock','--target']
+              main()
+              rows=read('analytics_snapshots',dict(source='eq.'+SOURCE,cabinet='eq.token_2',select='payload',order='id.desc',limit=1)) or []
+              report=rows[0]['payload'][0] if rows else {}
+              if report.get('stock_checks_complete') and report.get('campaign_scope_complete'):
+                  store_cache(gate_key,dict(passed=True,nm_id=TARGET_NM,campaign_id=TARGET_CAMPAIGN,observed_at=report.get('observed_at')))
+              # Full rollout is a later run, respecting configuration request quota.
           """
-          run_private.execute('Roll out only after actual pilot sources pass',['-c',script])
+          run_private.execute('One bounded full-scope stock retry after verified pilot and cooldown',['-c',script])
           print('Protected stock pilot/coverage saved. No WB writes or Telegram.')
           PY
       - name: Validate and recover due IP experiment history gap

@@ -1,4 +1,4 @@
-name: Issue 10 finish MPStats catalog pagination and both financial periods
+name: Issue 10 current IP search evidence after catalog completion
 on:
   push:
     branches: [main]
@@ -12,7 +12,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,125 +24,43 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: Ekaterina11098/VESCHI_AI
-          ref: 327d7647c857ed0310fd8427d709f832c9e68ad1
-          token: ${{ secrets.SOURCE_READ_TOKEN }}
-          path: baseline-source
-          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install existing runner runtime
-        run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow streamlit openai > "$RUNNER_TEMP/dependencies.log" 2>&1
-      - name: Inspect private workflow triggers without running them
-        run: |
-          python - <<'PY'
-          import json,re
-          from pathlib import Path
-          unsafe=[]
-          for file in Path('private-source/.github/workflows').glob('*.yml'):
-              content=file.read_text()
-              match=re.search(r'^on:(.*?)(?=^\S|\Z)',content,re.M|re.S)
-              trigger=match.group(1) if match else ''
-              if re.search(r'\b(pull_request|pull_request_target|push)\b',trigger):unsafe.append(file.name)
-          print(json.dumps(dict(private_automatic_workflows=unsafe,private_workflow_files_inspected=len(list(Path('private-source/.github/workflows').glob('*.yml'))))))
-          PY
-      - name: Full Python regression suite without live credentials
-        run: |
-          python - <<'PY'
-          import json,os,subprocess,sys
-          from pathlib import Path
-          folder=Path(os.environ['RUNNER_TEMP'])
-          script="""
-          import contextlib,json,os,re,unittest
-          from pathlib import Path
-          with open(os.environ['TEST_LOG'],'w') as log:
-              with contextlib.redirect_stdout(log),contextlib.redirect_stderr(log):
-                  suite=unittest.defaultTestLoader.discover('tests',pattern=os.environ['TEST_PATTERN'])
-                  result=unittest.TextTestRunner(stream=log,verbosity=2).run(suite)
-          Path(os.environ['TEST_SUMMARY']).write_text(json.dumps(dict(tests=result.testsRun,
-              failures=len(result.failures),errors=len(result.errors),skipped=len(result.skipped),
-              failed_ids=[test.id() for test,_ in result.failures+result.errors],
-              failed_locations=[dict(test=test.id(),frames=[dict(file=Path(p).name,line=n) for p,n in re.findall(r'File \"(.*?)\", line (\\d+)',trace)]) for test,trace in result.failures+result.errors],
-              error_types=[next((line.split(':')[0] for line in trace.splitlines() if re.match(r'^[A-Za-z.]*Error(?::|$)',line)),'TestFailure') for _,trace in result.failures+result.errors])))
-          """
-          results=[];baseline=[]
-          for path in sorted(Path('private-source/tests').glob('test_*.py')):
-              name=path.name
-              output=folder/('result-'+name+'.json')
-              log=folder/('log-'+name)
-              env={**os.environ,'TEST_PATTERN':name,'TEST_SUMMARY':str(output),'TEST_LOG':str(log)}
-              subprocess.run([sys.executable,'-c',script],cwd='private-source',env=env,check=True)
-              result=json.loads(output.read_text());results.append(result)
-              if result['failed_ids'] and Path('baseline-source/tests',name).exists():
-                  subprocess.run([sys.executable,'-c',script],cwd='baseline-source',env=env,check=True)
-                  baseline.append(json.loads(output.read_text()))
-          current={x for r in results for x in r['failed_ids']}
-          previous={x for r in baseline for x in r['failed_ids']}
-          summary=dict(tests=sum(r['tests'] for r in results),failures=sum(r['failures'] for r in results),
-              errors=sum(r['errors'] for r in results),skipped=sum(r['skipped'] for r in results),
-              failed_ids=sorted(current),baseline_failed_ids=sorted(previous),
-              regressions=sorted(current-previous),failed_locations=[x for r in results for x in r.get('failed_locations',[])],error_types=sorted({x for r in results for x in r['error_types']}))
-          (folder/'stage-one-tests.json').write_text(json.dumps(summary,indent=2))
-          with (folder/'private-tests.log').open('w') as joined:
-              for path in folder.glob('log-test_*.py'):joined.write(path.read_text())
-          print(json.dumps(summary))
-          sys.exit(1 if summary['regressions'] else 0)
-          PY
-      - name: Save failed test diagnostics in protected backend
-        if: failure()
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Read exact current-period MPStats query gaps
         env:
-          TASK: issue-10-stage-one
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: |
-          python - <<'PY'
-          import os,run_private
-          from pathlib import Path
-          log=Path(os.environ['RUNNER_TEMP'])/'private-tests.log'
-          if log.exists():run_private.save_diagnostic('stage-one regression',log.read_text())
-          PY
-      - name: Complete only retained missing MPStats catalog page
-        env:
-          TASK: ip-final-catalog-page
+          TASK: ip-current-query-sources
+          IP_RECOVERY_MODE: queries
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('No duplicate first page; fill exact remaining IP catalog scope',['-m','analytics.ip_financial_period_recovery'])
+          script="from analytics.ip_financial_period_recovery import run\nfor batch in range(12):\n    if not run():break"
+          run_private.execute('Only missing current IP paid-pair query scopes; reuse terminal results',['-c',script])
           PY
-      - name: Refresh operational inventory and composition without notifications
+      - name: WB only for demonstrated remaining MPStats gaps
         env:
-          TASK: ip-current-stock-read-only
+          TASK: ip-current-query-gap-batches
           WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Current IP stock and campaign configuration; no buyer bulk or Telegram',['-m','advertising_agent.run_stock_availability'])
+          script="import time\nfrom analytics.ip_query_gap_batches import run\nfor batch in range(3):\n    if not run():break\n    time.sleep(7)"
+          run_private.execute('Exact paid pairs only; max100 per request; shared cooldown',['-c',script])
           PY
-      - name: Recalculate latest seven completed days from saved sources
+      - name: Render both periods from saved evidence
         env:
-          TASK: ip-latest-completed-review
+          TASK: ip-completed-investigations
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Latest complete IP period; saved MPStats first',['-m','analytics.ip_sku_complete_review'])
           script="import os\nfrom analytics.ip_completed_investigations import run\nos.environ['IP_REVIEW_ID']='11059'\nrun()\nos.environ.pop('IP_REVIEW_ID')\nrun()"
-          run_private.execute('Frozen and latest completed periods; source limitations explicit',['-c',script])
+          run_private.execute('Both completed periods; no finance retry, WB changes or Telegram',['-c',script])
           PY
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ip-regression-flags
-          path: ${{ runner.temp }}/stage-one-tests.json
-          if-no-files-found: error
-          retention-days: 7

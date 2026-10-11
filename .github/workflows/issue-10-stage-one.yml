@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 058cd23a491091be9d866261f9655a5abbfae972
+          ref: f6a17925bfc55531c501621dd68d9947171c11e6
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -103,6 +103,17 @@ jobs:
           from pathlib import Path
           log=Path(os.environ['RUNNER_TEMP'])/'private-tests.log'
           if log.exists():run_private.save_diagnostic('stage-one regression',log.read_text())
+          PY
+      - name: Refresh IP experiment decisions from protected history only
+        env:
+          TASK: issue-10-ip-experiments
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Refresh completeness-aware IP experiment journal',['-m','advertising_agent.experiments'])
+          print('Protected IP checkpoints refreshed; no WB requests or Telegram.')
           PY
       - name: Prepare exact missing requests from actual protected cache
         env:

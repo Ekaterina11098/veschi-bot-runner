@@ -12,7 +12,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 51636d9a52cbfac7f5bee04b22401c6aa607d7a0
+          ref: 3be773baa055fe04783af6d60aa0448ba8ef2b2c
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -145,7 +145,7 @@ jobs:
           database('POST','telegram_api_cache',body=dict(cache_key=gaps.REQUEST_KEY,payload=state,
               expires_at=(now+timedelta(days=365)).isoformat()),params={'on_conflict':'cache_key'})
           original_execute=gaps.execute_reads
-          for batch in range(4):
+          for batch in range(8):
               state=cache(gaps.REQUEST_KEY)
               pending=[r for r in state.get('requests',[]) if r['key'] in financial]
               cooldown=read('telegram_api_cache',dict(cache_key='eq.mpstats:cooldown',expires_at='gt.'+datetime.now(timezone.utc).isoformat(),select='cache_key',limit=1)) or []

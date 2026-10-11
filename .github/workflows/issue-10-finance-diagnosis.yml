@@ -1,0 +1,69 @@
+name: Issue 10 saved finance diagnosis
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/issue-10-finance-diagnosis.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: bab48588ae23bf7461b39bdbc8c2584166e6919e
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Diagnose existing protected observations only
+        env:
+          TASK: issue-10-saved-finance-diagnosis
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,run_private
+          script="""
+          import json,os
+          from datetime import datetime,timedelta,timezone
+          from zoneinfo import ZoneInfo
+          from pathlib import Path
+          from analytics.stage_one import read,snapshots
+          from analytics.mpstats_composition import compose
+          now=datetime.now(timezone.utc)
+          end=now.astimezone(ZoneInfo('Europe/Moscow')).date()-timedelta(days=1)
+          start=end-timedelta(days=6)
+          components=[]
+          for i in range(7):
+              day=str(start+timedelta(days=i))
+              candidates=snapshots(read,('mpstats_lk_wb_products',),'token_2',day,day)
+              components.append(candidates[0])
+          try:
+              compose(components,'token_2',start,end)
+              result=dict(composition_status='complete')
+          except (ValueError,KeyError,TypeError) as exc:
+              result=dict(composition_status=type(exc).__name__,reason=str(exc) if isinstance(exc,ValueError) else 'missing_field:'+str(exc.args[0]) if isinstance(exc,KeyError) else 'invalid_component_type')
+          Path(os.environ['RUNNER_TEMP']+'/composition-diagnosis.json').write_text(json.dumps(result))
+          """
+          run_private.execute('Diagnose protected saved financial composition',['-c',script])
+          PY
+      - name: Print schema diagnosis only
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          print((Path(os.environ['RUNNER_TEMP'])/'composition-diagnosis.json').read_text())
+          PY

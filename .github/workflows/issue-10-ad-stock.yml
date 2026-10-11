@@ -46,6 +46,7 @@ jobs:
           token=os.environ['WB_TOKEN_2']
           def save(source,payload):
               database('POST','analytics_snapshots',body=dict(source=source,cabinet='token_2',run_id=RUN_ID,
+                  period_from=datetime.now(timezone.utc).date().isoformat(),period_to=datetime.now(timezone.utc).date().isoformat(),
                   status='complete',payload=[dict(observed_at=datetime.now(timezone.utc).isoformat(),
                   owner_cabinet='token_2',nm_id=432727735,chrt_id=614925915,article='471-RayeBag-brown',data=payload,
                   source_gap='MPStats cached historical aggregate lacks current all-warehouse inventory proof; saved WB inventory is older than one hour')]))

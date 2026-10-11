@@ -1,4 +1,4 @@
-name: Issue 10 deferred sales causes plan validation
+name: Issue 10 bounded IP data lineage audit
 on:
   push:
     branches: [main]
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 96e32084fb8f1e988f5646b1fb272b4b74db311f
+          ref: 416a7724b03709c876df0f12e2ac2659cfd7528e
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -28,39 +28,16 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
-      - name: Validate deferred plan and save common knowledge only
+      - name: Validate recovered evidence and bounded raw lineage
         env:
-          TASK: issue-10-sales-causes-plan
+          TASK: issue-10-ip-lineage-repair
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          script = r"""
-          import json
-          from datetime import datetime,timezone,timedelta
-          from business_agents.knowledge import shared_knowledge
-          from analytics.collect import database
-          from analytics.stage_one import read
-          knowledge=shared_knowledge()
-          plan=knowledge['planned_modules']['sales_change_causes']
-          assert plan['status']=='planned_after_IP_stage_one'
-          assert plan['owner']=='advertising_agent'
-          for flag in ('telegram_enabled','wb_writes_enabled','additional_review_question_collection_enabled','mass_buyer_collection_enabled','private_actions_allowed'):
-              assert plan['guards'][flag] is False
-          assert plan['pilot']['article']=='447-AngelaBag-burgundy'
-          assert plan['sequence'][0]=='Завершить текущий этап рекламного агента ИП'
-          assert len(plan['reuse'])>=6 and len(plan['signals'])==7
-          key='veschi:shared_knowledge:v1'
-          existing=read('telegram_api_cache',dict(cache_key='eq.'+key,select='payload',limit=1))
-          assert existing and isinstance(existing[0]['payload'],dict)
-          payload=existing[0]['payload']
-          payload.setdefault('planned_modules',{})['sales_change_causes']=plan
-          payload['sales_causes_plan_source_commit']='96e32084fb8f1e988f5646b1fb272b4b74db311f'
-          database('POST','telegram_api_cache',body=dict(cache_key=key,payload=payload,expires_at=(datetime.now(timezone.utc)+timedelta(days=365)).isoformat()),params={'on_conflict':'cache_key'})
-          verify=read('telegram_api_cache',dict(cache_key='eq.'+key,select='payload',limit=1))
-          assert verify[0]['payload']['planned_modules']['sales_change_causes']==plan
-          print(json.dumps(dict(plan_checks_passed=11,common_knowledge_saved=True,source_requests=0,telegram_sent=False,wb_writes=False,module_activated=False)))
-          """
-          run_private.execute('Validate and save deferred sales causes plan without source collection',['-c',script])
+          for pattern in ('test_ip_data_preservation.py','test_ip_sku_complete_review.py','test_postclick_evidence_guard.py'):
+              run_private.execute('Evidence and safety regression '+pattern,['-m','unittest','discover','-s','tests','-p',pattern])
+          run_private.execute('Bounded raw lineage audit and recovered pilot report',['-m','analytics.ip_data_quality_audit'])
+          print('Bounded lineage audit and evidence regressions passed; private results saved.')
           PY

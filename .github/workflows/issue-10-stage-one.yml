@@ -44,9 +44,9 @@ jobs:
           unsafe=[]
           for file in Path('private-source/.github/workflows').glob('*.yml'):
               content=file.read_text()
-              match=re.search(r'^on:(.*?)(?=^[^ \\n]|\\Z)',content,re.M|re.S)
+              match=re.search(r'^on:(.*?)(?=^\S|\Z)',content,re.M|re.S)
               trigger=match.group(1) if match else ''
-              if re.search(r'\\b(pull_request|pull_request_target|push)\\b',trigger):unsafe.append(file.name)
+              if re.search(r'\b(pull_request|pull_request_target|push)\b',trigger):unsafe.append(file.name)
           print(json.dumps(dict(private_automatic_workflows=unsafe,private_workflow_files_inspected=len(list(Path('private-source/.github/workflows').glob('*.yml'))))))
           PY
       - name: Full Python regression suite without live credentials
@@ -155,9 +155,10 @@ jobs:
               cooldown=read('telegram_api_cache',dict(cache_key='eq.mpstats:cooldown',expires_at='gt.'+datetime.now(timezone.utc).isoformat(),select='cache_key',limit=1)) or []
               if not pending or cooldown:break
               limit=min(24,len(pending))
-              def bounded(*args,**kwargs):
+              def bounded(call,checks,known_tools,requests,bidder_map,save,**kwargs):
+                  requests=[r for r in requests if r['key'] in financial]
                   kwargs['max_requests']=limit
-                  return original_execute(*args,**kwargs)
+                  return original_execute(call,checks,known_tools,requests,bidder_map,save,**kwargs)
               gaps.execute_reads=bounded
               gaps.main()
           """

@@ -1,4 +1,4 @@
-name: Issue 10 saved tape identity ambiguity regression
+name: Issue 10 final audit period and evidence verification
 on:
   push:
     branches: [main]
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 73a5a84d1b31c82dd1b22248cd965df95faa1f02
+          ref: a98b741c6847e3647e4972666d009f755c174836
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -30,15 +30,15 @@ jobs:
       - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Validate recovered evidence and bounded raw lineage
         env:
-          TASK: issue-10-ip-audit-recovered-pages
+          TASK: issue-10-ip-audit-period-final
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_ip_data_preservation.py','test_ip_attribution_tape_complete.py','test_postclick_evidence_guard.py'):
+          for pattern in ('test_ip_data_preservation.py','test_ip_attribution_tape_complete.py','test_mpstats_gaps.py','test_postclick_evidence_guard.py'):
               run_private.execute('Evidence and safety regression '+pattern,['-m','unittest','discover','-s','tests','-p',pattern])
-          run_private.execute('Inspect already saved complete tape pages',['-m','analytics.ip_attribution_tape_complete'])
-          run_private.execute('Render final protected audit matrix',['-m','analytics.ip_data_audit_report'])
+          run_private.execute('Compile explicit-period audit writers',['-m','py_compile','analytics/ip_data_quality_audit.py','analytics/ip_attribution_tape_probe.py'])
+          run_private.execute('Render existing frozen completed-period report',['-m','analytics.ip_data_audit_report'])
           print('Bounded lineage audit and evidence regressions passed; private results saved.')
           PY

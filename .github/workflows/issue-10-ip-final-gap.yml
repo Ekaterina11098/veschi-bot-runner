@@ -1,4 +1,4 @@
-name: Issue 10 IP attribution capability evidence
+name: Issue 10 IP pilot exact SKU detail recovery
 on:
   push:
     branches: [main]
@@ -12,7 +12,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,32 +20,27 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: a3193b9a30e4424643d1a3cf91e09b55d6c75c49
+          ref: 3d5cd7c5a86ee583f025390dbd50b793a52d2e36
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install requests==2.32.5 python-dotenv > "$RUNNER_TEMP/dependencies.log" 2>&1
-      - name: Inspect advertised read capabilities without repeating completed data calls
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Verify exact gap planner and recover only unattempted pilot SKU reports
         env:
-          TASK: issue-10-ip-attribution-capabilities
+          TASK: issue-10-ip-pilot-detail-gap
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
         run: |
           python - <<'PY'
           import run_private
+          run_private.execute('Test exact pilot gap planner',['-m','unittest','discover','-s','tests','-p','test_ip_pilot_detail_gap.py'])
           script="""
-          import os,json
-          from analytics.mpstats_probe import discover
-          from analytics.collect import snapshot
-          result=discover(os.environ['MPSTATS_API_TOKEN'])
-          wanted=('wbbidder_campaign_stats','wbbidder_campaigns','lk_wb_card_orders','lk_wb_sales_tape','lk_wb_card_info','lk_wb_card_table','wbbidder_events','lk_wb_dashboard_expenses')
-          evidence=dict(status=result['status'],tools=[t for t in result.get('tools',[]) if t['name'] in wanted],executed_data_tools=result.get('executed_data_tools',0),wb_writes_enabled=False,telegram_sent=False)
-          snapshot('ip_attribution_capabilities','token_2',[evidence],'complete' if result.get('connected') else 'partial','Provider tool contracts inspected for missing advertising order links; no data queries repeated')
-          print(json.dumps(dict(status=evidence['status'],tools=len(evidence['tools']),executed_data_tools=evidence['executed_data_tools'],wb_writes_enabled=False,telegram_sent=False)))
+          from analytics.ip_pilot_detail_gap import run
+          for batch in range(3):run()
           """
-          run_private.execute('Inspect attribution contracts only',['-c',script])
+          run_private.execute('Bounded exact pilot SKU day reports',['-c',script])
           PY

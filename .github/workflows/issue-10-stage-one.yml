@@ -24,27 +24,58 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 327d7647c857ed0310fd8427d709f832c9e68ad1
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: baseline-source
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install existing runner runtime
-        run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
+        run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow streamlit openai > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Full Python regression suite without live credentials
         run: |
-          cd private-source
           python - <<'PY'
-          import contextlib,json,os,sys,unittest
+          import json,os,subprocess,sys
           from pathlib import Path
           folder=Path(os.environ['RUNNER_TEMP'])
-          with (folder/'private-tests.log').open('w') as log:
+          script="""
+          import contextlib,json,os,unittest
+          from pathlib import Path
+          with open(os.environ['TEST_LOG'],'w') as log:
               with contextlib.redirect_stdout(log),contextlib.redirect_stderr(log):
-                  suite=unittest.defaultTestLoader.discover('tests')
+                  suite=unittest.defaultTestLoader.discover('tests',pattern=os.environ['TEST_PATTERN'])
                   result=unittest.TextTestRunner(stream=log,verbosity=2).run(suite)
-          summary=dict(tests=result.testsRun,failures=len(result.failures),errors=len(result.errors),
-              skipped=len(result.skipped),failed_ids=[test.id() for test,_ in result.failures+result.errors])
+          Path(os.environ['TEST_SUMMARY']).write_text(json.dumps(dict(tests=result.testsRun,
+              failures=len(result.failures),errors=len(result.errors),skipped=len(result.skipped),
+              failed_ids=[test.id() for test,_ in result.failures+result.errors],
+              error_types=[trace.strip().splitlines()[-1].split(':')[0] for _,trace in result.failures+result.errors])))
+          """
+          results=[];baseline=[]
+          for path in sorted(Path('private-source/tests').glob('test_*.py')):
+              name=path.name
+              output=folder/('result-'+name+'.json')
+              log=folder/('log-'+name)
+              env={**os.environ,'TEST_PATTERN':name,'TEST_SUMMARY':str(output),'TEST_LOG':str(log)}
+              subprocess.run([sys.executable,'-c',script],cwd='private-source',env=env,check=True)
+              result=json.loads(output.read_text());results.append(result)
+              if result['failed_ids'] and Path('baseline-source/tests',name).exists():
+                  subprocess.run([sys.executable,'-c',script],cwd='baseline-source',env=env,check=True)
+                  baseline.append(json.loads(output.read_text()))
+          current={x for r in results for x in r['failed_ids']}
+          previous={x for r in baseline for x in r['failed_ids']}
+          summary=dict(tests=sum(r['tests'] for r in results),failures=sum(r['failures'] for r in results),
+              errors=sum(r['errors'] for r in results),skipped=sum(r['skipped'] for r in results),
+              failed_ids=sorted(current),baseline_failed_ids=sorted(previous),
+              regressions=sorted(current-previous),error_types=sorted({x for r in results for x in r['error_types']}))
           (folder/'stage-one-tests.json').write_text(json.dumps(summary,indent=2))
+          with (folder/'private-tests.log').open('w') as joined:
+              for path in folder.glob('log-test_*.py'):joined.write(path.read_text())
           print(json.dumps(summary))
-          sys.exit(0 if result.wasSuccessful() else 1)
+          sys.exit(1 if summary['regressions'] else 0)
           PY
       - name: Save failed test diagnostics in protected backend
         if: failure()

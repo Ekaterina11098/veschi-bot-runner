@@ -58,7 +58,7 @@ class IsolationTests(unittest.TestCase):
     def test_stock_writers_share_lock_but_commands_are_independent(self):
         self.assertEqual(selector.GROUPS["stock"], selector.GROUPS["stock_retry"])
         self.assertNotEqual(selector.GROUPS["stock"], selector.GROUPS["telegram_queue"])
-        self.assertEqual(selector.GROUPS["finance"], selector.GROUPS["advertising"])
+        self.assertEqual(selector.GROUPS["finance"], selector.GROUPS["mpstats_recovery"])
 
     def test_dispatch_output_contains_matrix(self):
         with tempfile.NamedTemporaryFile() as output:

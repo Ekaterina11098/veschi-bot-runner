@@ -12,7 +12,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 95886d400b9458a9e088feb7c294e5843b525496
+          ref: 51636d9a52cbfac7f5bee04b22401c6aa607d7a0
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -126,21 +126,35 @@ jobs:
           script="""
           from datetime import datetime,timedelta,timezone
           from analytics.collect import database
-          from analytics.stage_one import cache
-          from analytics.mpstats_gaps import ingest_recovery_requests,main,REQUEST_KEY
+          from analytics.stage_one import cache,read
+          import analytics.mpstats_gaps as gaps
           now=datetime.now(timezone.utc)
-          state=cache(REQUEST_KEY)
-          ingest_recovery_requests(database,state,now)
+          state=cache(gaps.REQUEST_KEY)
+          gaps.ingest_recovery_requests(database,state,now)
+          financial={r['key'] for r in cache('analytics:recovery:stage_one_finance:v1').get('mpstats_requests',[])}
+          diagnoses=read('analytics_snapshots',dict(source='eq.mpstats_stage_one_finance_diagnosis',order='id.desc',select='payload',limit=1)) or []
+          original={r['key'] for r in diagnoses[0]['payload'][0].get('requests',[])} if diagnoses else set()
+          state['requests']=[r for r in state.get('requests',[]) if r['key'] not in original or r['key'] in financial]
           def priority(r):
+              if r['key'] not in financial:return 5
               if r['cabinet']=='token_3' and r['tool']=='wbbidder_campaign_stats':return 0
-              if r['tool']=='lk_wb_products':return 1
-              if r['tool']=='lk_wb_card_table':return 2
-              if r['tool']=='lk_wb_card_orders':return 3
-              return 4
+              if r['tool']=='lk_wb_card_table':return 1
+              if r['tool']=='lk_wb_card_orders':return 2
+              return 3
           state['requests']=sorted(state.get('requests',[]),key=priority)
-          database('POST','telegram_api_cache',body=dict(cache_key=REQUEST_KEY,payload=state,
+          database('POST','telegram_api_cache',body=dict(cache_key=gaps.REQUEST_KEY,payload=state,
               expires_at=(now+timedelta(days=365)).isoformat()),params={'on_conflict':'cache_key'})
-          main()
+          original_execute=gaps.execute_reads
+          for batch in range(4):
+              state=cache(gaps.REQUEST_KEY)
+              pending=[r for r in state.get('requests',[]) if r['key'] in financial]
+              if not pending or cache('mpstats:cooldown'):break
+              limit=min(24,len(pending))
+              def bounded(*args,**kwargs):
+                  kwargs['max_requests']=limit
+                  return original_execute(*args,**kwargs)
+              gaps.execute_reads=bounded
+              gaps.main()
           """
           run_private.execute('Read bounded confirmed MPStats finance gaps',['-c',script])
           PY

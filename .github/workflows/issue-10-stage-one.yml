@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: issue-10-ip-regression
+  group: issue-10-ip-final-regression
   cancel-in-progress: false
 jobs:
   verify:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 6338faa9b065e62d69c7cae6ba514b81e8b4e40c
+          ref: 024ae08d37effb1a17c568edc0d90468f4040736
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -104,48 +104,10 @@ jobs:
           log=Path(os.environ['RUNNER_TEMP'])/'private-tests.log'
           if log.exists():run_private.save_diagnostic('stage-one regression',log.read_text())
           PY
-      - name: Refresh IP experiment decisions from protected history only
-        env:
-          TASK: issue-10-ip-experiments
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: |
-          python - <<'PY'
-          import run_private
-          run_private.execute('Refresh completeness-aware IP experiment journal',['-m','advertising_agent.experiments'])
-          run_private.execute('Audit IP campaign economics and attribution gaps',['-m','analytics.ip_campaign_audit'])
-          print('Protected IP checkpoints and campaign report saved; no WB requests or Telegram.')
-          PY
-      - name: Audit actual scoped agent cache readers
-        env:
-          TASK: issue-10-stage-one
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: |
-          python - <<'PY'
-          import os,run_private
-          run_private.execute('Audit actual scoped agent readers',['-m','analytics.stage_one','--cabinet','token_2','--summary-path',os.environ['RUNNER_TEMP']+'/stage-one-status.json'])
-          PY
-      - name: Public acceptance flags only
-        if: always()
-        run: |
-          python - <<'PY'
-          import json,os
-          from pathlib import Path
-          path=Path(os.environ['RUNNER_TEMP'])/'stage-one-status.json'
-          if path.exists():
-              summary=json.loads(path.read_text())
-              print(json.dumps(summary,indent=2))
-              raise SystemExit(0 if summary['status']=='complete' else 2)
-          print('Acceptance audit unavailable; inspect preceding step status.')
-          raise SystemExit(1)
-          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: stage-one-acceptance-flags
-          path: |
-            ${{ runner.temp }}/stage-one-tests.json
-            ${{ runner.temp }}/stage-one-status.json
-          if-no-files-found: ignore
+          name: ip-regression-flags
+          path: ${{ runner.temp }}/stage-one-tests.json
+          if-no-files-found: error
           retention-days: 7

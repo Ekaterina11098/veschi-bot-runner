@@ -1,4 +1,4 @@
-name: Issue 10 final financial audit labels and exact card source recovery
+name: Issue 10 exact financial periods and final read-only acceptance
 on:
   push:
     branches: [main]
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 5c9092635c13a6b02495f9d15c927a7875281508
+          ref: 6a0a9d56d01753b8bb893b5e79fd8e34bd09cbc0
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false

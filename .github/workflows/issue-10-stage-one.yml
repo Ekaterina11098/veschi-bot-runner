@@ -1,0 +1,97 @@
+name: Issue 10 stage one acceptance
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/issue-10-stage-one.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: be5f6e38a9973e6d77cce26330f439e0d088d62f
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing runner runtime
+        run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Full Python regression suite without live credentials
+        run: |
+          cd private-source
+          python - <<'PY'
+          import contextlib,json,os,sys,unittest
+          from pathlib import Path
+          folder=Path(os.environ['RUNNER_TEMP'])
+          with (folder/'private-tests.log').open('w') as log:
+              with contextlib.redirect_stdout(log),contextlib.redirect_stderr(log):
+                  suite=unittest.defaultTestLoader.discover('tests')
+                  result=unittest.TextTestRunner(stream=log,verbosity=2).run(suite)
+          summary=dict(tests=result.testsRun,failures=len(result.failures),errors=len(result.errors),
+              skipped=len(result.skipped),failed_ids=[test.id() for test,_ in result.failures+result.errors])
+          (folder/'stage-one-tests.json').write_text(json.dumps(summary,indent=2))
+          print(json.dumps(summary))
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
+      - name: Save failed test diagnostics in protected backend
+        if: failure()
+        env:
+          TASK: issue-10-stage-one
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,run_private
+          from pathlib import Path
+          log=Path(os.environ['RUNNER_TEMP'])/'private-tests.log'
+          if log.exists():run_private.save_diagnostic('stage-one regression',log.read_text())
+          PY
+      - name: Targeted read-only recovery and real agent cache audit
+        env:
+          TASK: issue-10-stage-one
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,run_private
+          run_private.execute('Prepare exact Regina gaps',['-m','analytics.stage_one','--prepare'])
+          run_private.execute('Collect bounded MPStats gaps under shared lock',['-m','analytics.mpstats_gaps'])
+          run_private.execute('Audit actual scoped agent readers',['-m','analytics.stage_one','--summary-path',os.environ['RUNNER_TEMP']+'/stage-one-status.json'])
+          PY
+      - name: Public acceptance flags only
+        if: always()
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path(os.environ['RUNNER_TEMP'])/'stage-one-status.json'
+          if path.exists():
+              summary=json.loads(path.read_text())
+              print(json.dumps(summary,indent=2))
+              raise SystemExit(0 if summary['status']=='complete' else 2)
+          print('Acceptance audit unavailable; inspect preceding step status.')
+          raise SystemExit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stage-one-acceptance-flags
+          path: |
+            ${{ runner.temp }}/stage-one-tests.json
+            ${{ runner.temp }}/stage-one-status.json
+          if-no-files-found: ignore
+          retention-days: 7

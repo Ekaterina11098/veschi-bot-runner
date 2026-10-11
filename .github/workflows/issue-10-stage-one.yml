@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: ae538310187c85da457458ff71e87aa79062bd0c
+          ref: 1c1e17752bcc8e8820db7072a5d09e1633525def
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -43,7 +43,7 @@ jobs:
           from pathlib import Path
           folder=Path(os.environ['RUNNER_TEMP'])
           script="""
-          import contextlib,json,os,unittest
+          import contextlib,json,os,re,unittest
           from pathlib import Path
           with open(os.environ['TEST_LOG'],'w') as log:
               with contextlib.redirect_stdout(log),contextlib.redirect_stderr(log):
@@ -52,7 +52,7 @@ jobs:
           Path(os.environ['TEST_SUMMARY']).write_text(json.dumps(dict(tests=result.testsRun,
               failures=len(result.failures),errors=len(result.errors),skipped=len(result.skipped),
               failed_ids=[test.id() for test,_ in result.failures+result.errors],
-              error_types=[trace.strip().splitlines()[-1].split(':')[0] for _,trace in result.failures+result.errors])))
+              error_types=[next((line.split(':')[0] for line in trace.splitlines() if re.match(r'^[A-Za-z.]*Error(?::|$)',line)),'TestFailure') for _,trace in result.failures+result.errors])))
           """
           results=[];baseline=[]
           for path in sorted(Path('private-source/tests').glob('test_*.py')):

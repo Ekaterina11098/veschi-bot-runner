@@ -148,7 +148,8 @@ jobs:
           for batch in range(4):
               state=cache(gaps.REQUEST_KEY)
               pending=[r for r in state.get('requests',[]) if r['key'] in financial]
-              if not pending or cache('mpstats:cooldown'):break
+              cooldown=read('telegram_api_cache',dict(cache_key='eq.mpstats:cooldown',expires_at='gt.'+datetime.now(timezone.utc).isoformat(),select='cache_key',limit=1)) or []
+              if not pending or cooldown:break
               limit=min(24,len(pending))
               def bounded(*args,**kwargs):
                   kwargs['max_requests']=limit

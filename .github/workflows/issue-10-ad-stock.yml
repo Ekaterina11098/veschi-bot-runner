@@ -57,11 +57,14 @@ jobs:
           run_private.execute('Pilot Raye stock and movement',['-m','advertising_agent.run_stock_availability','--target'])
           script="""
           import os,sys
-          from advertising_agent.run_stock_availability import read,SOURCE,store_cache
+          from advertising_agent.run_stock_availability import read,SOURCE,store_cache,cache
           rows=read('analytics_snapshots',dict(source='eq.'+SOURCE,cabinet='eq.token_2',select='payload',order='id.desc',limit=1)) or []
           report=rows[0]['payload'][0] if rows else {}
-          if not report.get('stock_checks_complete') or not report.get('campaign_scope_complete'):
-              print('Pilot source evidence pending; all-active rollout waits for verified inventory.')
+          passed=report.get('stock_checks_complete') and report.get('campaign_scope_complete')
+          gate_key='advertising:stock_pilot_gate:token_2:v1'
+          if passed:store_cache(gate_key,dict(passed=True,nm_id=432727735,campaign_id=40428689,observed_at=report.get('observed_at')))
+          if not passed and not (cache(gate_key) or {}).get('passed'):
+              print('Pilot source evidence pending; initial rollout waits for verified inventory.')
           else:
               from advertising_agent.run_stock_availability import main
               sys.argv=['stock']+(['--notify'] if os.environ.get('STOCK_NOTIFY')=='true' else [])

@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: bab48588ae23bf7461b39bdbc8c2584166e6919e
+          ref: 95886d400b9458a9e088feb7c294e5843b525496
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -113,6 +113,36 @@ jobs:
           python - <<'PY'
           import os,run_private
           run_private.execute('Prepare exact Regina gaps',['-m','analytics.stage_one','--prepare'])
+          PY
+      - name: Collect confirmed financial MPStats gaps under shared lock
+        env:
+          TASK: issue-10-financial-recovery
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          script="""
+          from datetime import datetime,timedelta,timezone
+          from analytics.collect import database
+          from analytics.stage_one import cache
+          from analytics.mpstats_gaps import ingest_recovery_requests,main,REQUEST_KEY
+          now=datetime.now(timezone.utc)
+          state=cache(REQUEST_KEY)
+          ingest_recovery_requests(database,state,now)
+          def priority(r):
+              if r['cabinet']=='token_3' and r['tool']=='wbbidder_campaign_stats':return 0
+              if r['tool']=='lk_wb_products':return 1
+              if r['tool']=='lk_wb_card_table':return 2
+              if r['tool']=='lk_wb_card_orders':return 3
+              return 4
+          state['requests']=sorted(state.get('requests',[]),key=priority)
+          database('POST','telegram_api_cache',body=dict(cache_key=REQUEST_KEY,payload=state,
+              expires_at=(now+timedelta(days=365)).isoformat()),params={'on_conflict':'cache_key'})
+          main()
+          """
+          run_private.execute('Read bounded confirmed MPStats finance gaps',['-c',script])
           PY
       - name: Read only verified exact Regina query gaps
         env:

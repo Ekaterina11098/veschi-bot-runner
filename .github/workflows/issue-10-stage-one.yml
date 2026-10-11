@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 4aba54ab08aa7b3f8705ed05e6aa056e7cd3571f
+          ref: d9575586e1d531b39ed91f1d24ad7a437183f9d6
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -136,12 +136,13 @@ jobs:
           original={r['key'] for r in diagnoses[0]['payload'][0].get('requests',[])} if diagnoses else set()
           state['requests']=[r for r in state.get('requests',[]) if r['key'] not in original or r['key'] in financial]
           def priority(r):
-              if r['key'] not in financial:return 5
+              if r['key'] not in financial:return 6
               if r['cabinet']=='token_3' and r['tool']=='wbbidder_campaign_stats':return 0
-              if r['cabinet']=='token_3' and r['tool']=='lk_wb_card_table':return 1
-              if r['cabinet']=='token_1' and r['tool']=='lk_wb_card_table':return 2
-              if r['tool']=='lk_wb_card_table':return 3
-              if r['tool']=='lk_wb_card_orders':return 4
+              if r['tool']=='lk_wb_card_table' and r['arguments'].get('value') in ('124392259','124391875','124391842','124392075'):return 1
+              if r['cabinet']=='token_3' and r['tool']=='lk_wb_card_table':return 2
+              if r['cabinet']=='token_1' and r['tool']=='lk_wb_card_table':return 3
+              if r['tool']=='lk_wb_card_table':return 4
+              if r['tool']=='lk_wb_card_orders':return 5
               return 4
           state['requests']=sorted(state.get('requests',[]),key=priority)
           database('POST','telegram_api_cache',body=dict(cache_key=gaps.REQUEST_KEY,payload=state,

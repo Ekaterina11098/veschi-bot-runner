@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-mpstats-data
+  group: issue-10-ip-regression
   cancel-in-progress: false
 jobs:
   verify:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: f6a17925bfc55531c501621dd68d9947171c11e6
+          ref: def93c074f9e4cf8152e4e99a7017ea56477d3fb
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -115,16 +115,6 @@ jobs:
           run_private.execute('Refresh completeness-aware IP experiment journal',['-m','advertising_agent.experiments'])
           print('Protected IP checkpoints refreshed; no WB requests or Telegram.')
           PY
-      - name: Prepare exact missing requests from actual protected cache
-        env:
-          TASK: issue-10-stage-one
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: |
-          python - <<'PY'
-          import os,run_private
-          run_private.execute('Prepare exact Regina gaps',['-m','analytics.stage_one','--prepare'])
-          PY
       - name: Audit actual scoped agent cache readers
         env:
           TASK: issue-10-stage-one
@@ -133,7 +123,7 @@ jobs:
         run: |
           python - <<'PY'
           import os,run_private
-          run_private.execute('Audit actual scoped agent readers',['-m','analytics.stage_one','--summary-path',os.environ['RUNNER_TEMP']+'/stage-one-status.json'])
+          run_private.execute('Audit actual scoped agent readers',['-m','analytics.stage_one','--cabinet','token_2','--summary-path',os.environ['RUNNER_TEMP']+'/stage-one-status.json'])
           PY
       - name: Public acceptance flags only
         if: always()

@@ -1,4 +1,4 @@
-name: Issue 10 stage one acceptance
+name: Issue 10 technical IP data lineage audit
 on:
   push:
     branches: [main]
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 77effa6a6fde5549c40dc6c6dbe1cea55bb53a23
+          ref: 6bd4b805b8bedb2c200d701084518051dd9161e7
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -104,36 +104,36 @@ jobs:
           log=Path(os.environ['RUNNER_TEMP'])/'private-tests.log'
           if log.exists():run_private.save_diagnostic('stage-one regression',log.read_text())
           PY
-      - name: Reclassify rolling price observations in protected journal
+      - name: Refresh only expired exact active composition after saved sources
         env:
-          TASK: issue-10-ip-journal-quality
+          TASK: issue-10-ip-configuration-gap
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Reclassify observations without WB or Telegram',['-m','advertising_agent.experiments'])
+          script = """
+          import os
+          from datetime import datetime,timezone
+          from advertising_agent.run_stock_availability import active_configuration,cache,RAW
+          state=cache(RAW) or {}
+          cfg,ids=active_configuration(state,os.environ['WB_TOKEN_2'],datetime.now(timezone.utc))
+          assert cfg['complete'] is True and cfg['data']['scope']=='all_active'
+          print('Exact active configuration ready; read-only operational gap, buyer checks disabled')
+          """
+          run_private.execute('Expired composition gap only; existing Retry-After guard',['-c',script])
           PY
-      - name: Reassess independent movement using saved sources only
+      - name: Audit saved raw lineage and regenerate current pilot with unchanged safety
         env:
-          TASK: issue-10-ip-cached-movement
+          TASK: issue-10-ip-data-lineage
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Reassess saved movement without WB requests',['-m','analytics.ip_cached_movement_audit'])
-          PY
-      - name: Verify protected current IP campaign audit
-        env:
-          TASK: issue-10-ip-current-audit
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: |
-          python - <<'PY'
-          import run_private
-          run_private.execute('Audit configured IP SKUs with cached MPStats economics',['-m','analytics.ip_sku_complete_review'])
-          print('Protected IP campaign audit saved; no WB requests or Telegram.')
+          run_private.execute('Technical raw data matrix; no live business sources',['-m','analytics.ip_data_quality_audit'])
+          print('Protected technical lineage audit and unchanged recommendations saved.')
           PY
       - name: Produce full protected per-SKU analytical report and verify shop formula separately
         env:
@@ -146,10 +146,10 @@ jobs:
           script = """
           import json,math,html
           from datetime import datetime,timezone,timedelta
-          from analytics.ip_sku_complete_review import run
+          
           from analytics.stage_one import read
           from analytics.collect import database
-          r=run()
+          r=read('analytics_snapshots',dict(source='eq.ip_sku_complete_review',cabinet='eq.token_2',select='payload',order='id.desc',limit=1))[0]['payload'][0]
           esc=lambda v:html.escape(str(v))
           def val(v):
               if v is None:return 'неизвестно'

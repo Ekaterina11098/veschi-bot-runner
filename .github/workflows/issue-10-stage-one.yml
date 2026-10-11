@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-mpstats-data
+  group: issue-10-stock-read-only
   cancel-in-progress: false
 jobs:
   verify:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 8a48dbaec2f137f334d9981315cadd020cab16bb
+          ref: 9f5fc1e970fd5d147f3e8cab6560a6e331ef6d44
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -103,6 +103,16 @@ jobs:
           from pathlib import Path
           log=Path(os.environ['RUNNER_TEMP'])/'private-tests.log'
           if log.exists():run_private.save_diagnostic('stage-one regression',log.read_text())
+          PY
+      - name: Reclassify rolling price observations in protected journal
+        env:
+          TASK: issue-10-ip-journal-quality
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Reclassify observations without WB or Telegram',['-m','advertising_agent.experiments'])
           PY
       - name: Verify protected current IP campaign audit
         env:

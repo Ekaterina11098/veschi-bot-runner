@@ -41,22 +41,56 @@ jobs:
           from datetime import datetime,timedelta,timezone
           from zoneinfo import ZoneInfo
           from pathlib import Path
-          from analytics.stage_one import read,snapshots
-          from analytics.mpstats_composition import compose
+          from analytics.stage_one import read,snapshots,cache
+          from analytics.collect import database,RUN_ID
+          from analytics.mpstats_primary import profit_rows
           now=datetime.now(timezone.utc)
           end=now.astimezone(ZoneInfo('Europe/Moscow')).date()-timedelta(days=1)
           start=end-timedelta(days=6)
-          components=[]
-          for i in range(7):
-              day=str(start+timedelta(days=i))
-              candidates=snapshots(read,('mpstats_lk_wb_products',),'token_2',day,day)
-              components.append(candidates[0])
-          try:
-              compose(components,'token_2',start,end)
-              result=dict(composition_status='complete')
-          except (ValueError,KeyError,TypeError) as exc:
-              result=dict(composition_status=type(exc).__name__,reason=str(exc) if isinstance(exc,ValueError) else 'missing_field:'+str(exc.args[0]) if isinstance(exc,KeyError) else 'invalid_component_type')
-          Path(os.environ['RUNNER_TEMP']+'/composition-diagnosis.json').write_text(json.dumps(result))
+          result={'cabinets':{},'requests':[]}
+          def add(cab,tool,args):
+              result['requests'].append(dict(cabinet=cab,tool=tool,arguments=args,priority=100,key=cab+':'+tool+':'+json.dumps(args,sort_keys=True)))
+          for cab in ('token_1','token_2','token_3'):
+              finance,marker=profit_rows(read,cab,start,end)
+              gaps=[dict(nm_id=k,article=v.get('article'),reason=v.get('economics_status')) for k,v in finance.items() if v.get('net_profit') is None]
+              comparisons=snapshots(read,('mpstats_lk_wb_reports_compare',),cab,None,None)
+              mapping={}
+              for snap in comparisons:
+                  for obs in snap.get('payload',[]):
+                      if obs.get('scope_verified') is not True or obs.get('status')!='received':continue
+                      for row in obs.get('data',{}).get('data',[]):
+                          if isinstance(row,dict) and row.get('nm_id') and row.get('product_id'):
+                              mapping.setdefault(int(row['nm_id']),row)
+              for gap in gaps:
+                  row=mapping.get(gap['nm_id'],{})
+                  gap['product_id']=row.get('product_id')
+                  if gap['reason']=='mpstats_expense_components_missing' and gap['product_id']:
+                      pid=str(gap['product_id'])
+                      add(cab,'lk_wb_card_table',dict(type='products',value=pid,period_type='30days',self_redemption=False))
+                      add(cab,'lk_wb_card_orders',dict(type='products',value=pid,date_from=str(end-timedelta(days=29)),date_to=str(end),start_row=0,end_row=1500))
+              daily=[]
+              for i in range(7):
+                  day=str(start+timedelta(days=i));candidates=snapshots(read,('mpstats_lk_wb_products',),cab,day,day)
+                  obs=candidates[0]['payload'][0] if candidates else {}
+                  rows=obs.get('data',{}).get('data',{}).get('data',[])
+                  daily.append(dict(day=day,snapshot_id=candidates[0]['id'] if candidates else None,products=[dict(p_id=r.get('p_id'),nm_id=r.get('nm_id'),article=r.get('sa_name')) for r in rows]))
+              result['cabinets'][cab]=dict(gaps=gaps,daily=daily)
+              if any(g['reason']=='advertising_expenses_missing' for g in gaps):
+                  add(cab,'lk_wb_products',dict(date_from=str(start),date_to=str(end),start_row=0,end_row=1500))
+          from china_agent.mpstats_report import snapshot_reports
+          catalogs=snapshot_reports(read,'mpstats_campaign_catalog',start,end,now)
+          reports=snapshot_reports(read,'mpstats_campaign_report',start,end,now)
+          result['china_catalogs']=catalogs
+          result['china_reports']=reports
+          for catalog in catalogs:
+              if catalog.get('report')!='stats':continue
+              for row in catalog.get('rows',[]):
+                  if any(row.get(k)!=0 for k in ('ac_views','ac_clicks','ac_add_to_cart','ac_orders','ac_spending_sum')):
+                      if not any(r.get('campaign_id')==row['id'] and r.get('report')=='products' and r.get('scope_nm_id') is None and r.get('spending_reconciled') for r in reports):
+                          add('token_3','wbbidder_campaign_stats',dict(campaign_id=row['id'],report='products',d1=str(start),d2=str(end)))
+          database('POST','analytics_snapshots',body=dict(source='mpstats_stage_one_finance_diagnosis',cabinet='shared',run_id=RUN_ID,period_from=str(start),period_to=str(end),status='complete',payload=[result]))
+          database('POST','telegram_api_cache',body=dict(cache_key='analytics:recovery:stage_one_finance:v1',payload=dict(mpstats_requests=result['requests'],observed_at=now.isoformat()),expires_at=(now+timedelta(days=30)).isoformat()),params={'on_conflict':'cache_key'})
+          Path(os.environ['RUNNER_TEMP']+'/composition-diagnosis.json').write_text(json.dumps(dict(protected_diagnosis_saved=True,queued_requests=len(result['requests']),gap_counts={c:len(v['gaps']) for c,v in result['cabinets'].items()})))
           """
           run_private.execute('Diagnose protected saved financial composition',['-c',script])
           PY

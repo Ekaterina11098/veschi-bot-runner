@@ -1,0 +1,60 @@
+name: Issue 10 exact IP configuration gap
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/issue-10-ip-final-gap.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: issue-10-stock-read-only
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: f8fc26ea967b6b103fcf564dced015043e3a975b
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Fill only expired active composition evidence
+        env:
+          TASK: issue-10-ip-final-gap
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+        run: |
+          python - <<'PY'
+          import run_private
+          script="""
+          import os,json
+          from datetime import datetime,timezone,timedelta
+          from zoneinfo import ZoneInfo
+          from advertising_agent.run_stock_availability import active_configuration,cache,RAW,valid,read
+          from business_agents.data import Data
+          from analytics.ip_campaign_audit import run
+          now=datetime.now(timezone.utc)
+          end=now.astimezone(ZoneInfo('Europe/Moscow')).date()-timedelta(days=1);start=end-timedelta(days=6)
+          state=cache(RAW) or {}
+          recovered=Data('operations',read).mpstats_recovered('token_2')
+          proven=any(r.get('complete') and r.get('report')=='stats' and r.get('date_from')==str(start) and r.get('date_to')==str(end) for r in recovered.get('campaign_catalogs',[]))
+          if not proven:raise RuntimeError('Same-period MPStats catalog missing; no WB fallback')
+          cached=valid(state.get('configuration'),now) and (state.get('configuration',{}).get('data') or {}).get('scope')=='all_active'
+          cfg,ids=active_configuration(state,os.environ['WB_TOKEN_2'],now,False)
+          report=run()
+          print(json.dumps(dict(configuration_gap_only=True,cache_reused=cached,limited_mode_ready=report['limited_mode_ready'],wb_writes_enabled=False,telegram_sent=False)))
+          """
+          run_private.execute('One exact expired configuration gap, then cached audit',['-c',script])
+          print('Protected exact IP gap audit saved; no stock/history repetition or Telegram.')
+          PY

@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: fed576d50c1bdaf51e86c502b3db057f25830667
+          ref: d68c138f5d9d9ffd288cd3f5b2f6e5f0f78747c9
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -80,6 +80,8 @@ jobs:
           maps=[{int(r['p_id']):r for r in s['payload'][0]['data']['data']['data']} for s in components]
           common=set.intersection(*(set(m) for m in maps))
           reasons=Counter();details=[]
+          cost_rows=read('analytics_costs',dict(select='article,cost',limit=5000)) or []
+          actual_costs={r['article']:r['cost'] for r in cost_rows if r.get('article') and r.get('cost') is not None}
           for pid in common:
               scoped=[]
               for snapshot,mapping in zip(components,maps):
@@ -89,8 +91,8 @@ jobs:
               try:
                   observation=compose(scoped,'token_2',start,end)
                   article=maps[0][pid]['sa_name']
-                  calc=calculate(observation,{article:0},start,end)
-                  reason='calculated' if calc else 'expense_equation_unverified'
+                  calc=calculate(observation,actual_costs,start,end)
+                  reason='calculated' if calc and all(r.get('net_profit') is not None for r in calc.values()) else 'missing_cost' if calc else 'expense_equation_unverified'
               except (ValueError,KeyError,TypeError) as exc:
                   reason=str(exc) if isinstance(exc,ValueError) else type(exc).__name__+':'+str(exc.args[0])
               reasons[reason]+=1

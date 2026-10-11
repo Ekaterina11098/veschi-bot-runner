@@ -36,7 +36,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          script = """
+          script = r"""
           import json,math,html
           from datetime import datetime,timezone,timedelta
           from analytics.ip_campaign_audit import recovered_sku_days
@@ -45,7 +45,9 @@ jobs:
           from analytics.collect import database
           r=read('analytics_snapshots',dict(source='eq.ip_sku_complete_review',cabinet='eq.token_2',select='payload',order='id.desc',limit=1))[0]['payload'][0]
           detail=recovered_sku_days(read,date.fromisoformat(r['period_from']),date.fromisoformat(r['period_to']),12221549,datetime.now(timezone.utc))
-          filtered_proof=dict(checked_sku_reports=len(detail),reported_associated_orders_sum=sum((d.get('filtered_totals') or {}).get('ac_orders_associated',0) for d in detail.values()),campaign_associated_orders=3,origin_order_ids_available=False,snapshot_ids=[d['source_snapshot_id'] for d in detail.values()])
+          associated_values=[(d.get('filtered_totals') or {}).get('ac_orders_associated') for d in detail.values()]
+          pilot=next(c for c in r['campaigns'] if c['campaign_id']==40428689)
+          filtered_proof=dict(checked_sku_reports=len(detail),reported_associated_orders_sum=sum(associated_values) if all(type(v) in (int,float) for v in associated_values) else None,campaign_associated_orders=pilot['totals'].get('ac_orders_associated'),origin_order_ids_available=False,snapshot_ids=[d['source_snapshot_id'] for d in detail.values()])
           esc=lambda v:html.escape(str(v))
           def val(v):
               if v is None:return 'неизвестно'
@@ -107,7 +109,7 @@ jobs:
           parts.append('<h2>Реестр проверенных источников</h2><pre>'+esc(json.dumps(r['source_attempt_ledger'],ensure_ascii=False,indent=2))+'</pre>')
           parts.append('<p>Для завершения рекламной прибыли требуется источник связи рекламного заказа с исходным SKU, купленным SKU и финансовым выкупом/возвратом. Для Москвы по 471/541 ожидается поддержка WB; обход 403 и массовый опрос отключены. Проверка ограничений цены, СПП, фото, спроса и экспериментов остаётся обязательной до признания группы «Изменения не требуются».</p></html>')
           checks=dict(checked_pairs=len(finance_checks),formula_verified=sum(x['formula_verified'] is True for x in finance_checks),formula_failed=[x for x in finance_checks if x['formula_verified'] is False],formula_unknown=sum(x['formula_verified'] is None for x in finance_checks))
-          artifact=dict(html='\n'.join(parts),mpstats_filtered_reconciliation=filtered_proof,report_observed_at=r['observed_at'],financial_validation=checks,counts={k:r[k] for k in ('campaign_count','pair_count','unique_sku_count','groups','partition_verified')})
+          artifact=dict(html=chr(10).join(parts),mpstats_filtered_reconciliation=filtered_proof,report_observed_at=r['observed_at'],financial_validation=checks,counts={k:r[k] for k in ('campaign_count','pair_count','unique_sku_count','groups','partition_verified')})
           database('POST','telegram_api_cache',body=dict(cache_key='analytics:ip_review_artifact:v1',payload=artifact,expires_at=(datetime.now(timezone.utc)+timedelta(days=365)).isoformat()),params={'on_conflict':'cache_key'})
           print(json.dumps(dict(protected_full_report_saved=True,**checks,telegram_sent=False,wb_writes_enabled=False)))
           

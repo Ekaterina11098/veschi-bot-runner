@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 053d7739651ad64dd70afc684b7c0a2c8772fce8
+          ref: fed576d50c1bdaf51e86c502b3db057f25830667
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -37,8 +37,24 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
+          run_private.execute('Validate saved China destination detail',['-m','unittest','discover','-s','tests','-p','test_china_advertising_detail.py'])
           run_private.execute('Validate guarded read-only China gap',['-m','unittest','discover','-s','tests','-p','test_china_postclick_gap.py'])
           run_private.execute('Read verified China postclick gap',['-m','analytics.china_postclick_gap'])
+          script="""
+          from datetime import datetime,timedelta,timezone
+          from zoneinfo import ZoneInfo
+          from analytics.stage_one import read
+          from analytics.collect import database,RUN_ID
+          from china_agent.mpstats_report import snapshot_reports
+          from analytics.china_advertising_detail import cached,CAMPAIGN
+          now=datetime.now(timezone.utc);end=now.astimezone(ZoneInfo('Europe/Moscow')).date()-timedelta(days=1);start=end-timedelta(days=6)
+          reports=snapshot_reports(read,'mpstats_campaign_report',start,end,now)
+          primary=next(r for r in reports if r.get('campaign_id')==CAMPAIGN and r.get('scope_nm_id') is None and r.get('report')=='products' and r.get('spending_reconciled'))
+          detail=cached(read,primary,start,end)
+          if detail is None:raise ValueError('Saved destination detail failed reconciliation')
+          database('POST','analytics_snapshots',body=dict(source='china_associated_destination_reconciliation',cabinet='token_3',run_id=RUN_ID,period_from=str(start),period_to=str(end),status='complete',payload=[detail]))
+          """
+          run_private.execute('Reconcile saved associated purchase destinations',['-c',script])
           PY
       - name: Diagnose existing protected observations only
         env:

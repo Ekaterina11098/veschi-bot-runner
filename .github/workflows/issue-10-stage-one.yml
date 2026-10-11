@@ -1,4 +1,4 @@
-name: Issue 10 IP independent profit regression and settlement gap
+name: Issue 10 complete IP search investigations and regression
 on:
   push:
     branches: [main]
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 69cc30505eb2fdaf30335b97663b1da8421fee01
+          ref: 61b80ef6c64aa7eebe066009ab416a0238f6a19a
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -104,16 +104,17 @@ jobs:
           log=Path(os.environ['RUNNER_TEMP'])/'private-tests.log'
           if log.exists():run_private.save_diagnostic('stage-one regression',log.read_text())
           PY
-      - name: Recover only proven settlement identifier gap after primary source audit
+      - name: Read only demonstrated MPStats search gaps with shared Retry-After
         env:
-          TASK: ip-finance-identifiers
-          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          TASK: ip-query-gap-batches
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Proven financial identifiers gap; existing cursor and Retry-After',['-m','analytics.ip_finance_identifier_gap'])
+          script = "from analytics.ip_query_gap_batches import run\nfor batch in range(12):\n    if not run():break"
+          run_private.execute('Bounded exact query gaps only; stop immediately on cooldown',['-c',script])
           PY
       - name: Complete cached investigations and render protected report
         env:

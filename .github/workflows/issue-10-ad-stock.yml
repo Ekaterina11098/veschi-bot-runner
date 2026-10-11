@@ -12,7 +12,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,17 +20,29 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 2ce1c3c71c0661bae2db3dc8d681d3bab64e6e78
+          ref: f0ab412f94e83b13a2541626fb26ea67b795477b
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install requests==2.32.5 python-dotenv aiogram > "$RUNNER_TEMP/dependencies.log" 2>&1
-      - name: Verify exact target inventory and campaign source gaps read-only
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow streamlit openai > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Test stock availability and execution lifecycle before rollout
         env:
-          TASK: issue-10-stock-target-probe
+          TASK: issue-10-stock-tests
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          for pattern in ('test_stock_availability.py','test_price_finance_period_cache.py'):
+              run_private.execute('Validate stock and scoped finance '+pattern,['-m','unittest','discover','-s','tests','-p',pattern])
+          print('Stock/movement/lifecycle and finance period cache tests passed.')
+          PY
+      - name: Pilot exact Raye SKU before all-active campaign rollout
+        env:
+          TASK: issue-10-stock-pilot
           WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -38,59 +50,17 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
+          run_private.execute('Pilot Raye stock and movement',['-m','advertising_agent.run_stock_availability','--target'])
           script="""
-          import os,requests
-          from datetime import datetime,timezone
-          from analytics.stage_one import read
-          from analytics.collect import _fetch_transport,database,RUN_ID
-          token=os.environ['WB_TOKEN_2']
-          def save(source,payload):
-              database('POST','analytics_snapshots',body=dict(source=source,cabinet='token_2',run_id=RUN_ID,
-                  period_from=datetime.now(timezone.utc).date().isoformat(),period_to=datetime.now(timezone.utc).date().isoformat(),
-                  status='complete',payload=[dict(observed_at=datetime.now(timezone.utc).isoformat(),
-                  owner_cabinet='token_2',nm_id=432727735,chrt_id=614925915,article='471-RayeBag-brown',data=payload,
-                  source_gap='MPStats cached historical aggregate lacks current all-warehouse inventory proof; saved WB inventory is older than one hour')]))
-          def wb(method,url,params=None,body=None):
-              return _fetch_transport(method,url,token,params=params,body=body,max_retry_wait=0)
-          try:
-              save('advertising_stock_fbo_probe',wb('POST','https://seller-analytics-api.wildberries.ru/api/analytics/v1/stocks-report/wb-warehouses',body=dict(nmIds=[432727735],chrtIds=[614925915],limit=1000,offset=0)))
-          except RuntimeError as error:
-              save('advertising_stock_fbo_probe_error',dict(reason=str(error)))
-              if str(error)!='Source HTTP 403':raise
-              import analytics.collect as collector
-              def stock_report_read(method,url,token,params=None,body=None,**kwargs):
-                  if method!='GET' or not url.startswith('https://seller-analytics-api.wildberries.ru/api/v1/warehouse_remains'):raise ValueError('Unexpected stock report request')
-                  return _fetch_transport(method,url,token,params=params,body=body,max_retry_wait=0)
-              collector.fetch=stock_report_read
-              try:
-                  collector.warehouse_stocks('token_2',token)
-              except RuntimeError as deferred:
-                  save('advertising_stock_fbo_deferred',dict(reason=str(deferred),quantity=None))
-          warehouses=wb('GET','https://marketplace-api.wildberries.ru/api/v3/warehouses')
-          save('advertising_stock_fbs_warehouses_probe',warehouses)
-          if not isinstance(warehouses,list):raise ValueError('Invalid warehouse list')
-          for warehouse in warehouses:
-              if warehouse.get('isDeleting') is True:continue
-              ident=warehouse.get('id')
-              if type(ident) is not int:raise ValueError('Invalid warehouse identity')
-              response=wb('POST','https://marketplace-api.wildberries.ru/api/v3/stocks/'+str(ident),body={'chrtIds':[614925915]})
-              save('advertising_stock_fbs_probe',dict(warehouse_id=ident,response=response))
-          save('advertising_stock_membership_probe',wb('GET','https://advert-api.wildberries.ru/api/advert/v2/adverts',params={'ids':'40428689'}))
-          stores=requests.get('https://api.moysklad.ru/api/remap/1.2/entity/store',
-              headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN'],'Accept-Encoding':'gzip'},
-              params={'limit':100},timeout=(10,45))
-          stores.raise_for_status()
-          body=stores.json();rows=body.get('rows')
-          if not isinstance(rows,list) or len(rows)>=100:raise ValueError('Incomplete stores list')
-          matching=[r for r in rows if str(r.get('name','')).strip().casefold()=='мск']
-          if len(matching)!=1:raise ValueError('MSK store is ambiguous')
-          href=matching[0]['meta']['href']
-          response=requests.get('https://api.moysklad.ru/api/remap/1.2/entity/assortment',
-              headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN'],'Accept-Encoding':'gzip'},
-              params={'limit':100,'filter':'stockStore='+href,'search':'471-RayeBag-brown'},timeout=(10,45))
-          response.raise_for_status()
-          save('advertising_stock_msk_probe',dict(store_name='МСК',store_href=href,response=response.json()))
+          from advertising_agent.run_stock_availability import read,SOURCE,store_cache
+          rows=read('analytics_snapshots',dict(source='eq.'+SOURCE,cabinet='eq.token_2',select='payload',order='id.desc',limit=1)) or []
+          report=rows[0]['payload'][0] if rows else {}
+          if not report.get('stock_checks_complete') or not report.get('campaign_scope_complete'):
+              print('Pilot source evidence pending; all-active rollout waits for verified inventory.')
+          else:
+              from advertising_agent.run_stock_availability import main
+              main()
           """
-          run_private.execute('Read exact target stock source gaps with shared WB cooldown',['-c',script])
-          print('Protected exact-SKU inventory observations saved; no WB writes or Telegram.')
+          run_private.execute('Roll out only after actual pilot sources pass',['-c',script])
+          print('Protected stock pilot/coverage saved. No WB writes or Telegram during acceptance.')
           PY

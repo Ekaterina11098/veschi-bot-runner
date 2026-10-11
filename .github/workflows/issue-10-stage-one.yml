@@ -1,4 +1,4 @@
-name: Issue 10 complete MPStats catalog cache and two-period acceptance
+name: Issue 10 complete cache catalog regression and final two-period review
 on:
   push:
     branches: [main]

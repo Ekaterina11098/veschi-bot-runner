@@ -1,4 +1,4 @@
-name: Issue 10 IP investigation exact MPStats query gaps
+name: Issue 10 confirmed IP query finance gap
 on:
   push:
     branches: [main]
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-mpstats-data
+  group: issue-10-stock-read-only
   cancel-in-progress: false
 jobs:
   verify:
@@ -30,8 +30,8 @@ jobs:
       - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Validate recovered evidence and bounded raw lineage
         env:
-          TASK: ip-investigation-mp-query-gaps
-          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          TASK: ip-investigation-wb-query-finance
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
@@ -39,6 +39,6 @@ jobs:
           import run_private
           for pattern in ('test_ip_investigation_sources.py','test_regina_query_gap.py'):
               run_private.execute('Evidence and safety regression '+pattern,['-m','unittest','discover','-s','tests','-p',pattern])
-          run_private.execute('Recover only missing exact MPStats query detail',['-m','analytics.ip_investigation_sources','mpstats'])
+          run_private.execute('Recover only missing exact MPStats query detail',['-m','analytics.ip_investigation_sources','wb'])
           print('Bounded lineage audit and evidence regressions passed; private results saved.')
           PY

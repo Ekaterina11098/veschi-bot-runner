@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/regina-diagnostic-verification.yml'
   workflow_dispatch:
+  # Changes to this workflow trigger a one-time public-runner verification.
 permissions:
   contents: read
 jobs:

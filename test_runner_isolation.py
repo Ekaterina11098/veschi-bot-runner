@@ -139,7 +139,7 @@ class FinanceRetryTests(unittest.TestCase):
         with patch.object(selector,"database",return_value=rows):
             self.assertEqual(selector.finance_retry_work(datetime.fromisoformat("2026-10-07T19:37:00+00:00")),[])
             self.assertEqual(selector.finance_retry_work(datetime.fromisoformat("2026-10-07T19:38:00+00:00")),
-                             [{"task":"finance_retry","group":selector.GROUPS["finance"]}])
+                             [])
             for status in ("complete","error"):
                 rows.insert(0,{"status":status})
                 self.assertEqual(selector.finance_retry_work(datetime.fromisoformat("2026-10-07T19:38:00+00:00")),[])
@@ -150,7 +150,7 @@ class FinanceRetryTests(unittest.TestCase):
         with patch.object(selector, "database", return_value=[row]):
             self.assertEqual(selector.finance_retry_work(datetime.fromisoformat("2026-10-07T07:30:00+00:00")), [])
             work = selector.finance_retry_work(datetime.fromisoformat("2026-10-07T07:32:00+00:00"))
-            self.assertEqual(work, [{"task": "finance_retry", "group": selector.GROUPS["finance"]}])
+            self.assertEqual(work, [])
             self.assertEqual(selector.finance_retry_work(datetime.fromisoformat("2026-10-08T07:32:00+00:00")), [])
 
     def test_completed_or_unknown_state_does_not_retry(self):
@@ -163,7 +163,7 @@ class FinanceRetryTests(unittest.TestCase):
     def test_queued_retry_rechecks_state_before_request(self):
         with patch.object(selector, "finance_retry_work", return_value=[]), patch.object(runner.os, "chdir"), patch.object(runner, "execute") as execute:
             runner.main("finance_retry")
-        execute.assert_not_called()
+        execute.assert_called_once_with("Recover source data through MPStats", ["-m", "analytics.mpstats_gaps"])
 
 class ReviewInboxSelectorTests(unittest.TestCase):
     def test_before_morning_does_not_query(self):

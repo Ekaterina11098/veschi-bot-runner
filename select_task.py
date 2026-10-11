@@ -9,8 +9,8 @@ SCHEDULES = {"45 4 * * *": "reviews", "27 7,11,15,19 * * *": "advertising",
 TASKS = {"mpstats_recovery", "daily", "daily_context", "reviews", "advertising", "stock", "analytics", "finance", "queue", "probe", "agent"}
 GROUPS = {"daily_context": "advertising-and-finance", "stock": "stock-and-commands", "stock_retry": "stock-and-commands",
           "telegram_queue": "telegram-commands", "review_queue": "review-replies",
-          "advertising": "advertising-and-finance", "finance": "advertising-and-finance",
-          "advertising_report_retry": "advertising-and-finance", "finance_retry": "advertising-and-finance", "agent":"advertising-agent-conversations",
+          "advertising": "advertising-and-finance", "finance": "mpstats-data",
+          "advertising_report_retry": "advertising-and-finance", "finance_retry": "mpstats-data", "agent":"advertising-agent-conversations",
           "business_agent":"business-agent-conversations","advertising_research":"advertising-and-finance","mpstats_recovery":"mpstats-data","analytics_recovery":"advertising-and-finance","budget_retry":"advertising-and-finance"}
 
 def review_inbox_work(now=None):

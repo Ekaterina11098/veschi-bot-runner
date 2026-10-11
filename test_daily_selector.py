@@ -11,8 +11,10 @@ class DailySelectorTests(unittest.TestCase):
             output.seek(0)
             fields=dict(line.split("=",1) for line in output.read().decode().splitlines())
         tasks=json.loads(fields["matrix"])["include"]
-        self.assertEqual([r["task"] for r in tasks],["analytics","daily_context","finance"])
-        self.assertEqual(tasks[1]["group"],s.GROUPS["finance"])
+        self.assertEqual([r["task"] for r in tasks],["analytics","daily_context","mpstats_recovery"])
+        self.assertEqual(tasks[1]["group"],s.GROUPS["daily_context"])
+        self.assertEqual(tasks[2]["group"],"mpstats-data")
+        self.assertEqual(s.GROUPS["finance"],s.GROUPS["mpstats_recovery"])
         self.assertNotEqual(tasks[0]["group"],tasks[1]["group"])
 
     def test_stock_requests_wake_mpstats_worker_after_daily_plan_completed(self):

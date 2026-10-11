@@ -1,13 +1,15 @@
-name: Issue 10 remaining IP MPStats search gaps second batch
+name: Issue 10 pending IP Finance identifiers safe resume
 on:
   push:
     branches: [main]
     paths: ['.github/workflows/issue-10-ip-final-gap.yml']
   workflow_dispatch:
+  schedule:
+    - cron: '45 * * * *'
 permissions:
   contents: read
 concurrency:
-  group: bot-mpstats-data
+  group: issue-10-stock-read-only
   cancel-in-progress: false
 jobs:
   verify:
@@ -20,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: dfe09241b321a67e4f6d615f0ac9695e841dc8f9
+          ref: b2f7a02d3c5fd422b4e6fa40df9539a7b4b1010a
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -28,21 +30,33 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
-      - name: Validate recovered evidence and bounded raw lineage
+      - name: Check narrow scope, preservation and durable resume gate
         env:
-          TASK: ip-search-gap-recovery
-          IP_RECOVERY_MODE: queries
-          IP_PERIOD_FROM: '2026-10-04'
-          IP_PERIOD_TO: '2026-10-10'
-          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          TASK: ip-finance-resume-tests
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_ip_investigation_sources.py','test_regina_query_gap.py','test_ip_financial_period_recovery.py'):
-              run_private.execute('Evidence and safety regression '+pattern,['-m','unittest','discover','-s','tests','-p',pattern])
-          script = "from analytics.ip_financial_period_recovery import run\nfor batch in range(4):\n    if not run():break"
-          run_private.execute('Bounded exact IP query requests; reuse completed scopes',['-c',script])
-          print('Bounded lineage audit and evidence regressions passed; private results saved.')
+          for pattern in ('test_ip_finance_identifier_gap.py','test_success_rate_pause.py','test_ip_completed_investigations.py'):
+              run_private.execute('IP read-only recovery regression',['-m','unittest','discover','-s','tests','-p',pattern])
+          PY
+      - name: Resume only pending proven Finance gap after Retry-After
+        env:
+          TASK: ip-finance-pending-resume
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          script="""import time
+          from analytics.ip_finance_identifier_gap import run
+          for attempt in range(16):
+              result=run() or {}
+              retry=result.get('retry_after')
+              if result.get('status')!='pending' or type(retry) not in (int,float) or retry>60:break
+              time.sleep(max(1,retry))
+          """
+          run_private.execute('Exact proven seven-day identifier gap; long cooldown stops immediately',['-c',script])
           PY

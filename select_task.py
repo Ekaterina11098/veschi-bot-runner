@@ -4,9 +4,9 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 SCHEDULES = {"45 4 * * *": "reviews", "27 7,11,15,19 * * *": "advertising",
-             "30 13 * * *": "stock", "17 4 * * *": "daily", "0 7 * * *": "finance",
+             "30 13 * * *": "stock", "17 4 * * *": "daily", "0 7 * * *": "mpstats_recovery",
              "3-59/5 * * * *": "queue", "3-58/5 * * * *": "queue"}
-TASKS = {"daily", "daily_context", "reviews", "advertising", "stock", "analytics", "finance", "queue", "probe", "agent"}
+TASKS = {"mpstats_recovery", "daily", "daily_context", "reviews", "advertising", "stock", "analytics", "finance", "queue", "probe", "agent"}
 GROUPS = {"daily_context": "advertising-and-finance", "stock": "stock-and-commands", "stock_retry": "stock-and-commands",
           "telegram_queue": "telegram-commands", "review_queue": "review-replies",
           "advertising": "advertising-and-finance", "finance": "advertising-and-finance",
@@ -142,42 +142,8 @@ def database(table, params):
         return json.load(r)
 
 def finance_retry_work(now=None):
-    now = now or datetime.now(timezone.utc)
-    try:
-        daily = database("telegram_api_cache", {
-            "cache_key":"in.(finance:daily:token_1:v1,finance:daily:token_2:v1,finance:daily:token_3:v1)",
-            "select":"payload","limit":"3"}) or []
-        daily = [item for item in daily if isinstance(item.get("payload"),dict)]
-        for item in daily:
-            state = item.get("payload") or {}
-            if state.get("status") in {"pending", "running"} and state.get("next_retry_at"):
-                retry_at = datetime.fromisoformat(state["next_retry_at"].replace("Z", "+00:00"))
-                if now >= retry_at:
-                    return [{"task":"finance_retry","group":GROUPS["finance_retry"]}]
-        if daily:
-            return []
-        rows = database("analytics_snapshots", {
-            "source": "eq.finance_ip_daily_summary", "cabinet": "eq.token_2",
-            "select": "status,collected_at,detail", "order": "collected_at.desc", "limit": "20"})
-        # Cache refreshes can append a partial summary while a WB cooldown is
-        # pending. They do not cancel the last deferred collection. A completed
-        # collection or a later processing error does stop automatic retries.
-        if not rows or rows[0].get("status") in {"complete", "error"}:
-            return []
-        row = next((item for item in rows if item.get("status") == "deferred"), None)
-        if row is None:
-            return []
-        observed = datetime.fromisoformat(row["collected_at"].replace("Z", "+00:00"))
-        if observed.astimezone(ZoneInfo("Europe/Moscow")).date() != now.astimezone(ZoneInfo("Europe/Moscow")).date():
-            return []
-        match = re.search(r"Finance API 429; retry_after=(\d+)", row.get("detail") or "")
-        delay = max(60, int(match[1])) if match else 900
-        if now < observed + timedelta(seconds=delay + 60):
-            return []
-        return [{"task": "finance_retry", "group": GROUPS["finance_retry"]}]
-    except Exception:
-        # Missing cooldown state must not generate another marketplace request.
-        return []
+    """WB finance confirmation retries are disabled under MPStats primary."""
+    return []
 
 def queue_work():
     now=datetime.now(timezone.utc).isoformat()
@@ -223,7 +189,7 @@ def main():
         task=SCHEDULES.get(os.getenv("EVENT_SCHEDULE"))
     if task not in TASKS:
         raise ValueError("Unknown task")
-    work = ([{"task":name,"group":GROUPS.get(name,name)} for name in ("analytics","daily_context","finance")]
+    work = ([{"task":name,"group":GROUPS.get(name,name)} for name in ("analytics","daily_context","mpstats_recovery")]
             if task == "daily" else queue_work() if task == "queue" else [{"task":task,"group":GROUPS.get(task,task)}])
     run=bool(work)
     with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as f:

@@ -214,18 +214,8 @@ def main(task):
             return
         execute("Validate free advertising sources",["-m","unittest","discover","-s","tests","-p","test_wb_sources.py"])
         execute("Analyze IP and OOO campaigns without WB changes",["-m","analytics.campaign_review"])
-    elif task=="finance_retry":
-        import select_task
-        # Recheck after acquiring the shared finance/advertising lock.
-        if select_task.finance_retry_work():
-            execute("Resume saved daily Finance cursors",["-m","analytics.finance_daily"])
-            execute("Build product economics from complete daily reports",["advertising_agent/sku_economics.py"],optional=True)
-    elif task=="finance":
-        execute("Validate daily Finance top-up",["-m","unittest","discover","-s","tests","-p","test_finance_daily.py"])
-        execute("Validate SKU economics",["-m","unittest","discover","-s","tests","-p","test_sku_economics.py"])
-        execute("Validate China daily Finance integration",["-m","unittest","discover","-s","tests","-p","test_china_sales_demand.py"])
-        execute("Collect missing daily Finance reports",["-m","analytics.finance_daily"])
-        execute("Build product economics from complete daily reports",["advertising_agent/sku_economics.py"],optional=True)
+    elif task in {"finance_retry","finance"}:
+        execute("Recover source data through MPStats",["-m","analytics.mpstats_gaps"])
     print("Task complete.",flush=True)
 
 if __name__=="__main__":

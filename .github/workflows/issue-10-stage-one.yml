@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: a9cda88572f8c1c440f0eb8f1d30abe59390cb96
+          ref: 9aa0c52e367433827b98e3f206b7e03844fd6e85
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -42,6 +42,7 @@ jobs:
               run_private.execute('Regina finance once; no zero substitution or origin guessing',['-m','unittest','discover','-s','tests','-p',pattern])
           PY
       - name: Recover exact pilot traffic gaps from MPStats
+        if: github.event_name == 'schedule'
         env:
           TASK: ip-event-traffic-gap
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -57,6 +58,7 @@ jobs:
           run_private.execute('Exact MPStats pilot daily traffic gap; retain terminal results',['-m','analytics.ip_financial_period_recovery'])
           PY
       - name: Review both periods and refresh exact ten-color inventory gaps
+        if: github.event_name == 'schedule'
         env:
           TASK: ip-price-event-analysis
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

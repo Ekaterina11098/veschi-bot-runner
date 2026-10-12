@@ -92,8 +92,8 @@ def reviews():
     notify('\n'.join(lines))
 
 def review_queue():
-    from review_queue import process_due
-    process_due(limit=10)
+    from process_review_queue import main as process_and_report
+    process_and_report()
 
 def telegram_queue():
     import process_telegram_jobs as jobs

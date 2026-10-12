@@ -203,6 +203,8 @@ def main(task):
         execute("Collect complete advertising and price history",["-m","analytics.campaign_review"],optional=True)
         execute("Prepare advertising daily context from shared data",["advertising_agent/collect_ip.py"])
         execute("Refresh economics from daily cache",["advertising_agent/sku_economics.py","--refresh-from-cache"],optional=True)
+        if os.environ.get("IP_LIMITED_ANALYSIS_PUBLISH","").lower()=="true":
+            execute("Publish owner-approved limited IP cached analysis",["-m","analytics.ip_working_mode_replay"])
     elif task=="budget_retry":
         from advertising_agent import collect_ip
         token=os.environ.get("WB_TOKEN_2")

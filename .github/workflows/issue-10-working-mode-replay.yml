@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 54119613a251e94850e2dabb6a47f52fcda29ea7
+          ref: dcf8bb3a14418679aaa7e841dffa055c01126a02
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -36,7 +36,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_ip_working_mode_replay.py','test_profit_stability.py','test_finance_quality.py','test_ip_campaign_audit.py','test_ip_sku_complete_review.py','test_ip_completed_investigations.py','test_ip_campaign_reach.py','test_ip_daily_recommendations.py','test_ip_finance_reconciliation.py','test_price_watch_notifications.py','test_price_effect_recovery.py','test_sales_cache.py','test_mpstats*.py'):
+          for pattern in ('test_ip_price_launch_control.py','test_ip_working_mode_replay.py','test_profit_stability.py','test_finance_quality.py','test_ip_campaign_audit.py','test_ip_sku_complete_review.py','test_ip_completed_investigations.py','test_ip_campaign_reach.py','test_ip_daily_recommendations.py','test_ip_finance_reconciliation.py','test_price_watch_notifications.py','test_price_effect_recovery.py','test_sales_cache.py','test_mpstats*.py'):
               run_private.execute('Every dated SKU retained; qualified findings become actions; safe finance and notifications',['-m','unittest','discover','-s','tests','-p',pattern])
           PY
       - name: Complete path from retained source receipts to fresh proposals for every IP pair

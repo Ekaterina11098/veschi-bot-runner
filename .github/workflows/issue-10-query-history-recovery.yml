@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 475e4a1c21748ff26c2863930d768f54aa19fbef
+          ref: d6f328f6f5c445002902eb4cefd9734da37a58df
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -45,7 +45,7 @@ jobs:
               print('Historical recovery window closed; no source requests')
               raise SystemExit(0)
           import run_private
-          for pattern in ('test_payload_storage.py','test_ip_campaign_reach.py','test_ip_query_gap_batches.py','test_wb_success_rate_limits.py'):
+          for pattern in ('test_finance_quality.py','test_payload_storage.py','test_ip_campaign_reach.py','test_ip_query_gap_batches.py','test_wb_success_rate_limits.py'):
               run_private.execute('Bounded query recovery regression',['-m','unittest','discover','-s','tests','-p',pattern])
           run_private.execute('Resume only missing cached query scopes; honor shared Retry-After',['-m','analytics.ip_query_gap_batches'])
           run_private.execute('Recompute existing IP analytics from saved sources only',['-m','analytics.ip_price_event_analysis'])

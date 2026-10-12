@@ -21,10 +21,11 @@ def save_diagnostic(label, text):
         response=requests.post(os.environ["SUPABASE_URL"].rstrip("/")+"/rest/v1/telegram_api_cache?on_conflict=cache_key",
             headers=headers,json={"cache_key":"runner:diagnostic:"+os.environ.get("GITHUB_RUN_ID","manual")+":"+os.environ.get("TASK","manual"),
             "payload":{"stage":label,"log":text[-20000:]},"updated_at":now.isoformat(),
-            "expires_at":(now+timedelta(days=1)).isoformat()},timeout=(5,20))
+            "expires_at":(now+timedelta(days=1)).isoformat()},timeout=(30,60))
+        if not response.ok:print("Protected diagnostic persistence unavailable: HTTP "+str(response.status_code),flush=True)
         response.raise_for_status()
-    except Exception:
-        pass
+    except Exception as exc:
+        print('Protected diagnostic persistence unavailable: '+type(exc).__name__,flush=True)
 
 def execute(label, args, optional=False):
     print(label, flush=True)
@@ -40,7 +41,11 @@ def execute(label, args, optional=False):
         result=subprocess.run([sys.executable]+args,cwd=SOURCE,env=child_env,stdout=log,stderr=subprocess.STDOUT)
         if result.returncode:
             log.seek(0)
-            save_diagnostic(label,log.read().decode("utf-8",errors="replace"))
+            text=log.read().decode("utf-8",errors="replace")
+            import re
+            errors=re.findall(r"^(RuntimeError: Database HTTP [0-9]+(?: code [A-Z0-9]+)?|[A-Za-z]+Error):?",text,re.M)
+            if errors:print("Private technical failure: "+errors[-1],flush=True)
+            save_diagnostic(label,text)
     if result.returncode and not optional:
         raise RuntimeError("Private task failed")
     if result.returncode:

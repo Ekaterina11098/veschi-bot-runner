@@ -1,0 +1,52 @@
+name: Issue 10 bounded daily query history recovery
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0,30 9-12 12 10 *'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 475e4a1c21748ff26c2863930d768f54aa19fbef
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Resume only confirmed historical query gaps after shared cooldown
+        env:
+          TASK: ip-bounded-query-history-resume
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          IP_QUERY_HISTORY: '1'
+          IP_PERIOD_FROM: '2026-09-29'
+          IP_PERIOD_TO: '2026-10-11'
+          IP_EVENT_START: '2026-09-28'
+          IP_EVENT_END: '2026-10-11'
+        run: |
+          python - <<'PY'
+          from datetime import date,datetime,timezone
+          if datetime.now(timezone.utc).date()!=date(2026,10,12):
+              print('Historical recovery window closed; no source requests')
+              raise SystemExit(0)
+          import run_private
+          for pattern in ('test_payload_storage.py','test_ip_campaign_reach.py','test_ip_query_gap_batches.py','test_wb_success_rate_limits.py'):
+              run_private.execute('Bounded query recovery regression',['-m','unittest','discover','-s','tests','-p',pattern])
+          run_private.execute('Resume only missing cached query scopes; honor shared Retry-After',['-m','analytics.ip_query_gap_batches'])
+          run_private.execute('Recompute existing IP analytics from saved sources only',['-m','analytics.ip_price_event_analysis'])
+          PY

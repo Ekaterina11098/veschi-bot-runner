@@ -53,6 +53,20 @@ jobs:
           import run_private
           run_private.execute('Only missing complete comparison; no WB or Telegram',['-m','analytics.ip_financial_period_recovery'])
           PY
+      - name: Reconcile daily finance once after newer exact-period financial evidence
+        env:
+          TASK: ip-price-watch-finance-reconcile
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          IP_RECOVERY_MODE: finance_reconcile_refresh
+          IP_PERIOD_FROM: '2026-10-07'
+          IP_PERIOD_TO: '2026-10-11'
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('New exact-period version proves five daily finance gaps; bounded refresh only, no WB',['-m','analytics.ip_financial_period_recovery'])
+          PY
       - name: Generate private real-data price follow-up preview
         env:
           TASK: ip-price-watch-preview

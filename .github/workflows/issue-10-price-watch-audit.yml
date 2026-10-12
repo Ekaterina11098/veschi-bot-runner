@@ -1,0 +1,65 @@
+name: Issue 10 price follow-up data and notification audit
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/issue-10-price-watch-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: f7f2d17bbb606e9b71487cbf5b951c0683f067c3
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Verify cache recovery and notification suppression
+        env:
+          TASK: ip-price-watch-tests
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          for pattern in ('test_price_watch_notifications.py','test_price_effect_recovery.py','test_price_finance_period_cache.py','test_ip_price_policy.py','test_ip_daily_recommendations.py'):
+              run_private.execute('No zero substitution; internal diagnostics never sent',['-m','unittest','discover','-s','tests','-p',pattern])
+          PY
+      - name: Retrieve only missing exact MPStats price comparison period
+        env:
+          TASK: ip-price-watch-source-gap
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          IP_RECOVERY_MODE: price_watch
+          IP_PERIOD_FROM: '2026-10-07'
+          IP_PERIOD_TO: '2026-10-11'
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Only missing complete comparison; no WB or Telegram',['-m','analytics.ip_financial_period_recovery'])
+          PY
+      - name: Generate private real-data price follow-up preview
+        env:
+          TASK: ip-price-watch-preview
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Read saved six SKU evidence; no delivery or WB changes',['-m','analytics.ip_price_watch_audit'])
+          PY

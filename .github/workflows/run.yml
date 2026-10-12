@@ -40,6 +40,7 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           EVENT_SCHEDULE: ${{ github.event.schedule }}
           REQUESTED_TASK: ${{ inputs.task }}
+          IP_LIMITED_ANALYSIS_PUBLISH: ${{ vars.IP_LIMITED_ANALYSIS_PUBLISH || 'false' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
   run:

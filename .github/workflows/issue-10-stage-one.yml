@@ -195,6 +195,24 @@ jobs:
           run_private.execute('Regina financial bridge and exact inventory gap; no buyer bypass',['-m','analytics.ip_price_event_analysis'])
           PY
 
+      - name: Complete remaining proven daily pair gaps from MPStats only
+        env:
+          TASK: ip-final-pair-reach-gap
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          IP_RECOVERY_MODE: pair_reach
+          IP_PERIOD_FROM: '2026-09-29'
+          IP_PERIOD_TO: '2026-10-11'
+          IP_EVENT_START: '2026-09-28'
+          IP_EVENT_END: '2026-10-11'
+        run: |
+          python - <<'PY'
+          import run_private
+          for _ in range(4):
+              run_private.execute('Only missing daily SKU scopes; completed exact requests reused',['-m','analytics.ip_financial_period_recovery'])
+          run_private.execute('Final source-backed reach and finance quality report',['-m','analytics.ip_price_event_analysis'])
+          PY
       - name: Notification dry run without Telegram
         env:
           TASK: ip-notification-preview

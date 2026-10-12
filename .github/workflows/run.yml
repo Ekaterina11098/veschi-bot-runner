@@ -76,6 +76,7 @@ jobs:
         env:
           TASK: ${{ matrix.task }}
           IP_LIMITED_ANALYSIS_PUBLISH: ${{ vars.IP_LIMITED_ANALYSIS_PUBLISH || 'false' }}
+          IP_LIMITED_TELEGRAM_DELIVERY: ${{ vars.IP_LIMITED_TELEGRAM_DELIVERY || 'false' }}
           REQUESTED_RETRY: ${{ inputs.retry || 'false' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

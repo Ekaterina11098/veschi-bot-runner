@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 5d02a42fdd76d3c77b6cf3712b023ca0fbbd4c12
+          ref: c41f2739db9f91f51463c798554cf2223d3c94fe
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -98,6 +98,49 @@ jobs:
           python - <<'PY'
           import run_private
           run_private.execute('Thirteen exact campaign scope reach gaps; reuse completed responses',['-m','analytics.ip_financial_period_recovery'])
+          PY
+      - name: Recover missing campaign change journals
+        env:
+          TASK: ip-campaign_history-gap
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          IP_RECOVERY_MODE: campaign_history
+          IP_PERIOD_FROM: '2026-09-29'
+          IP_PERIOD_TO: '2026-10-11'
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Exact retained gaps; no WB or Telegram',['-m','analytics.ip_financial_period_recovery'])
+          PY
+      - name: Retry only retained transient search-source failures
+        env:
+          TASK: ip-position_retry-gap
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          IP_RECOVERY_MODE: position_retry
+          IP_PERIOD_FROM: '2026-09-29'
+          IP_PERIOD_TO: '2026-10-11'
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Exact retained gaps; no WB or Telegram',['-m','analytics.ip_financial_period_recovery'])
+          PY
+      - name: Recover explicit SKU reach period gaps
+        env:
+          TASK: ip-campaign_products-gap
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          IP_RECOVERY_MODE: campaign_products
+          IP_PERIOD_FROM: '2026-09-29'
+          IP_PERIOD_TO: '2026-10-11'
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Exact retained gaps; no WB or Telegram',['-m','analytics.ip_financial_period_recovery'])
+          run_private.execute('Remaining product gaps after bounded first batch',['-m','analytics.ip_financial_period_recovery'])
           PY
       - name: Reconcile retained daily financial periods and rerun event diagnosis
         env:

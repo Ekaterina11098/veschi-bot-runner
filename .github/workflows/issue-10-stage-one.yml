@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 742a73578c80919327864fe1f4abcd2935da5c64
+          ref: 2e55d4e2879f8626efc47688d2cf7036fce6dc29
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -55,6 +55,20 @@ jobs:
           python - <<'PY'
           import run_private
           run_private.execute('Exact MPStats pilot daily traffic gap; retain terminal results',['-m','analytics.ip_financial_period_recovery'])
+          PY
+      - name: Refresh finance only after newer scoped advertising facts
+        env:
+          TASK: ip-finance-reconcile-refresh
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          IP_RECOVERY_MODE: finance_reconcile_refresh
+          IP_PERIOD_FROM: '2026-10-05'
+          IP_PERIOD_TO: '2026-10-11'
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Refresh superseded MPStats finance only; no WB',['-m','analytics.ip_financial_period_recovery'])
           PY
       - name: Reconcile retained daily financial periods and rerun event diagnosis
         env:

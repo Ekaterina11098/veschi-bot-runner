@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: e348b1b5f33b4dbe79be857274a21f7edacb73b7
+          ref: 502a3cddcd4bc61400adfc4220fc9ed4098fa5a9
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -44,9 +44,21 @@ jobs:
           run_private.execute('Save owner-approved shared knowledge without changing delivery or decisions',['-c',"import json; from pathlib import Path; from advertising_agent.agent_store import cache_set; cache_set('veschi:shared_knowledge:v1',json.loads(Path('business_agents/shared_knowledge.json').read_text(encoding='utf-8')),ttl_days=365)"])
           run_private.execute('Employee webhook scope and confirmation boundary',['-c',"import subprocess; subprocess.run(['node','--test','tests/test_advertising_webhook.mjs'],check=True)"])
           PY
+      - name: Record owner-approved analytical publication only
+        env:
+          TASK: ip-limited-rollout-approval
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Record owner consent; delivery and WB writes remain disabled',['-c',"from advertising_agent.agent_store import registration,cache_set; from datetime import datetime,timezone; r=registration(); cache_set('advertising:ip:limited_rollout:v1',dict(cabinet='token_2',owner_id=r['registered_by_user_id'],chat_id=r['chat_id'],analysis_publication_approved=True,telegram_delivery_approved=False,wb_writes_approved=False,approved_at=datetime.now(timezone.utc).isoformat(),authorization='Owner explicitly approved step 1 in Codex on 2026-10-12',source_commit='502a3cddcd4bc61400adfc4220fc9ed4098fa5a9'),ttl_days=365)"])
+          PY
       - name: Complete path from retained source receipts to fresh proposals for every IP pair
         env:
           TASK: ip-complete-working-mode-replay
+          IP_LIMITED_ANALYSIS_PUBLISH: 'true'
+          IP_LIMITED_TELEGRAM_DELIVERY: 'false'
           IP_EVENT_START: '2026-09-28'
           IP_EVENT_END: '2026-10-11'
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

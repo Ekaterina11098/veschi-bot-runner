@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: ba2965f592b7a445344a348bf1e92a0a1a20c542
+          ref: e722c0534e2ac18fe9c68763c3b2de1a2e20cf71
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -38,6 +38,20 @@ jobs:
           import run_private
           for pattern in ('test_ip_regina_model_review.py','test_ip_completed_investigations.py'):
               run_private.execute('Regina finance once; no zero substitution or origin guessing',['-m','unittest','discover','-s','tests','-p',pattern])
+          PY
+      - name: Recover only missing independent MPStats financial baseline
+        env:
+          TASK: ip-regina-finance-baseline
+          IP_PERIOD_FROM: '2026-09-28'
+          IP_PERIOD_TO: '2026-10-04'
+          IP_RECOVERY_MODE: finance_only
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Only missing independent finance scopes, cached responses reused',['-m','analytics.ip_financial_period_recovery'])
           PY
       - name: Review both cached periods and all active campaign intersections
         env:

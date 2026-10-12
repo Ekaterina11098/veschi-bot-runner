@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: d6f328f6f5c445002902eb4cefd9734da37a58df
+          ref: 5375a72d58c9269221ecf0727319089a49dcc574
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -38,7 +38,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_finance_quality.py','test_ip_organic_search_scope.py','test_payload_storage.py','test_ip_query_gap_batches.py','test_ip_investigation_sources.py','test_wb_success_rate_limits.py','test_ip_campaign_reach.py','test_ip_finance_reconciliation.py','test_ip_official_knowledge.py','test_ip_daily_recommendations.py','test_ip_price_event_analysis.py','test_price_effect_recovery.py','test_ip_price_history.py','test_ip_regina_deterioration.py','test_ip_regina_model_review.py','test_ip_completed_investigations.py','test_stock_configuration.py','test_stock_limits.py','test_mpstats*.py'):
+          for pattern in ('test_market_search_history.py','test_finance_quality.py','test_ip_organic_search_scope.py','test_payload_storage.py','test_ip_query_gap_batches.py','test_ip_investigation_sources.py','test_wb_success_rate_limits.py','test_ip_campaign_reach.py','test_ip_finance_reconciliation.py','test_ip_official_knowledge.py','test_ip_daily_recommendations.py','test_ip_price_event_analysis.py','test_price_effect_recovery.py','test_ip_price_history.py','test_ip_regina_deterioration.py','test_ip_regina_model_review.py','test_ip_completed_investigations.py','test_stock_configuration.py','test_stock_limits.py','test_mpstats*.py'):
               run_private.execute('Regina finance once; no zero substitution or origin guessing',['-m','unittest','discover','-s','tests','-p',pattern])
           PY
       - name: Recover only Orange and Angela current-period campaign day gaps from MPStats

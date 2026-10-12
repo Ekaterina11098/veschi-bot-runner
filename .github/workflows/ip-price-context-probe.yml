@@ -1,0 +1,41 @@
+name: IP three price experiments targeted missing data
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-price-context-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 502a3cddcd4bc61400adfc4220fc9ed4098fa5a9
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Read only missing context for three verified IP SKUs
+        env:
+          TASK: ip-three-price-context
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Three missing price contexts; retained catalog/cache and shared MPStats cooldown', ['-c', "import os,json\nfrom datetime import datetime,timezone,timedelta\nfrom analytics.collect import database,RUN_ID\nfrom analytics.mpstats_probe import discover,unpack_tool,sanitize,ProbeError\nnow=datetime.now(timezone.utc)\nrows=database('GET','analytics_snapshots',params=dict(id='eq.1047',select='payload',limit=1))\ncatalog=rows[0]['payload'][0]['tools']\ntargets=[(432460316,'447-AngelaBag-burgundy'),(776196396,'600-JessicaBag-blue'),(223390635,'91-Zont-yellow')]\npause=database('GET','telegram_api_cache',params={'cache_key':'eq.mpstats:cooldown','expires_at':'gt.'+now.isoformat(),'select':'payload','limit':1})\nobservations=[]\ndef save(row):\n    database('POST','telegram_api_cache',body=dict(cache_key='advertising:ip:price_experiment_probe:'+str(row['nm_id']),payload=row,updated_at=now.isoformat(),expires_at=(now+timedelta(days=30)).isoformat()),params={'on_conflict':'cache_key'})\n    observations.append(row)\ndef reader(call,checks,known):\n    if 'wb_sku' not in known:raise ProbeError('required_read_tool_unavailable')\n    for nm,article in targets:\n        key='advertising:ip:price_experiment_probe:'+str(nm)\n        prior=database('GET','telegram_api_cache',params={'cache_key':'eq.'+key,'select':'payload','limit':1})\n        p=prior[0]['payload'] if prior else {}\n        if p.get('status') in ('http_404','access_denied','tool_access_error'):observations.append(p);continue\n        if p.get('observed_at') and (now-datetime.fromisoformat(p['observed_at'])).total_seconds()<86400:observations.append(p);continue\n        row=dict(nm_id=nm,article=article,cabinet='token_2',observed_at=now.isoformat(),source='MPStats wb_sku/info',arguments=dict(sku=nm,report='info'),scope='market SKU info, not owner financial attribution',buyer_address_verified=False,wallet_exclusion_verified=False)\n        try:\n            row.update(status='received',data=sanitize(unpack_tool(call('tools/call',{'name':'wb_sku','arguments':row['arguments']}))))\n        except ProbeError as exc:\n            row.update(status=exc.status,retry_after=exc.retry_after)\n            if exc.retry_after:\n                database('POST','telegram_api_cache',body=dict(cache_key='mpstats:cooldown',payload=dict(pending=True),expires_at=(now+timedelta(seconds=exc.retry_after)).isoformat()),params={'on_conflict':'cache_key'})\n        save(row)\n        if row.get('retry_after'):break\n    return dict(observations=observations)\nresult=dict(status='cooldown') if pause else discover(os.getenv('MPSTATS_API_TOKEN',''),read_checks=True,extra_reader=reader,catalog=catalog)\ndatabase('POST','analytics_snapshots',body=dict(source='ip_price_experiment_missing_data',cabinet='token_2',run_id=RUN_ID,period_from=now.date().isoformat(),period_to=now.date().isoformat(),payload=[dict(status=result.get('status'),observations=observations,wb_requests=0,telegram_calls=0,wb_writes=0)],status='complete' if result.get('connected') else 'partial'))\nprint('Targeted missing price-context reads completed; no WB or Telegram calls')\n"])
+          PY

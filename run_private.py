@@ -205,6 +205,8 @@ def main(task):
         execute("Refresh economics from daily cache",["advertising_agent/sku_economics.py","--refresh-from-cache"],optional=True)
         if os.environ.get("IP_LIMITED_ANALYSIS_PUBLISH","").lower()=="true":
             execute("Publish owner-approved limited IP cached analysis",["-m","analytics.ip_working_mode_replay"])
+            if os.environ.get("IP_LIMITED_TELEGRAM_DELIVERY","").lower()=="true":
+                execute("Deliver registered-owner-approved grouped IP recommendations",["-m","analytics.ip_daily_recommendations"])
     elif task=="budget_retry":
         from advertising_agent import collect_ip
         token=os.environ.get("WB_TOKEN_2")

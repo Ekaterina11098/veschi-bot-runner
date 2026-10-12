@@ -159,6 +159,8 @@ jobs:
       - name: Reconcile retained daily financial periods and rerun event diagnosis
         env:
           TASK: ip-price-event-analysis
+          IP_EVENT_START: '2026-09-28'
+          IP_EVENT_END: '2026-10-11'
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |

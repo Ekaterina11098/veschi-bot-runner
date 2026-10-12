@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: cdeb5fb77cb16d3bd75c58bce130ad440f8f51f6
+          ref: 5d02a42fdd76d3c77b6cf3712b023ca0fbbd4c12
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -38,7 +38,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_ip_finance_reconciliation.py','test_ip_official_knowledge.py','test_ip_daily_recommendations.py','test_ip_price_event_analysis.py','test_price_effect_recovery.py','test_ip_price_history.py','test_ip_regina_deterioration.py','test_ip_regina_model_review.py','test_ip_completed_investigations.py','test_stock_configuration.py','test_stock_limits.py','test_mpstats*.py'):
+          for pattern in ('test_ip_campaign_reach.py','test_ip_finance_reconciliation.py','test_ip_official_knowledge.py','test_ip_daily_recommendations.py','test_ip_price_event_analysis.py','test_price_effect_recovery.py','test_ip_price_history.py','test_ip_regina_deterioration.py','test_ip_regina_model_review.py','test_ip_completed_investigations.py','test_stock_configuration.py','test_stock_limits.py','test_mpstats*.py'):
               run_private.execute('Regina finance once; no zero substitution or origin guessing',['-m','unittest','discover','-s','tests','-p',pattern])
           PY
       - name: Recover only Orange and Angela current-period campaign day gaps from MPStats
@@ -84,6 +84,20 @@ jobs:
           python - <<'PY'
           import run_private
           run_private.execute('Refresh superseded MPStats finance only; no WB',['-m','analytics.ip_financial_period_recovery'])
+          PY
+      - name: Recover only missing campaign-wide reach for all thirteen IP campaigns
+        env:
+          TASK: ip-campaign-reach-gap
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          IP_RECOVERY_MODE: campaign_reach
+          IP_PERIOD_FROM: '2026-09-29'
+          IP_PERIOD_TO: '2026-10-11'
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Thirteen exact campaign scope reach gaps; reuse completed responses',['-m','analytics.ip_financial_period_recovery'])
           PY
       - name: Reconcile retained daily financial periods and rerun event diagnosis
         env:

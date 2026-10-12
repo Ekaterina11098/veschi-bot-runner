@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: a498e588c17141dda7ddc7e657c49fa3ae6d184a
+          ref: 475e4a1c21748ff26c2863930d768f54aa19fbef
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -63,7 +63,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           IP_RECOVERY_MODE: ad_cost_residual
-          IP_EVENT_PILOT_NMS: '699217344'
+          IP_EVENT_PILOT_NMS: '699217344,699208547,432460316'
           IP_PERIOD_FROM: '2026-10-05'
           IP_PERIOD_TO: '2026-10-11'
         run: |

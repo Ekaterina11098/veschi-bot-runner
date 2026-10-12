@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 7ab6b22fe4233455ad764fbf92402e806a2ffb75
+          ref: 70ef4da0e42aa80178c1b70c67f5b747981de56f
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -211,6 +211,10 @@ jobs:
           import run_private
           for _ in range(4):
               run_private.execute('Only missing daily SKU scopes; completed exact requests reused',['-m','analytics.ip_financial_period_recovery'])
+          import os
+          os.environ['IP_RECOVERY_MODE']='organic_history'
+          os.environ['IP_EVENT_PILOT_NMS']=''
+          run_private.execute('Leading confirmed reach losses only; reuse keyword history and no repeated hourly errors',['-m','analytics.ip_financial_period_recovery'])
           run_private.execute('Final source-backed reach and finance quality report',['-m','analytics.ip_price_event_analysis'])
           PY
       - name: Notification dry run without Telegram

@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 9aa0c52e367433827b98e3f206b7e03844fd6e85
+          ref: 377f346e6b4e3cbbe3c7a8439dd0aec6128375d3
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -38,7 +38,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_ip_daily_recommendations.py','test_ip_price_event_analysis.py','test_price_effect_recovery.py','test_ip_price_history.py','test_ip_regina_deterioration.py','test_ip_regina_model_review.py','test_ip_completed_investigations.py','test_stock_configuration.py','test_stock_limits.py','test_mpstats*.py'):
+          for pattern in ('test_ip_official_knowledge.py','test_ip_daily_recommendations.py','test_ip_price_event_analysis.py','test_price_effect_recovery.py','test_ip_price_history.py','test_ip_regina_deterioration.py','test_ip_regina_model_review.py','test_ip_completed_investigations.py','test_stock_configuration.py','test_stock_limits.py','test_mpstats*.py'):
               run_private.execute('Regina finance once; no zero substitution or origin guessing',['-m','unittest','discover','-s','tests','-p',pattern])
           PY
       - name: Recover exact pilot traffic gaps from MPStats
@@ -82,16 +82,48 @@ jobs:
           from datetime import datetime,timezone,timedelta
           from analytics.stage_one import read
           from analytics.collect import database,RUN_ID
-          from analytics.ip_daily_recommendations import preview_notifications,POLICY_VERSION
+          from analytics.ip_daily_recommendations import preview_notifications,POLICY_VERSION,KEY
           rows=read('analytics_snapshots',dict(source='eq.ip_daily_recommendations',cabinet='eq.token_2',select='payload',order='id.desc',limit=1))
           report=rows[0]['payload'][0]
+          source_observed_at=report['observed_at']
+          report['observed_at']=datetime.now(timezone.utc).isoformat()
+          current=read('telegram_api_cache',dict(cache_key='eq.'+KEY,select='payload',limit=1))
+          if current:report['decision_state']=current[0]['payload']
+          active=[p for p in report['full_pair_analysis'] if p.get('currently_advertised') is True]
+          expected=read('analytics_snapshots',dict(source='eq.ip_sku_complete_review',cabinet='eq.token_2',select='payload',order='id.desc',limit=1))[0]['payload'][0]
+          want={(c['campaign_id'],p['nm_id']) for c in expected['campaigns'] for p in c['rows']}
+          actual={(p['campaign_id'],p['nm_id']) for p in active}
+          assert actual==want and len(active)==len(want)
+          ids=sorted({p['campaign_id'] for p in active})
+          assert len(ids)==13 and 40428689 in ids
+          coverage=dict(campaign_ids=ids,campaign_count=len(ids),active_pair_count=len(active),unique_sku_count=len({p['nm_id'] for p in active}),all_pairs_present_once=True,source_observed_at=source_observed_at)
           prior=read('analytics_snapshots',dict(source='eq.ip_notification_dry_run',cabinet='eq.token_2',select='payload',order='id.desc',limit=1))
           ledger=prior[0]['payload'][0]['preview']['preview_state'] if prior else None
           first=preview_notifications(report,ledger)
           repeat=preview_notifications(report,first['preview_state'])
           assert repeat['messages']==[]
-          shared=json.loads(Path('business_agents/shared_knowledge.json').read_text())
+          from business_agents.knowledge import shared_knowledge
+          shared=shared_knowledge()
           database('POST','telegram_api_cache',params={'on_conflict':'cache_key'},body=dict(cache_key='veschi:shared_knowledge:v1',payload=shared,expires_at=(datetime.now(timezone.utc)+timedelta(days=365)).isoformat()))
-          database('POST','analytics_snapshots',body=dict(source='ip_notification_dry_run',cabinet='token_2',run_id=RUN_ID,period_from=report['period_from'],period_to=report['period_to'],payload=[dict(policy_version=POLICY_VERSION,preview=first,repeat_message_count=len(repeat['messages']),actual_telegram_calls=0)],status='complete'))
+          database('POST','analytics_snapshots',body=dict(source='ip_notification_dry_run',cabinet='token_2',run_id=RUN_ID,period_from=report['period_from'],period_to=report['period_to'],payload=[dict(policy_version=POLICY_VERSION,preview=first,repeat_message_count=len(repeat['messages']),actual_telegram_calls=0,coverage=coverage)],status='complete'))
+          from analytics.ip_price_event_analysis import apply_verified_knowledge
+          saved=read('analytics_snapshots',dict(source='eq.ip_price_event_analysis',cabinet='eq.token_2',select='id,payload',order='id.desc',limit=1))[0]
+          events=apply_verified_knowledge(saved['payload'][0])
+          assert events['pair_count']==len(active) and events['official_knowledge_new_requests']==0
+          import html
+          out=['<meta charset=utf-8><title>ИП — предпросмотр и применение знаний WB</title><h1>ИП: предпросмотр уведомлений</h1>']
+          out.append('<p>Период '+report['period_from']+' — '+report['period_to']+'. Проверено 13 РК / '+str(len(active))+' активных пар / '+str(coverage['unique_sku_count'])+' SKU. Использован сохранённый анализ; это не новое подтверждение текущего состава через WB API.</p>')
+          out.append('<p>Реальных отправок: 0. Повторных сообщений в том же проходе: '+str(len(repeat['messages']))+'. Telegram отключён.</p>')
+          if not first['messages']:out.append('<p>Новых сообщений нет: известные неизменившиеся проблемы подавлены. Это не означает подтверждённую норму всех SKU. Согласованных, но не выполненных действий в текущем реестре нет.</p>')
+          for m in first['messages']:out.append('<h2>РК '+str(m['campaign_id'])+'</h2><pre>'+html.escape(m['text'])+'</pre>')
+          out.append('<h2>Охват кампаний</h2><p>'+', '.join(map(str,ids))+'</p><h2>Применение официальных знаний к реальным данным</h2>')
+          for p in events['products']:
+              if p['article'] not in ('143-ReginaBag-black','584-ReginaBag-dblack','587-ReginaBag-orange','471-RayeBag-brown'):continue
+              out.append('<h3>'+html.escape(p['article'])+'</h3>')
+              out.append('<details><summary>Расчёты, источники и выводы</summary><pre>'+html.escape(json.dumps(p['official_knowledge_application'],ensure_ascii=False,indent=2))+'</pre></details>')
+          out.append('<p>Orange: ранее согласованное сохранение настроек действует; ноль прямых заказов не доказывает отсутствие вклада в связку. 471: физический FBO не доказывает доступность покупки; причина ограничения не установлена, ответ поддержки ожидается.</p>')
+          out.append('<h2>Официальные правила и ограничения</h2><pre>'+html.escape(json.dumps(shared['wb_rules'],ensure_ascii=False,indent=2))+'</pre>')
+          artifact=''.join(out)
+          database('POST','analytics_snapshots',body=dict(source='ip_wb_knowledge_application',cabinet='token_2',run_id=RUN_ID,period_from=report['period_from'],period_to=report['period_to'],payload=[dict(html=artifact,coverage=coverage,event_source_snapshot_id=saved['id'],knowledge_version=events['official_knowledge_version'],preview=first,actual_telegram_calls=0,wb_writes=0,products=[dict(article=p['article'],nm_id=p['nm_id'],campaign_ids=p['campaign_ids'],application=p['official_knowledge_application']) for p in events['products']])],status='complete'))
           """])
           PY

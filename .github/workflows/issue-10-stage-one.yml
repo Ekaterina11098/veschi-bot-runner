@@ -36,7 +36,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_ip_regina_deterioration.py','test_ip_regina_model_review.py','test_ip_completed_investigations.py','test_stock_inventory.py'):
+          for pattern in ('test_ip_regina_deterioration.py','test_ip_regina_model_review.py','test_ip_completed_investigations.py','test_stock_configuration.py','test_stock_limits.py'):
               run_private.execute('Regina finance once; no zero substitution or origin guessing',['-m','unittest','discover','-s','tests','-p',pattern])
           PY
       - name: Review both periods and refresh exact ten-color inventory gaps

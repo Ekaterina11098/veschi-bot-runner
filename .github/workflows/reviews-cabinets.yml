@@ -34,7 +34,7 @@ jobs:
           import run_private
           run_private.execute('Validate review scope and existing cooldowns',['-m','unittest','discover','-s','tests','-p','test_review*.py'])
           run_private.execute('Validate daily task UI',['-m','unittest','discover','-s','tests','-p','test_dashboard_tasks*.py'])
-          run_private.execute('Validate all cabinet pages',['-m','unittest','discover','-s','tests','-p','test_cabinet_dashboard.py'])
+          # Analytics dashboard tests have their own validate-dashboard workflow.
           run_private.execute('Compile review modules',['-m','py_compile','review_manager.py','review_scope.py','review_inbox_cache.py','wildberries.py','review_queue.py','refresh_review_inbox.py','openai_client.py','validator.py'])
           run_private.execute('Process already approved replies and save cabinet receipts',['process_review_queue.py'])
           run_private.execute('Read inboxes without sending answers',['-c','from refresh_review_inbox import refresh_all; refresh_all()'])

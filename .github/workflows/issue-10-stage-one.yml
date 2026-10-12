@@ -1,9 +1,11 @@
-name: Issue 10 Regina model audit without WB mutations
+name: Issue 10 IP observed price event analysis
 on:
   push:
     branches: [main]
     paths: ['.github/workflows/issue-10-stage-one.yml']
   workflow_dispatch:
+  schedule:
+    - cron: '20 6 * * *'
 permissions:
   contents: read
 concurrency:
@@ -20,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 0ba6db0942f65f49d3866990e440131598823928
+          ref: e30caacec14a31247dd2c5bc6030cbcc92a0db10
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false

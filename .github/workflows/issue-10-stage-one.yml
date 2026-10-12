@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: a08536a107826a18b85de4ad3978bc7e1c6f9da2
+          ref: d8ca9db123649564f1ab965f41181c236ec4d2e9
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -36,16 +36,18 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_ip_regina_model_review.py','test_ip_completed_investigations.py'):
+          for pattern in ('test_ip_regina_deterioration.py','test_ip_regina_model_review.py','test_ip_completed_investigations.py','test_stock_inventory.py'):
               run_private.execute('Regina finance once; no zero substitution or origin guessing',['-m','unittest','discover','-s','tests','-p',pattern])
           PY
-      - name: Review both cached periods and all active campaign intersections
+      - name: Review both periods and refresh exact ten-color inventory gaps
         env:
-          TASK: ip-regina-model-review
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          TASK: ip-regina-deterioration
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Regina model review; cache only, no external business API',['-m','analytics.ip_regina_model_review'])
+          run_private.execute('Regina financial bridge and exact inventory gap; no buyer bypass',['-m','analytics.ip_regina_deterioration'])
           PY

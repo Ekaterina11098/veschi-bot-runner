@@ -4,6 +4,12 @@ on:
     branches: [main]
     paths: ['.github/workflows/lossless-storage-backup.yml']
   workflow_dispatch:
+    inputs:
+      authorized_backup:
+        description: 'Only after confirmed restoration of database access'
+        type: boolean
+        default: false
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -20,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: a2599de83bf7e2a75c6eaa294e61a561ce5bd0e0
+          ref: 92afb041fd86deac8702474eb9f3a1d8e4f7f10d
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -35,10 +41,13 @@ jobs:
           python - <<'PY'
           import run_private
           run_private.execute('Lossless archive and authenticated owner/worker decryption',['-m','unittest','discover','-s','tests','-p','test_storage_archive.py'])
+          run_private.execute('Compile guarded backup module',['-m','py_compile','analytics/storage_recovery_prepare.py'])
           PY
       - name: Read-only complete backup and measured content-addressed plan
+        if: github.event_name == 'workflow_dispatch' && inputs.authorized_backup
         env:
           TASK: storage-readonly-backup
+          RECOVERY_FULL_BACKUP_AUTHORIZED: 'true'
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           RECOVERY_WORK: ${{ runner.temp }}/veschi-recovery-private
@@ -57,17 +66,22 @@ jobs:
             -----END PUBLIC KEY-----
         run: |
           python - <<'PY'
-          import run_private
-          run_private.execute('Verified encrypted backup; no Supabase, WB or Telegram writes',['-m','analytics.storage_recovery_prepare'])
+          import subprocess,tempfile,sys
+          with tempfile.TemporaryFile() as private_log:
+              result=subprocess.run([sys.executable,'-m','analytics.storage_recovery_prepare'],
+                  cwd='private-source',stdout=private_log,stderr=subprocess.STDOUT)
+          if result.returncode:
+              print('Backup failed; only sanitized summaries and encrypted partial copies retained.')
+              raise SystemExit(result.returncode)
           PY
       - name: Safe numeric backup status
         if: always()
         run: |
-          for name in resource-summary failure-summary; do
+          for name in resource-summary failure-summary partial-summary; do
             if [ -f "$RUNNER_TEMP/veschi-recovery-sealed/$name.json" ]; then cat "$RUNNER_TEMP/veschi-recovery-sealed/$name.json"; fi
           done
       - name: Retain only encrypted backups and technical resource summary
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.authorized_backup
         uses: actions/upload-artifact@v4
         with:
           name: owner-encrypted-storage-backup

@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: b88aef39fbbe98f2a6a1812db848f829f25af49f
+          ref: ca4f39120efa514637982080e1895cb9c2afa410
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -46,6 +46,9 @@ jobs:
       - run: pip install requests==2.32.5 python-dotenv simplejson cryptography > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Install existing application dependencies for remaining functional tests
         run: pip install -r private-source/requirements.txt > "$RUNNER_TEMP/application-dependencies.log" 2>&1
+      - name: Sanitized storage acceptance diagnostics
+        working-directory: private-source
+        run: python -m analytics.storage_unit_acceptance "$RUNNER_TEMP/storage-unit-acceptance.json"
       - name: Test exact restoration, deduplication, owner key and corruption rejection
         env:
           TASK: storage-archive-tests

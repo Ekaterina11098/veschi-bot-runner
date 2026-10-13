@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 2c4c5b9361171551b0c7c54cdb70f2b8357c1870
+          ref: a7a095433b82dd805615ae7892e023e0a4f39a1a
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -57,6 +57,8 @@ jobs:
           run_private.execute('Existing advertising dashboard regression',['-m','unittest','discover','-s','tests','-p','test_advertising_dashboard.py'])
           run_private.execute('Existing price watch notification regression',['-m','unittest','discover','-s','tests','-p','test_price_watch_notifications.py'])
           run_private.execute('Existing experiment notification regression',['-m','unittest','discover','-s','tests','-p','test_advertising_notifications.py'])
+          run_private.execute('Finance daily regression',['-m','unittest','discover','-s','tests','-p','test_finance_daily.py'])
+          run_private.execute('MPStats finance regression',['-m','unittest','discover','-s','tests','-p','test_mpstats*economics.py'])
           run_private.execute('Economics regression',['-m','unittest','discover','-s','tests','-p','test_sku_economics.py'])
           run_private.execute('Compile guarded recovery modules',['-m','py_compile','analytics/storage_recovery_prepare.py','analytics/storage_archive.py','analytics/storage_read_guard.py','analytics/storage_compatibility.py','analytics/r2_archive.py','analytics/storage_working_reader.py','analytics/storage_budget.py'])
           PY

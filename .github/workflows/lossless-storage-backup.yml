@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 0b0ed080ba8eb03138c0aea7ec3e2e19a22dc2ea
+          ref: b88aef39fbbe98f2a6a1812db848f829f25af49f
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -44,6 +44,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install requests==2.32.5 python-dotenv simplejson cryptography > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Install existing application dependencies for remaining functional tests
+        run: pip install -r private-source/requirements.txt > "$RUNNER_TEMP/application-dependencies.log" 2>&1
       - name: Test exact restoration, deduplication, owner key and corruption rejection
         env:
           TASK: storage-archive-tests
@@ -62,8 +64,6 @@ jobs:
           run_private.execute('Economics regression',['-m','unittest','discover','-s','tests','-p','test_sku_economics.py'])
           run_private.execute('Compile guarded recovery modules',['-m','py_compile','analytics/storage_recovery_prepare.py','analytics/storage_archive.py','analytics/storage_read_guard.py','analytics/storage_compatibility.py','analytics/r2_archive.py','analytics/storage_working_reader.py','analytics/storage_budget.py'])
           PY
-      - name: Install existing application dependencies for remaining functional tests
-        run: pip install -r private-source/requirements.txt > "$RUNNER_TEMP/application-dependencies.log" 2>&1
       - name: Remaining functional consumers with network disabled
         working-directory: private-source
         run: python -m analytics.storage_functional_acceptance "$RUNNER_TEMP/storage-functional-acceptance.json"

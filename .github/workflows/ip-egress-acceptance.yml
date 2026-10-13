@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 0f968e80a8dccee03ed0d5d88ba122fc71490aca
+          ref: 05d69e809b329bffe1166bf9ab991829dbf431bc
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -39,7 +39,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          for pattern in ('test_snapshot_reads.py','test_ip_price_launch_control.py','test_ip_final_status.py','test_ip_partial_reach.py','test_ip_employee_access.py','test_ip_rollout_gate.py','test_ip_delivery_boundary.py','test_source_collection_policy.py','test_wb_sources.py','test_ip_management_modes.py','test_ip_working_mode_replay.py','test_profit_stability.py','test_finance_quality.py','test_ip_campaign_audit.py','test_ip_sku_complete_review.py','test_ip_completed_investigations.py','test_ip_campaign_reach.py','test_ip_daily_recommendations.py','test_ip_finance_reconciliation.py','test_price_watch_notifications.py','test_price_effect_recovery.py','test_sales_cache.py','test_mpstats*.py'):
+          for pattern in ('test_snapshot_reads.py','test_ip_missing_catalog_coverage.py','test_ip_price_launch_control.py','test_ip_final_status.py','test_ip_partial_reach.py','test_ip_employee_access.py','test_ip_rollout_gate.py','test_ip_delivery_boundary.py','test_source_collection_policy.py','test_wb_sources.py','test_ip_management_modes.py','test_ip_working_mode_replay.py','test_profit_stability.py','test_finance_quality.py','test_ip_campaign_audit.py','test_ip_sku_complete_review.py','test_ip_completed_investigations.py','test_ip_campaign_reach.py','test_ip_daily_recommendations.py','test_ip_finance_reconciliation.py','test_price_watch_notifications.py','test_price_effect_recovery.py','test_sales_cache.py','test_mpstats*.py'):
               run_private.execute('Every dated SKU retained; qualified findings become actions; safe finance and notifications',['-m','unittest','discover','-s','tests','-p',pattern])
           run_private.execute('Save unchanged shared knowledge without delivery or decisions',['-c',"import json; from pathlib import Path; from advertising_agent.agent_store import cache_set; cache_set('veschi:shared_knowledge:v1',json.loads(Path('business_agents/shared_knowledge.json').read_text(encoding='utf-8')),ttl_days=365)"])
           run_private.execute('Employee webhook scope and confirmation boundary',['-c',"import subprocess; subprocess.run(['node','--test','tests/test_advertising_webhook.mjs'],check=True)"])

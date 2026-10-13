@@ -29,30 +29,42 @@ jobs:
           WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
         run: |
           python - <<'PY'
-          import os, json, base64, re, time
+          import os, json, base64, time
           import requests
-          from stock_fbo import URL
+          from uuid import UUID
           failures = []
-          for index in (1, 2, 3):
-              primary = os.getenv(f'WB_TOKEN_{index}')
-              for kind, token in [('main', primary), ('finance', os.getenv(f'WB_FINANCE_TOKEN_{index}'))]:
-                  if not token:
-                      continue
-                  claims = json.loads(base64.urlsafe_b64decode(token.split('.')[1] + '==='))
-                  mask = int(claims.get('s', 0))
-                  print(f"Cabinet {index} {kind}: type_acc={claims.get('acc')}, analytics={bool(mask & (1 << 2))}, read_only={bool(mask & (1 << 30))}, expired={claims.get('exp', 0) <= time.time()}")
-                  host = URL.replace('.wildberries.ru', '.wildberries.cn') if index == 3 else URL
-                  r = requests.post(host, headers={'Authorization': token}, json={'limit': 1, 'offset': 0}, timeout=30)
-                  print(f'Cabinet {index} {kind}: HTTP {r.status_code}')
-                  if r.status_code != 200:
-                      try:
-                          body = r.json()
-                          reason = str({k: body.get(k) for k in ('title','detail','error','errorText') if k in body})
-                      except Exception:
-                          reason = 'non-JSON response'
-                      for secret in [token, str(claims.get('sid', '')), str(claims.get('id', ''))]:
-                          if secret:
-                              reason = reason.replace(secret, '[redacted]')
-                      reason = re.sub(r'eyJ[A-Za-z0-9_.-]+', '[redacted]', reason)
-                      print(f'Cabinet {index} {kind}: {reason[:350]}')
+          tasks = []
+          for index in (1, 2):
+              token = os.getenv(f'WB_FINANCE_TOKEN_{index}') or os.getenv(f'WB_TOKEN_{index}')
+              base = 'https://seller-analytics-api.wildberries.ru/api/v1/warehouse_remains'
+              r = requests.get(base, headers={'Authorization': token}, params={'locale':'ru','groupBySa':'true','groupByNm':'true','groupByBarcode':'false','groupBySize':'false','filterPics':0,'filterVolume':0}, timeout=30)
+              print(f'Cabinet {index}: warehouse report create HTTP {r.status_code}')
+              if r.status_code != 200:
+                  failures.append(index)
+                  continue
+              task = str(UUID(r.json()['data']['taskId']))
+              tasks.append((index, token, base, task))
+          time.sleep(20)
+          for index, token, base, task in tasks:
+              r = requests.get(base+'/tasks/'+task+'/status', headers={'Authorization': token}, timeout=30)
+              print(f'Cabinet {index}: report status HTTP {r.status_code}')
+              if r.status_code != 200 or r.json().get('data', {}).get('status') != 'done':
+                  failures.append(index)
+                  continue
+              r = requests.get(base+'/tasks/'+task+'/download', headers={'Authorization': token}, timeout=30)
+              print(f'Cabinet {index}: report download HTTP {r.status_code}')
+              if r.status_code != 200:
+                  failures.append(index)
+                  continue
+              rows = r.json()
+              if not isinstance(rows, list) or any(not isinstance(x.get('nmId'), int) or not isinstance(x.get('warehouses'), list) for x in rows):
+                  failures.append(index)
+                  continue
+              if len({x['nmId'] for x in rows}) != len(rows):
+                  raise RuntimeError('grouped report has duplicate product identities')
+              if any(sum(w.get('warehouseName') == 'Всего находится на складах' for w in x['warehouses']) != 1 for x in rows):
+                  raise RuntimeError('physical total is missing or duplicated')
+              print(f'Cabinet {index}: complete grouped FBO report verified')
+          if failures:
+              raise SystemExit(1)
           PY

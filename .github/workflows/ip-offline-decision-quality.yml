@@ -78,12 +78,9 @@ jobs:
           from analytics import ip_daily_recommendations as d
           sys.path.insert(0,'tests')
           import test_ip_offline_decision_quality as q
-          analytics.__path__.append(str(Path('../prepared-storage/analytics').resolve()))
+          analytics.__path__=list(analytics.__path__)+[str(Path('../prepared-storage/analytics').resolve())]
           from analytics.storage_archive import canonical
           from analytics.storage_working_reader import CompatibleRead
-          sys.path.insert(0,'tests')
-          import test_ip_offline_decision_quality as q
-          from analytics import ip_daily_recommendations as d
           p,c,r,f=q.inputs();p['correction_model']=q.model()
           value=dict(p=p,c=c,r=r,f=f)
           raw=canonical(value);digest=hashlib.sha256(raw).hexdigest()

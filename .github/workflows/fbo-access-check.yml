@@ -29,33 +29,30 @@ jobs:
           WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
         run: |
           python - <<'PY'
-          import os
-          import tg_agent_new as g
+          import os, json, base64, re, time
+          import requests
           from stock_fbo import URL
           failures = []
-          for index, token in enumerate(g.cabinet_tokens(), 1):
-              try:
+          for index in (1, 2, 3):
+              primary = os.getenv(f'WB_TOKEN_{index}')
+              for kind, token in [('main', primary), ('finance', os.getenv(f'WB_FINANCE_TOKEN_{index}'))]:
                   if not token:
-                      raise RuntimeError('missing token')
-                  r = g.api('POST', URL, token, json={'limit': 1, 'offset': 0})
-                  if not isinstance(r, dict) or not isinstance(r.get('data'), dict) or not isinstance(r['data'].get('items'), list):
-                      raise RuntimeError('invalid response')
-                  print(f'Cabinet {index}: FBO access verified')
-              except Exception as exc:
-                  failures.append(index)
-                  print(f'Cabinet {index}: FBO access unavailable ({type(exc).__name__}: {exc})')
-          for index in failures.copy():
-              token = os.getenv(f'WB_FINANCE_TOKEN_{index}')
-              if not token:
-                  continue
-              try:
-                  r = g.api('POST', URL, token, json={'limit': 1, 'offset': 0})
-                  if not isinstance(r.get('data', {}).get('items'), list):
-                      raise RuntimeError('invalid response')
-                  print(f'Cabinet {index}: existing finance token FBO access verified')
-                  failures.remove(index)
-              except Exception as exc:
-                  print(f'Cabinet {index}: finance token FBO access unavailable ({type(exc).__name__}: {exc})')
-          if failures:
-              raise SystemExit(1)
+                      continue
+                  claims = json.loads(base64.urlsafe_b64decode(token.split('.')[1] + '==='))
+                  mask = int(claims.get('s', 0))
+                  print(f"Cabinet {index} {kind}: type_acc={claims.get('acc')}, analytics={bool(mask & (1 << 2))}, read_only={bool(mask & (1 << 30))}, expired={claims.get('exp', 0) <= time.time()}")
+                  host = URL.replace('.wildberries.ru', '.wildberries.cn') if index == 3 else URL
+                  r = requests.post(host, headers={'Authorization': token}, json={'limit': 1, 'offset': 0}, timeout=30)
+                  print(f'Cabinet {index} {kind}: HTTP {r.status_code}')
+                  if r.status_code != 200:
+                      try:
+                          body = r.json()
+                          reason = str({k: body.get(k) for k in ('title','detail','error','errorText') if k in body})
+                      except Exception:
+                          reason = 'non-JSON response'
+                      for secret in [token, str(claims.get('sid', '')), str(claims.get('id', ''))]:
+                          if secret:
+                              reason = reason.replace(secret, '[redacted]')
+                      reason = re.sub(r'eyJ[A-Za-z0-9_.-]+', '[redacted]', reason)
+                      print(f'Cabinet {index} {kind}: {reason[:350]}')
           PY

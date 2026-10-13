@@ -23,7 +23,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: veshi-storage-maintenance
+  group: ${{ github.event_name == 'push' && 'veshi-storage-offline-acceptance' || 'veshi-storage-maintenance' }}
   cancel-in-progress: false
 jobs:
   backup:
@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 3c86b4e248c293c0d4d9d4b9313aa99f1e9c788a
+          ref: 0b0ed080ba8eb03138c0aea7ec3e2e19a22dc2ea
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false

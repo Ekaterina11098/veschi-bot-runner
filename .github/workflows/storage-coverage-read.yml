@@ -1,0 +1,31 @@
+name: Read saved offline storage coverage only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/storage-coverage-read.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: storage-functional-acceptance
+          run-id: 38380044275
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/saved-coverage
+      - name: Print saved coverage without tests or source requests
+        env:
+          SAVED_COVERAGE: ${{ runner.temp }}/saved-coverage/storage-functional-acceptance.json
+        run: |
+          python - <<'PY'
+          import json,os
+          data=json.load(open(os.environ['SAVED_COVERAGE']))
+          for row in data['consumers']:
+              print(json.dumps(row))
+          print(json.dumps({k:v for k,v in data.items() if k!='consumers'}))
+          PY

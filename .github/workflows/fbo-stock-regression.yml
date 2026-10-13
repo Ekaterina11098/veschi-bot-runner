@@ -1,0 +1,24 @@
+name: FBO stock allocation regression
+on:
+  push:
+    branches: [verify/fbo-stock-2026-10-13]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: fb96f06dd011754bf72e5ed8ebcb0e8832131078
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check syntax and FBO regression without external API calls
+        run: |
+          python -m py_compile stock_fbo.py auto_stock.py tg_agent_new.py
+          python -m unittest discover -s tests -p 'test_stock_fbo_allocation.py' -v

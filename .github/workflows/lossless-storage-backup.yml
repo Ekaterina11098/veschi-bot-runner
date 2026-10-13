@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 78edb2798094a6573696159d0cd798b376d00264
+          ref: 264b73ba5fe1556d4b2f962d330242e100c1b68e
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -115,6 +115,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: owner-encrypted-storage-backup
-          path: ${{ runner.temp }}/veschi-recovery-sealed/
+          path: |
+            ${{ runner.temp }}/veschi-recovery-sealed/*.sqlite.aes
+            ${{ runner.temp }}/veschi-recovery-sealed/resource-summary.json
+            ${{ runner.temp }}/veschi-recovery-sealed/failure-summary.json
+            ${{ runner.temp }}/veschi-recovery-sealed/partial-summary.json
           if-no-files-found: error
           retention-days: 90

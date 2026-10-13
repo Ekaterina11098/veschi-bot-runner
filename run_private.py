@@ -40,8 +40,8 @@ def execute(label, args, optional=False):
     with tempfile.TemporaryDirectory() as meter_dir, tempfile.TemporaryFile() as log:
         meter_path=Path(meter_dir)/'egress.json'
         if child_env.get('SUPABASE_URL'):
-            (Path(meter_dir)/'sitecustomize.py').write_text('from egress_meter import install; install('+repr(str(meter_path))+')',encoding='utf-8')
-            child_env['PYTHONPATH']=str(meter_dir)+os.pathsep+str(ROOT)+os.pathsep+child_env.get('PYTHONPATH','')
+            (Path(meter_dir)/'sitecustomize.py').write_text('from egress_meter import install; install('+repr(str(meter_path))+')\nfrom analytics.storage_worker_bootstrap import activate; activate()' if child_env.get('COLLECTION_STORAGE_GUARD','').lower()=='true' else 'from egress_meter import install; install('+repr(str(meter_path))+')',encoding='utf-8')
+            child_env['PYTHONPATH']=str(meter_dir)+os.pathsep+str(ROOT)+os.pathsep+str(SOURCE)+os.pathsep+child_env.get('PYTHONPATH','')
         result=subprocess.run([sys.executable]+args,cwd=SOURCE,env=child_env,stdout=log,stderr=subprocess.STDOUT)
         if meter_path.exists():
             try:
@@ -148,6 +148,9 @@ def main(task):
     os.environ["WB_FEEDBACK_TOKEN"]=os.environ.get("WB_FEEDBACK_TOKEN") or os.environ.get("WB_TOKEN_1","")
     os.chdir(SOURCE)
     sys.path.insert(0,str(SOURCE))
+    if os.environ.get("COLLECTION_STORAGE_GUARD","").lower()=="true":
+        from analytics.storage_worker_bootstrap import activate
+        activate()
     if task=="daily_validation":
         execute("Compile completed-day modules",["-m","compileall","-q","analytics","advertising_agent","stock_daily_data.py","stock_mpstats.py","tg_agent_new.py"])
         for pattern in ("test_daily_data.py","test_advertising_decision_engine.py","test_advertising_experiments.py",

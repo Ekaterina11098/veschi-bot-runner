@@ -58,3 +58,19 @@ jobs:
           import run_private
           run_private.execute('Full retained-source analysis; isolated state, external HTTP blocked, no delivery',['-m','analytics.ip_working_mode_replay'])
           PY
+
+      - name: Measure normal reuse after lossless cache population
+        env:
+          TASK: ip-egress-warm-replay
+          IP_LIMITED_ANALYSIS_PUBLISH: 'false'
+          IP_LIMITED_TELEGRAM_DELIVERY: 'false'
+          IP_EVENT_START: '2026-09-28'
+          IP_EVENT_END: '2026-10-11'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,run_private
+          os.environ['GITHUB_RUN_ATTEMPT']=os.environ.get('GITHUB_RUN_ATTEMPT','1')+'-warm'
+          run_private.execute('Verify normal full analysis traffic after warm shared cache',['-m','analytics.ip_working_mode_replay'])
+          PY

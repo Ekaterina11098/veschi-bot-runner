@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 29bfaa0c7f004c180c224e51dece17cdcd4f85d5
+          ref: 4bdd2a6ad806b74ff895a8a29e24abb453e830f5
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -53,7 +53,7 @@ jobs:
           run_private.execute('Lossless archive and authenticated owner/worker decryption',['-m','unittest','discover','-s','tests','-p','test_storage*.py'])
           run_private.execute('Reader cache regression',['-m','unittest','discover','-s','tests','-p','test_snapshot_reads.py'])
           run_private.execute('Economics regression',['-m','unittest','discover','-s','tests','-p','test_sku_economics.py'])
-          run_private.execute('Compile guarded recovery modules',['-m','py_compile','analytics/storage_recovery_prepare.py','analytics/storage_archive.py','analytics/storage_read_guard.py','analytics/storage_compatibility.py'])
+          run_private.execute('Compile guarded recovery modules',['-m','py_compile','analytics/storage_recovery_prepare.py','analytics/storage_archive.py','analytics/storage_read_guard.py','analytics/storage_compatibility.py','analytics/r2_archive.py'])
           PY
       - name: Download owner-encrypted resume checkpoint only after restoration confirmation
         if: github.event_name == 'workflow_dispatch' && inputs.authorized_backup && inputs.source_recovery_confirmed && inputs.resume_run_id != ''

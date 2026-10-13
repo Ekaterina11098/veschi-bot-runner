@@ -40,7 +40,7 @@ jobs:
                   print(f'Cabinet {index}: FBO access verified')
               except Exception as exc:
                   failures.append(index)
-                  print(f'Cabinet {index}: FBO access unavailable ({type(exc).__name__})')
+                  print(f'Cabinet {index}: FBO access unavailable ({type(exc).__name__}: {exc})')
           if failures:
               raise SystemExit(1)
           PY

@@ -1,0 +1,44 @@
+name: Deploy verified IP traffic optimization analytical run
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-egress-deploy.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: issue10-cached-complete-analysis
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 545d0f6fee6a9d8243fa41e04fccb346fccbddf1
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Publish complete measured analytics; no source API, Telegram or WB writes
+        env:
+          TASK: ip-egress-deployed
+          SUPABASE_EGRESS_OPTIMIZED: 'true'
+          IP_LIMITED_ANALYSIS_PUBLISH: 'true'
+          IP_LIMITED_TELEGRAM_DELIVERY: 'false'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Preserve registered-owner analytical-only authorization',['-c',"from advertising_agent.agent_store import registration,cache_get,cache_set; r=registration(); a=cache_get('advertising:ip:limited_rollout:v1'); assert a['owner_id']==r['registered_by_user_id'] and a['chat_id']==r['chat_id'] and a['analysis_publication_approved'] is True; a.update(source_commit='545d0f6fee6a9d8243fa41e04fccb346fccbddf1',telegram_delivery_approved=False,wb_writes_approved=False,optimization_authorization='Owner requested traffic optimization on 2026-10-13'); cache_set('advertising:ip:limited_rollout:v1',a,ttl_days=365)"])
+          run_private.execute('Actual optimized analytical publication and response measurement',['-m','analytics.ip_working_mode_replay'])
+          PY

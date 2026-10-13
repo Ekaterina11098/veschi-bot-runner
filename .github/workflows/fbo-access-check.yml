@@ -8,12 +8,12 @@ permissions:
 jobs:
   access:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: fb96f06dd011754bf72e5ed8ebcb0e8832131078
+          ref: 9872c8d3678f80af3ecb41f843c110990eb0af58
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
       - uses: actions/setup-python@v5
@@ -27,46 +27,39 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
           WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
         run: |
-          python - <<'PY'
-          import os, json, base64, time
-          import requests
-          from uuid import UUID
+          python -u - <<'PY'
+          import time
+          import tg_agent_new as g
+          values = {}
+          g._CACHE_GET = values.get
+          g._CACHE_SET = lambda k, v, ttl: values.update({k: v})
+          g.RUN_DEADLINE = time.monotonic() + 22 * 60
           failures = []
-          tasks = []
-          for index in (1, 2):
-              token = os.getenv(f'WB_TOKEN_{index}')
-              base = 'https://seller-analytics-api.wildberries.ru/api/v1/warehouse_remains'
-              r = requests.get(base, headers={'Authorization': token}, params={'locale':'ru','groupBySa':'true','groupByNm':'true','groupByBarcode':'false','groupBySize':'false','filterPics':0,'filterVolume':0}, timeout=30)
-              print(f'Cabinet {index}: warehouse report create HTTP {r.status_code}')
-              if r.status_code != 200:
+          for index, token in enumerate(g.cabinet_tokens(), 1):
+              try:
+                  cards = g.get_real_wb_cards_and_scores(token)
+                  if not cards:
+                      raise RuntimeError('incomplete card catalog')
+                  for attempt in range(3):
+                      try:
+                          result = g.load_cabinet_fbo(token, cards)
+                          print(f'Cabinet {index}: full FBO loader verified, matched report to current cards')
+                          break
+                      except g.RateLimited as exc:
+                          if attempt == 2 or exc.wait > 1200:
+                              raise
+                          print(f'Cabinet {index}: respecting WB permitted retry interval')
+                          until = time.monotonic() + exc.wait
+                          while time.monotonic() < until:
+                              g.check_run_budget()
+                              time.sleep(min(30, until - time.monotonic()))
+                  if any('_fbo_quantity' not in c or '_fbo_observed_at' not in c for c in cards):
+                      raise RuntimeError('FBO coverage incomplete')
+              except Exception as exc:
                   failures.append(index)
-                  continue
-              task = str(UUID(r.json()['data']['taskId']))
-              tasks.append((index, token, base, task))
-          time.sleep(20)
-          for index, token, base, task in tasks:
-              r = requests.get(base+'/tasks/'+task+'/status', headers={'Authorization': token}, timeout=30)
-              print(f'Cabinet {index}: report status HTTP {r.status_code}')
-              if r.status_code != 200 or r.json().get('data', {}).get('status') != 'done':
-                  failures.append(index)
-                  continue
-              r = requests.get(base+'/tasks/'+task+'/download', headers={'Authorization': token}, timeout=30)
-              print(f'Cabinet {index}: report download HTTP {r.status_code}')
-              if r.status_code != 200:
-                  failures.append(index)
-                  continue
-              rows = r.json()
-              if not isinstance(rows, list) or any(not isinstance(x.get('nmId'), int) or not isinstance(x.get('warehouses'), list) for x in rows):
-                  failures.append(index)
-                  continue
-              if len({x['nmId'] for x in rows}) != len(rows):
-                  raise RuntimeError('grouped report has duplicate product identities')
-              names = sorted({str(w.get('warehouseName')) for x in rows for w in x['warehouses']})
-              print(f'Cabinet {index}: warehouse labels = {names}')
-              print(f'Cabinet {index}: rows without physical aggregate = {sum(not any(w.get("warehouseName") == "Всего находится на складах" for w in x["warehouses"]) for x in rows)}')
-              print(f'Cabinet {index}: empty warehouse lists = {sum(not x["warehouses"] for x in rows)}')
-              print(f'Cabinet {index}: complete grouped FBO report verified')
+                  print(f'Cabinet {index}: FBO loader failed ({type(exc).__name__}: {exc})')
           if failures:
               raise SystemExit(1)
           PY

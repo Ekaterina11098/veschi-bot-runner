@@ -1,0 +1,71 @@
+name: IP offline decision quality
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-offline-decision-quality.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ip-offline-decision-quality
+  cancel-in-progress: false
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 6d79225fd11218f0d75200f1b2350b7ab8a4e21b
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: revised
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 755b69c266ad39beafd334e60aa900c07814cae8
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: baseline
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencies only
+        run: pip install -r revised/requirements.txt > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Identical baseline inputs without source credentials
+        run: |
+          cp revised/tests/test_ip_offline_decision_quality.py baseline/tests/
+          cp revised/tests/ip_offline_decision_comparison.py baseline/tests/
+          cd baseline
+          python tests/ip_offline_decision_comparison.py "$RUNNER_TEMP/baseline.json"
+      - name: Revised offline control cases and same-input comparison
+        working-directory: revised
+        run: |
+          python -m unittest discover -s tests -p test_ip_offline_decision_quality.py -v
+          python tests/ip_offline_decision_comparison.py "$RUNNER_TEMP/revised.json"
+      - name: Existing decision, lifecycle and experiment regressions with network disabled
+        working-directory: revised
+        run: |
+          python - <<'PY'
+          import socket,unittest,sys
+          from unittest.mock import patch
+          suite=unittest.TestSuite()
+          loader=unittest.TestLoader()
+          for pattern in ('test_ip_daily_recommendations.py','test_advertising_experiments.py','test_experiment_data_quality.py','test_experiment_journal_coverage.py','test_profit_stability.py'):
+              suite.addTests(loader.discover('tests',pattern=pattern))
+          with patch.object(socket.socket,'connect',side_effect=AssertionError('External network forbidden')):
+              result=unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
+      - name: Comparison evidence
+        if: always()
+        run: |
+          cat "$RUNNER_TEMP/baseline.json" || true
+          cat "$RUNNER_TEMP/revised.json" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-decision-comparison
+          path: ${{ runner.temp }}/*.json
+          retention-days: 7

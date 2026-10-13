@@ -10,8 +10,18 @@ on:
         type: boolean
         default: false
         required: true
+      source_recovery_confirmed:
+        description: 'Provider restored maintenance access; does not bypass Retry-After'
+        type: boolean
+        default: false
+        required: true
+      resume_run_id:
+        description: 'Run containing a verified encrypted original checkpoint; empty starts new backup'
+        type: string
+        default: ''
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: veshi-storage-maintenance
   cancel-in-progress: false
@@ -26,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 59b88364ec4437203e72ca5ae3318ee82cf659ec
+          ref: 78edb2798094a6573696159d0cd798b376d00264
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -40,14 +50,28 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Lossless archive and authenticated owner/worker decryption',['-m','unittest','discover','-s','tests','-p','test_storage_archive.py'])
-          run_private.execute('Compile guarded backup module',['-m','py_compile','analytics/storage_recovery_prepare.py'])
+          run_private.execute('Lossless archive and authenticated owner/worker decryption',['-m','unittest','discover','-s','tests','-p','test_storage*.py'])
+          run_private.execute('Reader cache regression',['-m','unittest','discover','-s','tests','-p','test_snapshot_reads.py'])
+          run_private.execute('Economics regression',['-m','unittest','discover','-s','tests','-p','test_sku_economics.py'])
+          run_private.execute('Compile guarded recovery modules',['-m','py_compile','analytics/storage_recovery_prepare.py','analytics/storage_archive.py','analytics/storage_read_guard.py','analytics/storage_compatibility.py'])
           PY
+      - name: Download owner-encrypted resume checkpoint only after restoration confirmation
+        if: github.event_name == 'workflow_dispatch' && inputs.authorized_backup && inputs.source_recovery_confirmed && inputs.resume_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-storage-backup
+          run-id: ${{ inputs.resume_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/veschi-recovery-resume
       - name: Read-only complete backup and measured content-addressed plan
-        if: github.event_name == 'workflow_dispatch' && inputs.authorized_backup
+        if: github.event_name == 'workflow_dispatch' && inputs.authorized_backup && inputs.source_recovery_confirmed
         env:
           TASK: storage-readonly-backup
           RECOVERY_FULL_BACKUP_AUTHORIZED: 'true'
+          RECOVERY_SOURCE_RECOVERY_CONFIRMED: 'true'
+          RECOVERY_MAX_RESPONSE_BYTES: '100000000'
+          REQUESTED_RESUME_RUN: ${{ inputs.resume_run_id }}
+          RECOVERY_RESUME_DIRECTORY: ${{ runner.temp }}/veschi-recovery-resume
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           RECOVERY_WORK: ${{ runner.temp }}/veschi-recovery-private
@@ -66,7 +90,13 @@ jobs:
             -----END PUBLIC KEY-----
         run: |
           python - <<'PY'
-          import subprocess,tempfile,sys
+          import subprocess,tempfile,sys,os
+          from pathlib import Path
+          if os.environ.get('REQUESTED_RESUME_RUN'):
+              candidates=[Path(os.environ['RECOVERY_RESUME_DIRECTORY'])/name for name in ('original.partial.sqlite.aes','original.sqlite.aes')]
+              selected=next((p for p in candidates if p.exists()),None)
+              if selected is None:raise RuntimeError('No encrypted checkpoint; source reads not started')
+              os.environ['RECOVERY_RESUME_FILE']=str(selected)
           with tempfile.TemporaryFile() as private_log:
               result=subprocess.run([sys.executable,'-m','analytics.storage_recovery_prepare'],
                   cwd='private-source',stdout=private_log,stderr=subprocess.STDOUT)
@@ -81,7 +111,7 @@ jobs:
             if [ -f "$RUNNER_TEMP/veschi-recovery-sealed/$name.json" ]; then cat "$RUNNER_TEMP/veschi-recovery-sealed/$name.json"; fi
           done
       - name: Retain only encrypted backups and technical resource summary
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.authorized_backup
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.authorized_backup && inputs.source_recovery_confirmed
         uses: actions/upload-artifact@v4
         with:
           name: owner-encrypted-storage-backup

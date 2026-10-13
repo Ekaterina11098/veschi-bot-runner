@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: f0be8d97eac6d578957917cc5b6f68b5218e4234
+          ref: 20a6fad3b8f117179ab3dac9682f9d46b8471ee3
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -62,6 +62,15 @@ jobs:
           run_private.execute('Economics regression',['-m','unittest','discover','-s','tests','-p','test_sku_economics.py'])
           run_private.execute('Compile guarded recovery modules',['-m','py_compile','analytics/storage_recovery_prepare.py','analytics/storage_archive.py','analytics/storage_read_guard.py','analytics/storage_compatibility.py','analytics/r2_archive.py','analytics/storage_working_reader.py','analytics/storage_budget.py'])
           PY
+      - name: Static consumer inventory without source requests
+        working-directory: private-source
+        run: python -m analytics.storage_consumer_inventory "$RUNNER_TEMP/storage-consumer-inventory.json"
+      - name: Save source-path inventory only
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-consumer-inventory
+          path: ${{ runner.temp }}/storage-consumer-inventory.json
+          retention-days: 7
       - name: Download owner-encrypted resume checkpoint only after restoration confirmation
         if: github.event_name == 'workflow_dispatch' && inputs.authorized_backup && inputs.source_recovery_confirmed && inputs.resume_run_id != ''
         uses: actions/download-artifact@v4

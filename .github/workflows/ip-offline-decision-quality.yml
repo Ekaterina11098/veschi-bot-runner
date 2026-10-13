@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: ddeb4a4e1a0bc8bddefd9371e6060571e7d71c8c
+          ref: a2c082b577de5de351f12b1030f3b9a44de2b8df
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: revised
           persist-credentials: false
@@ -53,6 +53,9 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_ip_offline_decision_quality.py -v
           python tests/ip_offline_decision_comparison.py "$RUNNER_TEMP/revised.json"
+      - name: Full retained-source pipeline without database or external services
+        working-directory: revised
+        run: python -m unittest discover -s tests -p test_ip_full_offline_pipeline.py -v
       - name: Existing decision, lifecycle and experiment regressions with network disabled
         working-directory: revised
         run: |
@@ -61,7 +64,7 @@ jobs:
           from unittest.mock import patch
           suite=unittest.TestSuite()
           loader=unittest.TestLoader()
-          for pattern in ('test_ip_daily_recommendations.py','test_advertising_experiments.py','test_experiment_data_quality.py','test_experiment_journal_coverage.py','test_profit_stability.py'):
+          for pattern in ('test_ip_daily_recommendations.py','test_advertising_experiments.py','test_experiment_data_quality.py','test_experiment_journal_coverage.py','test_profit_stability.py','test_ip_working_mode_replay.py'):
               suite.addTests(loader.discover('tests',pattern=pattern))
           with patch.object(socket.socket,'connect',side_effect=AssertionError('External network forbidden')):
               result=unittest.TextTestRunner(verbosity=2).run(suite)

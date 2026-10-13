@@ -13,11 +13,13 @@ jobs:
   offline:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      PYTHONPATH: "."
     steps:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 6d79225fd11218f0d75200f1b2350b7ab8a4e21b
+          ref: 2984d3dff64a9697e9fad06ce0049c56175805f4
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: revised
           persist-credentials: false

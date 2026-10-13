@@ -62,7 +62,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 502a3cddcd4bc61400adfc4220fc9ed4098fa5a9
+          ref: 545d0f6fee6a9d8243fa41e04fccb346fccbddf1
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -75,6 +75,7 @@ jobs:
         run: python run_private.py "$TASK"
         env:
           TASK: ${{ matrix.task }}
+          SUPABASE_EGRESS_OPTIMIZED: 'true'
           IP_LIMITED_ANALYSIS_PUBLISH: 'true'
           IP_LIMITED_TELEGRAM_DELIVERY: 'false'
           REQUESTED_RETRY: ${{ inputs.retry || 'false' }}

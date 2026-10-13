@@ -50,17 +50,17 @@ def recovery_work(now=None):
     try:
         rows=database('telegram_api_cache',{'cache_key':'like.analytics:recovery:%',
             'payload->>status':'eq.pending','expires_at':'gt.'+now.isoformat(),
-            'select':'payload','order':'updated_at.asc','limit':'20'}) or []
+            'select':'next_retry_at:payload->next_retry_at','order':'updated_at.asc','limit':'20'}) or []
         return [{'task':'analytics_recovery','group':GROUPS['analytics_recovery']}] if any(
-            r['payload'].get('next_retry_at') and now>=datetime.fromisoformat(r['payload']['next_retry_at']) for r in rows) else []
+            r.get('next_retry_at') and now>=datetime.fromisoformat(r['next_retry_at']) for r in rows) else []
     except Exception:return []
 
 
 def mpstats_work(now=None):
     now=now or datetime.now(timezone.utc)
     try:
-        rows=database('telegram_api_cache',{'cache_key':'eq.mpstats:gap_requests:v1','select':'payload','limit':'1'})
-        state=rows[0]['payload'] if rows else {}
+        rows=database('telegram_api_cache',{'cache_key':'eq.mpstats:gap_requests:v1','select':'requests:payload->requests->0,normalization_pending:payload->normalization_pending,next_retry_at:payload->next_retry_at,planned_day:payload->planned_day,last_stock_ingested_at:payload->last_stock_ingested_at,last_recovery_ingested_at:payload->last_recovery_ingested_at','limit':'1'})
+        state=rows[0] if rows else {}
         pause=database('telegram_api_cache',{'cache_key':'eq.mpstats:cooldown','expires_at':'gt.'+now.isoformat(),'select':'payload','limit':'1'})
         if pause:return []
         if state.get('next_retry_at') and now<datetime.fromisoformat(state['next_retry_at']):return []
@@ -68,13 +68,13 @@ def mpstats_work(now=None):
         due=bool(state.get('requests') or state.get('normalization_pending')) or (local.hour>=7 and state.get('planned_day')!=str(local.date()))
         if not due:
             stock=database('telegram_api_cache',{'cache_key':'like.mpstats:stock-request:%',
-                'expires_at':'gt.'+now.isoformat(),'select':'payload,updated_at','limit':'3'}) or []
-            due=any(row.get('payload',{}).get('mpstats_requests') and
+                'expires_at':'gt.'+now.isoformat(),'select':'mpstats_requests:payload->mpstats_requests->0,updated_at','limit':'3'}) or []
+            due=any(row.get('mpstats_requests') and
                     row.get('updated_at','')>state.get('last_stock_ingested_at','') for row in stock)
         if not due:
             requests=database('telegram_api_cache',{'cache_key':'like.analytics:recovery:%',
-                'expires_at':'gt.'+now.isoformat(),'select':'payload,updated_at','order':'updated_at.desc','limit':'1'}) or []
-            due=bool(requests and requests[0]['payload'].get('mpstats_requests') and
+                'expires_at':'gt.'+now.isoformat(),'select':'mpstats_requests:payload->mpstats_requests->0,updated_at','order':'updated_at.desc','limit':'1'}) or []
+            due=bool(requests and requests[0].get('mpstats_requests') and
                 requests[0]['updated_at']>state.get('last_recovery_ingested_at',''))
         return [{'task':'mpstats_recovery','group':GROUPS['mpstats_recovery']}] if due else []
     except Exception:

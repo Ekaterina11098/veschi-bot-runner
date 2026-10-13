@@ -1,0 +1,57 @@
+name: Owner requested review and question replies
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-review-replies.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bot-review-replies
+  cancel-in-progress: false
+jobs:
+  replies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: f8a7eed078445c6bf8344ef9df5842a8a0f500f0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Validate existing reply guards without live credentials
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Validate existing review duplicate protection',['-m','unittest','discover','-s','tests','-p','test_review_queue.py'])
+          run_private.execute('Compile today reply preflight',['-m','py_compile','analytics/review_reply_dispatch.py'])
+          PY
+      - name: One owner-authorized queue preflight and approved reply pass
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FEEDBACK_TOKEN: ${{ secrets.WB_FEEDBACK_TOKEN }}
+          REPLY_RESULT: ${{ runner.temp }}/reply-result.json
+        run: |
+          python - <<'PY'
+          import subprocess,tempfile,sys
+          with tempfile.TemporaryFile() as log:
+              result=subprocess.run([sys.executable,'-m','analytics.review_reply_dispatch'],cwd='private-source',stdout=log,stderr=subprocess.STDOUT)
+          if result.returncode:raise SystemExit(result.returncode)
+          PY
+      - name: Show numeric result only
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/reply-result.json" ]; then cat "$RUNNER_TEMP/reply-result.json"; fi

@@ -37,8 +37,19 @@ def execute(label, args, optional=False):
         for name in list(child_env):
             if name.startswith(("WB_","SUPABASE_","TELEGRAM_","ADVERTISING_","CHINA_","BUSINESS_","MOYSKLAD_","AUTO_STOCK_","OPENAI_","MPSTATS_")):
                 child_env.pop(name)
-    with tempfile.TemporaryFile() as log:
+    with tempfile.TemporaryDirectory() as meter_dir, tempfile.TemporaryFile() as log:
+        meter_path=Path(meter_dir)/'egress.json'
+        if child_env.get('SUPABASE_URL'):
+            (Path(meter_dir)/'sitecustomize.py').write_text('from egress_meter import install; install('+repr(str(meter_path))+')',encoding='utf-8')
+            child_env['PYTHONPATH']=str(meter_dir)+os.pathsep+str(ROOT)+os.pathsep+child_env.get('PYTHONPATH','')
         result=subprocess.run([sys.executable]+args,cwd=SOURCE,env=child_env,stdout=log,stderr=subprocess.STDOUT)
+        if meter_path.exists():
+            try:
+                import json
+                from egress_meter import persist
+                persist(json.loads(meter_path.read_text(encoding='utf-8')),label)
+            except Exception:
+                print('Traffic measurement persistence unavailable; business result preserved.',flush=True)
         if result.returncode:
             log.seek(0)
             text=log.read().decode("utf-8",errors="replace")

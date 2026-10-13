@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 97d011a7ad61c11dd7462e868fa80f6d18e2ecd7
+          ref: d916faca3f8d9bf3a0474141e4f886b57f613bfa
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: revised
           persist-credentials: false
@@ -30,11 +30,18 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: baseline
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: prepared-storage
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Dependencies only
-        run: pip install -r revised/requirements.txt > "$RUNNER_TEMP/dependencies.log" 2>&1
+        run: pip install simplejson -r revised/requirements.txt > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Identical baseline inputs without source credentials
         run: |
           cp revised/tests/test_ip_offline_decision_quality.py baseline/tests/
@@ -59,6 +66,35 @@ jobs:
           with patch.object(socket.socket,'connect',side_effect=AssertionError('External network forbidden')):
               result=unittest.TextTestRunner(verbosity=2).run(suite)
           sys.exit(0 if result.wasSuccessful() else 1)
+          PY
+      - name: Compatibility with prepared PR16 readers without modifying PR16
+        working-directory: revised
+        run: |
+          python - <<'PY'
+          import sys,socket,gzip,base64,hashlib
+          from pathlib import Path
+          from unittest.mock import patch
+          import analytics
+          analytics.__path__.append(str(Path('../prepared-storage/analytics').resolve()))
+          from analytics.storage_archive import canonical
+          from analytics.storage_working_reader import CompatibleRead
+          sys.path.insert(0,'tests')
+          import test_ip_offline_decision_quality as q
+          from analytics import ip_daily_recommendations as d
+          p,c,r,f=q.inputs();p['correction_model']=q.model()
+          value=dict(p=p,c=c,r=r,f=f)
+          raw=canonical(value);digest=hashlib.sha256(raw).hexdigest()
+          gzip_value=dict(storage_format='veschi-json-gzip-v1',sha256=digest,data=base64.b64encode(gzip.compress(raw)).decode())
+          ref=dict(storage_format='veschi-json-ref-v1',sha256=digest)
+          results=[]
+          with patch.object(socket.socket,'connect',side_effect=AssertionError('External network forbidden')):
+              for stored in (value,gzip_value,ref):
+                  reader=CompatibleRead(lambda table,params:[dict(id=1,payload=stored)],resolver=lambda key:value)
+                  v=reader('analytics_snapshots',{'select':'*'})[0]['payload']
+                  actions=d._pair_actions_one(v['c'],v['p'],v['r'],v['f'],{},q.NOW)
+                  results.append([(a['kind'],a['correction']['target']) for a in actions])
+          assert results==[[('bid_test',4.4)]]*3,results
+          print('Prepared reader plain/gzip/reference: identical bounded bid recommendation; no source calls')
           PY
       - name: Comparison evidence
         if: always()

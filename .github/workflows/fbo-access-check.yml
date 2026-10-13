@@ -1,0 +1,46 @@
+name: FBO access check (read only)
+on:
+  push:
+    branches: [verify/fbo-stock-2026-10-13]
+    paths: ['.github/workflows/fbo-access-check.yml']
+permissions:
+  contents: read
+jobs:
+  access:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: fb96f06dd011754bf72e5ed8ebcb0e8832131078
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram > "$RUNNER_TEMP/deps.log" 2>&1
+      - name: Read FBO access without stock writes or business data logging
+        env:
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python - <<'PY'
+          import tg_agent_new as g
+          from stock_fbo import URL
+          failures = []
+          for index, token in enumerate(g.cabinet_tokens(), 1):
+              try:
+                  if not token:
+                      raise RuntimeError('missing token')
+                  r = g.api('POST', URL, token, json={'limit': 1, 'offset': 0})
+                  if not isinstance(r, dict) or not isinstance(r.get('data'), dict) or not isinstance(r['data'].get('items'), list):
+                      raise RuntimeError('invalid response')
+                  print(f'Cabinet {index}: FBO access verified')
+              except Exception as exc:
+                  failures.append(index)
+                  print(f'Cabinet {index}: FBO access unavailable ({type(exc).__name__})')
+          if failures:
+              raise SystemExit(1)
+          PY

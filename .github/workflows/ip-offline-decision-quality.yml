@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 2d5d4d1a9d88ddca32c8af9eb556a261b9c5e4ee
+          ref: ddeb4a4e1a0bc8bddefd9371e6060571e7d71c8c
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: revised
           persist-credentials: false
@@ -75,6 +75,9 @@ jobs:
           from pathlib import Path
           from unittest.mock import patch
           import analytics
+          from analytics import ip_daily_recommendations as d
+          sys.path.insert(0,'tests')
+          import test_ip_offline_decision_quality as q
           analytics.__path__.append(str(Path('../prepared-storage/analytics').resolve()))
           from analytics.storage_archive import canonical
           from analytics.storage_working_reader import CompatibleRead

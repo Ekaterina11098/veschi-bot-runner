@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 60f3dc6ca1d00a61fda744e57ae798e3944716f9
+          ref: b478008ffc50e520f48884c4bb60ec8cb3e01f3a
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: revised
           persist-credentials: false
@@ -56,6 +56,24 @@ jobs:
       - name: Full retained-source pipeline without database or external services
         working-directory: revised
         run: python -m unittest discover -s tests -p test_ip_full_offline_pipeline.py -v
+      - name: Owner-encrypted historical flow result, no business plaintext in public logs
+        working-directory: revised
+        env:
+          OWNER_OFFLINE_RESULT_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          printf '%s' "$OWNER_OFFLINE_RESULT_PUBLIC_KEY" > "$RUNNER_TEMP/offline-owner-public.pem"
+          python tests/ip_retained_flow_result.py "$RUNNER_TEMP/offline-owner-public.pem"
       - name: Existing decision, lifecycle and experiment regressions with network disabled
         working-directory: revised
         run: |

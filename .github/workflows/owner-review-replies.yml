@@ -1,9 +1,12 @@
 name: Owner requested review and question replies
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-review-replies.yml']
   workflow_dispatch:
+    inputs:
+      owner_send_approved:
+        description: 'Explicit owner authorization for this dated reply pass'
+        type: boolean
+        required: true
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -11,6 +14,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   replies:
+    if: inputs.owner_send_approved
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

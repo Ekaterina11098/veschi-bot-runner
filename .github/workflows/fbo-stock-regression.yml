@@ -12,13 +12,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: fb96f06dd011754bf72e5ed8ebcb0e8832131078
+          ref: 6755e9d60a6442e106c031151f58f066c0a76659
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram > "$RUNNER_TEMP/deps.log" 2>&1
       - name: Check syntax and FBO regression without external API calls
         run: |
           python -m py_compile stock_fbo.py auto_stock.py tg_agent_new.py
           python -m unittest discover -s tests -p 'test_stock_fbo_allocation.py' -v
+          python -m unittest discover -s tests -p 'test_auto_stock.py' -v
+          python -m unittest discover -s tests -p 'test_stock_limits.py' -v
+          python -m unittest discover -s tests -p 'test_sales_cache.py' -v

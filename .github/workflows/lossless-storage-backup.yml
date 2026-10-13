@@ -1,0 +1,69 @@
+name: Owner encrypted lossless storage recovery backup
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/lossless-storage-backup.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 20ae6137ef06e9a1e64ac1413b62cd840ec03365
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv simplejson cryptography > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Test exact restoration, deduplication, owner key and corruption rejection
+        env:
+          TASK: storage-archive-tests
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Lossless archive and authenticated owner/worker decryption',['-m','unittest','discover','-s','tests','-p','test_storage_archive.py'])
+          PY
+      - name: Read-only complete backup and measured content-addressed plan
+        env:
+          TASK: storage-readonly-backup
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RECOVERY_WORK: ${{ runner.temp }}/veschi-recovery-private
+          RECOVERY_OUTPUT: ${{ runner.temp }}/veschi-recovery-sealed
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Verified encrypted backup; no Supabase, WB or Telegram writes',['-m','analytics.storage_recovery_prepare'])
+          PY
+      - name: Retain only encrypted backups and technical resource summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-encrypted-storage-backup
+          path: ${{ runner.temp }}/veschi-recovery-sealed/
+          if-no-files-found: error
+          retention-days: 90

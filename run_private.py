@@ -40,7 +40,7 @@ def execute(label, args, optional=False):
     with tempfile.TemporaryDirectory() as meter_dir, tempfile.TemporaryFile() as log:
         meter_path=Path(meter_dir)/'egress.json'
         if child_env.get('SUPABASE_URL'):
-            (Path(meter_dir)/'sitecustomize.py').write_text('from egress_meter import install; install('+repr(str(meter_path))+')\nfrom analytics.storage_worker_bootstrap import activate; activate()' if child_env.get('COLLECTION_STORAGE_GUARD','').lower()=='true' else 'from egress_meter import install; install('+repr(str(meter_path))+')',encoding='utf-8')
+            (Path(meter_dir)/'sitecustomize.py').write_text('from egress_meter import install; install('+repr(str(meter_path))+')\ntry:\n from analytics.storage_worker_bootstrap import activate; activate()\nexcept Exception:\n raise SystemExit(\"Storage guard startup failed\")' if child_env.get('COLLECTION_STORAGE_GUARD','').lower()=='true' else 'from egress_meter import install; install('+repr(str(meter_path))+')',encoding='utf-8')
             child_env['PYTHONPATH']=str(meter_dir)+os.pathsep+str(ROOT)+os.pathsep+str(SOURCE)+os.pathsep+child_env.get('PYTHONPATH','')
         result=subprocess.run([sys.executable]+args,cwd=SOURCE,env=child_env,stdout=log,stderr=subprocess.STDOUT)
         if meter_path.exists():

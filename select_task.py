@@ -145,7 +145,7 @@ def finance_retry_work(now=None):
     """WB finance confirmation retries are disabled under MPStats primary."""
     return []
 
-def queue_work():
+def queue_work(include_analytics=True):
     now=datetime.now(timezone.utc).isoformat()
     checks = (
         ("telegram_queue", "telegram_jobs", {"select":"id","limit":"1",
@@ -175,10 +175,19 @@ def queue_work():
         work.append({"task":"agent","group":GROUPS["agent"]})
     if business_due():
         work.append({"task":"business_agent","group":GROUPS["business_agent"]})
-    return work+review_inbox_work()+evening_recovery_work()+finance_retry_work()+research_work()+mpstats_work()+recovery_work()+budget_work()
+    work+=review_inbox_work()
+    if include_analytics:
+        work+=evening_recovery_work()+finance_retry_work()+research_work()+mpstats_work()+recovery_work()+budget_work()
+    return work
 
 def queue_due():
     return bool(queue_work())
+
+ANALYTIC_TASKS={'analytics','daily_context','mpstats_recovery','finance','finance_retry',
+    'advertising','advertising_report_retry','advertising_research','analytics_recovery','budget_retry'}
+
+def scheduled_analytics_paused():
+    return os.getenv('SCHEDULE_ANALYTICS_PAUSED','').lower()=='true' and os.getenv('GITHUB_EVENT_NAME')!='workflow_dispatch'
 
 def main():
     if os.getenv("GITHUB_EVENT_NAME")=="workflow_dispatch":
@@ -190,7 +199,9 @@ def main():
     if task not in TASKS:
         raise ValueError("Unknown task")
     work = ([{"task":name,"group":GROUPS.get(name,name)} for name in ("analytics","daily_context","mpstats_recovery")]
-            if task == "daily" else queue_work() if task == "queue" else [{"task":task,"group":GROUPS.get(task,task)}])
+            if task == "daily" else queue_work(include_analytics=not scheduled_analytics_paused()) if task == "queue" else [{"task":task,"group":GROUPS.get(task,task)}])
+    if scheduled_analytics_paused():
+        work=[item for item in work if item["task"] not in ANALYTIC_TASKS]
     run=bool(work)
     with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as f:
         f.write(f"task={task}\nrun={str(run).lower()}\n")

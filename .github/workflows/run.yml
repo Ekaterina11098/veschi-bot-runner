@@ -40,6 +40,8 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           EVENT_SCHEDULE: ${{ github.event.schedule }}
           REQUESTED_TASK: ${{ inputs.task }}
+          # Owner-approved analytics-only pause while Supabase ticket SU-505365 is open.
+          SCHEDULE_ANALYTICS_PAUSED: 'true'
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
   run:

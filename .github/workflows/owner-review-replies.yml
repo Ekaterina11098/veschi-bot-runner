@@ -32,7 +32,7 @@ jobs:
         run: |
           python - <<'PY'
           import run_private
-          run_private.execute('Validate existing review duplicate protection',['-m','unittest','discover','-s','tests','-p','test_review_queue.py'])
+          run_private.execute('Validate existing review duplicate protection',['-m','unittest','discover','-s','tests','-p','test_review_publication.py'])
           run_private.execute('Compile today reply preflight',['-m','py_compile','analytics/review_reply_dispatch.py'])
           PY
       - name: One owner-authorized queue preflight and approved reply pass

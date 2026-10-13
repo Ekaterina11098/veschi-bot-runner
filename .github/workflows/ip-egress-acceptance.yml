@@ -1,0 +1,60 @@
+name: IP egress optimization full coverage acceptance
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-egress-acceptance.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: issue10-cached-complete-analysis
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 0f968e80a8dccee03ed0d5d88ba122fc71490aca
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Full coverage, scoped sources and decision bridge regression
+        env:
+          TASK: ip-full-replay-tests
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          for pattern in ('test_snapshot_reads.py','test_ip_price_launch_control.py','test_ip_final_status.py','test_ip_partial_reach.py','test_ip_employee_access.py','test_ip_rollout_gate.py','test_ip_delivery_boundary.py','test_source_collection_policy.py','test_wb_sources.py','test_ip_management_modes.py','test_ip_working_mode_replay.py','test_profit_stability.py','test_finance_quality.py','test_ip_campaign_audit.py','test_ip_sku_complete_review.py','test_ip_completed_investigations.py','test_ip_campaign_reach.py','test_ip_daily_recommendations.py','test_ip_finance_reconciliation.py','test_price_watch_notifications.py','test_price_effect_recovery.py','test_sales_cache.py','test_mpstats*.py'):
+              run_private.execute('Every dated SKU retained; qualified findings become actions; safe finance and notifications',['-m','unittest','discover','-s','tests','-p',pattern])
+          run_private.execute('Save unchanged shared knowledge without delivery or decisions',['-c',"import json; from pathlib import Path; from advertising_agent.agent_store import cache_set; cache_set('veschi:shared_knowledge:v1',json.loads(Path('business_agents/shared_knowledge.json').read_text(encoding='utf-8')),ttl_days=365)"])
+          run_private.execute('Employee webhook scope and confirmation boundary',['-c',"import subprocess; subprocess.run(['node','--test','tests/test_advertising_webhook.mjs'],check=True)"])
+          PY
+      - name: Complete path from retained source receipts to fresh proposals for every IP pair
+        env:
+          TASK: ip-complete-working-mode-replay
+          IP_LIMITED_ANALYSIS_PUBLISH: 'false'
+          IP_LIMITED_TELEGRAM_DELIVERY: 'false'
+          IP_EVENT_START: '2026-09-28'
+          IP_EVENT_END: '2026-10-11'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import run_private
+          run_private.execute('Full retained-source analysis; isolated state, external HTTP blocked, no delivery',['-m','analytics.ip_working_mode_replay'])
+          PY

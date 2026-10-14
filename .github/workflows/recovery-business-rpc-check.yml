@@ -86,29 +86,29 @@ jobs:
               INSERT INTO public.telegram_api_cache(cache_key,payload,updated_at,expires_at)
               VALUES('stock-retry','{"pending":true,"due":0,"attempts":0}'::jsonb,now(),now()+interval '1 hour');
               SET LOCAL ROLE anon;
-              DO $ DECLARE n bigint; BEGIN
+              DO $$ DECLARE n bigint; BEGIN
                 BEGIN
                   SELECT count(*) INTO n FROM public.telegram_api_cache WHERE cache_key='stock-retry';
                   ASSERT n=0,'anonymous role saw private fixture';
                 EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-              END $;
+              END $$;
               RESET ROLE;
               SET LOCAL ROLE authenticated;
-              DO $ DECLARE n bigint; BEGIN
+              DO $$ DECLARE n bigint; BEGIN
                 BEGIN
                   SELECT count(*) INTO n FROM public.telegram_api_cache WHERE cache_key='stock-retry';
                   ASSERT n=0,'authenticated role saw private fixture';
                 EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-              END $;
+              END $$;
               RESET ROLE;
-              DO $ BEGIN
+              DO $$ BEGIN
                 ASSERT NOT has_function_privilege('anon','public.claim_stock_retry(text)','EXECUTE');
                 ASSERT NOT has_function_privilege('authenticated','public.claim_stock_retry(text)','EXECUTE');
                 ASSERT NOT has_function_privilege('anon','public.finish_stock_retry_dispatch(text,boolean)','EXECUTE');
                 ASSERT NOT has_function_privilege('authenticated','public.finish_stock_retry_dispatch(text,boolean)','EXECUTE');
-              END $;
+              END $$;
               SET LOCAL ROLE service_role;
-              DO $ DECLARE claim jsonb; result boolean; i int; BEGIN
+              DO $$ DECLARE claim jsonb; result boolean; i int; BEGIN
                 claim:=public.claim_stock_retry();
                 ASSERT claim IS NOT NULL AND length(claim->>'claim')>0;
                 ASSERT public.claim_stock_retry() IS NULL,'duplicate live claim';
@@ -124,10 +124,10 @@ jobs:
                   ASSERT (SELECT (payload->>'attempts')::int=i FROM public.telegram_api_cache WHERE cache_key='stock-retry');
                 END LOOP;
                 ASSERT public.claim_stock_retry() IS NULL,'exhausted retries claimed';
-              END $;
+              END $$;
               RESET ROLE;
               ROLLBACK;
-              DO $ BEGIN ASSERT (SELECT count(*)=0 FROM public.telegram_api_cache); END $;
+              DO $$ BEGIN ASSERT (SELECT count(*)=0 FROM public.telegram_api_cache); END $$;
               """)
               report['fixture_exit_code']=psql(fixture,'isolated_restore')
               report['business_rpc_claim_finish_retry_smoke_passed']=report['fixture_exit_code']==0

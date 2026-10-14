@@ -1,0 +1,64 @@
+name: Authorized restored storage partial backup
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/restored-storage-backup.yml']
+permissions:
+  contents: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv simplejson cryptography > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Owner-authorized read-only two-table export; not full project backup
+        env:
+          RECOVERY_FULL_BACKUP_AUTHORIZED: 'true'
+          RECOVERY_SOURCE_RECOVERY_CONFIRMED: 'true'
+          RECOVERY_MAX_RESPONSE_BYTES: '100000000'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RECOVERY_WORK: ${{ runner.temp }}/veschi-recovery-private
+          RECOVERY_OUTPUT: ${{ runner.temp }}/veschi-recovery-sealed
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          import subprocess,tempfile,sys
+          with tempfile.TemporaryFile() as private_log:
+              result=subprocess.run([sys.executable,'-m','analytics.storage_recovery_prepare'],stdout=private_log,stderr=subprocess.STDOUT)
+          print('Export scope: analytics_snapshots and telegram_api_cache only. Completion is not full database backup.')
+          raise SystemExit(result.returncode)
+          PY
+      - name: Retain encrypted parts even when budget stops export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-encrypted-storage-backup
+          path: |
+            ${{ runner.temp }}/veschi-recovery-sealed/*.aes
+            ${{ runner.temp }}/veschi-recovery-sealed/*summary.json
+          if-no-files-found: error
+          retention-days: 90

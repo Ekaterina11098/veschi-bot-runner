@@ -1,4 +1,4 @@
-name: Authorized restored storage partial backup
+name: Serial restored backup continuation
 on:
   push:
     branches: [main]
@@ -12,7 +12,7 @@ concurrency:
 jobs:
   backup:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,7 +28,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: owner-encrypted-storage-backup
-          run-id: 38527562171
+          run-id: 38528783445
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/recovery-resume
       - name: Owner-authorized read-only two-table export; not full project backup
@@ -53,19 +53,125 @@ jobs:
             6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
             eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
             -----END PUBLIC KEY-----
+        timeout-minutes: 85
         run: |
           python - <<'PY'
-          import subprocess,tempfile,sys,os
+          import os,time,json,tempfile,contextlib,shutil
           from pathlib import Path
-          with tempfile.TemporaryFile() as private_log:
-              result=subprocess.run([sys.executable,'-m','analytics.storage_recovery_prepare'],stdout=private_log,stderr=subprocess.STDOUT)
-          import sqlite3,json
+          import analytics.storage_recovery_prepare as recovery
           from analytics.storage_archive import Archive
-          arc=Archive(str(Path(os.environ['RECOVERY_WORK'])/'original.sqlite'))
-          print(json.dumps(dict(saved_records=arc.db.execute('select count(*) from records').fetchone()[0],coverage={t:dict(saved=(arc.state(t) or {}).get('saved'),expected=len((arc.state(t) or {}).get('manifest',[])),verified=(arc.state(t) or {}).get('verified')) for t in ('analytics_snapshots','telegram_api_cache')})))
-          arc.db.close()
-          print('Export scope: analytics_snapshots and telegram_api_cache only. Completion is not full database backup.')
-          raise SystemExit(result.returncode)
+          from analytics.storage_backup_crypto import restore,digest_file
+          from analytics.storage_read_guard import ReadBlocked
+          root=Path(os.environ['RUNNER_TEMP'])/'serial-recovery'
+          root.mkdir()
+          sealroot=root/'sealed'
+          sealroot.mkdir()
+          workroot=root/'private'
+          workroot.mkdir()
+          baseline=Path(os.environ['RECOVERY_RESUME_FILE'])
+          if digest_file(baseline)!='9551a1eba80ced1a45f4e3ed360ad45aaeafc26ace95165f1265df0181549638':
+              raise RuntimeError('Baseline ciphertext checksum mismatch; no source requests')
+          verified=workroot/'baseline.sqlite'
+          if restore(baseline,verified,secret=os.environ['SUPABASE_SECRET_KEY'])!='b0325557f1c9168021054d6893d27295935f04113b6693e1993ede1e4576542c':
+              raise RuntimeError('Baseline plaintext checksum mismatch')
+          initial=Archive(str(verified))
+          guard=initial.state('read_guard') or {}
+          if guard.get('source_block') or guard.get('requests') or guard.get('retry_at',0)>time.time():
+              raise RuntimeError('Blocked source state; no retry allowed')
+          previous=dict(((t,i),h) for t,i,h in initial.db.execute('select table_name,identity,root from records'))
+          initial.db.close()
+          verified.unlink()
+          original_session=recovery.requests.Session
+          started=time.monotonic()
+          total=[0]
+          deadline=80*60
+          cap=2_000_000_000
+          def tracked_session():
+              session=original_session()
+              original_get=session.get
+              def bounded_get(*args,**kwargs):
+                  if total[0]>=cap or time.monotonic()-started>=deadline:
+                      raise ReadBlocked('Serial maintenance budget reached')
+                  return original_get(*args,**kwargs)
+              session.get=bounded_get
+              def measure(response,*args,**kwargs):
+                  total[0]+=len(response.content)
+              session.hooks['response'].append(measure)
+              return session
+          recovery.requests.Session=tracked_session
+          report=dict(full_database_backup=False,source_response_bytes=0,passes=[],complete_two_tables=False)
+          latest=baseline
+          previous_checkpoint=None
+          def checked_remove(path,parent):
+              path=path.resolve()
+              if not path.is_relative_to(parent.resolve()) or path==parent.resolve():
+                  raise RuntimeError('Cleanup outside private recovery area')
+              if path.is_dir():shutil.rmtree(path)
+              elif path.exists():path.unlink()
+          try:
+              for index in range(20):
+                  if total[0]>=cap or time.monotonic()-started>=deadline or shutil.disk_usage(root).free<4_000_000_000:
+                      report['stop_reason']='session_budget_or_disk_headroom'
+                      break
+                  work=workroot/str(index)
+                  out=sealroot/str(index)
+                  os.environ.update(RECOVERY_WORK=str(work),RECOVERY_OUTPUT=str(out),RECOVERY_RESUME_FILE=str(latest))
+                  result=None
+                  error=None
+                  with tempfile.TemporaryFile(mode='w+') as private_log:
+                      try:
+                          with contextlib.redirect_stdout(private_log),contextlib.redirect_stderr(private_log):
+                              result=recovery.run()
+                      except Exception as exc:
+                          error=exc
+                  checkpoint=out/('original.sqlite.aes' if result else 'original.partial.sqlite.aes')
+                  if not checkpoint.exists():
+                      report['stop_reason']='no_new_verified_checkpoint'
+                      break
+                  # Verify that the consolidated copy preserves EVERY previously saved row.
+                  current=Archive(str(work/'original.sqlite'))
+                  roots=dict(((t,i),h) for t,i,h in current.db.execute('select table_name,identity,root from records'))
+                  if any(roots.get(k)!=v for k,v in previous.items()):
+                      current.db.close()
+                      raise RuntimeError('Checkpoint lost or changed preserved records')
+                  coverage={t:dict(saved=(current.state(t) or {}).get('saved'),
+                      expected=len((current.state(t) or {}).get('manifest',[])),
+                      verified=(current.state(t) or {}).get('verified')) for t in ('analytics_snapshots','telegram_api_cache')}
+                  current.db.close()
+                  previous=roots
+                  previous_count=report['passes'][-1]['saved_records'] if report['passes'] else 367
+                  status=dict(pass_index=index,saved_records=len(roots),coverage=coverage,
+                      ciphertext_sha256=digest_file(checkpoint),result='complete' if result else type(error).__name__)
+                  if result:status['source_response_bytes']=result['response_body_bytes']
+                  report['passes'].append(status)
+                  report['source_response_bytes']=total[0]
+                  report['latest_checkpoint']=str(checkpoint.relative_to(sealroot))
+                  print(json.dumps(status),flush=True)
+                  (sealroot/'serial-summary.json').write_text(json.dumps(report))
+                  latest=checkpoint
+                  # Old full envelopes are redundant only after exact row-prefix proof.
+                  # The original cloud artifact is never deleted; all encrypted receipts remain.
+                  if previous_checkpoint:
+                      checked_remove(previous_checkpoint,sealroot)
+                  previous_checkpoint=checkpoint
+                  checked_remove(work,workroot)
+                  if result:
+                      report['complete_two_tables']=True
+                      report['stop_reason']='two_declared_tables_complete_not_full_database'
+                      break
+                  if not isinstance(error,ReadBlocked) or str(error)!='Run traffic budget reached; preserve checkpoint':
+                      report['stop_reason']='source_or_validation_error_no_automatic_retry'
+                      break
+                  if len(roots)<=previous_count:
+                      report['stop_reason']='no_cursor_progress'
+                      break
+              else:
+                  report['stop_reason']='pass_count_limit'
+          finally:
+              recovery.requests.Session=original_session
+              report['source_response_bytes']=total[0]
+              (sealroot/'serial-summary.json').write_text(json.dumps(report))
+              print(json.dumps(report),flush=True)
           PY
       - name: Numeric checkpoint status only
         if: always()
@@ -79,7 +185,7 @@ jobs:
         with:
           name: owner-encrypted-storage-backup
           path: |
-            ${{ runner.temp }}/veschi-recovery-sealed/*.aes
-            ${{ runner.temp }}/veschi-recovery-sealed/*summary.json
+            ${{ runner.temp }}/serial-recovery/sealed/**/*.aes
+            ${{ runner.temp }}/serial-recovery/sealed/**/*.json
           if-no-files-found: error
           retention-days: 7

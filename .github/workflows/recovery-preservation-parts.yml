@@ -1,0 +1,60 @@
+name: Split existing encrypted reconstruction for durable preservation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-preservation-parts.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-verified-restore-input
+          run-id: 38607412622
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/encrypted-input
+      - name: Copy ciphertext bytes only; no source connection or decryption
+        run: |
+          python - <<'PY'
+          import os,hashlib,json
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP']);src=root/'encrypted-input/verified-restore-input.sql.gz.aes'
+          whole=hashlib.sha256();parts=[];out=root/'preservation-parts';out.mkdir()
+          with src.open('rb') as stream:
+              for index in range(3):
+                  data=stream.read(300_000_000)
+                  assert data
+                  part=out/('part-%02d.aes'%index);part.write_bytes(data);whole.update(data)
+                  parts.append({'name':part.name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+              assert not stream.read(1)
+          assert whole.hexdigest()=='457875d0b572a422eb0fc76137143776c4a697db9b16b76745d851228220c8ce'
+          report={'ciphertext_only':True,'whole_ciphertext_sha256':whole.hexdigest(),'parts':parts,'production_calls':0}
+          (out/'manifest.json').write_text(json.dumps(report,sort_keys=True));print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fixed-point-encrypted-part-00
+          path: ${{ runner.temp }}/preservation-parts/part-00.aes
+          compression-level: 0
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fixed-point-encrypted-part-01
+          path: ${{ runner.temp }}/preservation-parts/part-01.aes
+          compression-level: 0
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fixed-point-encrypted-part-02
+          path: ${{ runner.temp }}/preservation-parts/part-02.aes
+          compression-level: 0
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fixed-point-encrypted-part-manifest
+          path: ${{ runner.temp }}/preservation-parts/manifest.json
+          retention-days: 7

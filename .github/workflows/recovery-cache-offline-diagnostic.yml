@@ -1,0 +1,77 @@
+name: Inspect recovery cache checkpoint offline
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-cache-offline-diagnostic.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv simplejson cryptography > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-storage-backup
+          run-id: 38561695550
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/checkpoint
+      - name: Offline checksum, archive and source guard verification
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time
+          from pathlib import Path
+          from analytics.storage_archive import Archive
+          from analytics.storage_backup_crypto import restore,digest_file
+          root=Path(os.environ['RUNNER_TEMP'])/'checkpoint'
+          summary=json.loads((root/'serial-summary.json').read_text())
+          assert summary['latest_checkpoint']=='16/original.partial.sqlite.aes'
+          sealed=root/summary['latest_checkpoint']
+          assert digest_file(sealed)=='cd70f3dbb7885a5d1c79cc15958717b6b3d086e36fec1829d52dde33e90dec58'
+          plain=Path(os.environ['RUNNER_TEMP'])/'verified.sqlite'
+          plainhash=restore(sealed,plain,secret=os.environ['SUPABASE_SECRET_KEY'])
+          archive=Archive(str(plain))
+          counts=dict(archive.db.execute('select table_name,count(*) from records group by table_name'))
+          assert counts.get('analytics_snapshots')==17085
+          guard=archive.state('read_guard') or {}
+          blocked=bool(guard.get('source_block') or guard.get('requests') or guard.get('retry_at',0)>time.time())
+          print(json.dumps({'checkpoint_verified':True,'counts':counts,'plaintext_sha256':plainhash,'ciphertext_sha256':digest_file(sealed),'ciphertext_bytes':sealed.stat().st_size,'source_response_bytes':summary['source_response_bytes'],'source_guard_blocked':blocked,'guard_keys':list(guard),'source_export':False,'full_database_backup':False}))
+          for path in (root/'16').glob('*summary.json'):
+              data=json.loads(path.read_text())
+              safe={k:v for k,v in data.items() if k in ('error_type','response_body_bytes','saved_records','full_database_backup','stop_reason')}
+              print(json.dumps({'summary_file':path.name,'numeric_status':safe}))
+          states=[]
+          for (name,) in archive.db.execute('select name from state'):
+              value=archive.state(name)
+              item={'name':name,'type':type(value).__name__}
+              if isinstance(value,dict):
+                  item['keys']=list(value)
+                  for k,v in value.items():
+                      if isinstance(v,list):item[k+'_length']=len(v)
+                      elif k in ('saved','expected','complete','verified') and isinstance(v,(int,bool)):item[k]=v
+                  manifest=value.get('manifest',[])
+                  if isinstance(manifest,list) and manifest and isinstance(manifest[0],dict):
+                      item['manifest_fields']=list(manifest[0])
+                      item['first_field_types']={k:type(v).__name__ for k,v in manifest[0].items()}
+                      item['string_field_lengths']={k:len(v) for k,v in manifest[0].items() if isinstance(v,str)}
+              states.append(item)
+          print(json.dumps({'offline_state_structure':states,'source_requests':0}))
+          archive.db.close()
+          plain.unlink()
+          PY

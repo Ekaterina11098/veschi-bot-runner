@@ -1,0 +1,189 @@
+name: Resume verified reconstruction in isolated PostgreSQL
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-resume-verified.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install simplejson cryptography > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-consistent-point
+          run-id: 38592132657
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/restore-input/point
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-verified-restore-input
+          run-id: 38607412622
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/restore-input/cache
+      - name: Resume checked SQL only; await final TCP server and retain startup diagnostics
+        timeout-minutes: 80
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          """Offline reconstruction only. Never receives a production database DSN."""
+          import base64,collections,gzip,hashlib,json,os,secrets,shutil,subprocess,time
+          from decimal import Decimal
+          from pathlib import Path
+          import simplejson
+          from cryptography.hazmat.primitives import serialization,hashes
+          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+          from analytics.storage_archive import Archive
+          from analytics.storage_backup_crypto import restore,digest_file,seal
+          
+          def norm(v):
+              if v is None:return 'null'
+              if isinstance(v,bool):return 'true' if v else 'false'
+              if isinstance(v,(int,Decimal)):return format(Decimal(v),'f')
+              if isinstance(v,str):return json.dumps(v,ensure_ascii=False)
+              if isinstance(v,list):return '['+', '.join(norm(x) for x in v)+']'
+              return '{'+', '.join(json.dumps(k,ensure_ascii=False)+': '+norm(v[k]) for k in sorted(v,key=lambda k:(len(k.encode()),k.encode())))+'}'
+          
+          def rowhash(row):return hashlib.sha256(norm(row).encode()).hexdigest()
+          def ident(s):return '"'+s.replace('"','""')+'"'
+          def literal(s):return "'"+s.replace("'","''")+"'"
+          def qualified(name):return '.'.join(ident(x) for x in name.split('.'))
+          
+          def main():
+              root=Path(os.environ['RUNNER_TEMP'])
+              report={'production_calls':0,'network':'none','full_database_backup':False,'actual_isolated_restore':False,'resumed_verified_reconstruction':True}
+              point=root/'restore-input/point'
+              def unseal(path,cipher,plain,target):
+                  assert digest_file(path)==cipher
+                  assert restore(path,target,secret=os.environ['SUPABASE_SECRET_KEY'])==plain
+                  return target
+              receipt_path=unseal(point/'point-receipt.json.aes','cdbf10a41dc3bd800f57e79e81e42741c6bb85595d5a453f8ae92022e5ded495','50ec68275a005d2cb31f6102ae6cc583d5689bfc26f3507e9fa276a019f79d27',root/'receipt.json')
+              receipt=json.loads(receipt_path.read_text())
+              assert receipt['point_utc']=='2026-10-14T16:04:01.348817+00:00'
+              report['point_utc']=receipt['point_utc']
+              schema=unseal(point/'point-schema.sql.aes','e694fd47aa597c09dac411a8947608ecaab71dd756ca84cb4de4c45ded3197c1','08bd6ce99bb1839237747d6190557fc6a36e285bc8238430cc500f46e6fd362a',root/'schema.sql')
+              packed=unseal(root/'restore-input/cache/verified-restore-input.sql.gz.aes','457875d0b572a422eb0fc76137143776c4a697db9b16b76745d851228220c8ce','0692dcbf7b872f69af61a525d0925bab81d53a2fbaf46591bbf43c7db3cc61a0',root/'verified.sql.gz')
+              data_sql=root/'restore-data.sql'
+              with gzip.open(packed,'rb') as src,data_sql.open('wb') as dst:shutil.copyfileobj(src,dst,1024*1024)
+              assert digest_file(data_sql)=='bf95c241d4ab0e8a61ff5eac5d8a01d226e374e3b347f1d09ded67b10ba7a06d'
+              packed.unlink()
+              wanted={table:collections.Counter(status['row_hashes']) for table,status in receipt['tables'].items()}
+              report['free_bytes_before_container']=shutil.disk_usage(root).free
+              assert report['free_bytes_before_container']>=4_000_000_000
+              container='veschi-isolated-'+secrets.token_hex(4)
+              image='supabase/postgres:17.6.1.136'
+              log=root/'isolated-private.log'
+              def run(args,**kwargs):
+                  with log.open('ab') as stream:return subprocess.run(args,stderr=stream,**kwargs)
+              with log.open('ab') as stream:subprocess.run(['docker','pull',image],stdout=stream,stderr=stream,check=True,timeout=600)
+              try:
+                  with log.open('ab') as stream:
+                      subprocess.run(['docker','run','-d','--name',container,'--network','none','-e','POSTGRES_PASSWORD='+secrets.token_hex(24),image,'postgres','-c','shared_preload_libraries=pg_cron,pg_net','-c','cron.database_name=isolated_restore','-c','cron.launch_active_jobs=off'],stdout=stream,stderr=stream,check=True,timeout=60)
+                  for attempt in range(60):
+                      ready=run(['docker','exec',container,'pg_isready','-h','127.0.0.1','-U','postgres'],stdout=subprocess.DEVNULL)
+                      if ready.returncode==0:break
+                      time.sleep(1)
+                  else:raise RuntimeError('Isolated PostgreSQL unavailable')
+                  report['final_tcp_ready']=True
+                  report['phase']='bootstrap_roles'
+                  roles=root/'restore-roles.sql'
+                  roles.write_text('\n'.join('DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='+literal(row[0])+') THEN CREATE ROLE '+ident(row[0])+'; END IF; END $$;' for row in receipt['role_flags_without_passwords']))
+                  def psql(file,database):
+                      with file.open('rb') as src,log.open('ab') as dst:
+                          return subprocess.run(['docker','exec','-i',container,'psql','-X','-U','supabase_admin','-d',database,'-v','ON_ERROR_STOP=1'],stdin=src,stdout=dst,stderr=dst,timeout=1800).returncode
+                  assert psql(roles,'postgres')==0,'Role bootstrap failed'
+                  assert run(['docker','exec',container,'createdb','-U','supabase_admin','-T','template0','isolated_restore'],stdout=subprocess.DEVNULL).returncode==0
+                  report['phase']='schema_restore'
+                  schema_code=psql(schema,'isolated_restore');report['schema_restore_exit_code']=schema_code
+                  if schema_code!=0:raise RuntimeError('Full schema restore failed; platform dependency diagnostics required')
+                  report['phase']='typed_data_restore'
+                  data_code=psql(data_sql,'isolated_restore');report['data_restore_exit_code']=data_code
+                  if data_code!=0:raise RuntimeError('Typed data restore failed')
+                  results={}
+                  for table,expected in wanted.items():
+                      query="select encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex') from "+qualified(table)+' t'
+                      response=run(['docker','exec',container,'psql','-X','-A','-t','-U','supabase_admin','-d','isolated_restore','-v','ON_ERROR_STOP=1','-c',query],stdout=subprocess.PIPE)
+                      assert response.returncode==0
+                      actual=collections.Counter(response.stdout.decode().splitlines())
+                      results[table]={'count':sum(actual.values()),'all_full_row_hashes_match':actual==expected}
+                      assert actual==expected,'Restored row values or identifiers differ'
+                  def scalar_query(query):
+                      response=run(['docker','exec',container,'psql','-X','-A','-t','-U','supabase_admin','-d','isolated_restore','-v','ON_ERROR_STOP=1','-c',query],stdout=subprocess.PIPE)
+                      assert response.returncode==0,'Isolated verification query failed'
+                      return response.stdout.decode().strip()
+                  fk_query="""select json_build_object('name',c.conname,'src',n.nspname||'.'||t.relname,'dst',n2.nspname||'.'||t2.relname,'match',c.confmatchtype,'src_cols',array(select a.attname from unnest(c.conkey) with ordinality k(attnum,ord) join pg_attribute a on a.attrelid=c.conrelid and a.attnum=k.attnum order by k.ord),'dst_cols',array(select a.attname from unnest(c.confkey) with ordinality k(attnum,ord) join pg_attribute a on a.attrelid=c.confrelid and a.attnum=k.attnum order by k.ord))::text from pg_constraint c join pg_class t on t.oid=c.conrelid join pg_namespace n on n.oid=t.relnamespace join pg_class t2 on t2.oid=c.confrelid join pg_namespace n2 on n2.oid=t2.relnamespace where c.contype='f' and n.nspname not in ('pg_catalog','information_schema')"""
+                  checked=[]
+                  for line in scalar_query(fk_query).splitlines():
+                      fk=json.loads(line)
+                      left=['s.'+ident(col) for col in fk['src_cols']]
+                      right=['d.'+ident(col) for col in fk['dst_cols']]
+                      present=' AND '.join(col+' IS NOT NULL' for col in left)
+                      equal=' AND '.join(a+'='+b for a,b in zip(left,right))
+                      missing='('+present+') AND NOT EXISTS(SELECT 1 FROM '+qualified(fk['dst'])+' d WHERE '+equal+')'
+                      if fk['match']=='f':
+                          any_null=' OR '.join(col+' IS NULL' for col in left)
+                          any_present=' OR '.join(col+' IS NOT NULL' for col in left)
+                          missing='('+missing+') OR (('+any_null+') AND ('+any_present+'))'
+                      count=int(scalar_query('SELECT count(*) FROM '+qualified(fk['src'])+' s WHERE '+missing))
+                      checked.append({'constraint':fk['name'],'table':fk['src'],'orphan_or_partial_null_rows':count})
+                      assert count==0,'Restored foreign-key relationship invalid'
+                  report['foreign_keys']=checked
+                  report['tables']=results;report['actual_isolated_restore']=True
+                  report['remaining_checks']=['RPC/RLS behavior','exact role flags and extension versions','Vault portable decryption and UUID continuity','platform/Edge configuration and secrets completeness']
+              except Exception as exc:
+                  report['error_type']=type(exc).__name__
+                  # Only fixed internal exception category, no DB/source values.
+                  report['failure_stage']=str(exc) if isinstance(exc,RuntimeError) else 'restoration_validation_failed'
+              finally:
+                  with log.open('ab') as output:subprocess.run(['docker','logs',container],stdout=output,stderr=output)
+                  state=subprocess.run(['docker','inspect','--format','{{json .State}}',container],capture_output=True,text=True)
+                  if state.returncode==0:
+                      state_data=json.loads(state.stdout)
+                      report['container_state']={k:state_data.get(k) for k in ('Running','OOMKilled','ExitCode')}
+                  report['free_bytes_after_container']=shutil.disk_usage(root).free
+                  if log.exists() and os.environ.get('RECOVERY_PUBLIC_KEY'):
+                      report['private_diagnostic']=seal(log,root/'isolated-private.log.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])
+                  run(['docker','rm','-f',container],stdout=subprocess.DEVNULL)
+                  report_path=root/'isolated-restore-summary.json';report_path.write_text(json.dumps(report,sort_keys=True))
+                  print(json.dumps(report,sort_keys=True))
+          
+          if __name__=='__main__':main()
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: resumed-isolated-restoration-result
+          path: |
+            ${{ runner.temp }}/isolated-restore-summary.json
+            ${{ runner.temp }}/isolated-private.log.aes
+          retention-days: 7
+          if-no-files-found: error

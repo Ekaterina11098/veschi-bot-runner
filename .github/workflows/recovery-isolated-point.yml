@@ -173,7 +173,7 @@ jobs:
                       if h not in wanted.get(table,{}):return
                       if generated[table][h]>=wanted[table][h]:return
                       q=qualified(table)
-                      output.write('INSERT INTO '+q+' SELECT * FROM json_populate_record(NULL::'+q+','+literal(norm(row))+');\n')
+                      output.write('INSERT INTO '+q+' OVERRIDING SYSTEM VALUE SELECT * FROM json_populate_record(NULL::'+q+','+literal(norm(row))+');\n')
                       generated[table][h]+=1
                   for table,rows in local['tables'].items():
                       for row in rows:insert(table,row)
@@ -194,6 +194,14 @@ jobs:
                   output.write('COMMIT;\n')
               delta.db.close()
               report['reconstructed_counts']={t:sum(v.values()) for t,v in generated.items()}
+              # Preserve the verified offline reconstruction, so later environment fixes
+              # need not repeatedly decode every baseline. Only encrypted SQL is retained.
+              compressed_sql=root/'verified-restore-input.sql.gz'
+              with data_sql.open('rb') as src,gzip.open(compressed_sql,'wb',compresslevel=3) as dst:
+                  shutil.copyfileobj(src,dst,1024*1024)
+              report['verified_reconstruction']={'point_utc':receipt['point_utc'],'sql_sha256':digest_file(data_sql),'all_receipt_row_versions_present':True,'identity_values_preserved':True,**seal(compressed_sql,root/'verified-restore-input.sql.gz.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])}
+              compressed_sql.unlink()
+              (root/'verified-reconstruction-summary.json').write_text(json.dumps(report['verified_reconstruction'],sort_keys=True))
               # All requested versions are reconstructed and checked above. Remove only
               # redundant runner-local downloaded inputs; cloud originals remain intact.
               inputs_root=(root/'restore-input').resolve()
@@ -286,3 +294,12 @@ jobs:
             ${{ runner.temp }}/isolated-private.log.aes
           retention-days: 7
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-verified-restore-input
+          path: |
+            ${{ runner.temp }}/verified-restore-input.sql.gz.aes
+            ${{ runner.temp }}/verified-reconstruction-summary.json
+          retention-days: 7
+          if-no-files-found: warn

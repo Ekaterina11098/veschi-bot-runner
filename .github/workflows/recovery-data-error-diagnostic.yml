@@ -27,7 +27,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: isolated-consistent-point-restoration-result
-          run-id: 38602830476
+          run-id: 38607412622
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/error-input
       - name: Extract fixed error categories without publishing source values
@@ -40,12 +40,12 @@ jobs:
           from analytics.storage_backup_crypto import restore,digest_file
           root=Path(os.environ['RUNNER_TEMP'])
           sealed=root/'error-input/isolated-private.log.aes'
-          assert digest_file(sealed)=='41e22914a47eb40fcdec9885bcadd1b90e71e7bc2c0dcf4d9eb61066ed465ad6'
+          assert digest_file(sealed)=='879364d55e3d6f02273cd72b04269a9985bb95d8ac53ed07b0cbc2583fd30f30'
           plain=root/'error-private.log'
-          assert restore(sealed,plain,secret=os.environ['SUPABASE_SECRET_KEY'])=='5a713eef567ca20a6a4324154fb9c018ef434d788e9dfe6a35180ab9cb8dad96'
+          assert restore(sealed,plain,secret=os.environ['SUPABASE_SECRET_KEY'])=='fccfe47cf430d3e457e3af16e9326a8ff39b7d6c5faeb57e1a39b2b714b134c0'
           lines=plain.read_text(errors='replace').splitlines()
-          errors=[line for line in lines if 'ERROR:' in line or 'FATAL:' in line]
-          patterns={'identity_always':r'cannot insert a non-DEFAULT value','generated_column':r'cannot insert a non-DEFAULT value into column','duplicate_key':r'duplicate key value violates unique constraint','not_null':r'null value in column','invalid_input':r'invalid input syntax','permission_denied':r'permission denied','relation_missing':r'relation .* does not exist','column_missing':r'column .* does not exist','type_mismatch':r'is of type .* but expression','disk_full':r'No space left on device','connection_closed':r'server closed the connection','foreign_key':r'violates foreign key constraint','check_constraint':r'violates check constraint','publication':r'publication','extension_config':r'extension','read_only':r'read-only transaction'}
+          errors=[line for line in lines if any(x in line for x in ('ERROR:','FATAL:','error:','Connection refused','server closed'))]
+          patterns={'identity_always':r'cannot insert a non-DEFAULT value','generated_column':r'cannot insert a non-DEFAULT value into column','duplicate_key':r'duplicate key value violates unique constraint','not_null':r'null value in column','invalid_input':r'invalid input syntax','permission_denied':r'permission denied','relation_missing':r'relation .* does not exist','column_missing':r'column .* does not exist','type_mismatch':r'is of type .* but expression','disk_full':r'No space left on device','connection_closed':r'server closed the connection','foreign_key':r'violates foreign key constraint','check_constraint':r'violates check constraint','publication':r'publication','extension_config':r'extension','read_only':r'read-only transaction','role_exists':r'role .* already exists','role_missing':r'role .* does not exist','connection_refused':r'Connection refused','startup':r'(starting up|shutting down|startup|initializ)','database_missing':r'database .* does not exist','database_exists':r'database .* already exists'}
           categories=sorted({name for name,pattern in patterns.items() if any(re.search(pattern,line,re.I) for line in errors)})
           objects=[]
           for line in errors:

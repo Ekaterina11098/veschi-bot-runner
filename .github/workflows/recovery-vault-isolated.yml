@@ -1,0 +1,140 @@
+name: Isolated portable Vault recovery offline
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-vault-isolated.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: recovery-vault-isolated
+  cancel-in-progress: false
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cryptography > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-consistent-point
+          run-id: 38592132657
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/schema-input
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-portable-vault
+          run-id: 38605166518
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/vault-input
+      - name: Restore schema in network-disabled container; no source database connection
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          import os,json,secrets,subprocess,time,re
+          from pathlib import Path
+          from analytics.storage_backup_crypto import restore,digest_file,seal
+          root=Path(os.environ['RUNNER_TEMP']);out=root/'schema-restore-output';out.mkdir()
+          schema=root/'schema.sql';inv=root/'inventory.json'
+          assert digest_file(root/'schema-input/point-schema.sql.aes')=='e694fd47aa597c09dac411a8947608ecaab71dd756ca84cb4de4c45ded3197c1'
+          assert restore(root/'schema-input/point-schema.sql.aes',schema,secret=os.environ['SUPABASE_SECRET_KEY'])=='08bd6ce99bb1839237747d6190557fc6a36e285bc8238430cc500f46e6fd362a'
+          assert restore(root/'schema-input/point-receipt.json.aes',inv,secret=os.environ['SUPABASE_SECRET_KEY'])=='50ec68275a005d2cb31f6102ae6cc583d5689bfc26f3507e9fa276a019f79d27'
+          inventory=json.loads(inv.read_text())
+          name='isolated-schema-'+secrets.token_hex(4);image='supabase/postgres:17.6.1.136'
+          log=root/'private-schema-restore.log'
+          report={'full_database_backup':False,'full_data_restore':False,'production_calls':0,'container_network':'none','cron_launch_active_jobs':False,'image':image}
+          def command(args,**kw):
+              with log.open('ab') as output:return subprocess.run(args,stdout=output,stderr=output,**kw)
+          def ident(s):return '"'+s.replace('"','""')+'"'
+          def literal(s):return "'"+s.replace("'","''")+"'"
+          try:
+              assert command(['docker','pull',image],timeout=600).returncode==0
+              assert command(['docker','run','-d','--name',name,'--network','none','-e','POSTGRES_PASSWORD='+secrets.token_hex(24),image,'postgres','-c','shared_preload_libraries=pg_cron,pg_net','-c','cron.database_name=isolated_restore','-c','cron.launch_active_jobs=off'],timeout=60).returncode==0
+              for i in range(60):
+                  if command(['docker','exec',name,'pg_isready','-U','postgres'],timeout=10).returncode==0:break
+                  time.sleep(1)
+              else:raise RuntimeError('isolated_database_unavailable')
+              roles=root/'roles.sql'
+              roles.write_text('\n'.join('DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='+literal(row[0])+') THEN CREATE ROLE '+ident(row[0])+'; END IF; END $$;' for row in inventory['role_flags_without_passwords']))
+              def psql(path,db):
+                  with path.open('rb') as src,log.open('ab') as output:
+                      return subprocess.run(['docker','exec','-i',name,'psql','-X','-U','supabase_admin','-d',db,'-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'],stdin=src,stdout=output,stderr=output,timeout=900).returncode
+              assert psql(roles,'postgres')==0
+              assert command(['docker','exec',name,'createdb','-U','supabase_admin','-T','template0','isolated_restore'],timeout=30).returncode==0
+              report['schema_restore_exit_code']=psql(schema,'isolated_restore')
+              report['schema_restore_completed']=report['schema_restore_exit_code']==0
+              assert report['schema_restore_completed'],'Isolated schema prerequisite failed'
+              import hashlib
+              vault_plain=root/'vault-logical.json'
+              sealed=root/'vault-input/vault-portable.json.aes'
+              assert digest_file(sealed)=='c95d898bf21a1cc19664feabe9d53be1afc3e0eb5da86b873b1b776977bffa24'
+              assert restore(sealed,vault_plain,secret=os.environ['SUPABASE_SECRET_KEY'])=='631ff3c255e281ea15ca9c58249eb791a7d1c45f7e7f98f01bf80a3d713ab5ed'
+              rows=json.loads(vault_plain.read_text());assert len(rows)==1
+              vault_sql=root/'vault-recovery.sql'
+              statements=['BEGIN; SET LOCAL session_replication_role=replica;']
+              for row in rows:
+                  statements.append('INSERT INTO vault.secrets OVERRIDING SYSTEM VALUE SELECT * FROM json_populate_record(NULL::vault.secrets,'+literal(json.dumps(row))+');')
+                  statements.append("UPDATE vault.secrets s SET secret=encode(vault._crypto_aead_det_encrypt(message:=convert_to("+literal(row['decrypted_secret'])+",'utf8'),additional:=convert_to(s.id::text,'utf8'),key_id:=0,context:='pgsodium'::bytea,nonce:=s.nonce),'base64') WHERE id="+literal(row['id'])+"::uuid;")
+              statements.append('COMMIT;')
+              vault_sql.write_text('\\n'.join(statements))
+              report['vault_restore_exit_code']=psql(vault_sql,'isolated_restore')
+              assert report['vault_restore_exit_code']==0,'Portable Vault restore failed'
+              query="select row_to_json(s)::text from vault.decrypted_secrets s order by id"
+              result=subprocess.run(['docker','exec',name,'psql','-X','-A','-t','-U','supabase_admin','-d','isolated_restore','-v','ON_ERROR_STOP=1','-c',query],capture_output=True,text=True)
+              assert result.returncode==0,'Restored Vault decryption failed'
+              restored=[json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+              expected={x['id']:x for x in rows}
+              assert len(restored)==len(rows)
+              for row in restored:
+                  original=expected[row['id']]
+                  assert hashlib.sha256(row['decrypted_secret'].encode()).digest()==hashlib.sha256(original['decrypted_secret'].encode()).digest()
+                  assert {k:v for k,v in row.items() if k not in ('secret','decrypted_secret')}=={k:v for k,v in original.items() if k not in ('secret','decrypted_secret')}
+              report['vault_rows']=len(restored)
+              report['vault_logical_restore_verified']=True
+              report['vault_ids_metadata_and_secret_hashes_match']=True
+              report['ciphertext_reencrypted_for_isolated_root_key']=True
+              vault_plain.unlink();vault_sql.unlink()
+          except Exception as exc:
+              report['error_type']=type(exc).__name__;report['schema_restore_completed']=False
+          finally:
+              state=subprocess.run(['docker','inspect','--format','{{json .State}}',name],capture_output=True,text=True)
+              if state.returncode==0:
+                  state_data=json.loads(state.stdout)
+                  report['container_state']={k:state_data.get(k) for k in ('Running','OOMKilled','ExitCode')}
+              command(['docker','rm','-f',name],timeout=30)
+              content=log.read_text(errors='replace')
+              report['permission_categories']=sorted(set(re.findall(r'ERROR:\\s+42501:\\s+((?:permission denied|must be superuser|must be owner)[^\\n]*)',content)))
+              report['error_sqlstates']=sorted(set(re.findall(r'ERROR:\s+([0-9A-Z]{5}):',content)))
+              report['missing_extension_names']=sorted(set(re.findall(r'extension "([a-zA-Z0-9_]+)" is not available',content)))
+              report['private_diagnostic']=seal(log,out/'private-schema-restore.log.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])
+              (out/'summary.json').write_text(json.dumps(report,sort_keys=True))
+              print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: portable-vault-isolated-result
+          path: ${{ runner.temp }}/schema-restore-output
+          retention-days: 7

@@ -1,0 +1,51 @@
+name: PR20 offline journal recovery
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-pr20-journal-offline.yml']
+permissions:
+  contents: read
+concurrency:
+  group: stock-pr20-journal-offline
+  cancel-in-progress: false
+jobs:
+  journal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: offline
+          POSTGRES_PASSWORD: offline-test-only
+          POSTGRES_DB: offline_stock_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U offline -d offline_stock_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 9f0e1e9c9a4c0e81883a20e094f350909d265a0d
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/client.log" 2>&1
+      - name: Isolated journal tests; WB and Telegram fully simulated
+        env:
+          OFFLINE_POSTGRES_DSN: postgresql://offline:offline-test-only@127.0.0.1:5432/offline_stock_test
+        run: |
+          python - <<'PY'
+          import socket,unittest,sys
+          def denied(*args,**kwargs):raise AssertionError('Business service network disabled')
+          socket.socket.connect=denied
+          socket.socket.connect_ex=denied
+          socket.create_connection=denied
+          suite=unittest.defaultTestLoader.discover('tests',pattern='test_stock_operation_store.py')
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          print('Only local isolated PostgreSQL and fake WB used; no business secrets.')
+          sys.exit(not result.wasSuccessful())
+          PY

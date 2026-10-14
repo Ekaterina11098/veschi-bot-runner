@@ -95,11 +95,23 @@ jobs:
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           PYTHONPATH: ${{ github.workspace }}/private-source
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
           LOCAL_CAPTURE_ENVELOPE: ${{ runner.temp }}/local-captures.aes.json
         run: |
           python - <<'PY'
           """Offline reconstruction only. Never receives a production database DSN."""
-          import base64,collections,gzip,hashlib,json,os,secrets,subprocess,time
+          import base64,collections,gzip,hashlib,json,os,secrets,shutil,subprocess,time
           from decimal import Decimal
           from pathlib import Path
           import simplejson
@@ -107,7 +119,7 @@ jobs:
           from cryptography.hazmat.primitives.asymmetric import padding
           from cryptography.hazmat.primitives.ciphers.aead import AESGCM
           from analytics.storage_archive import Archive
-          from analytics.storage_backup_crypto import restore,digest_file
+          from analytics.storage_backup_crypto import restore,digest_file,seal
           
           def norm(v):
               if v is None:return 'null'
@@ -182,6 +194,15 @@ jobs:
                   output.write('COMMIT;\n')
               delta.db.close()
               report['reconstructed_counts']={t:sum(v.values()) for t,v in generated.items()}
+              # All requested versions are reconstructed and checked above. Remove only
+              # redundant runner-local downloaded inputs; cloud originals remain intact.
+              inputs_root=(root/'restore-input').resolve()
+              for folder in ('snapshots','cache','tail','finance'):
+                  target=(inputs_root/folder).resolve()
+                  assert target.is_relative_to(inputs_root) and target!=inputs_root
+                  shutil.rmtree(target)
+              report['free_bytes_before_container']=shutil.disk_usage(root).free
+              assert report['free_bytes_before_container']>=4_000_000_000,'Insufficient isolated restoration disk headroom'
               container='veschi-isolated-'+secrets.token_hex(4)
               image='supabase/postgres:17.6.1.136'
               log=root/'isolated-private.log'
@@ -243,6 +264,13 @@ jobs:
                   # Only fixed internal exception category, no DB/source values.
                   report['failure_stage']=str(exc) if isinstance(exc,RuntimeError) else 'restoration_validation_failed'
               finally:
+                  state=subprocess.run(['docker','inspect','--format','{{json .State}}',container],capture_output=True,text=True)
+                  if state.returncode==0:
+                      state_data=json.loads(state.stdout)
+                      report['container_state']={k:state_data.get(k) for k in ('Running','OOMKilled','ExitCode')}
+                  report['free_bytes_after_container']=shutil.disk_usage(root).free
+                  if log.exists() and os.environ.get('RECOVERY_PUBLIC_KEY'):
+                      report['private_diagnostic']=seal(log,root/'isolated-private.log.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])
                   run(['docker','rm','-f',container],stdout=subprocess.DEVNULL)
                   report_path=root/'isolated-restore-summary.json';report_path.write_text(json.dumps(report,sort_keys=True))
                   print(json.dumps(report,sort_keys=True))
@@ -253,6 +281,8 @@ jobs:
         if: always()
         with:
           name: isolated-consistent-point-restoration-result
-          path: ${{ runner.temp }}/isolated-restore-summary.json
+          path: |
+            ${{ runner.temp }}/isolated-restore-summary.json
+            ${{ runner.temp }}/isolated-private.log.aes
           retention-days: 7
           if-no-files-found: error

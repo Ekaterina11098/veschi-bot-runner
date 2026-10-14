@@ -1,0 +1,46 @@
+name: China zero discount read only 20261014
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-zero-discount-20261014.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.event.head_commit.message == 'Read China zero discounts 20261014'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read current China seller prices
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python -u <<'PY'
+          import os,json,urllib.request,time,datetime
+          token=os.environ['WB_TOKEN_3']
+          if not token: raise RuntimeError('China token missing')
+          rows=[]
+          offset=0
+          while True:
+              req=urllib.request.Request('https://discounts-prices-api.wildberries.cn/api/v2/list/goods/filter?limit=1000&offset='+str(offset),headers={'Authorization':token})
+              with urllib.request.urlopen(req,timeout=45) as response: data=json.load(response)
+              if data.get('error'): raise RuntimeError('WB response error')
+              goods=data['data']['listGoods']
+              rows.extend(goods)
+              if len(goods)<1000: break
+              offset+=len(goods)
+              time.sleep(1)
+          if len({x['nmID'] for x in rows})!=len(rows): raise RuntimeError('Duplicate IDs')
+          print('OBSERVED_UTC',datetime.datetime.now(datetime.timezone.utc).isoformat())
+          print('TOTAL_GOODS',len(rows))
+          selected=[]
+          for g in rows:
+              if 'discount' not in g: raise RuntimeError('Missing discount')
+              if g['discount']!=0: continue
+              selected.append({k:g.get(k) for k in ['nmID','vendorCode','currencyIsoCode4217','discount','sizes']})
+          print('ZERO_DISCOUNT_JSON',json.dumps(selected,ensure_ascii=False))
+          print('ZERO_DISCOUNT_COUNT',len(selected))
+          PY

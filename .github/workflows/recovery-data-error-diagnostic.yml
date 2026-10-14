@@ -1,0 +1,57 @@
+name: Inspect encrypted data restore error offline
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-data-error-diagnostic.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: recovery-data-error-diagnostic
+  cancel-in-progress: false
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cryptography > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: isolated-consistent-point-restoration-result
+          run-id: 38602830476
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/error-input
+      - name: Extract fixed error categories without publishing source values
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,re
+          from pathlib import Path
+          from analytics.storage_backup_crypto import restore,digest_file
+          root=Path(os.environ['RUNNER_TEMP'])
+          sealed=root/'error-input/isolated-private.log.aes'
+          assert digest_file(sealed)=='41e22914a47eb40fcdec9885bcadd1b90e71e7bc2c0dcf4d9eb61066ed465ad6'
+          plain=root/'error-private.log'
+          assert restore(sealed,plain,secret=os.environ['SUPABASE_SECRET_KEY'])=='5a713eef567ca20a6a4324154fb9c018ef434d788e9dfe6a35180ab9cb8dad96'
+          lines=plain.read_text(errors='replace').splitlines()
+          errors=[line for line in lines if 'ERROR:' in line or 'FATAL:' in line]
+          patterns={'identity_always':r'cannot insert a non-DEFAULT value','generated_column':r'cannot insert a non-DEFAULT value into column','duplicate_key':r'duplicate key value violates unique constraint','not_null':r'null value in column','invalid_input':r'invalid input syntax','permission_denied':r'permission denied','relation_missing':r'relation .* does not exist','column_missing':r'column .* does not exist','type_mismatch':r'is of type .* but expression','disk_full':r'No space left on device','connection_closed':r'server closed the connection','foreign_key':r'violates foreign key constraint','check_constraint':r'violates check constraint','publication':r'publication','extension_config':r'extension','read_only':r'read-only transaction'}
+          categories=sorted({name for name,pattern in patterns.items() if any(re.search(pattern,line,re.I) for line in errors)})
+          objects=[]
+          for line in errors:
+              for kind,name in re.findall(r'(column|constraint|relation|table) "([A-Za-z0-9_.]+)"',line):
+                  objects.append({'kind':kind,'name':name})
+          positions=[int(x) for line in errors for x in re.findall(r'psql:<stdin>:(\d+):',line)]
+          print(json.dumps({'error_count':len(errors),'categories':categories,'object_names':objects,'sql_line_numbers':positions,'source_values_published':False,'production_calls':0}))
+          plain.unlink()
+          PY

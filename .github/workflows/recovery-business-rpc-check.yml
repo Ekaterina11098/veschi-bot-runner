@@ -1,0 +1,160 @@
+name: Isolated dispatch RPC and effective RLS checks
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-business-rpc-check.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: recovery-business-rpc-check
+  cancel-in-progress: false
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cryptography > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-consistent-point
+          run-id: 38592132657
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/schema-input
+      - name: Restore schema in network-disabled container; no source database connection
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          import os,json,secrets,subprocess,time,re
+          from pathlib import Path
+          from analytics.storage_backup_crypto import restore,digest_file,seal
+          root=Path(os.environ['RUNNER_TEMP']);out=root/'schema-restore-output';out.mkdir()
+          schema=root/'schema.sql';inv=root/'inventory.json'
+          assert digest_file(root/'schema-input/point-schema.sql.aes')=='e694fd47aa597c09dac411a8947608ecaab71dd756ca84cb4de4c45ded3197c1'
+          assert restore(root/'schema-input/point-schema.sql.aes',schema,secret=os.environ['SUPABASE_SECRET_KEY'])=='08bd6ce99bb1839237747d6190557fc6a36e285bc8238430cc500f46e6fd362a'
+          assert restore(root/'schema-input/point-receipt.json.aes',inv,secret=os.environ['SUPABASE_SECRET_KEY'])=='50ec68275a005d2cb31f6102ae6cc583d5689bfc26f3507e9fa276a019f79d27'
+          inventory=json.loads(inv.read_text())
+          name='isolated-schema-'+secrets.token_hex(4);image='supabase/postgres:17.6.1.136'
+          log=root/'private-schema-restore.log'
+          report={'full_database_backup':False,'full_data_restore':False,'production_calls':0,'container_network':'none','cron_launch_active_jobs':False,'image':image}
+          def command(args,**kw):
+              with log.open('ab') as output:return subprocess.run(args,stdout=output,stderr=output,**kw)
+          def ident(s):return '"'+s.replace('"','""')+'"'
+          def literal(s):return "'"+s.replace("'","''")+"'"
+          try:
+              assert command(['docker','pull',image],timeout=600).returncode==0
+              assert command(['docker','run','-d','--name',name,'--network','none','-e','POSTGRES_PASSWORD='+secrets.token_hex(24),image,'postgres','-c','shared_preload_libraries=pg_cron,pg_net','-c','cron.database_name=isolated_restore','-c','cron.launch_active_jobs=off'],timeout=60).returncode==0
+              for i in range(60):
+                  if command(['docker','exec',name,'pg_isready','-U','postgres'],timeout=10).returncode==0:break
+                  time.sleep(1)
+              else:raise RuntimeError('isolated_database_unavailable')
+              roles=root/'roles.sql'
+              roles.write_text('\n'.join('DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='+literal(row[0])+') THEN CREATE ROLE '+ident(row[0])+'; END IF; END $$;' for row in inventory['role_flags_without_passwords']))
+              def psql(path,db):
+                  with path.open('rb') as src,log.open('ab') as output:
+                      return subprocess.run(['docker','exec','-i',name,'psql','-X','-U','supabase_admin','-d',db,'-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'],stdin=src,stdout=output,stderr=output,timeout=900).returncode
+              assert psql(roles,'postgres')==0
+              assert command(['docker','exec',name,'createdb','-U','supabase_admin','-T','template0','isolated_restore'],timeout=30).returncode==0
+              report['schema_restore_exit_code']=psql(schema,'isolated_restore')
+              report['schema_restore_completed']=report['schema_restore_exit_code']==0
+              assert report['schema_restore_completed']
+              fixture=root/'isolated-fixture.sql'
+              fixture.write_text("""
+              BEGIN;
+              INSERT INTO public.telegram_api_cache(cache_key,payload,updated_at,expires_at)
+              VALUES('stock-retry','{"pending":true,"due":0,"attempts":0}'::jsonb,now(),now()+interval '1 hour');
+              SET LOCAL ROLE anon;
+              DO $ DECLARE n bigint; BEGIN
+                BEGIN
+                  SELECT count(*) INTO n FROM public.telegram_api_cache WHERE cache_key='stock-retry';
+                  ASSERT n=0,'anonymous role saw private fixture';
+                EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+              END $;
+              RESET ROLE;
+              SET LOCAL ROLE authenticated;
+              DO $ DECLARE n bigint; BEGIN
+                BEGIN
+                  SELECT count(*) INTO n FROM public.telegram_api_cache WHERE cache_key='stock-retry';
+                  ASSERT n=0,'authenticated role saw private fixture';
+                EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+              END $;
+              RESET ROLE;
+              DO $ BEGIN
+                ASSERT NOT has_function_privilege('anon','public.claim_stock_retry(text)','EXECUTE');
+                ASSERT NOT has_function_privilege('authenticated','public.claim_stock_retry(text)','EXECUTE');
+                ASSERT NOT has_function_privilege('anon','public.finish_stock_retry_dispatch(text,boolean)','EXECUTE');
+                ASSERT NOT has_function_privilege('authenticated','public.finish_stock_retry_dispatch(text,boolean)','EXECUTE');
+              END $;
+              SET LOCAL ROLE service_role;
+              DO $ DECLARE claim jsonb; result boolean; i int; BEGIN
+                claim:=public.claim_stock_retry();
+                ASSERT claim IS NOT NULL AND length(claim->>'claim')>0;
+                ASSERT public.claim_stock_retry() IS NULL,'duplicate live claim';
+                result:=public.finish_stock_retry_dispatch(claim->>'claim',true);
+                ASSERT result;
+                ASSERT NOT (SELECT (payload->>'pending')::boolean FROM public.telegram_api_cache WHERE cache_key='stock-retry');
+                ASSERT public.claim_stock_retry() IS NULL,'completed dispatch claimed';
+                UPDATE public.telegram_api_cache SET payload='{"pending":true,"due":0,"attempts":0}'::jsonb WHERE cache_key='stock-retry';
+                FOR i IN 1..4 LOOP
+                  UPDATE public.telegram_api_cache SET payload=payload||'{"due":0}'::jsonb WHERE cache_key='stock-retry';
+                  claim:=public.claim_stock_retry(); ASSERT claim IS NOT NULL;
+                  ASSERT public.finish_stock_retry_dispatch(claim->>'claim',false);
+                  ASSERT (SELECT (payload->>'attempts')::int=i FROM public.telegram_api_cache WHERE cache_key='stock-retry');
+                END LOOP;
+                ASSERT public.claim_stock_retry() IS NULL,'exhausted retries claimed';
+              END $;
+              RESET ROLE;
+              ROLLBACK;
+              DO $ BEGIN ASSERT (SELECT count(*)=0 FROM public.telegram_api_cache); END $;
+              """)
+              report['fixture_exit_code']=psql(fixture,'isolated_restore')
+              report['business_rpc_claim_finish_retry_smoke_passed']=report['fixture_exit_code']==0
+              report['effective_anon_authenticated_isolation_passed']=report['fixture_exit_code']==0
+              report['only_synthetic_cache_fixture']=True
+              report['saved_queue_data_restored_or_executed']=False
+              report['business_external_services_called']=False
+              fixture.unlink()
+          except Exception as exc:
+              report['error_type']=type(exc).__name__;report['schema_restore_completed']=False
+          finally:
+              state=subprocess.run(['docker','inspect','--format','{{json .State}}',name],capture_output=True,text=True)
+              if state.returncode==0:
+                  state_data=json.loads(state.stdout)
+                  report['container_state']={k:state_data.get(k) for k in ('Running','OOMKilled','ExitCode')}
+              command(['docker','rm','-f',name],timeout=30)
+              content=log.read_text(errors='replace')
+              report['permission_categories']=sorted(set(re.findall(r'ERROR:\\s+42501:\\s+((?:permission denied|must be superuser|must be owner)[^\\n]*)',content)))
+              report['error_sqlstates']=sorted(set(re.findall(r'ERROR:\s+([0-9A-Z]{5}):',content)))
+              report['missing_extension_names']=sorted(set(re.findall(r'extension "([a-zA-Z0-9_]+)" is not available',content)))
+              report['private_diagnostic']=seal(log,out/'private-schema-restore.log.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])
+              (out/'summary.json').write_text(json.dumps(report,sort_keys=True))
+              print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: business-rpc-rls-result
+          path: ${{ runner.temp }}/schema-restore-output
+          retention-days: 7

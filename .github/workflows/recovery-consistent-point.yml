@@ -119,6 +119,10 @@ jobs:
               archive.db.close();plain.unlink()
           for table,old in baseline.items():
               if 'row_hashes' in old:reuse['public.'+table]=set(old['row_hashes'])
+          hashes_path=root/'verified-reuse-hashes.json'
+          hashes_path.write_text(json.dumps({'reuse':{k:sorted(v) for k,v in reuse.items()},'inputs':inputs},sort_keys=True))
+          seal(hashes_path,out/'verified-reuse-hashes.json.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])
+          hashes_path.unlink()
           image='postgres:17'
           with open(root/'point-private.log','wb') as log:subprocess.run(['docker','pull',image],stdout=log,stderr=log,check=True,timeout=300)
           delta_plain=root/'point-delta.sqlite';delta=Archive(str(delta_plain))
@@ -135,8 +139,10 @@ jobs:
                   tables=cur.fetchall()
                   for schema,table in tables:
                       name=schema+'.'+table
-                      cur.execute(sql.SQL("select encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex') from {}.{} t").format(sql.Identifier(schema),sql.Identifier(table)))
-                      current=[r[0] for r in cur.fetchall()]
+                      with conn.cursor(name='point_hash_'+str(len(receipt['tables']))) as hash_cursor:
+                          hash_cursor.itersize=25
+                          hash_cursor.execute(sql.SQL("select encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex') from {}.{} t").format(sql.Identifier(schema),sql.Identifier(table)))
+                          current=[r[0] for r in hash_cursor]
                       aggregate=hashlib.sha256(('\n'.join(sorted(current))).encode()).hexdigest()
                       old=baseline.get(table) if schema=='public' else None
                       if old and 'row_hashes' not in old:

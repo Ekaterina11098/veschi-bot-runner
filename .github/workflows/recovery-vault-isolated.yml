@@ -69,9 +69,14 @@ jobs:
               with log.open('ab') as output:return subprocess.run(args,stdout=output,stderr=output,**kw)
           def ident(s):return '"'+s.replace('"','""')+'"'
           def literal(s):return "'"+s.replace("'","''")+"'"
+          getkey=root/'isolated-vault-getkey'
+          getkey.write_text("#!/bin/sh\necho "+secrets.token_hex(32)+"\n")
+          getkey.chmod(0o755)
+          report['isolated_root_key_created']=True
+          report['source_root_key_exported']=False
           try:
               assert command(['docker','pull',image],timeout=600).returncode==0
-              assert command(['docker','run','-d','--name',name,'--network','none','-e','POSTGRES_PASSWORD='+secrets.token_hex(24),image,'postgres','-c','shared_preload_libraries=pg_cron,pg_net','-c','cron.database_name=isolated_restore','-c','cron.launch_active_jobs=off'],timeout=60).returncode==0
+              assert command(['docker','run','-d','--name',name,'--network','none','-v',str(getkey)+':/run/isolated-vault-getkey:ro','-e','POSTGRES_PASSWORD='+secrets.token_hex(24),image,'postgres','-c','shared_preload_libraries=pg_cron,pg_net,supabase_vault','-c','cron.database_name=isolated_restore','-c','cron.launch_active_jobs=off','-c','vault.getkey_script=/run/isolated-vault-getkey'],timeout=60).returncode==0
               for i in range(60):
                   if command(['docker','exec',name,'pg_isready','-h','127.0.0.1','-U','postgres'],timeout=10).returncode==0:break
                   time.sleep(1)
@@ -111,6 +116,14 @@ jobs:
                   original=expected[row['id']]
                   assert hashlib.sha256(row['decrypted_secret'].encode()).digest()==hashlib.sha256(original['decrypted_secret'].encode()).digest()
                   assert {k:v for k,v in row.items() if k not in ('secret','decrypted_secret')}=={k:v for k,v in original.items() if k not in ('secret','decrypted_secret')}
+              necessary=[row for row in restored if row['name']=='stock_clock_trigger_key']
+              assert len(necessary)==1 and necessary[0]['decrypted_secret']
+              report['stock_clock_trigger_key_available']=True
+              report['saved_stock_clock_auth_matches']=hashlib.sha256(necessary[0]['decrypted_secret'].encode()).hexdigest()=='ff4ec4efb56b5ec3f8c515ec644de13c172bffde13d6f2b028e6852aa66a636e'
+              assert report['saved_stock_clock_auth_matches'],'Saved dispatcher authorization does not match portable secret'
+              accessible=subprocess.run(['docker','exec',name,'psql','-X','-A','-t','-U','postgres','-d','isolated_restore','-v','ON_ERROR_STOP=1','-c',"select count(*) from vault.decrypted_secrets where name='stock_clock_trigger_key' and decrypted_secret<>''"],capture_output=True,text=True)
+              report['cron_role_postgres_secret_access_verified']=accessible.returncode==0 and accessible.stdout.strip()=='1'
+              assert report['cron_role_postgres_secret_access_verified'],'Cron role cannot access required secret'
               report['vault_rows']=len(restored)
               report['vault_logical_restore_verified']=True
               report['vault_ids_metadata_and_secret_hashes_match']=True
@@ -125,6 +138,7 @@ jobs:
                   state_data=json.loads(state.stdout)
                   report['container_state']={k:state_data.get(k) for k in ('Running','OOMKilled','ExitCode')}
               command(['docker','rm','-f',name],timeout=30)
+              getkey.unlink(missing_ok=True)
               content=log.read_text(errors='replace')
               report['permission_categories']=sorted(set(re.findall(r'ERROR:\\s+42501:\\s+((?:permission denied|must be superuser|must be owner)[^\\n]*)',content)))
               report['error_sqlstates']=sorted(set(re.findall(r'ERROR:\s+([0-9A-Z]{5}):',content)))

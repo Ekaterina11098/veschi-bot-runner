@@ -1,0 +1,56 @@
+name: Diagnose four small-table field fingerprints read-only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-small-field-diagnostic.yml']
+permissions:
+  contents: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Return only counts and SHA256 comparisons; no row payloads
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          PGHOST: aws-0-eu-central-1.pooler.supabase.com
+          PGPORT: '5432'
+          PGDATABASE: postgres
+          PGUSER: postgres.abxgjoqlddhtcmjcjwxw
+          PGSSLMODE: require
+          PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=30000'
+        run: |
+          python - <<'PY'
+          import json,psycopg
+          from psycopg import sql
+          from pathlib import Path
+          import os
+          baseline={"advertising_action_queue":{"count":4,"fields":{"action_type":"82a472bee9043419e5cfcf1f0210eb6d0fa12f49db433b3be479c4780338cb31","approved_at":"11d4a71cf887528a69dcb6f490632837aba73ff305158044c03933ff867a6d59","article":"ca421739a5699abcc86eb5eff661ca4011d39c88f09c6023db04725eb97524b7","cabinet":"caee757785a2a13cae8f6df87ea3437f65b5a5f0f42d898ba3c9ea7eb9696558","campaign_id":"3ea01e318391e83eef99fe242997fa71a225279a1c8ecdd0454a7ea7caa7083d","confidence":"3750e6ea2ff3c7bc2f2f30d2fdbae61b57e30dac88752046eb4f934b186dcd3b","created_at":"41e75e5ad88056c2897100e730501e371b1239d8832ede3ecc236c7033212c93","error":"719e2c1595adcc08e63b32ee2bacde8b63cb3a29ff99b49a1b68d6b188876a57","executed_at":"11d4a71cf887528a69dcb6f490632837aba73ff305158044c03933ff867a6d59","id":"d5b768a56136073b0b05c429adff0be29598fc5c59ff66fe602ce8b2a8b58480","nm_id":"daf2c9c08de4c7c1c291117fe067254dc51ee09829340dcf006fcdd487ef2ea2","proposed_payload":"976268a415a221677eaafcdd3bdaf56b4116e4cfb8ce6f24436f949465ca3387","rationale":"637dbf2ddce3670f78e6628c6e95990d4e6fcb3ad45e131a490c9b4983c707fa","source_run_id":"9a88073c915062997208746d29860fff655e3fe27b6e7e66a35f1fc7bd497337","status":"3dc7c00546ce963450f7f76745eb9f14893cf535a102a24db7d6a41ba1d33543"},"sha256":"66d5a6c9561b22454f7bb07191d252a46f04a88649391acdd951eb3bc5b33b46"},"advertising_agent_watches":{"count":11,"fields":{"campaign_id":"f2d590c290df410eff79b28cfad95e4d20f428544c973868b70b9f8fcf413252","chat_id":"3428f97a71e59ad4808e1aa88d7ecd160c5d9706298269f3e282c0eeaf3616c8","created_at":"1a620f820865982104667494e5cc492457004af466103df89deb9d73e49f9096","expires_at":"93909cfb8b852497063ac268dfad106dc6919e796454cde7f329fe7ae3c6b6dd","goal":"619e384eddb4f5a0e7faf2122a2056c95ad2edd7e690d3008f91fb4e83c284a7","id":"41a72bfb9fdf4c904426f12f7ed78cc449e50eb7479ca7421a2d6f12b4a46c30","next_check_at":"89574b03de8e399feed7e2d29fcbea08ccb97c836c7191dcd9342b06d76dba46","nm_id":"2533368cf88dab7f87f3b373b4d795096fd0411a9354c147835a58a01f43c38c","policy":"17c4e39f2666850c2a68766dce646ed5dd4144d3132610a79eb437ebbdb3ccbb","sender_id":"da76cfee139857583453f5ac19965fb1a54a9a0ee357988d8985f212067f0beb","state":"7e56fd9223238be5946c37c0a34ca1dfefe39a43473fe78c86dff9eff51fe092","status":"8f0569603a98b9bbe8703f85cd823a99f0d9c424f20caa193da0375ae0065e4d"},"sha256":"1516dfe69eee660867aed8a411cf77c30654b438c13f8a0fa35d243759ac1114"},"review_inbox_cache":{"count":2,"fields":{"fetched_at":"e31ad3e0bb0262b9d971b2a4b5098f327af9e2407c7d887a4b7620bf3523b567","kind":"fc409fcee86541045a6e897e1ddef3d966c2908f9374468d21ac032740afb152","payload":"aaf403bd41d407b64b5fa6c39feed64c4d16bbbd84211ca9730c909d78ee3e7c"},"sha256":"ed3aee90f11d91913dbc1c2c23ed558d258550404b7423841f74d095cdbf1c33"},"review_replies":{"count":99,"fields":{"answer":"b043b21808b1590ea4f30c686ff723445959d84bf11c024230a1dd4aea7dabcc","attempts":"cdac7f49e61e275a7906ec1cb25df22d22ec453660f2446ca12394b0dc1e44e8","created_at":"afe1f8287f5a13d7a4bcbc818edbd1a7752f0c10f38c56ee6c1c97a81417efa8","error":"08e0872669e76c113923654cca9aefff825bb09339e1d0836e9fd2464178da46","feedback_id":"4028cd62481272dd96346b47013af69f4573cb37fcd9e6c34bff63d5799224b7","retry_at":"dba9d86429bff44fba6c30369d4723e89ebcd7be971b1bb0e2ddad1505577211","state":"79fd9aa5dd81d5752cf4b14373baa5515ef47dcfa617fdff738237244f67a05b"},"sha256":"aad405681b0da49f689b5ea484e925b21c0a869a38c26ec3828618b2b5ca82bf"}}
+          result={}
+          with psycopg.connect(connect_timeout=15,application_name='recovery_small_fingerprint') as conn:
+              with conn.cursor() as cur:
+                  cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                  for table,old in baseline.items():
+                      result[table]={}
+                      for field,expected in old['fields'].items():
+                          query=sql.SQL("select count(*),encode(sha256(convert_to(coalesce(string_agg(h,E'\\n' order by h),''),'UTF8')),'hex') from (select encode(sha256(convert_to((to_jsonb(t)->%s)::text,'UTF8')),'hex') h from public.{} t) q").format(sql.Identifier(table))
+                          cur.execute(query,(field,))
+                          count,checksum=cur.fetchone()
+                          result[table][field]={'matches':count==old['count'] and checksum==expected,'count':count}
+              conn.rollback()
+          report={'tables':result,'source_row_payloads_exported':0,'production_writes':0,'full_database_backup':False,'serialization':'PostgreSQL jsonb text; mismatch requires content versus representation diagnosis'}
+          (Path(os.environ['RUNNER_TEMP'])/'small-comparison.json').write_text(json.dumps(report,sort_keys=True))
+          print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-table-fingerprint-comparison
+          path: ${{ runner.temp }}/small-comparison.json
+          retention-days: 7

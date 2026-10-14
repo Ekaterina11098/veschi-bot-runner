@@ -1,4 +1,4 @@
-name: Verify restored backup checkpoint without source reads
+name: Authorized restored storage partial backup
 on:
   push:
     branches: [main]
@@ -31,25 +31,55 @@ jobs:
           run-id: 38527562171
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/recovery-resume
-      - name: Verify encrypted checkpoint and report numeric coverage only
+      - name: Owner-authorized read-only two-table export; not full project backup
         env:
+          RECOVERY_FULL_BACKUP_AUTHORIZED: 'true'
+          RECOVERY_SOURCE_RECOVERY_CONFIRMED: 'true'
+          RECOVERY_RESUME_FILE: ${{ runner.temp }}/recovery-resume/original.partial.sqlite.aes
+          RECOVERY_MAX_RESPONSE_BYTES: '100000000'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RECOVERY_WORK: ${{ runner.temp }}/veschi-recovery-private
+          RECOVERY_OUTPUT: ${{ runner.temp }}/veschi-recovery-sealed
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
         run: |
           python - <<'PY'
-          import os,sqlite3,json,tempfile
+          import subprocess,tempfile,sys,os
           from pathlib import Path
-          from analytics.storage_backup_crypto import restore
+          with tempfile.TemporaryFile() as private_log:
+              result=subprocess.run([sys.executable,'-m','analytics.storage_recovery_prepare'],stdout=private_log,stderr=subprocess.STDOUT)
+          import sqlite3,json
           from analytics.storage_archive import Archive
-          source=Path(os.environ['RUNNER_TEMP'])/'recovery-resume'/'original.partial.sqlite.aes'
-          with tempfile.TemporaryDirectory() as tmp:
-              db=Path(tmp)/'verified.sqlite'
-              digest=restore(source,db,secret=os.environ['SUPABASE_SECRET_KEY'])
-              arc=Archive(str(db))
-              coverage={}
-              for table in ('analytics_snapshots','telegram_api_cache'):
-                  state=arc.state(table)
-                  coverage[table]=None if state is None else dict(saved=state.get('saved'),expected=len(state.get('manifest',[])),verified=state.get('verified'))
-              print(json.dumps(dict(full_database_backup=False,plaintext_sha256=digest,coverage=coverage,saved_records=arc.db.execute('select count(*) from records').fetchone()[0])))
-              print('guard_state_names='+json.dumps([name for (name,) in arc.db.execute('select name from state') if 'guard' in name or 'read' in name]))
-              arc.db.close()
+          arc=Archive(str(Path(os.environ['RECOVERY_WORK'])/'original.sqlite'))
+          print(json.dumps(dict(saved_records=arc.db.execute('select count(*) from records').fetchone()[0],coverage={t:dict(saved=(arc.state(t) or {}).get('saved'),expected=len((arc.state(t) or {}).get('manifest',[])),verified=(arc.state(t) or {}).get('verified')) for t in ('analytics_snapshots','telegram_api_cache')})))
+          arc.db.close()
+          print('Export scope: analytics_snapshots and telegram_api_cache only. Completion is not full database backup.')
+          raise SystemExit(result.returncode)
           PY
+      - name: Numeric checkpoint status only
+        if: always()
+        run: |
+          for name in failure-summary partial-summary resource-summary; do
+            if [ -f "$RUNNER_TEMP/veschi-recovery-sealed/$name.json" ]; then cat "$RUNNER_TEMP/veschi-recovery-sealed/$name.json"; fi
+          done
+      - name: Retain encrypted parts even when budget stops export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-encrypted-storage-backup
+          path: |
+            ${{ runner.temp }}/veschi-recovery-sealed/*.aes
+            ${{ runner.temp }}/veschi-recovery-sealed/*summary.json
+          if-no-files-found: error
+          retention-days: 7

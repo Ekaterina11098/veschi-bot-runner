@@ -74,9 +74,9 @@ jobs:
               roles.write_text('\n'.join('DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='+literal(row[0])+') THEN CREATE ROLE '+ident(row[0])+'; END IF; END $$;' for row in inventory['role_flags_without_passwords']))
               def psql(path,db):
                   with path.open('rb') as src,log.open('ab') as output:
-                      return subprocess.run(['docker','exec','-i',name,'psql','-X','-U','postgres','-d',db,'-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'],stdin=src,stdout=output,stderr=output,timeout=900).returncode
+                      return subprocess.run(['docker','exec','-i',name,'psql','-X','-U','supabase_admin','-d',db,'-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'],stdin=src,stdout=output,stderr=output,timeout=900).returncode
               assert psql(roles,'postgres')==0
-              assert command(['docker','exec',name,'createdb','-U','postgres','-T','template0','isolated_restore'],timeout=30).returncode==0
+              assert command(['docker','exec',name,'createdb','-U','supabase_admin','-T','template0','isolated_restore'],timeout=30).returncode==0
               report['schema_restore_exit_code']=psql(schema,'isolated_restore')
               report['schema_restore_completed']=report['schema_restore_exit_code']==0
           except Exception as exc:
@@ -84,6 +84,7 @@ jobs:
           finally:
               command(['docker','rm','-f',name],timeout=30)
               content=log.read_text(errors='replace')
+              report['permission_categories']=sorted(set(re.findall(r'ERROR:\\s+42501:\\s+((?:permission denied|must be superuser|must be owner)[^\\n]*)',content)))
               report['error_sqlstates']=sorted(set(re.findall(r'ERROR:\s+([0-9A-Z]{5}):',content)))
               report['missing_extension_names']=sorted(set(re.findall(r'extension "([a-zA-Z0-9_]+)" is not available',content)))
               report['private_diagnostic']=seal(log,out/'private-schema-restore.log.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])

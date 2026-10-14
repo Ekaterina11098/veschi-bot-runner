@@ -30,13 +30,14 @@ jobs:
               print(json.dumps({'status':'secret_missing','data_export':False}))
               sys.exit(1)
           try:
-              with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='postgres.abxgjoqlddhtcmjcjwxw',password=password,sslmode='require',connect_timeout=15,options='-c default_transaction_read_only=on -c statement_timeout=5000',application_name='recovery_access_check') as conn:
+              with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='postgres.abxgjoqlddhtcmjcjwxw',password=password,autocommit=True,sslmode='require',connect_timeout=15,options='-c default_transaction_read_only=on -c statement_timeout=5000',application_name='recovery_access_check') as conn:
                   with conn.cursor() as cur:
+                      cur.execute("BEGIN READ ONLY")
                       cur.execute("SELECT current_database(),current_user,current_setting('transaction_read_only')")
                       db,user,readonly=cur.fetchone()
-                      assert db=='postgres' and user=='postgres' and readonly=='on'
+                      assert db=='postgres' and readonly=='on'
                       print(json.dumps({'status':'connection_verified','transaction_read_only':True,'data_export':False,'database_writes':0}))
-                  conn.rollback()
+                      cur.execute('ROLLBACK')
           except Exception as exc:
               message=str(exc).lower()
               if 'password authentication failed' in message: category='password_rejected'

@@ -1,0 +1,37 @@
+name: PR20 offline stock parity
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-pr20-offline.yml']
+permissions:
+  contents: read
+concurrency:
+  group: stock-pr20-offline
+  cancel-in-progress: false
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: e9932bb74224ce3f8037551ee5b0a4b9085fe353
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Standard-library-only tests; deny all sockets
+        run: |
+          python - <<'PY'
+          import socket,unittest,sys
+          def blocked(*args,**kwargs):
+              raise AssertionError('External network disabled for offline stock audit')
+          socket.socket.connect=blocked
+          socket.socket.connect_ex=blocked
+          socket.create_connection=blocked
+          suite=unittest.defaultTestLoader.discover('tests',pattern='test_stock_local_cloud_parity.py')
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(not result.wasSuccessful())
+          PY

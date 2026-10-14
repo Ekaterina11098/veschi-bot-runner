@@ -28,14 +28,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: owner-encrypted-storage-backup
-          run-id: 38528783445
+          run-id: 38552401130
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/recovery-resume
       - name: Owner-authorized read-only two-table export; not full project backup
         env:
           RECOVERY_FULL_BACKUP_AUTHORIZED: 'true'
           RECOVERY_SOURCE_RECOVERY_CONFIRMED: 'true'
-          RECOVERY_RESUME_FILE: ${{ runner.temp }}/recovery-resume/original.partial.sqlite.aes
+          RECOVERY_RESUME_FILE: ${{ runner.temp }}/recovery-resume/19/original.partial.sqlite.aes
           RECOVERY_MAX_RESPONSE_BYTES: '100000000'
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -69,16 +69,17 @@ jobs:
           workroot=root/'private'
           workroot.mkdir()
           baseline=Path(os.environ['RECOVERY_RESUME_FILE'])
-          if digest_file(baseline)!='9551a1eba80ced1a45f4e3ed360ad45aaeafc26ace95165f1265df0181549638':
+          if digest_file(baseline)!='7d5ca0a42db56abab0c77ff500575460038fb3bf302868fa2ddf66dd68cd0bb2':
               raise RuntimeError('Baseline ciphertext checksum mismatch; no source requests')
           verified=workroot/'baseline.sqlite'
-          if restore(baseline,verified,secret=os.environ['SUPABASE_SECRET_KEY'])!='b0325557f1c9168021054d6893d27295935f04113b6693e1993ede1e4576542c':
+          if restore(baseline,verified,secret=os.environ['SUPABASE_SECRET_KEY'])!='3fecc6d07c283f12760743f068d5b3e67ca8b2898dec88682e6d7d29eea4b93a':
               raise RuntimeError('Baseline plaintext checksum mismatch')
           initial=Archive(str(verified))
           guard=initial.state('read_guard') or {}
           if guard.get('source_block') or guard.get('requests') or guard.get('retry_at',0)>time.time():
               raise RuntimeError('Blocked source state; no retry allowed')
           previous=dict(((t,i),h) for t,i,h in initial.db.execute('select table_name,identity,root from records'))
+          assert len(previous)==8418, 'Unexpected verified baseline size'
           initial.db.close()
           verified.unlink()
           original_session=recovery.requests.Session
@@ -139,9 +140,12 @@ jobs:
                       verified=(current.state(t) or {}).get('verified')) for t in ('analytics_snapshots','telegram_api_cache')}
                   current.db.close()
                   previous=roots
-                  previous_count=report['passes'][-1]['saved_records'] if report['passes'] else 367
+                  previous_count=report['passes'][-1]['saved_records'] if report['passes'] else 8418
                   status=dict(pass_index=index,saved_records=len(roots),coverage=coverage,
                       ciphertext_sha256=digest_file(checkpoint),result='complete' if result else type(error).__name__)
+                  status['cumulative_source_response_bytes']=total[0]
+                  status['elapsed_seconds']=round(time.monotonic()-started,3)
+                  if error:status['stop_category']='session_limit' if isinstance(error,ReadBlocked) and str(error)=='Serial maintenance budget reached' else ('pass_limit' if isinstance(error,ReadBlocked) and str(error)=='Run traffic budget reached; preserve checkpoint' else 'source_or_validation_error')
                   if result:status['source_response_bytes']=result['response_body_bytes']
                   report['passes'].append(status)
                   report['source_response_bytes']=total[0]
@@ -158,6 +162,9 @@ jobs:
                   if result:
                       report['complete_two_tables']=True
                       report['stop_reason']='two_declared_tables_complete_not_full_database'
+                      break
+                  if isinstance(error,ReadBlocked) and str(error)=='Serial maintenance budget reached':
+                      report['stop_reason']='session_budget_reached'
                       break
                   if not isinstance(error,ReadBlocked) or str(error)!='Run traffic budget reached; preserve checkpoint':
                       report['stop_reason']='source_or_validation_error_no_automatic_retry'

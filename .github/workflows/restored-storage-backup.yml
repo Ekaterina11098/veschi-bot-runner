@@ -5,6 +5,7 @@ on:
     paths: ['.github/workflows/restored-storage-backup.yml']
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: veshi-storage-maintenance
   cancel-in-progress: false
@@ -23,10 +24,18 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install requests==2.32.5 python-dotenv simplejson cryptography > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Resume verified owner-encrypted partial; never start again
+        uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-storage-backup
+          run-id: 38526994005
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/recovery-resume
       - name: Owner-authorized read-only two-table export; not full project backup
         env:
           RECOVERY_FULL_BACKUP_AUTHORIZED: 'true'
           RECOVERY_SOURCE_RECOVERY_CONFIRMED: 'true'
+          RECOVERY_RESUME_FILE: ${{ runner.temp }}/recovery-resume/original.partial.sqlite.aes
           RECOVERY_MAX_RESPONSE_BYTES: '100000000'
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -52,6 +61,12 @@ jobs:
           print('Export scope: analytics_snapshots and telegram_api_cache only. Completion is not full database backup.')
           raise SystemExit(result.returncode)
           PY
+      - name: Numeric checkpoint status only
+        if: always()
+        run: |
+          for name in failure-summary partial-summary resource-summary; do
+            if [ -f "$RUNNER_TEMP/veschi-recovery-sealed/$name.json" ]; then cat "$RUNNER_TEMP/veschi-recovery-sealed/$name.json"; fi
+          done
       - name: Retain encrypted parts even when budget stops export
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,0 +1,201 @@
+name: Consistent database point with reused verified rows
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-consistent-point.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install python-dotenv requests simplejson cryptography 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-storage-backup
+          run-id: 38561695550
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/point-input/snapshots
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-cache-component
+          run-id: 38577383158
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/point-input/cache
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-snapshot-tail-component
+          run-id: 38579518325
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/point-input/tail
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-financial-backup
+          run-id: 38528355455
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/point-input/finance
+      - name: Export schema only and numerical service inventory; no table payload duplication
+        timeout-minutes: 80
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PGHOST: aws-0-eu-central-1.pooler.supabase.com
+          PGPORT: '5432'
+          PGDATABASE: postgres
+          PGUSER: postgres.abxgjoqlddhtcmjcjwxw
+          PGSSLMODE: require
+          PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=30000'
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          import os,json,subprocess,shutil,time,hashlib,collections
+          from pathlib import Path
+          from decimal import Decimal
+          import psycopg,simplejson
+          from psycopg import sql
+          from analytics.storage_archive import Archive
+          from analytics.storage_backup_crypto import seal,restore,digest_file
+          root=Path(os.environ['RUNNER_TEMP']);out=root/'schema-sealed';out.mkdir()
+          assert shutil.disk_usage(root).free>=4_000_000_000
+          start=time.monotonic()
+          baseline={"advertising_action_queue":{"count":4,"row_hashes":["611200f75930ab9941f48877a33399034e57be67c269438b8c3cf7f6dcf127a7","3f52ce14efb5bc4f2cc53f327a5e5e674edd8e36fc246d2fbed97ad215870f8b","3033590dd6cb5b66edb3071b02b35bb0e1fb9c13dc90fe75cdbba1e7cb917b29","c7b08bee78bd27cf0c0c0d358fd9aa7d0d13550d961bef08b15cb0a8dd13ddd0"],"sha256":"66d5a6c9561b22454f7bb07191d252a46f04a88649391acdd951eb3bc5b33b46"},"advertising_agent_actions":{"count":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"advertising_agent_jobs":{"count":28,"sha256":"2cf8a29cbfaf7886173c412f14a6255f10a7627af9b92106d30bdbaceda7411c"},"advertising_agent_memory":{"count":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"advertising_agent_watches":{"count":11,"row_hashes":["10661ed57721b45008d077537bb63366a4cae0b9bb104c5cf0dfdb7ab68a1b1c","e437448245975ddf3801f873301e2cb0049d1e2655b6c5cee55925c4fb2cf2c2","853a0e3a8b2b1a0d92bc98b3e25b329fcb14b02e87e0d1e0e83f4cbf205f3c5c","3dfd0b03e863407f155f161a1012d302aa78c3c5d97c334fd78e9d6d6919e94d","d9be1e39202604705c218f46c4f8ffb0c78e1e12a99e930e7e4b8a4e2330bcb9","4e1eda6773d530e0f7d3f5ac6399124b32e6ab3aa152bdfbc6003c095326c6e3","c66f0ae6696f12d988d35378648377959dac2278c6670c07654ebda13cfb9b83","31a2d936c8b192f7348a34718d6c788e0a1719848bd53398fc32e460e97d056f","d6f381112c65dfcfbcb58ece4c23cf5ade90b463d2f955b43af5af479b6caa65","ee34f4a8fa46a18fcd2f248afd9305bacd0854f387e0927774f6e586b4ac1b3c","93ffe3458c52d68e91777815dd3b1ffad9dcd77389ae3d300cca63a399b51c7a"],"sha256":"1516dfe69eee660867aed8a411cf77c30654b438c13f8a0fa35d243759ac1114"},"advertising_campaign_budget_state":{"count":116,"sha256":"9d5a0f8c3cc5b5674070ea0938b3a2dbc519b43d52913e41f00a99eaf0078984"},"advertising_change_log":{"count":431,"sha256":"81aec13f334ffe7d053ed15cb7ba44cbc55589105c7d813b1e6675aa6347b0d2"},"advertising_telegram_chat":{"count":1,"sha256":"3b0dae8b1d93a98ff8f1b2570656a0c15a19f0fdee33fbedfe90424e59f99915"},"analytics_costs":{"count":576,"sha256":"f79a5a7ccaef7553da7293a6e1f6df5202f300fe2b355d87833e5ba8dc1e0bb5"},"business_agent_config":{"count":2,"sha256":"7b0f353fe02234cb3745e1ae728909a4bb1d4060ec1a75738f61dbfc8b6be8ff"},"business_agent_jobs":{"count":31,"sha256":"89c9eef0a947c8eb3014bf1ae7633b0570e7e75d17a36a340afb7c6adc21c034"},"price_snapshot_checkpoints":{"count":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"review_benchmarks":{"count":37,"sha256":"8818d6cd49e9540d6ca220d49fc079949af88d1f8cf4ab1f76d681634518e411"},"review_inbox_cache":{"count":2,"row_hashes":["46546faffd73b6217c8942f3d2479ba4b86eee8569724d3000644fbe9e236bc9","171b685e768c32a0e6f8f0a66d0b13f4be608323345380554b627297b8b9e5a4"],"sha256":"ed3aee90f11d91913dbc1c2c23ed558d258550404b7423841f74d095cdbf1c33"},"review_replies":{"count":99,"row_hashes":["310b1b8526879faf9626c67b0e747fc25f2cd230f195efe3a4ae8fadd6070336","806bb355cb5efa4e33a9ce58c4dd950d72c9b48954e75b30ea9133981d8864ec","2b2841dacf3c8e9013a353c27d96ed38f21280b735076b56d31f03919395bca4","228fe455bc44906d036f1ece599b89efd4dd69a5db35469e3534e6d1f6a48ee9","27dd74cfd5cac996600e93246a233ab999150a99ba78462e2f516b7d4cd7e517","8a6cb6ff51e545cb50d2e3e1156da0c361253da653159e27858db7eafcee6618","98d97762786be4737f1e455f4e635e511d180dcc0348b6ae59cfb091406e157c","e7eb87bea8d6e129be99aff9e791dddfaf8e7d6c2a5cd8569929b324963f45d1","455789fadf6c186c2dacb343c9e880b76f0914f2f3cac72835cf45a5938dc94a","7dd42458ba6a1eaf00569e05e0b34f350841c8b4e08605b12025146b5e7a42ec","f8a3746e4c1b0ae0897ce43b3f96599eed0d4b5a0dfd120ff06dc7aa24277cc8","65c8d3e1c0e1bd768c0218e907a0798a791ae4a7914c1052898144a36d2ee456","7afbcbbdc57a3f633ce7db4c8854c4693bc3c4047fe09f149e87c7193f15492c","41f1c1944f94712935646281242d919864a6bf56c53199d1c5c98973747e7b9a","837f537d2143c2d19016c7ddb499ed1d63cf7e7bfaab15bae8599a5417347014","7eb3db2f4ab6087c27162dbd302eb5cde56244f4fde2baf1af97045ada037418","592884d2d63712596d213f046825907f5e98ce2385735b16058fb8576b2952a8","bdff3e6fba99b9c10a8a0858374f995a70facdc02f3325765a7b0164df97e1e8","f155d63ad00bb79b7c35272f4f3f63069a9a3780ba8a8f0245e750e48a3f851d","a089e43617cfe0bfef93c4dafe33f8170bef99cd9adef3b278d6252eab1d5dff","46b938a40f967c195d59ff2d195b7b5cc59855cf533775b87218635cd51b3483","f92c74baf085f1fa2710251e00085743ff81b6a9977390d0d734336c3eb29a78","ab1f277e45f4d7214c0fc625d13e330ab09f9ede202e665db0f715c887ef273a","a3d71d15291bc1191b610c5bcc6e89aa7105fc8a4a347936ec1636680c9a85e1","e256482d215920705c08abc33f0b75ad17e446b1fa7dc615ee78b3f15bd46780","e6f5753a858caa778e07fd4355ec77e98e3b5c944a7adc655a4575926254eaf2","0efea7f8e4fc3160c6ed13e2ca2267275667d0224b077488192fc6e13b3dad55","180228a43b2887ffdc5dec19c953874672b750996ed334cedfbb49ce032ea254","23f3bdaaae1c479b60dfab546cd7883693f1d187397bb83c3ac9ecedf6afbdf8","f84e88d702b3da4632e0f687483ad396cfe8ef6f41cb8745460ddaec5371e6b2","f199961e085028848681b1be748bdea9be221dc3f2ca2ac18f5f72e8a3b52e61","c19d7ffc2d11905788d07ed4f81fcdd37411386f08af71c8aba0f3c66aa9c38b","3296e358b8aedeeed2e8077308398e78840908c5d7746c838a3d2da4be8401a7","d8b207da0e2dc5cb796467dc1c545b639d1eb53dac591a308dadb6624bc5714b","95abf28998d4d7ab70ac5449a0e1af9f5afa10a684a1534ecfbffe0b469affc0","ff1b8cadfbb7aede88aafe3b461ced9cf77e5f2119e280e24ce234d27fbe2912","c6f49df17dbb05de44eb47d3590c52cfcb03bcffeb59842f5d44e59cc8eb7da0","0ec9160da7db94df6f1e58ffaee0dfe9b1909f8f33ab75c81006128e6ca33dd8","b8b56a15f8b2208cc65dc972240f0f6cdf7ae3699b9723fa085e6e35465aee90","3b78d91662e89958c624fd940429b5f95160accbc993e3cc2b194d2e5eb5cf19","8ca0655672b3d249b3f980a1f3bafda150e9e286232c76a5fd481ed36de1caae","13d3be8d22ba01e9c66c586d16b7c198dafab3ae2453d5d169d4e703471d5dc0","23b0aabde9e2c2551d28c65a7d7be5a170060d69ce18714da2f5ded64ce6c630","83e039e95882934f39f56947b5205cb0300ad21350a3052551d4937cf4387998","01f0245d8ae2cf7b73bdea751fd38a4de5a630b547a06abe42aefe37d02d259f","a8424d2546658a627f0e2be39c2681b7137777fcdf79a94c2f8fc3b9be43c651","96942cda1082e5964fe21e398f7924fe7ea828dc2ae8c140eed2616bcc5bb447","9e4eaee76573e90c9c85ad637ca773b61c2bc0e0ee2435388b5e467dc646dfa2","b0740c2ca1166697f65aed4bb161df994f680f1e4c0cfd81fc9489a23842fe89","08de1013561abdca038b409e0a6d6dc83ff3c5989ac479461ebc087462681860","b70e312ace9330678f6039394af696504ec97e8a77319711a0fa5cb086d7a2b0","e9407939d95dfb6ab735068b39f6819d86154a3e9245d17d904034821580ab20","e63df595756265b4630910f97252d1b2624978c86215bb2ad5596a8243626231","018a4541db8f79407dbf5c376aa8710b9aca2e72a6fee3cd160c9a4861e2be6f","b1e92e9545bc3222866eb132b50c9c3020cc780d8a536cf408b27a469d3020e4","14947df828ca333e886d0a716f67a33d35f19bb88d56ad0dd298fa666b01c284","b0d87bb6eb29d0c96dfc3aca8ada68ca9f09dfcd5b5b199e67ceac9dfb49ad13","7ceb41cec97ac4f2e541d2357f67d4d8d57dde3ee96b6f5a80306721256ed71a","11e4f581550f4052751637eadd02bd838b1960ecca0d6c6a8ae1ab0f0f51c02e","89f8fe7213abcf1cb887ac035588e1ab547e34a7196810df85c475a40d8d6f3e","4f961dbe6d2f36bb3332c5afb2f6cf52a55daaa6ba35423946ae4aaa68f77090","1d6e629f81e81292779ca520b0b4fb85340dfa161e256deb471bdfb96852e5fe","1883f048be5c2a8b8ca0a6ce6a9effb7c576eb2e62740f649ae43e77247cb536","1e2c6fd173192d942d8ed3b2cca3fc7afb076500f901df96b698897aee4e9dac","c7eb0436736e174193e9b05c788e5f2ff57f0533da36dc520091f32adb41853d","f2501b3026db91f491b8e0d7db7f1ae2bb3ecb0fd81cf3b183b710392cf54981","2db8915542cc50123ac05996c44b7d54f12148c79fe1792953ed089cfe09d78e","1168bf2739133f2d61606992e1d3ea8c7cae438c34bc9e9802b09e441721496a","d8603f66e0c81e6c7c0888e774df2a5bb70f3a1ca60c9a9adf338b5d79b7921f","ee1102793a0f169b3883c16666392f2774ab75a76f52725bcd8e7270c3438f65","6435ffc94fddc8595431785aab41aba9f9c9a6250bd9c850fe12c4fa08ddca87","b7bca41f9b47819ed3f59ad839635b78c34ac7aea7e8ffbc33840dab31fd372a","a549e6083de75e72588af86a17bec1581c6f1049cac842292e7e9d7c0f6dcbc3","1983d64268f3859e94be249fea4a66f899ab9b748d09f081ad4f1a0533ba946c","66984f0e2768f31d7cd514190f2efa6eead40305c221dac7cff6235c095a4dc7","f0a043cc924260893e5f72450caf39534e04adc118ad72d0be8c23a40cb9f715","cce2f85c0d8a5c936f60ef144084a826c9400fd54f7a6dccb106a1bd6be2dc14","07223f0f9e2a5c7d58b5facbf5d8f6f5e59477f226bcc15ba0db7614fc3fc3e1","4e8dab40ad1e1caf5b5291858201b1a93c2716a8a4842dbab8b93dad2b086ba6","79f02460a215319d5fc4dbe7fea99ca94c2bf83cbfd5cb7328088d2371d4cce0","6b00c0b4de0bd993ec9569237659926e61b5928a031420e1ca565f401e473a0f","7139663489cfb4f3c318b5f6cd4d8b8d96e079f7c99eae890963a97d6b93e6c0","8d135791f94340d3bf4496e1c4968beddcb74a3e093d36818e29bf5d35e3ca82","9614a6faa359603fea6ebf25fcfe4e4a381f8f7dadeb8008ee549c8eea9e7fe5","e60ee5f1e1c3c0179dd2924220e0ca69fea1a5c124febecd1eb8259e0838f7f2","374bf6af30b9fba999aa1fd865cebcb1dd40bbc4ef8f5f8225036d8315baff02","a8d963749ea1e2cad087a5d77f1110c0e6df450d9a3b2e64d439dd90766eee25","33a1691c6520c234849b456a1189d55e8899fbcb0ce5c6f2227bd0ead7c4094f","793c429e7c95792b9e7a42e6165b5e1be0cdf19cb796865fe0f5242038061d1b","1922ffdae544b15fcd739eaedc066f8146dbbfcfb6287bf10b80ccbaf62f0f67","4abba4c775b572a5f41caaa9777414d548f48fb6f7e763336b668c8e447eb919","8261a2966c14b52cbb7b8dbae0e9de93b948b38e40b1cff06f4c7707ec409eb3","ce33be737d9254009d21c34551a676d272b32dc9fc41293fa7aa3f75e0f51b3f","baf8c213a166fdd52b50f5be7e81841780700aea6ffff99ce8d208dcc2cab469","e50bf0fd6fbfdd99950304a2f96dab9d40b35d3eade08ad9d30e9d48d4d94d8f","96658e4c74e15002d6adbc57c0760f659d9519542871f3118aca192c742fdd4e","ccf31e106526da36756617ab6842036c3dce847ba43442a9fe215a0d9800a6e5","8dc511911d9037a50d7b0d633077b11e6bf34256880a455b64c3813b6f039950","c442db976302177390342fb6f7269558dfe534a229cb724ebccf4fa65dc292ae"],"sha256":"aad405681b0da49f689b5ea484e925b21c0a869a38c26ec3828618b2b5ca82bf"},"telegram_bot_state":{"count":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"telegram_jobs":{"count":23,"sha256":"511654f1f024255db05a6450120d44aa0ae955b5622dcb2005279c4a8517528a"}}
+          def norm(v):
+              if v is None:return 'null'
+              if isinstance(v,bool):return 'true' if v else 'false'
+              if isinstance(v,(int,Decimal)):return format(Decimal(v),'f')
+              if isinstance(v,str):return json.dumps(v,ensure_ascii=False)
+              if isinstance(v,list):return '['+', '.join(norm(x) for x in v)+']'
+              return '{'+', '.join(json.dumps(k,ensure_ascii=False)+': '+norm(v[k]) for k in sorted(v,key=lambda k:(len(k.encode()),k.encode())))+'}'
+          def rowhash(row):return hashlib.sha256(norm(row).encode()).hexdigest()
+          reuse={}
+          inputs=[]
+          expected=[
+           ('snapshots','cd70f3dbb7885a5d1c79cc15958717b6b3d086e36fec1829d52dde33e90dec58'),
+           ('cache','7c1916e14e20c7fed4d7e3f67ed64f12989b79d63d3c87a493bd8dc47432ad82'),
+           ('tail','683743e5460f135eb09371d195d993dad766e81aa2abf7ad3e95cd8eb8c2b320'),
+           ('finance','0cae4bfad0ab8d0587fb5f20c597f7cec80975717b5e16dee4aefc14b334da04')]
+          for folder,checksum in expected:
+              paths=[p for p in (root/'point-input'/folder).rglob('*.aes') if digest_file(p)==checksum]
+              assert len(paths)==1,'Missing verified input'
+              plain=root/(folder+'-input.sqlite')
+              ph=restore(paths[0],plain,secret=os.environ['SUPABASE_SECRET_KEY'])
+              archive=Archive(str(plain))
+              guard=archive.state('read_guard') or {}
+              assert not (guard.get('source_block') or guard.get('requests') or guard.get('retry_at',0)>time.time())
+              counts={}
+              tables=[r[0] for r in archive.db.execute('select distinct table_name from records')]
+              for table in tables:
+                  hashes=reuse.setdefault('public.'+table,set())
+                  count=0
+                  for identity,row in archive.rows(table):
+                      hashes.add(rowhash(row));count+=1
+                  counts[table]=count
+              inputs.append({'component':folder,'ciphertext_sha256':checksum,'plaintext_sha256':ph,'counts':counts})
+              archive.db.close();plain.unlink()
+          for table,old in baseline.items():
+              if 'row_hashes' in old:reuse['public.'+table]=set(old['row_hashes'])
+          image='postgres:17'
+          with open(root/'point-private.log','wb') as log:subprocess.run(['docker','pull',image],stdout=log,stderr=log,check=True,timeout=300)
+          delta_plain=root/'point-delta.sqlite';delta=Archive(str(delta_plain))
+          receipt={'full_database_backup':False,'production_writes':0,'inputs':inputs,'tables':{},'source_payload_bytes':0,'passes':1,'later_changes':'outside point; excluded','acceptance':'pending actual isolated restoration and platform configuration completeness'}
+          passbytes=0
+          with psycopg.connect(connect_timeout=15,application_name='recovery_consistent_point') as conn:
+              with conn.cursor() as cur:
+                  cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                  cur.execute("select transaction_timestamp(),pg_export_snapshot(),current_setting('server_version_num')::int")
+                  timestamp,snapshot,version=cur.fetchone()
+                  assert version//10000==17
+                  receipt['point_utc']=timestamp.isoformat();receipt['snapshot_id']=snapshot
+                  cur.execute("select schemaname,tablename from pg_tables where schemaname not in ('pg_catalog','information_schema') order by 1,2")
+                  tables=cur.fetchall()
+                  for schema,table in tables:
+                      name=schema+'.'+table
+                      cur.execute(sql.SQL("select encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex') from {}.{} t").format(sql.Identifier(schema),sql.Identifier(table)))
+                      current=[r[0] for r in cur.fetchall()]
+                      aggregate=hashlib.sha256(('\n'.join(sorted(current))).encode()).hexdigest()
+                      old=baseline.get(table) if schema=='public' else None
+                      if old and 'row_hashes' not in old:
+                          assert len(current)==old['count'] and aggregate==old['sha256'],'Previously matching small table changed; preserve originals and diagnose selective delta'
+                          known=set(current)
+                      else:known=reuse.get(name,set())
+                      missing=set(current)-known
+                      receipt['tables'][name]={'count':len(current),'row_hashes':current,'reused':len(current)-sum(h in missing for h in current),'delta_rows':sum(h in missing for h in current)}
+                      if not missing:continue
+                      with conn.cursor(name='point_rows_'+str(len(receipt['tables']))) as stream:
+                          stream.itersize=1
+                          query=sql.SQL("select row_to_json(t)::text from {}.{} t where encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex')=any(%s)").format(sql.Identifier(schema),sql.Identifier(table))
+                          stream.execute(query,(list(missing),))
+                          got=collections.Counter()
+                          for (raw,) in stream:
+                              if receipt['source_payload_bytes']>=2_000_000_000 or time.monotonic()-start>=4800 or shutil.disk_usage(root).free<4_000_000_000:raise RuntimeError('Maintenance budget stop')
+                              if passbytes>=100_000_000:
+                                  assert receipt['passes']<20
+                                  receipt['passes']+=1;passbytes=0
+                              n=len(raw.encode());receipt['source_payload_bytes']+=n;passbytes+=n
+                              row=simplejson.loads(raw,use_decimal=True);h=rowhash(row)
+                              assert h in missing
+                              got[h]+=1
+                              delta.record(name,h+':'+str(got[h]),row);delta.db.commit()
+                          assert got==collections.Counter(h for h in current if h in missing)
+                  cur.execute('select rolname,rolsuper,rolinherit,rolcreaterole,rolcreatedb,rolcanlogin,rolreplication,rolbypassrls,rolconnlimit from pg_roles order by rolname')
+                  receipt['role_flags_without_passwords']=cur.fetchall()
+                  cur.execute('select schemaname,sequencename from pg_sequences order by 1,2')
+                  receipt['sequences']={}
+                  for schema,name in cur.fetchall():
+                      cur.execute(sql.SQL('select last_value,is_called from {}.{}').format(sql.Identifier(schema),sql.Identifier(name)))
+                      receipt['sequences'][schema+'.'+name]=cur.fetchone()
+                  schema_file=root/'point-schema.sql'
+                  args=['docker','run','--rm']
+                  for name in ('PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSSLMODE','PGOPTIONS'):args+=['-e',name]
+                  args += [image,'pg_dump','--schema-only','--snapshot='+snapshot,'--lock-wait-timeout=5000','--no-password']
+                  with open(schema_file,'wb') as output,open(root/'point-private.log','ab') as log:
+                      result=subprocess.run(args,stdout=output,stderr=log,timeout=1200)
+                  assert result.returncode==0,'Same-snapshot schema dump failed'
+              conn.rollback()
+          receipt['same_snapshot_materialized']=True
+          delta.set_state('consistent_point_receipt',receipt);delta.db.commit();delta.db.close()
+          receipt_file=root/'point-receipt.json';receipt_file.write_text(json.dumps(receipt,sort_keys=True))
+          summary={'point_utc':receipt['point_utc'],'same_snapshot_materialized':True,'full_database_backup':False,'actual_isolated_restore':False,'tables':{k:{f:v[f] for f in ('count','reused','delta_rows')} for k,v in receipt['tables'].items()},'source_payload_bytes':receipt['source_payload_bytes'],'passes':receipt['passes'],'production_writes':0,'components':{}}
+          for path in (delta_plain,schema_file,receipt_file):
+              target=out/(path.name+'.aes')
+              hashes=seal(path,target,os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])
+              check=root/(path.name+'.readback')
+              assert restore(target,check,secret=os.environ['SUPABASE_SECRET_KEY'])==hashes['plaintext_sha256']
+              summary['components'][path.name]={**hashes,'ciphertext_bytes':target.stat().st_size}
+              check.unlink();path.unlink()
+          summary['elapsed_seconds']=round(time.monotonic()-start,3)
+          (out/'summary.json').write_text(json.dumps(summary,sort_keys=True))
+          print(json.dumps(summary,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-consistent-point
+          path: ${{ runner.temp }}/schema-sealed
+          retention-days: 7
+          if-no-files-found: error

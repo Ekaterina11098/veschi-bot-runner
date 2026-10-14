@@ -1,0 +1,49 @@
+name: PostgreSQL recovery access check
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-postgres-access.yml']
+permissions:
+  contents: read
+concurrency:
+  group: recovery-postgres-access
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PostgreSQL client
+        run: pip install 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/client-install.log" 2>&1
+      - name: Single read-only connection check; no export or business actions
+        env:
+          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import os,json,sys
+          import psycopg
+          password=os.environ.get('DB_PASSWORD','')
+          if not password:
+              print(json.dumps({'status':'secret_missing','data_export':False}))
+              sys.exit(1)
+          try:
+              with psycopg.connect(host='db.abxgjoqlddhtcmjcjwxw.supabase.co',port=5432,dbname='postgres',user='postgres',password=password,sslmode='require',connect_timeout=15,options='-c default_transaction_read_only=on -c statement_timeout=5000',application_name='recovery_access_check') as conn:
+                  with conn.cursor() as cur:
+                      cur.execute("SELECT current_database(),current_user,current_setting('transaction_read_only')")
+                      db,user,readonly=cur.fetchone()
+                      assert db=='postgres' and user=='postgres' and readonly=='on'
+                      print(json.dumps({'status':'connection_verified','transaction_read_only':True,'data_export':False,'database_writes':0}))
+                  conn.rollback()
+          except Exception as exc:
+              message=str(exc).lower()
+              if 'password authentication failed' in message: category='password_rejected'
+              elif 'network is unreachable' in message: category='network_ipv6_unreachable'
+              elif 'could not translate host' in message or 'name or service not known' in message: category='dns_unreachable'
+              elif 'timeout' in message: category='connection_timeout'
+              else: category='connection_failed'
+              print(json.dumps({'status':category,'error_type':type(exc).__name__,'data_export':False,'database_writes':0}))
+              sys.exit(1)
+          PY

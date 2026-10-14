@@ -1,0 +1,258 @@
+name: Actual isolated consistent-point data restoration
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-isolated-point.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: e9f1414a81e5ee7a845f1e6b0fc4e4e2e3500a17
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install simplejson cryptography > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-consistent-point
+          run-id: 38592132657
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/restore-input/point
+      - uses: actions/download-artifact@v4
+        with:
+          name: offline-restore-receiver
+          run-id: 38588520250
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/restore-input/receiver
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-storage-backup
+          run-id: 38561695550
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/restore-input/snapshots
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-cache-component
+          run-id: 38577383158
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/restore-input/cache
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-snapshot-tail-component
+          run-id: 38579518325
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/restore-input/tail
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-financial-backup
+          run-id: 38528355455
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/restore-input/finance
+      - name: Verify ciphertext transport and accepted-point components offline
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PYTHONPATH: ${{ github.workspace }}/private-source
+        run: |
+          python - <<'PY'
+          import hashlib,os,json
+          from pathlib import Path
+          from analytics.storage_backup_crypto import digest_file,restore
+          root=Path(os.environ['RUNNER_TEMP'])
+          parts=Path('recovery-input/2026-10-14')
+          payload=''.join((parts/('local-captures.part-%02d.aes.txt'%i)).read_text() for i in range(6))
+          data=payload.encode()
+          assert len(data)==355292 and hashlib.sha256(data).hexdigest()=='bffce7c76bef89cfc68811c83443cc1e4d1ec9b2a295768fc75d3c87650ad9b7'
+          (root/'local-captures.aes.json').write_bytes(data)
+          expected={'point-delta.sqlite':('cfdc68ec48716655e3b0454d3b21c12f88445d6eaaec855c31bc8f19d64abd33','1e7b09961f31663accc183a9f2fc4bb243b66f2c78fe49f37aa8478cac874181'),'point-receipt.json':('cdbf10a41dc3bd800f57e79e81e42741c6bb85595d5a453f8ae92022e5ded495','50ec68275a005d2cb31f6102ae6cc583d5689bfc26f3507e9fa276a019f79d27'),'point-schema.sql':('e694fd47aa597c09dac411a8947608ecaab71dd756ca84cb4de4c45ded3197c1','08bd6ce99bb1839237747d6190557fc6a36e285bc8238430cc500f46e6fd362a')}
+          summary=json.loads((root/'restore-input/point/summary.json').read_text())
+          assert summary['same_snapshot_materialized'] and summary['point_utc']=='2026-10-14T16:04:01.348817+00:00'
+          for name,(cipher,plain) in expected.items():
+              assert summary['components'][name]['ciphertext_sha256']==cipher
+              assert summary['components'][name]['plaintext_sha256']==plain
+              assert digest_file(root/'restore-input/point'/(name+'.aes'))==cipher
+          assert digest_file(root/'restore-input/receiver/receiver-private.pem.aes')=='e315bdaf4bcc4ced0733a46a0a6d51c7e352d06fdb1d8ff3f65d51148fe8241e'
+          print(json.dumps({'point_components_verified':True,'ciphertext_transfer_verified':True,'production_calls':0,'full_database_backup':False}))
+          PY
+      - name: Reconstruct typed state, restore and verify rows and foreign keys without network
+        timeout-minutes: 85
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PYTHONPATH: ${{ github.workspace }}/private-source
+          LOCAL_CAPTURE_ENVELOPE: ${{ runner.temp }}/local-captures.aes.json
+        run: |
+          python - <<'PY'
+          """Offline reconstruction only. Never receives a production database DSN."""
+          import base64,collections,gzip,hashlib,json,os,secrets,subprocess,time
+          from decimal import Decimal
+          from pathlib import Path
+          import simplejson
+          from cryptography.hazmat.primitives import serialization,hashes
+          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+          from analytics.storage_archive import Archive
+          from analytics.storage_backup_crypto import restore,digest_file
+          
+          def norm(v):
+              if v is None:return 'null'
+              if isinstance(v,bool):return 'true' if v else 'false'
+              if isinstance(v,(int,Decimal)):return format(Decimal(v),'f')
+              if isinstance(v,str):return json.dumps(v,ensure_ascii=False)
+              if isinstance(v,list):return '['+', '.join(norm(x) for x in v)+']'
+              return '{'+', '.join(json.dumps(k,ensure_ascii=False)+': '+norm(v[k]) for k in sorted(v,key=lambda k:(len(k.encode()),k.encode())))+'}'
+          
+          def rowhash(row):return hashlib.sha256(norm(row).encode()).hexdigest()
+          def ident(s):return '"'+s.replace('"','""')+'"'
+          def literal(s):return "'"+s.replace("'","''")+"'"
+          def qualified(name):return '.'.join(ident(x) for x in name.split('.'))
+          
+          def main():
+              root=Path(os.environ['RUNNER_TEMP']);report={'production_calls':0,'network':'none','full_database_backup':False,'actual_isolated_restore':False}
+              # Paths are artifact inputs. Secret unwrap never connects to its service.
+              point=root/'restore-input/point'
+              summary=json.loads((point/'summary.json').read_text())
+              def unseal(path,expected,target):
+                  assert digest_file(path)==expected['ciphertext_sha256']
+                  assert restore(path,target,secret=os.environ['SUPABASE_SECRET_KEY'])==expected['plaintext_sha256']
+                  return target
+              receipt_path=unseal(point/'point-receipt.json.aes',summary['components']['point-receipt.json'],root/'receipt.json')
+              receipt=json.loads(receipt_path.read_text())
+              report['point_utc']=receipt['point_utc']
+              schema=unseal(point/'point-schema.sql.aes',summary['components']['point-schema.sql'],root/'schema.sql')
+              delta_path=unseal(point/'point-delta.sqlite.aes',summary['components']['point-delta.sqlite'],root/'delta.sqlite')
+              delta=Archive(str(delta_path))
+              # Decode already existing local backups with ephemeral receiver key only.
+              receiver_dir=root/'restore-input/receiver'
+              private_path=root/'receiver-private.pem'
+              restore(receiver_dir/'receiver-private.pem.aes',private_path,secret=os.environ['SUPABASE_SECRET_KEY'])
+              key=serialization.load_pem_private_key(private_path.read_bytes(),password=None);private_path.unlink()
+              envelope=json.loads(Path(os.environ['LOCAL_CAPTURE_ENVELOPE']).read_text())
+              assert envelope['format']=='veschi-offline-receiver-v1'
+              raw=lambda name:base64.b64decode(envelope[name])
+              aeskey=key.decrypt(raw('wrapped_key'),padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
+              packed=AESGCM(aeskey).decrypt(raw('nonce'),raw('ciphertext'),b'veschi-offline-receiver-v1')
+              assert hashlib.sha256(packed).hexdigest()==envelope['packed_sha256']
+              plain=gzip.decompress(packed)
+              assert hashlib.sha256(plain).hexdigest()==envelope['plaintext_sha256']
+              local=simplejson.loads(plain,use_decimal=True)
+              wanted={table:collections.Counter(status['row_hashes']) for table,status in receipt['tables'].items()}
+              generated={table:collections.Counter() for table in wanted}
+              data_sql=root/'restore-data.sql'
+              with data_sql.open('w',encoding='utf-8') as output:
+                  output.write('BEGIN; SET LOCAL session_replication_role=replica;\n')
+                  def insert(table,row):
+                      h=rowhash(row)
+                      if h not in wanted.get(table,{}):return
+                      if generated[table][h]>=wanted[table][h]:return
+                      q=qualified(table)
+                      output.write('INSERT INTO '+q+' SELECT * FROM json_populate_record(NULL::'+q+','+literal(norm(row))+');\n')
+                      generated[table][h]+=1
+                  for table,rows in local['tables'].items():
+                      for row in rows:insert(table,row)
+                  for component in receipt['inputs']:
+                      matches=[p for p in (root/'restore-input'/component['component']).rglob('*.aes') if digest_file(p)==component['ciphertext_sha256']]
+                      assert len(matches)==1
+                      path=root/(component['component']+'.sqlite')
+                      assert restore(matches[0],path,secret=os.environ['SUPABASE_SECRET_KEY'])==component['plaintext_sha256']
+                      source=Archive(str(path))
+                      for table in component['counts']:
+                          for identity,row in source.rows(table):insert('public.'+table,row)
+                      source.db.close();path.unlink()
+                  for table in [x[0] for x in delta.db.execute('select distinct table_name from records')]:
+                      for identity,row in delta.rows(table):insert(table,row)
+                  for table,expected in wanted.items():assert generated[table]==expected,'Missing state-at-point row versions'
+                  for name,(last,is_called) in receipt['sequences'].items():
+                      output.write('SELECT setval('+literal(qualified(name))+','+str(last)+','+('true' if is_called else 'false')+');\n')
+                  output.write('COMMIT;\n')
+              delta.db.close()
+              report['reconstructed_counts']={t:sum(v.values()) for t,v in generated.items()}
+              container='veschi-isolated-'+secrets.token_hex(4)
+              image='supabase/postgres:17.6.1.136'
+              log=root/'isolated-private.log'
+              def run(args,**kwargs):
+                  with log.open('ab') as stream:return subprocess.run(args,stderr=stream,**kwargs)
+              with log.open('ab') as stream:subprocess.run(['docker','pull',image],stdout=stream,stderr=stream,check=True,timeout=600)
+              try:
+                  with log.open('ab') as stream:
+                      subprocess.run(['docker','run','-d','--name',container,'--network','none','-e','POSTGRES_PASSWORD='+secrets.token_hex(24),image,'postgres','-c','shared_preload_libraries=pg_cron,pg_net','-c','cron.database_name=isolated_restore','-c','cron.launch_active_jobs=off'],stdout=stream,stderr=stream,check=True,timeout=60)
+                  for attempt in range(60):
+                      ready=run(['docker','exec',container,'pg_isready','-U','postgres'],stdout=subprocess.DEVNULL)
+                      if ready.returncode==0:break
+                      time.sleep(1)
+                  else:raise RuntimeError('Isolated PostgreSQL unavailable')
+                  roles=root/'restore-roles.sql'
+                  roles.write_text('\n'.join('DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='+literal(row[0])+') THEN CREATE ROLE '+ident(row[0])+'; END IF; END $$;' for row in receipt['role_flags_without_passwords']))
+                  def psql(file,database):
+                      with file.open('rb') as src,log.open('ab') as dst:
+                          return subprocess.run(['docker','exec','-i',container,'psql','-X','-U','supabase_admin','-d',database,'-v','ON_ERROR_STOP=1'],stdin=src,stdout=dst,stderr=dst,timeout=1800).returncode
+                  assert psql(roles,'postgres')==0,'Role bootstrap failed'
+                  assert run(['docker','exec',container,'createdb','-U','supabase_admin','-T','template0','isolated_restore'],stdout=subprocess.DEVNULL).returncode==0
+                  schema_code=psql(schema,'isolated_restore');report['schema_restore_exit_code']=schema_code
+                  if schema_code!=0:raise RuntimeError('Full schema restore failed; platform dependency diagnostics required')
+                  data_code=psql(data_sql,'isolated_restore');report['data_restore_exit_code']=data_code
+                  if data_code!=0:raise RuntimeError('Typed data restore failed')
+                  results={}
+                  for table,expected in wanted.items():
+                      query="select encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex') from "+qualified(table)+' t'
+                      response=run(['docker','exec',container,'psql','-X','-A','-t','-U','supabase_admin','-d','isolated_restore','-v','ON_ERROR_STOP=1','-c',query],stdout=subprocess.PIPE)
+                      assert response.returncode==0
+                      actual=collections.Counter(response.stdout.decode().splitlines())
+                      results[table]={'count':sum(actual.values()),'all_full_row_hashes_match':actual==expected}
+                      assert actual==expected,'Restored row values or identifiers differ'
+                  def scalar_query(query):
+                      response=run(['docker','exec',container,'psql','-X','-A','-t','-U','supabase_admin','-d','isolated_restore','-v','ON_ERROR_STOP=1','-c',query],stdout=subprocess.PIPE)
+                      assert response.returncode==0,'Isolated verification query failed'
+                      return response.stdout.decode().strip()
+                  fk_query="""select json_build_object('name',c.conname,'src',n.nspname||'.'||t.relname,'dst',n2.nspname||'.'||t2.relname,'match',c.confmatchtype,'src_cols',array(select a.attname from unnest(c.conkey) with ordinality k(attnum,ord) join pg_attribute a on a.attrelid=c.conrelid and a.attnum=k.attnum order by k.ord),'dst_cols',array(select a.attname from unnest(c.confkey) with ordinality k(attnum,ord) join pg_attribute a on a.attrelid=c.confrelid and a.attnum=k.attnum order by k.ord))::text from pg_constraint c join pg_class t on t.oid=c.conrelid join pg_namespace n on n.oid=t.relnamespace join pg_class t2 on t2.oid=c.confrelid join pg_namespace n2 on n2.oid=t2.relnamespace where c.contype='f' and n.nspname not in ('pg_catalog','information_schema')"""
+                  checked=[]
+                  for line in scalar_query(fk_query).splitlines():
+                      fk=json.loads(line)
+                      left=['s.'+ident(col) for col in fk['src_cols']]
+                      right=['d.'+ident(col) for col in fk['dst_cols']]
+                      present=' AND '.join(col+' IS NOT NULL' for col in left)
+                      equal=' AND '.join(a+'='+b for a,b in zip(left,right))
+                      missing='('+present+') AND NOT EXISTS(SELECT 1 FROM '+qualified(fk['dst'])+' d WHERE '+equal+')'
+                      if fk['match']=='f':
+                          any_null=' OR '.join(col+' IS NULL' for col in left)
+                          any_present=' OR '.join(col+' IS NOT NULL' for col in left)
+                          missing='('+missing+') OR (('+any_null+') AND ('+any_present+'))'
+                      count=int(scalar_query('SELECT count(*) FROM '+qualified(fk['src'])+' s WHERE '+missing))
+                      checked.append({'constraint':fk['name'],'table':fk['src'],'orphan_or_partial_null_rows':count})
+                      assert count==0,'Restored foreign-key relationship invalid'
+                  report['foreign_keys']=checked
+                  report['tables']=results;report['actual_isolated_restore']=True
+                  report['remaining_checks']=['RPC/RLS behavior','exact role flags and extension versions','Vault portable decryption and UUID continuity','platform/Edge configuration and secrets completeness']
+              except Exception as exc:
+                  report['error_type']=type(exc).__name__
+                  # Only fixed internal exception category, no DB/source values.
+                  report['failure_stage']=str(exc) if isinstance(exc,RuntimeError) else 'restoration_validation_failed'
+              finally:
+                  run(['docker','rm','-f',container],stdout=subprocess.DEVNULL)
+                  report_path=root/'isolated-restore-summary.json';report_path.write_text(json.dumps(report,sort_keys=True))
+                  print(json.dumps(report,sort_keys=True))
+          
+          if __name__=='__main__':main()
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolated-consistent-point-restoration-result
+          path: ${{ runner.temp }}/isolated-restore-summary.json
+          retention-days: 7
+          if-no-files-found: error

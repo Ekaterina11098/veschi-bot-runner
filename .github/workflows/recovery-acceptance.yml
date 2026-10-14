@@ -1,0 +1,185 @@
+name: Remaining backup acceptance checks offline
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-acceptance.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: recovery-acceptance-offline
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cryptography > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-consistent-point
+          run-id: 38592132657
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/point
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-schema-inventory
+          run-id: 38581907715
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/inventory
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-verified-restore-input
+          run-id: 38607412622
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/cache
+      - name: New role, RLS, auth RPC, sequence and saved-state checks; no data restoration
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          import os,json,re,subprocess,time,secrets,hashlib,gzip,collections
+          from pathlib import Path
+          from analytics.storage_backup_crypto import restore,digest_file,seal
+          root=Path(os.environ['RUNNER_TEMP']);out=root/'acceptance-result';out.mkdir()
+          report={'point_utc':'2026-10-14T16:04:01.348817+00:00','production_calls':0,'full_data_restore_repeated':False,'vault_check_repeated':False,'network':'none','full_copy_accepted':False}
+          def unwrap(folder,file,cipher,plain):
+              src=root/folder/(file+'.aes');assert digest_file(src)==cipher
+              target=root/file
+              assert restore(src,target,secret=os.environ['SUPABASE_SECRET_KEY'])==plain
+              return target
+          schema=unwrap('point','point-schema.sql','e694fd47aa597c09dac411a8947608ecaab71dd756ca84cb4de4c45ded3197c1','08bd6ce99bb1839237747d6190557fc6a36e285bc8238430cc500f46e6fd362a')
+          receiptpath=unwrap('point','point-receipt.json','cdbf10a41dc3bd800f57e79e81e42741c6bb85595d5a453f8ae92022e5ded495','50ec68275a005d2cb31f6102ae6cc583d5689bfc26f3507e9fa276a019f79d27')
+          receipt=json.loads(receiptpath.read_text())
+          assert receipt['point_utc']==report['point_utc']
+          inventory=unwrap('inventory','inventory.json','f15196ea3dc13962cf767a843d4670ff94551ce0e138ffe2ede34d9e94cbf70b','05b7e71edc6098fb4de11b54ce3babe821b80c2a82e5262bf09c1f65932975f7')
+          inventory=json.loads(inventory.read_text())
+          packed=unwrap('cache','verified-restore-input.sql.gz','457875d0b572a422eb0fc76137143776c4a697db9b16b76745d851228220c8ce','0692dcbf7b872f69af61a525d0925bab81d53a2fbaf46591bbf43c7db3cc61a0')
+          # New continuation audit: read preserved statements, never execute saved INSERTs.
+          maxima={};distributions={};rows=collections.Counter();rawhash=hashlib.sha256()
+          with gzip.open(packed,'rb') as stream:
+              for rawline in stream:
+                  rawhash.update(rawline)
+                  if not rawline.startswith(b'INSERT INTO '):continue
+                  line=rawline.decode().rstrip('\r\n')
+                  table=line[12:line.index(' OVERRIDING SYSTEM VALUE')].replace('"','')
+                  marker=line.index(",'");assert line.endswith("');")
+                  row=json.loads(line[marker+2:-3].replace("''","'"))
+                  rows[table]+=1
+                  for col,value in row.items():
+                      if isinstance(value,int) and not isinstance(value,bool):
+                          maxima.setdefault(table,{})[col]=max(maxima.get(table,{}).get(col,value),value)
+                  if table in ('public.advertising_action_queue','public.advertising_agent_jobs','public.business_agent_jobs','public.telegram_jobs','public.review_replies','public.advertising_experiments'):
+                      for col in ('status','state','decision_type','action_type'):
+                          value=row.get(col)
+                          if isinstance(value,str) and re.fullmatch('[a-zA-Z0-9_-]{1,40}',value):
+                              distributions.setdefault(table,{}).setdefault(col,collections.Counter())[value]+=1
+          assert rawhash.hexdigest()=='bf95c241d4ab0e8a61ff5eac5d8a01d226e374e3b347f1d09ded67b10ba7a06d'
+          assert all(rows[table]==status['count'] for table,status in receipt['tables'].items())
+          report['saved_statement_count_manifest_matches']=True
+          report['saved_state_distributions']=distributions
+          sqltext=schema.read_text()
+          expected_rls={name.replace('"','') for name in re.findall(r'ALTER TABLE (?:ONLY )?([^;\n]+?) ENABLE ROW LEVEL SECURITY;',sqltext)}
+          expected_force={name.replace('"','') for name in re.findall(r'ALTER TABLE (?:ONLY )?([^;\n]+?) FORCE ROW LEVEL SECURITY;',sqltext)}
+          def ident(v):return '"'+v.replace('"','""')+'"'
+          def literal(v):return "'"+v.replace("'","''")+"'"
+          name='acceptance-'+secrets.token_hex(4);log=root/'acceptance-private.log';image='supabase/postgres:17.6.1.136'
+          def run(args,**kw):
+              with log.open('ab') as err:return subprocess.run(args,stderr=err,**kw)
+          def command(args):
+              with log.open('ab') as dst:return subprocess.run(args,stdout=dst,stderr=dst,timeout=600)
+          def query(sql,user='supabase_admin'):
+              response=run(['docker','exec',name,'psql','-X','-A','-t','-U',user,'-d','acceptance','-v','ON_ERROR_STOP=1','-c',sql],stdout=subprocess.PIPE,timeout=120)
+              assert response.returncode==0,'Isolated audit SQL failed'
+              return response.stdout.decode().strip()
+          try:
+              assert command(['docker','pull',image]).returncode==0
+              assert command(['docker','run','-d','--name',name,'--network','none','-e','POSTGRES_PASSWORD='+secrets.token_hex(24),image,'postgres','-c','shared_preload_libraries=pg_cron,pg_net','-c','cron.database_name=acceptance','-c','cron.launch_active_jobs=off']).returncode==0
+              for i in range(90):
+                  ready=run(['docker','exec',name,'pg_isready','-h','127.0.0.1','-U','postgres'],stdout=subprocess.DEVNULL)
+                  if ready.returncode==0:break
+                  time.sleep(1)
+              else:raise RuntimeError('Final PostgreSQL startup not ready')
+              roles=root/'roles.sql'
+              roles.write_text('\n'.join('DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='+literal(row[0])+') THEN CREATE ROLE '+ident(row[0])+'; END IF; END $$;' for row in receipt['role_flags_without_passwords']))
+              def psql(path,database):
+                  with path.open('rb') as src,log.open('ab') as dst:return subprocess.run(['docker','exec','-i',name,'psql','-X','-U','supabase_admin','-d',database,'-v','ON_ERROR_STOP=1'],stdin=src,stdout=dst,stderr=dst,timeout=600).returncode
+              assert psql(roles,'postgres')==0
+              assert command(['docker','exec',name,'createdb','-U','supabase_admin','-T','template0','acceptance']).returncode==0
+              assert psql(schema,'acceptance')==0
+              # Schema load is prerequisite only; no data import or prior hash/FK test repeats.
+              rls=json.loads(query("select coalesce(json_agg(json_build_object('table',n.nspname||'.'||c.relname,'enabled',c.relrowsecurity,'forced',c.relforcerowsecurity)),'[]') from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind in ('r','p') and n.nspname='public'"))
+              report['rls_flags_match_dump']=all(x['enabled']==(x['table'] in expected_rls) and x['forced']==(x['table'] in expected_force) for x in rls)
+              report['public_rls_profile']=rls
+              actual_roles=json.loads(query("select json_agg(json_build_array(rolname,rolsuper,rolinherit,rolcreaterole,rolcreatedb,rolcanlogin,rolreplication,rolbypassrls,rolconnlimit)) from pg_roles"))
+              actual_roles={row[0]:row for row in actual_roles}
+              report['role_flag_mismatches']=[row[0] for row in receipt['role_flags_without_passwords'] if actual_roles.get(row[0])!=row]
+              actual_ext=dict(json.loads(query("select json_agg(json_build_array(extname,extversion)) from pg_extension")))
+              report['extension_version_differences_vs_saved_inventory']=[{'extension':name,'saved':version,'isolated':actual_ext.get(name)} for name,version in inventory['extensions'] if actual_ext.get(name)!=version]
+              report['extension_inventory_is_earlier_than_fixed_point']=True
+              smoke=[]
+              for role in ('anon','authenticated','service_role'):
+                  claims={'role':role}
+                  if role!='anon':claims['sub']='00000000-0000-4000-8000-000000000001'
+                  sql='BEGIN; SET LOCAL ROLE '+ident(role)+'; SET LOCAL request.jwt.claims='+literal(json.dumps(claims))+"; SELECT json_build_object('uid',auth.uid(),'role',auth.role())::text; ROLLBACK;"
+                  lines=query(sql).splitlines()
+                  values=[json.loads(line) for line in lines if line.startswith('{')]
+                  ok=len(values)==1 and values[0]['role']==role and values[0]['uid']==claims.get('sub')
+                  smoke.append({'role':role,'jwt_helper_behavior_passed':ok})
+              report['auth_rpc_smoke']=smoke
+              policy_rows=json.loads(query("select coalesce(json_agg(json_build_object('table',schemaname||'.'||tablename,'policy',policyname,'roles',roles,'command',cmd)),'[]') from pg_policies where schemaname='public'"))
+              report['public_policy_inventory']=policy_rows
+              bindings=json.loads(query("select coalesce(json_agg(json_build_object('sequence',sn.nspname||'.'||s.relname,'table',tn.nspname||'.'||t.relname,'column',a.attname,'increment',q.seqincrement)),'[]') from pg_class s join pg_namespace sn on sn.oid=s.relnamespace join pg_sequence q on q.seqrelid=s.oid join pg_depend d on d.objid=s.oid and d.deptype in ('a','i') join pg_class t on t.oid=d.refobjid join pg_namespace tn on tn.oid=t.relnamespace join pg_attribute a on a.attrelid=t.oid and a.attnum=d.refobjsubid where s.relkind='S'"))
+              sequence_report=[]
+              for binding in bindings:
+                  seq=binding['sequence'];assert seq in receipt['sequences']
+                  value,called=receipt['sequences'][seq]
+                  observed=json.loads(query('select json_build_array(last_value,is_called) from '+'.'.join(ident(x) for x in seq.split('.'))))
+                  query('select setval('+literal('.'.join(ident(x) for x in seq.split('.')))+','+str(value)+','+('true' if called else 'false')+')')
+                  roundtrip=json.loads(query('select json_build_array(last_value,is_called) from '+'.'.join(ident(x) for x in seq.split('.'))))
+                  assert roundtrip==[value,called]
+                  maximum=maxima.get(binding['table'],{}).get(binding['column'])
+                  candidate=value+binding['increment'] if called else value
+                  safe=maximum is None or (binding['increment']>0 and candidate>maximum)
+                  sequence_report.append({**binding,'recorded_value_roundtrip':True,'next_value_above_saved_ids':safe})
+              report['sequence_continuation']=sequence_report
+              report['business_rpc_execution_not_tested']=True
+              report['new_isolated_audit_completed']=True
+          except Exception as exc:
+              report['new_isolated_audit_completed']=False
+              report['error_type']=type(exc).__name__
+          finally:
+              with log.open('ab') as dst:subprocess.run(['docker','logs',name],stdout=dst,stderr=dst)
+              command(['docker','rm','-f',name])
+              if log.exists():report['private_diagnostic']=seal(log,out/'acceptance-private.log.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])
+              (out/'summary.json').write_text(json.dumps(report,sort_keys=True))
+              print(json.dumps(report,sort_keys=True))
+          
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: remaining-backup-acceptance-result
+          path: ${{ runner.temp }}/acceptance-result
+          retention-days: 7

@@ -48,7 +48,7 @@ jobs:
           dependencies=[]
           for identity,row in source.rows('cron.job'):
               command=row['command']
-              dependencies.append({'jobname':row.get('jobname'),'execution_role':row.get('username'),'uses_vault':bool(re.search(r'vault\.',command,re.I)),'vault_secret_names':sorted(set(re.findall(r"\\bname\\s*=\\s*'([a-zA-Z0-9_-]+)'",command,re.I))),'routes':sorted(set(re.findall(r'/functions/v1/([a-zA-Z0-9_-]+)',command)))})
+              dependencies.append({'jobname':row.get('jobname'),'execution_role':row.get('username'),'uses_vault':bool(re.search(r'vault\.',command,re.I)),'vault_secret_names':sorted(set(re.findall(r"name[^=]{0,8}=[^']{0,8}'([a-zA-Z0-9_-]+)'",command,re.I))),'routes':sorted(set(re.findall(r'/functions/v1/([a-zA-Z0-9_-]+)',command)))})
           assert len(dependencies)==3
           print(json.dumps({'point_utc':'2026-10-14T16:04:01.348817+00:00','saved_cron_dependencies':dependencies,'source_database_calls':0,'secret_values_published':False}))
           source.db.close();plain.unlink()

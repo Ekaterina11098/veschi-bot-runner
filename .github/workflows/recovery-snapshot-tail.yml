@@ -1,0 +1,130 @@
+name: Read-only snapshot tail backup
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-snapshot-tail.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv simplejson cryptography 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-storage-backup
+          run-id: 38561695550
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/checkpoint
+      - name: Capture only snapshots beyond preserved high-watermark
+        timeout-minutes: 85
+        env:
+          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          import os,time,shutil,json
+          from pathlib import Path
+          import simplejson,psycopg
+          from analytics.storage_archive import Archive
+          from analytics.storage_backup_crypto import restore,seal,digest_file
+          root=Path(os.environ['RUNNER_TEMP'])
+          sealed=root/'checkpoint/16/original.partial.sqlite.aes'
+          assert digest_file(sealed)=='cd70f3dbb7885a5d1c79cc15958717b6b3d086e36fec1829d52dde33e90dec58'
+          base=root/'baseline.sqlite'
+          assert restore(sealed,base,secret=os.environ['SUPABASE_SECRET_KEY'])=='82f50ad7a8d6e31d30af21d8f1f1ab6f7c3466864678435413aaee5c93195ce3'
+          old=Archive(str(base))
+          guard=old.state('read_guard') or {}
+          assert not (guard.get('source_block') or guard.get('requests') or guard.get('retry_at',0)>time.time())
+          snapshot_state=old.state('analytics_snapshots')
+          assert snapshot_state['saved']==17085 and snapshot_state['verified']
+          maximum=snapshot_state['maximum']
+          assert isinstance(maximum,int)
+          assert old.db.execute("select count(*) from records where table_name='analytics_snapshots'").fetchone()[0]==17085
+          old.db.close();base.unlink()
+          out=root/'snapshot-tail-sealed';out.mkdir()
+          plain=root/'snapshot-tail-component.sqlite'
+          archive=Archive(str(plain))
+          report=dict(component='analytics_snapshots_tail',epoch='postgres_repeatable_read_20261014',full_database_backup=False,complete=False,saved=0,source_json_bytes=0,passes=1,production_writes=0,automatic_retry=False)
+          start=time.monotonic();passbytes=0
+          try:
+              with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='postgres.abxgjoqlddhtcmjcjwxw',password=os.environ['DB_PASSWORD'],sslmode='require',connect_timeout=15,options='-c default_transaction_read_only=on -c statement_timeout=30000',application_name='recovery_snapshot_tail') as conn:
+                  with conn.cursor() as cur:
+                      cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                      cur.execute('select count(*),transaction_timestamp() from public.analytics_snapshots where id > %s',(maximum,))
+                      expected,epoch=cur.fetchone()
+                      from datetime import datetime
+                      cur.execute('select id,collected_at from public.analytics_snapshots where id <= %s order by id',(maximum,))
+                      current=dict(cur.fetchall())
+                      preserved={x['id']:datetime.fromisoformat(x['collected_at']) for x in snapshot_state['manifest']}
+                      report['missing_preserved_ids']=len(preserved.keys()-current.keys())
+                      report['added_below_bound']=len(current.keys()-preserved.keys())
+                      report['changed_preserved_versions']=sum(preserved[k]!=current[k] for k in preserved.keys() & current.keys())
+                      report['original_high_watermark']=maximum
+                      report['expected']=expected;report['captured_at']=epoch.isoformat()
+                  with conn.cursor(name='recovery_snapshot_tail_rows') as cur:
+                      cur.itersize=1
+                      cur.execute('select row_to_json(t)::text from public.analytics_snapshots t where id > %s order by id',(maximum,))
+                      for (raw,) in cur:
+                          if report['source_json_bytes']>=2_000_000_000 or time.monotonic()-start>=4800 or shutil.disk_usage(root).free<4_000_000_000:raise RuntimeError('budget_or_free_space_stop')
+                          if passbytes>=100_000_000:
+                              if report['passes']>=20:raise RuntimeError('pass_budget_stop')
+                              report['passes']+=1;passbytes=0
+                          n=len(raw.encode('utf-8'));report['source_json_bytes']+=n;passbytes+=n
+                          row=simplejson.loads(raw,use_decimal=True)
+                          archive.record('analytics_snapshots',row['id'],row)
+                          archive.db.commit();report['saved']+=1
+                  assert report['saved']==expected
+                  conn.rollback()
+              report['complete']=True
+          except Exception as exc:
+              report['error_type']=type(exc).__name__
+              report['stop_reason']='source_or_validation_error_no_automatic_retry'
+          archive.set_state('snapshot_tail_receipt',report);archive.db.commit()
+          archive.db.close()
+          report['elapsed_seconds']=round(time.monotonic()-start,3)
+          encrypted=out/'snapshot-tail-component.sqlite.aes'
+          report.update(seal(plain,encrypted,os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY']))
+          check=root/'cache-readback.sqlite'
+          assert restore(encrypted,check,secret=os.environ['SUPABASE_SECRET_KEY'])==report['plaintext_sha256']
+          verified=Archive(str(check))
+          assert verified.db.execute('select count(*) from records').fetchone()[0]==report['saved']
+          for identity,row in verified.rows('analytics_snapshots'):assert identity==str(row['id'])
+          verified.db.close();check.unlink();plain.unlink()
+          report['readback_verified']=True;report['ciphertext_bytes']=encrypted.stat().st_size
+          (out/'summary.json').write_text(json.dumps(report,sort_keys=True))
+          print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-snapshot-tail-component
+          path: ${{ runner.temp }}/snapshot-tail-sealed
+          retention-days: 7
+          if-no-files-found: error

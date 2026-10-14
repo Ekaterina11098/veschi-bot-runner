@@ -1,0 +1,54 @@
+name: Compare saved small table fingerprints read-only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-small-table-compare.yml']
+permissions:
+  contents: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Return only counts and SHA256 comparisons; no row payloads
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          PGHOST: aws-0-eu-central-1.pooler.supabase.com
+          PGPORT: '5432'
+          PGDATABASE: postgres
+          PGUSER: postgres.abxgjoqlddhtcmjcjwxw
+          PGSSLMODE: require
+          PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=30000'
+        run: |
+          python - <<'PY'
+          import json,psycopg
+          from psycopg import sql
+          from pathlib import Path
+          import os
+          baseline={"advertising_action_queue":{"count":4,"sha256":"66d5a6c9561b22454f7bb07191d252a46f04a88649391acdd951eb3bc5b33b46"},"advertising_agent_actions":{"count":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"advertising_agent_jobs":{"count":28,"sha256":"2cf8a29cbfaf7886173c412f14a6255f10a7627af9b92106d30bdbaceda7411c"},"advertising_agent_memory":{"count":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"advertising_agent_watches":{"count":11,"sha256":"1516dfe69eee660867aed8a411cf77c30654b438c13f8a0fa35d243759ac1114"},"advertising_campaign_budget_state":{"count":116,"sha256":"9d5a0f8c3cc5b5674070ea0938b3a2dbc519b43d52913e41f00a99eaf0078984"},"advertising_change_log":{"count":431,"sha256":"81aec13f334ffe7d053ed15cb7ba44cbc55589105c7d813b1e6675aa6347b0d2"},"advertising_telegram_chat":{"count":1,"sha256":"3b0dae8b1d93a98ff8f1b2570656a0c15a19f0fdee33fbedfe90424e59f99915"},"analytics_costs":{"count":576,"sha256":"f79a5a7ccaef7553da7293a6e1f6df5202f300fe2b355d87833e5ba8dc1e0bb5"},"business_agent_config":{"count":2,"sha256":"7b0f353fe02234cb3745e1ae728909a4bb1d4060ec1a75738f61dbfc8b6be8ff"},"business_agent_jobs":{"count":31,"sha256":"89c9eef0a947c8eb3014bf1ae7633b0570e7e75d17a36a340afb7c6adc21c034"},"price_snapshot_checkpoints":{"count":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"review_benchmarks":{"count":37,"sha256":"8818d6cd49e9540d6ca220d49fc079949af88d1f8cf4ab1f76d681634518e411"},"review_inbox_cache":{"count":2,"sha256":"ed3aee90f11d91913dbc1c2c23ed558d258550404b7423841f74d095cdbf1c33"},"review_replies":{"count":99,"sha256":"aad405681b0da49f689b5ea484e925b21c0a869a38c26ec3828618b2b5ca82bf"},"telegram_bot_state":{"count":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"telegram_jobs":{"count":23,"sha256":"511654f1f024255db05a6450120d44aa0ae955b5622dcb2005279c4a8517528a"}}
+          result={}
+          with psycopg.connect(connect_timeout=15,application_name='recovery_small_fingerprint') as conn:
+              with conn.cursor() as cur:
+                  cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                  for table,old in baseline.items():
+                      query=sql.SQL("select count(*),encode(sha256(convert_to(coalesce(string_agg(h,E'\\n' order by h),''),'UTF8')),'hex') from (select encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex') h from public.{} t) q").format(sql.Identifier(table))
+                      cur.execute(query)
+                      count,checksum=cur.fetchone()
+                      result[table]={'saved_count':old['count'],'current_count':count,'saved_sha256':old['sha256'],'current_sha256':checksum,'matches':count==old['count'] and checksum==old['sha256']}
+              conn.rollback()
+          report={'tables':result,'source_row_payloads_exported':0,'production_writes':0,'full_database_backup':False,'serialization':'PostgreSQL jsonb text; mismatch requires content versus representation diagnosis'}
+          (Path(os.environ['RUNNER_TEMP'])/'small-comparison.json').write_text(json.dumps(report,sort_keys=True))
+          print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-table-fingerprint-comparison
+          path: ${{ runner.temp }}/small-comparison.json
+          retention-days: 7

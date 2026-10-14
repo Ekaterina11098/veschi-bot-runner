@@ -1,0 +1,29 @@
+name: PR20 offline stock write path inventory
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-pr20-path-inventory.yml']
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 3931cc77e187b3bc4e292072b4837648167fcaa4
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - name: Static paths only; no business imports
+        run: |
+          python - <<'PY'
+          import pathlib,json,re
+          for p in pathlib.Path('.').rglob('*'):
+              if '.git' in p.parts or p.suffix not in ('.py','.yml','.yaml'):continue
+              if 'tests' in p.parts:continue
+              lines=p.read_text(encoding='utf-8').splitlines()
+              hits=[{'line':i+1,'code':line.strip()} for i,line in enumerate(lines) if ('stocks' in line.lower() and any(x in line.lower() for x in ('put','delete','update','/api/','/v3/'))) or any(x in line for x in ('write_verified(','.apply_article(','update_stock(','set_stock('))]
+              if hits:print(json.dumps({'path':str(p),'hits':hits},ensure_ascii=False))
+          PY

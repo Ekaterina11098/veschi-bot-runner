@@ -1,0 +1,55 @@
+name: Fixed-point Vault dependency inventory offline
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-vault-dependencies.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: recovery-vault-dependencies
+  cancel-in-progress: false
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cryptography simplejson > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-consistent-point
+          run-id: 38592132657
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/point-input
+      - name: Read only saved cron definitions; publish dependency names without values
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,re
+          from pathlib import Path
+          from analytics.storage_backup_crypto import restore,digest_file
+          from analytics.storage_archive import Archive
+          root=Path(os.environ['RUNNER_TEMP'])
+          sealed=root/'point-input/point-delta.sqlite.aes'
+          assert digest_file(sealed)=='cfdc68ec48716655e3b0454d3b21c12f88445d6eaaec855c31bc8f19d64abd33'
+          plain=root/'point-delta.sqlite'
+          assert restore(sealed,plain,secret=os.environ['SUPABASE_SECRET_KEY'])=='1e7b09961f31663accc183a9f2fc4bb243b66f2c78fe49f37aa8478cac874181'
+          source=Archive(str(plain))
+          dependencies=[]
+          for identity,row in source.rows('cron.job'):
+              command=row['command']
+              dependencies.append({'jobname':row.get('jobname'),'execution_role':row.get('username'),'uses_vault':bool(re.search(r'vault\.',command,re.I)),'vault_secret_names':sorted(set(re.findall(r"\\bname\\s*=\\s*'([a-zA-Z0-9_-]+)'",command,re.I))),'routes':sorted(set(re.findall(r'/functions/v1/([a-zA-Z0-9_-]+)',command)))})
+          assert len(dependencies)==3
+          print(json.dumps({'point_utc':'2026-10-14T16:04:01.348817+00:00','saved_cron_dependencies':dependencies,'source_database_calls':0,'secret_values_published':False}))
+          source.db.close();plain.unlink()
+          PY

@@ -73,7 +73,7 @@ jobs:
               assert command(['docker','pull',image],timeout=600).returncode==0
               assert command(['docker','run','-d','--name',name,'--network','none','-e','POSTGRES_PASSWORD='+secrets.token_hex(24),image,'postgres','-c','shared_preload_libraries=pg_cron,pg_net','-c','cron.database_name=isolated_restore','-c','cron.launch_active_jobs=off'],timeout=60).returncode==0
               for i in range(60):
-                  if command(['docker','exec',name,'pg_isready','-U','postgres'],timeout=10).returncode==0:break
+                  if command(['docker','exec',name,'pg_isready','-h','127.0.0.1','-U','postgres'],timeout=10).returncode==0:break
                   time.sleep(1)
               else:raise RuntimeError('isolated_database_unavailable')
               roles=root/'roles.sql'
@@ -119,6 +119,7 @@ jobs:
           except Exception as exc:
               report['error_type']=type(exc).__name__;report['schema_restore_completed']=False
           finally:
+              with log.open('ab') as output:subprocess.run(['docker','logs',name],stdout=output,stderr=output)
               state=subprocess.run(['docker','inspect','--format','{{json .State}}',name],capture_output=True,text=True)
               if state.returncode==0:
                   state_data=json.loads(state.stdout)

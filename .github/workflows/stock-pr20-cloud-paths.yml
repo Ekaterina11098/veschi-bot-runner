@@ -1,0 +1,35 @@
+name: PR20 complete cloud paths offline
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-pr20-cloud-paths.yml']
+permissions:
+  contents: read
+jobs:
+  cloud:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 1730c142f01cda41ef5cabd6c4da8a8482df832e
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Full integration with fake business services and denied network
+        run: |
+          python - <<'PY'
+          import socket,unittest,sys,pathlib
+          def denied(*args,**kwargs):raise AssertionError('Real external services disabled')
+          socket.socket.connect=denied
+          socket.socket.connect_ex=denied
+          socket.create_connection=denied
+          for name in ('auto_stock.py','tg_agent_new.py','stock_cloud_execution.py','stock_operation_store.py'):
+              compile(pathlib.Path(name).read_text(encoding='utf-8'),name,'exec')
+          suite=unittest.defaultTestLoader.discover('tests',pattern='test_stock_cloud_paths.py')
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(not result.wasSuccessful())
+          PY

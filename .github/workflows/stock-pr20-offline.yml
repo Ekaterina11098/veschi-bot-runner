@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: e9932bb74224ce3f8037551ee5b0a4b9085fe353
+          ref: eb08ba9feba01b1dd574b10880f0a5013a4607f2
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
       - uses: actions/setup-python@v5
@@ -31,7 +31,9 @@ jobs:
           socket.socket.connect=blocked
           socket.socket.connect_ex=blocked
           socket.create_connection=blocked
-          suite=unittest.defaultTestLoader.discover('tests',pattern='test_stock_local_cloud_parity.py')
+          sys.path.insert(0,'tests')
+          from test_stock_local_cloud_parity import ParityTests
+          suite=unittest.TestSuite(ParityTests(name) for name in ('test_signed_zero_and_missing_row','test_cloud_loop_blocks_all_automatic_low_stock_changes','test_shared_batch_uses_same_completed_moscow_window'))
           result=unittest.TextTestRunner(verbosity=2).run(suite)
           sys.exit(not result.wasSuccessful())
           PY

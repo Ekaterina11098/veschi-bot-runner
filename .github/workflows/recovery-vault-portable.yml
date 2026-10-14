@@ -1,0 +1,99 @@
+name: Portable Vault component bound to fixed point
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-vault-portable.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install simplejson cryptography 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-consistent-point
+          run-id: 38592132657
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/point-input
+      - name: Export portable logical Vault data only if ciphertext rows still match fixed point
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          PGHOST: aws-0-eu-central-1.pooler.supabase.com
+          PGPORT: '5432'
+          PGDATABASE: postgres
+          PGUSER: postgres.abxgjoqlddhtcmjcjwxw
+          PGSSLMODE: require
+          PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=30000'
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          import os,json,hashlib,collections,shutil
+          from pathlib import Path
+          import psycopg,simplejson
+          from analytics.storage_backup_crypto import restore,seal,digest_file
+          root=Path(os.environ['RUNNER_TEMP']);out=root/'vault-sealed';out.mkdir()
+          assert shutil.disk_usage(root).free>=4_000_000_000
+          receiptfile=root/'point-receipt.json'
+          source=root/'point-input/point-receipt.json.aes'
+          assert digest_file(source)=='cdbf10a41dc3bd800f57e79e81e42741c6bb85595d5a453f8ae92022e5ded495'
+          assert restore(source,receiptfile,secret=os.environ['SUPABASE_SECRET_KEY'])=='50ec68275a005d2cb31f6102ae6cc583d5689bfc26f3507e9fa276a019f79d27'
+          receipt=json.loads(receiptfile.read_text())
+          report={'point_utc':receipt['point_utc'],'production_writes':0,'root_key_exported':False,'full_database_backup':False,'automatic_retry':False}
+          with psycopg.connect(connect_timeout=15,application_name='recovery_portable_vault') as conn:
+              with conn.cursor() as cur:
+                  cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                  cur.execute("select encode(sha256(convert_to(to_jsonb(s)::text,'UTF8')),'hex') from vault.secrets s")
+                  current=collections.Counter(x[0] for x in cur.fetchall())
+                  assert current==collections.Counter(receipt['tables']['vault.secrets']['row_hashes']),'Vault changed since point; refuse mixed version export'
+                  report['ciphertext_rows_match_fixed_point']=True
+                  cur.execute('select row_to_json(s)::text from vault.decrypted_secrets s')
+                  rows=[x[0] for x in cur.fetchall()]
+                  assert len(rows)==sum(current.values())
+                  assert sum(len(x.encode()) for x in rows)<=100_000_000
+                  plain=root/'vault-portable.json'
+                  plain.write_text('['+','.join(rows)+']')
+                  report['rows']=len(rows);report['source_json_bytes']=sum(len(x.encode()) for x in rows)
+              conn.rollback()
+          report.update(seal(plain,out/'vault-portable.json.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY']))
+          check=root/'vault-check.json'
+          assert restore(out/'vault-portable.json.aes',check,secret=os.environ['SUPABASE_SECRET_KEY'])==report['plaintext_sha256']
+          assert len(simplejson.loads(check.read_text(),use_decimal=True))==report['rows']
+          plain.unlink();check.unlink();receiptfile.unlink()
+          report['readback_verified']=True
+          (out/'summary.json').write_text(json.dumps(report,sort_keys=True))
+          print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-portable-vault
+          path: ${{ runner.temp }}/vault-sealed
+          retention-days: 7
+          if-no-files-found: error

@@ -23,6 +23,8 @@ permissions:
   contents: read
 jobs:
   select:
+    # Owner-authorized recovery maintenance: no queue execution or source collection.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:

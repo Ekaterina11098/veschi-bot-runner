@@ -1,0 +1,127 @@
+name: Apply China 50 percent discount 20261014
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-discount50-20261014.yml']
+permissions:
+  contents: read
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'Apply authorized China discount50 20261014'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: china-price-write
+      cancel-in-progress: false
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python -u <<'PYCODE'
+          import json,os,time,urllib.request,urllib.error
+          from pathlib import Path
+          BASE='https://discounts-prices-api.wildberries.cn'
+          TOKEN=os.environ['WB_TOKEN_3']
+          OUT=Path('price-report')
+          OUT.mkdir(exist_ok=True)
+          PLAN=json.loads("[{\"vendorCode\":\"680-VivienneBag-black\",\"target\":360},{\"vendorCode\":\"683-CelineaBag-brown\",\"target\":356},{\"vendorCode\":\"684-CelineaBag-grey\",\"target\":334},{\"vendorCode\":\"685-CelineaBag-black\",\"target\":334},{\"vendorCode\":\"37-FurManizhka-dbrown\",\"target\":185},{\"vendorCode\":\"38-FurManizhka-white\",\"target\":185},{\"vendorCode\":\"39-FurManizhka-black\",\"target\":185},{\"vendorCode\":\"530-NoelBag-oliva\",\"target\":183},{\"vendorCode\":\"66-NoelBag-zcream\",\"target\":180},{\"vendorCode\":\"674-NoelBag-pink\",\"target\":180},{\"vendorCode\":\"043-NoelBag-brown\",\"target\":180},{\"vendorCode\":\"63-NoelBag-zdarkblue\",\"target\":180},{\"vendorCode\":\"64-NoelBag-zchocolate\",\"target\":180},{\"vendorCode\":\"65-NoelBag-zhaki\",\"target\":180},{\"vendorCode\":\"67-NoelBag-zginger\",\"target\":180},{\"vendorCode\":\"528-NoelBag-ginger\",\"target\":177},{\"vendorCode\":\"016-MelanieBag-brown\",\"target\":162},{\"vendorCode\":\"93-Zont-blue\",\"target\":88},{\"vendorCode\":\"94-Zont-black\",\"target\":82},{\"vendorCode\":\"81-Zont-Iblue\",\"target\":79},{\"vendorCode\":\"82-Zont-green\",\"target\":79},{\"vendorCode\":\"83-Zont-fiol\",\"target\":79},{\"vendorCode\":\"84-Zont-cream\",\"target\":79},{\"vendorCode\":\"85-Zont-pink\",\"target\":79},{\"vendorCode\":\"86-Zont-blue\",\"target\":79}]")
+          def call(path, params=None, data=None):
+              from urllib.parse import urlencode
+              url = BASE + path + ('?' + urlencode(params) if params else '')
+              req = urllib.request.Request(url, headers={'Authorization': TOKEN, 'Content-Type': 'application/json'}, data=json.dumps(data).encode() if data is not None else None)
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as response:
+                      result = json.load(response)
+              except urllib.error.HTTPError as error:
+                  raise RuntimeError('WB HTTP ' + str(error.code) + ': ' + error.read().decode()[:500]) from None
+              if result.get('error'):
+                  raise RuntimeError('WB: ' + str(result.get('errorText')))
+              return result
+          
+          def goods():
+              result = {}; offset = 0
+              for page in range(20):
+                  rows = call('/api/v2/list/goods/filter', {'limit':1000,'offset':offset}).get('data',{}).get('listGoods')
+                  assert isinstance(rows,list), 'No listGoods returned'
+                  for row in rows: result[row['nmID']] = row
+                  if len(rows)<1000: return result
+                  offset+=len(rows); time.sleep(2)
+              raise RuntimeError('Pagination limit reached')
+          
+          from decimal import Decimal, ROUND_CEILING
+          before = goods()
+          by_vendor = {}
+          for row in before.values():
+              by_vendor.setdefault(row.get('vendorCode'), []).append(row)
+          updates=[]; backup=[]
+          assert len(PLAN) == 25 and len({x['vendorCode'] for x in PLAN}) == 25
+          for item in PLAN:
+              matches = by_vendor.get(item['vendorCode'], [])
+              assert len(matches) == 1, 'Missing or duplicate article: '+item['vendorCode']
+              row = matches[0]
+              item['nmID'] = row['nmID']
+              assert row['discount'] == 0, 'Discount no longer zero: '+item['vendorCode']
+              assert all(float(z['discountedPrice']) == item['target'] for z in row['sizes']), 'Current final price changed: '+item['vendorCode']
+              item['discount'] = 50
+              assert 0 <= item['discount'] < 100
+              item['price'] = int((Decimal(item['target'])*100/Decimal(100-item['discount'])).to_integral_value(rounding=ROUND_CEILING))
+              item['expected_after_discount'] = float(Decimal(item['price'])*Decimal(100-item['discount'])/100)
+              assert row is not None, 'Article missing: '+item['vendorCode']
+              assert row.get('vendorCode') == item['vendorCode'], 'Article mismatch'
+              assert row.get('currencyIsoCode4217') == 'CNY', 'Unexpected currency'
+              assert row.get('discount') == 0, 'Discount changed: '+item['vendorCode']
+              assert not row.get('editableSizePrice'), 'Size-specific pricing requires separate handling'
+              assert row.get('sizes'), 'Missing sizes'
+              assert 0 <= item['discount'] <100 and item['price']>0
+              backup.append(row)
+              if any(float(size['price'])!=item['price'] for size in row['sizes']):
+                  updates.append({k:item[k] for k in ('nmID','price','discount')})
+          (OUT/'before.json').write_text(json.dumps(backup,ensure_ascii=False,indent=2))
+          (OUT/'requested.json').write_text(json.dumps(PLAN,ensure_ascii=False,indent=2))
+          print('Validated China CNY articles:',len(PLAN),'Updates required:',len(updates),flush=True)
+          if updates:
+              time.sleep(2)
+              response=call('/api/v2/upload/task',data={'data':updates})
+              (OUT/'submission.json').write_text(json.dumps(response,ensure_ascii=False,indent=2))
+              upload=response.get('data',{}).get('id') or response.get('data',{}).get('uploadID')
+              print('SUBMITTED uploadID=',upload,'count=',len(updates),flush=True)
+              # Never repeat a submission after an ambiguous network response.
+              assert upload, 'Missing upload ID; inspect report before another submission'
+              for attempt in range(20):
+                  time.sleep(15)
+                  try:
+                      state=call('/api/v2/history/tasks',{'uploadID':upload})
+                  except RuntimeError as error:
+                      if 'HTTP 400' in str(error): continue
+                      raise
+                  (OUT/'upload-state.json').write_text(json.dumps(state,ensure_ascii=False,indent=2))
+                  status=state.get('data',{}).get('status')
+                  print('Upload status:',status,flush=True)
+                  if status in (3,4,5,6): break
+              else: raise RuntimeError('Upload still processing; no resubmission')
+              time.sleep(2)
+              details=call('/api/v2/history/goods/task',{'uploadID':upload,'limit':1000,'offset':0})
+              (OUT/'upload-details.json').write_text(json.dumps(details,ensure_ascii=False,indent=2))
+              print('Upload details saved',flush=True)
+              time.sleep(2)
+          after=goods(); checked=[]; failures=[]
+          for item in PLAN:
+              row=after.get(item['nmID'],{})
+              ok=row.get('discount')==item['discount'] and row.get('currencyIsoCode4217')=='CNY' and bool(row.get('sizes')) and all(float(size['price'])==item['price'] for size in row.get('sizes',[]))
+              ok = ok and all(abs(float(size.get('discountedPrice', -1))-item['expected_after_discount']) < 0.011 for size in row.get('sizes', []))
+              checked.append({'article':item['vendorCode'],'nmID':item['nmID'],'confirmed':ok,'price':item['price'],'discount':item['discount'],'target_after_discount':item['target'],'actual_after_discount':[size.get('discountedPrice') for size in row.get('sizes',[])]})
+              if not ok: failures.append(item['vendorCode'])
+          (OUT/'verified.json').write_text(json.dumps(checked,ensure_ascii=False,indent=2))
+          print('FINAL_RESULT',json.dumps({'total':len(PLAN),'confirmed':len(PLAN)-len(failures),'failures':failures},ensure_ascii=False),flush=True)
+          assert not failures, 'Some prices not confirmed'
+          PYCODE
+      - name: Save before and verified prices
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: china-discount50-20261014-report
+          path: price-report/
+          retention-days: 30

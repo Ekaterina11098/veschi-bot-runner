@@ -98,7 +98,7 @@ jobs:
                   statements.append('INSERT INTO vault.secrets OVERRIDING SYSTEM VALUE SELECT * FROM json_populate_record(NULL::vault.secrets,'+literal(json.dumps(row))+');')
                   statements.append("UPDATE vault.secrets s SET secret=encode(vault._crypto_aead_det_encrypt(message:=convert_to("+literal(row['decrypted_secret'])+",'utf8'),additional:=convert_to(s.id::text,'utf8'),key_id:=0,context:='pgsodium'::bytea,nonce:=s.nonce),'base64') WHERE id="+literal(row['id'])+"::uuid;")
               statements.append('COMMIT;')
-              vault_sql.write_text('\\n'.join(statements))
+              vault_sql.write_text('\n'.join(statements))
               report['vault_restore_exit_code']=psql(vault_sql,'isolated_restore')
               assert report['vault_restore_exit_code']==0,'Portable Vault restore failed'
               query="select row_to_json(s)::text from vault.decrypted_secrets s order by id"
@@ -117,7 +117,7 @@ jobs:
               report['ciphertext_reencrypted_for_isolated_root_key']=True
               vault_plain.unlink();vault_sql.unlink()
           except Exception as exc:
-              report['error_type']=type(exc).__name__;report['schema_restore_completed']=False
+              report['error_type']=type(exc).__name__;report['vault_logical_restore_verified']=False
           finally:
               with log.open('ab') as output:subprocess.run(['docker','logs',name],stdout=output,stderr=output)
               state=subprocess.run(['docker','inspect','--format','{{json .State}}',name],capture_output=True,text=True)

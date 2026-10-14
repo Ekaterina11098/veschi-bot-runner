@@ -1,0 +1,127 @@
+name: Read-only schema and service inventory backup
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-schema-inventory.yml']
+permissions:
+  contents: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install python-dotenv requests simplejson cryptography 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Export schema only and numerical service inventory; no table payload duplication
+        timeout-minutes: 80
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PGHOST: aws-0-eu-central-1.pooler.supabase.com
+          PGPORT: '5432'
+          PGDATABASE: postgres
+          PGUSER: postgres.abxgjoqlddhtcmjcjwxw
+          PGSSLMODE: require
+          PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=30000'
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          import os,json,subprocess,shutil,time
+          from pathlib import Path
+          import psycopg
+          from psycopg import sql
+          from analytics.storage_backup_crypto import seal,restore
+          root=Path(os.environ['RUNNER_TEMP']);out=root/'schema-sealed';out.mkdir()
+          assert shutil.disk_usage(root).free>=4_000_000_000
+          start=time.monotonic()
+          report={'full_database_backup':False,'production_writes':0,'table_payload_export':False}
+          inventory={'counts':{},'sequences':{},'errors':[]}
+          with psycopg.connect(connect_timeout=15,application_name='recovery_schema_inventory') as conn:
+              with conn.cursor() as cur:
+                  cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                  cur.execute("select current_setting('server_version_num')::int")
+                  major=cur.fetchone()[0]//10000
+                  inventory['postgres_major']=major
+                  cur.execute("select rolname,rolsuper,rolinherit,rolcreaterole,rolcreatedb,rolcanlogin,rolreplication,rolbypassrls,rolconnlimit from pg_roles order by rolname")
+                  inventory['role_flags_without_passwords']=cur.fetchall()
+                  cur.execute("select extname,extversion from pg_extension order by extname")
+                  inventory['extensions']=cur.fetchall()
+                  cur.execute("select schemaname,tablename from pg_tables where schemaname not in ('pg_catalog','information_schema') order by 1,2")
+                  tables=cur.fetchall()
+                  for schema,table in tables:
+                      cur.execute('SAVEPOINT inventory_item')
+                      try:
+                          cur.execute(sql.SQL('select count(*) from {}.{}').format(sql.Identifier(schema),sql.Identifier(table)))
+                          inventory['counts'][schema+'.'+table]=cur.fetchone()[0]
+                      except Exception as exc:
+                          cur.execute('ROLLBACK TO SAVEPOINT inventory_item')
+                          inventory['errors'].append({'component':schema+'.'+table,'error_type':type(exc).__name__})
+                      cur.execute('RELEASE SAVEPOINT inventory_item')
+                  cur.execute("select schemaname,sequencename from pg_sequences order by 1,2")
+                  for schema,name in cur.fetchall():
+                      cur.execute('SAVEPOINT sequence_item')
+                      try:
+                          cur.execute(sql.SQL('select last_value,is_called from {}.{}').format(sql.Identifier(schema),sql.Identifier(name)))
+                          inventory['sequences'][schema+'.'+name]=cur.fetchone()
+                      except Exception as exc:
+                          cur.execute('ROLLBACK TO SAVEPOINT sequence_item')
+                          inventory['errors'].append({'component':schema+'.'+name,'error_type':type(exc).__name__})
+                      cur.execute('RELEASE SAVEPOINT sequence_item')
+              conn.rollback()
+          image='postgres:'+str(major)
+          with open(root/'schema-private.log','wb') as log:
+              subprocess.run(['docker','pull',image],stdout=log,stderr=log,check=True,timeout=300)
+              schema=root/'schema.sql'
+              with open(schema,'wb') as output:
+                  args=['docker','run','--rm']
+                  for name in ('PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSSLMODE','PGOPTIONS'):args+=['-e',name]
+                  args += [image,'pg_dump','--schema-only','--lock-wait-timeout=5000','--no-password']
+                  result=subprocess.run(args,stdout=output,stderr=log,timeout=1200)
+          report['schema_dump_exit_code']=result.returncode
+          assert result.returncode==0,'Schema export failed; private log not published'
+          assert schema.stat().st_size<=100_000_000
+          inv=root/'inventory.json';inv.write_text(json.dumps(inventory,sort_keys=True))
+          report['components']={}
+          for path in (schema,inv):
+              target=out/(path.name+'.aes')
+              hashes=seal(path,target,os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])
+              check=root/(path.name+'.readback')
+              assert restore(target,check,secret=os.environ['SUPABASE_SECRET_KEY'])==hashes['plaintext_sha256']
+              report['components'][path.name]={**hashes,'plaintext_bytes':path.stat().st_size,'ciphertext_bytes':target.stat().st_size}
+              check.unlink();path.unlink()
+          report['service_table_counts']=inventory['counts']
+          report['inventory_errors']=inventory['errors']
+          report['elapsed_seconds']=round(time.monotonic()-start,3)
+          report['readback_verified']=True
+          (out/'summary.json').write_text(json.dumps(report,sort_keys=True))
+          print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-schema-inventory
+          path: ${{ runner.temp }}/schema-sealed
+          retention-days: 7
+          if-no-files-found: error

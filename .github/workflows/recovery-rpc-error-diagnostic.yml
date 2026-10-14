@@ -53,9 +53,11 @@ jobs:
                   objects.append({'kind':kind,'name':name})
           positions=[int(x) for line in errors for x in re.findall(r'psql:<stdin>:(\d+):',line)]
           tokens=[token for line in errors for token in re.findall(r'syntax error at or near "([A-Za-z_]{1,25})"',line)]
+          punct=[token for line in errors for token in re.findall(r'syntax error at or near "([^"]{1,15})"',line) if not re.search('[A-Za-z0-9]{12,}',token)]
+          positions=[int(x) for line in lines for x in re.findall(r'^LINE ([0-9]+):',line)]
           syntax_end=any('syntax error at end of input' in line for line in errors)
           safe_errors=[re.sub(r'["\\\'][^"\\\']*["\\\']','<quoted>',line.split('ERROR:',1)[-1])[:240] for line in errors]
           contexts=[{'function':m[0],'line':m[1],'phase':m[2]} for line in lines for m in re.findall(r'PL/pgSQL function ([A-Za-z0-9_.]+)(?:\\([^)]*\\))? line ([0-9]+) at ([A-Za-z ]+)',line)]
-          print(json.dumps({'syntax_end_of_input':syntax_end,'safe_errors':safe_errors,'function_contexts':contexts,'safe_fixture_syntax_tokens':tokens,'error_count':len(errors),'categories':categories,'object_names':objects,'sql_line_numbers':positions,'source_values_published':False,'production_calls':0}))
+          print(json.dumps({'syntax_punctuation_or_short_token':punct,'source_statement_line_numbers':positions,'syntax_end_of_input':syntax_end,'safe_errors':safe_errors,'function_contexts':contexts,'safe_fixture_syntax_tokens':tokens,'error_count':len(errors),'categories':categories,'object_names':objects,'sql_line_numbers':positions,'source_values_published':False,'production_calls':0}))
           plain.unlink()
           PY

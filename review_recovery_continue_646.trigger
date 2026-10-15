@@ -1,1 +1,1 @@
-Continue only existing owner-confirmed intent646 after saved RetryAfter; 2026-10-15T12:48:03UTC.
+Continue only existing owner-confirmed intent646 after verified pause expiry;2026-10-15T13:00:57UTC. Card removal confirmed; no routine Telegram status edits.

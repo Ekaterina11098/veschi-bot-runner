@@ -51,6 +51,9 @@ def main():
     import wildberries
     conn=psycopg.connect(os.environ['REVIEW_APPROVAL_DSN'],autocommit=True,connect_timeout=10,options='-c statement_timeout=30000')
     try:
+        # GitHub pending concurrency drops older callbacks. Keep every run and
+        # serialize its complete decision + Telegram edit on this DB session.
+        conn.execute("SELECT pg_advisory_lock(hashtextextended('review-approval-process-ui-v1',0))")
         approval=Approval(Repository(conn,postgres=True),os.environ['REVIEW_APPROVAL_INGRESS_KEY'],os.environ['REVIEW_APPROVAL_OWNER_ID'],os.environ['TELEGRAM_ALLOWED_CHAT_ID'],os.environ['REVIEW_APPROVAL_BOT_ID'],enabled=True)
         bridge=DurableBridge(approval,SQLSource(conn))
         output=Path(os.environ['RUNNER_TEMP'])/'review-approval-output';output.mkdir(exist_ok=True)
@@ -72,4 +75,3 @@ if __name__=='__main__':
     except Exception as exc:
         print(json.dumps({'error_type':type(exc).__name__,'completed':False}))
         raise SystemExit(1)
-

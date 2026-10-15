@@ -14,9 +14,11 @@ def persist(key,payload):
     q._request('POST','/telegram_api_cache',params={'on_conflict':'cache_key'},payload={'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+timedelta(days=3650)).isoformat()},prefer='resolution=ignore-duplicates,return=minimal')
     rows=q._request('GET','/telegram_api_cache',params={'cache_key':'eq.'+key,'select':'payload','limit':1}) or []
     if not rows or sha(rows[0]['payload'])!=sha(payload):raise RuntimeError('History readback mismatch')
+DEADLINE=time.monotonic()+8*60
+
 def wait_scope(cabinet):
     pause=wb.review_pause_seconds(cabinet=cabinet)
-    if pause>900:raise wb.ReviewRateLimit(pause)
+    if pause>90 or time.monotonic()+pause+30>DEADLINE:raise wb.ReviewRateLimit(max(pause,1))
     if pause>0:time.sleep(pause+1)
 def main():
     report={'manual':[],'inboxes':[],'wb_writes':0,'telegram_sends':0}
@@ -42,6 +44,7 @@ def main():
             result.update(status='manual_confirmed',answer_preserved=True,history_readback=True,row_readback=True)
         except wb.ReviewRateLimit as exc:result.update(status='paused',retry_after=exc.retry_seconds)
         except Exception as exc:result.update(status='error',error=error(exc))
+        finally:seal('reviews-recovery',report)
     for cabinet in ('token_1','token_2','token_3'):
         for kind,fetch in (('feedbacks',wb.get_unanswered_feedbacks),('questions',wb.get_unanswered_questions)):
             result={'cabinet':cabinet,'kind':kind};report['inboxes'].append(result)
@@ -63,6 +66,8 @@ def main():
                 result.update(status='complete',count=len(items),fetched_at=stamp,full_sha256=sha(items),readback=True,items=items)
             except wb.ReviewRateLimit as exc:result.update(status='paused',retry_after=exc.retry_seconds)
             except Exception as exc:result.update(status='error',error=error(exc))
+            finally:seal('reviews-recovery',report)
+    report['manual_history']=q._request('GET','/telegram_api_cache',params={'cache_key':'like.reviews:manual-history:*','select':'cache_key,payload','limit':100}) or []
     return report
 hidden=io.StringIO()
 try:

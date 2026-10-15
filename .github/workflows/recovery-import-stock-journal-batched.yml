@@ -108,8 +108,10 @@ jobs:
                       cur.execute("SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='stock_execution' AND NOT t.tgisinternal");assert cur.fetchone()[0]==0
                       for role in ('anon','authenticated','service_role'):
                           cur.execute("SELECT has_schema_privilege(%s,'stock_execution','USAGE')",(role,));assert cur.fetchone()[0] is False
+                      preexisting={}
                       for t in tables:
-                          cur.execute('SELECT count(*) FROM stock_execution.'+t);assert cur.fetchone()[0]==0,'Expected empty pre-import journal; existing state requires reconciliation'
+                          cur.execute('SELECT * FROM stock_execution.'+t);preexisting[t]=sorted(cur.fetchall())
+                          assert all(row in expected[t] for row in preexisting[t]),'Existing journal differs; reconcile without overwrite'
                           cur.execute('CREATE TEMP TABLE import_'+t+' (LIKE stock_execution.'+t+') ON COMMIT DROP')
                           with cur.copy('COPY pg_temp.import_'+t+' FROM STDIN') as copy:
                               for row in expected[t]:copy.write_row(row)

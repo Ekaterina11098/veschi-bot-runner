@@ -59,12 +59,17 @@ class Executor:
         if intent.get('retry_at',0)>self.a.clock():return intent
         if self.wb.pause(intent['cabinet']):return intent
         if not self.guard(card):return self.save(intent,'blocked',reason='Canonical hold/version/journal')
-        try:actual=self.wb.read(intent)
-        except ExplicitRateLimit as exc:return self.save(intent,intent['status'],retry_at=self.a.clock()+exc.seconds)
-        if not isinstance(actual,str):raise Rejected('Unknown WB answer')
-        if actual.strip():return self.save(intent,'confirmed' if actual==intent['answer'] else 'manual_present',actual_answer_sha256=sha(actual))
+        verified_at=intent.get('preflight_verified_at')
+        fresh=(isinstance(verified_at,(int,float)) and 0<=self.a.clock()-verified_at<=120)
+        if not fresh:
+            try:actual=self.wb.read(intent)
+            except ExplicitRateLimit as exc:return self.save(intent,intent['status'],retry_at=self.a.clock()+exc.seconds)
+            if not isinstance(actual,str):raise Rejected('Unknown WB answer')
+            if actual.strip():return self.save(intent,'confirmed' if actual==intent['answer'] else 'manual_present',actual_answer_sha256=sha(actual))
+            self.save(intent,intent['status'],preflight_verified_at=self.a.clock())
         # GET can establish a new server pause. Re-read it before saving write intent.
-        if self.wb.pause(intent['cabinet']):return intent
+        pause=self.wb.pause(intent['cabinet'])
+        if pause:return self.save(intent,intent['status'],retry_at=self.a.clock()+pause)
         if not self.guard(card):return self.save(intent,'blocked',reason='Canonical changed after preflight')
         self.save(intent,'verify',write_intent_at=self.a.clock())
         try:self.wb.post(intent)

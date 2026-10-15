@@ -85,6 +85,21 @@ class PostgreSQLTests(unittest.TestCase):
     def test_manual_answer_no_post(self):
         intent=self.approve();self.wb.answer='Владелец ответил вручную'
         self.assertEqual(self.executor.run(intent)['status'],'manual_present');self.assertEqual(self.wb.posts,0)
+    def test_successful_get_pause_can_resume_without_endless_get(self):
+        intent=self.approve();original=self.wb.read
+        def read_and_pause(value):
+            answer=original(value);self.wb.paused=62;return answer
+        self.wb.read=read_and_pause
+        self.assertEqual(self.executor.run(intent)['status'],'awaiting_preflight')
+        self.assertEqual(self.wb.posts,0);self.assertEqual(self.wb.reads,1)
+        self.now+=63;self.wb.paused=0;self.wb.read=original
+        self.assertEqual(self.executor.run(intent)['status'],'confirmed')
+        self.assertEqual(self.wb.posts,1);self.assertEqual(self.wb.reads,2)
+    def test_expired_saved_preflight_requires_new_get(self):
+        intent=self.approve();self.wb.mode='429';self.executor.run(intent)
+        self.now+=121;self.wb.mode='ok';self.wb.answer='Ручной ответ'
+        self.assertEqual(self.executor.run(intent)['status'],'manual_present')
+        self.assertEqual(self.wb.posts,1)
     def test_new_hold_after_approval(self):
         intent=self.approve();self.admin.execute('INSERT INTO public.telegram_api_cache(cache_key,payload) VALUES(%s,%s)',('reviews:hold:token_1:feedbacks:synthetic-review',Jsonb({'active':True})))
         self.assertEqual(self.executor.run(intent)['status'],'blocked');self.assertEqual(self.wb.posts,0)
@@ -265,5 +280,3 @@ class PostgreSQLTests(unittest.TestCase):
         finally:restore.close()
 
 if __name__=='__main__':unittest.main(verbosity=2)
-
-

@@ -57,3 +57,5 @@ jobs:
 # Deployment regression: local owner hold blocks notices for newer draft versions before any send.
 
 # Regression: identical selection keeps nonce; callback runs never replace pending clicks.
+
+# Regression: preserve bounded preflight across successful GET-induced WB pause.

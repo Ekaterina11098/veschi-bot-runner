@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 5b0c24c67408c28a709ab37db62999a02e2e0bd7
+          ref: 1b4201067880e379d8dacbe5f6ca3f9848d6ffb0
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -51,3 +51,5 @@ jobs:
           done
           exit 1
 
+
+# Reuse deployed source/storage components; prior import failure occurred before all source calls.

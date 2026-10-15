@@ -1,0 +1,52 @@
+name: China owner requested current report 2026-10-15
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-price-manual-20261015.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  deliver:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 02a3409356225e2da23f721e5e68407a88aa661d
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: One owner-authorized off-schedule China report, current sources
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import sys
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          assert str(datetime.now(ZoneInfo('Europe/Moscow')).date())=='2026-10-15','One-time request expired'
+          from china_agent.daily_report_worker import main
+          sys.argv=['china_daily_worker','--send-now']
+          main()
+          PY
+      - name: Verify regular daily report duplicate is suppressed
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: python -m china_agent.daily_report_worker

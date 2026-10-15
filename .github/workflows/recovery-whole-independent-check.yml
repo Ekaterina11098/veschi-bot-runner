@@ -1,0 +1,211 @@
+name: Verify entire independent recovery archive without local computer files
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-whole-independent-check.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  whole:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 cryptography > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Download original ZIP, authenticate every payload, scan archived dependencies only
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,sys,hashlib,base64,gzip,sqlite3,zipfile,tarfile,io,shutil,re,ast,time
+          from pathlib import Path
+          import requests
+          from cryptography.hazmat.primitives import serialization,hashes
+          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+          root=Path(os.environ['RUNNER_TEMP'])/'whole-independent-check';root.mkdir()
+          out=root/'public';out.mkdir();private=root/'private';private.mkdir()
+          report={'production_calls':0,'source_exports':0,'postgres_restore_repeated':False,'vault_logical_restore_repeated':False,'local_owner_files_used':False,'owner_private_key_used':False,'phase':'download'}
+          def sha(p):
+              h=hashlib.sha256()
+              with open(p,'rb') as f:
+                  for b in iter(lambda:f.read(1048576),b''):h.update(b)
+              return h.hexdigest()
+          def download(artifact,size,digest,name):
+              p=root/name
+              with requests.get('https://api.github.com/repos/Ekaterina11098/veschi-bot-runner/actions/artifacts/'+str(artifact)+'/zip',headers={'Authorization':'Bearer '+os.environ['GH_READ_TOKEN'],'Accept':'application/vnd.github+json'},stream=True,timeout=(30,120)) as r:
+                  r.raise_for_status()
+                  with p.open('wb') as f:
+                      for b in r.iter_content(1048576):f.write(b)
+              assert p.stat().st_size==size and sha(p)==digest,'Downloaded ZIP digest'
+              with zipfile.ZipFile(p) as z:
+                  assert z.testzip() is None
+                  dest=private/name.removesuffix('.zip');dest.mkdir()
+                  for info in z.infolist():
+                      target=(dest/info.filename).resolve();assert target.is_relative_to(dest.resolve())
+                  z.extractall(dest)
+              return dest
+          def hash_gzip(p):
+              h=hashlib.sha256();count=0
+              with gzip.open(p,'rb') as f:
+                  for b in iter(lambda:f.read(1048576),b''):h.update(b);count+=len(b)
+              return h.hexdigest(),count
+          try:
+              main=download(11948952796,965218495,'01bebc005bf8498af7f2b7d2821012cb316e932a7add495aa4446cfa618117dc','independent.zip')
+              manifest=json.loads((main/'file-manifest.json').read_text())
+              actual={str(p.relative_to(main)) for p in main.rglob('*') if p.is_file()}
+              assert actual==set(manifest)|{'file-manifest.json','independent-copy-summary.json'},'Manifest coverage'
+              for name,m in manifest.items():
+                  p=main/name;assert p.stat().st_size==m['bytes'] and sha(p)==m['sha256'],'Manifest entry mismatch'
+              report['downloaded_zip_sha_verified']=True;report['archive_crc_verified']=True
+              report['manifest_entries_verified']=len(manifest);report['total_archive_files']=len(actual);report['manifest_coverage_complete']=True
+              sys.path.insert(0,str(main))
+              from storage_backup_crypto import restore
+              secret=os.environ['SUPABASE_SECRET_KEY']
+              expected={
+                'point/point-receipt.json.aes':'50ec68275a005d2cb31f6102ae6cc583d5689bfc26f3507e9fa276a019f79d27',
+                'point/point-schema.sql.aes':'08bd6ce99bb1839237747d6190557fc6a36e285bc8238430cc500f46e6fd362a',
+                'point/point-delta.sqlite.aes':'1e7b09961f31663accc183a9f2fc4bb243b66f2c78fe49f37aa8478cac874181',
+                'vault/vault-portable.json.aes':'631ff3c255e281ea15ca9c58249eb791a7d1c45f7e7f98f01bf80a3d713ab5ed',
+                'external/external-kit.tar.gz.aes':'f2ee673a59135c8b3613bca8abf622188d886e299dd8f25fc4d36fae902a0888'}
+              report['phase']='decrypt_all_components'
+              plain={}
+              for name,digest in expected.items():
+                  target=private/Path(name).name.removesuffix('.aes')
+                  assert restore(main/name,target,secret=secret)==digest,'Plaintext SHA'
+                  plain[name]=target
+              receiver=private/'receiver-private.pem';restore(main/'receiver/receiver-private.pem.aes',receiver,secret=secret)
+              receiver_key=serialization.load_pem_private_key(receiver.read_bytes(),password=None);receiver.unlink()
+              combined=private/'verified-sql.aes'
+              with combined.open('wb') as dst:
+                  for p in sorted((main/'parts').glob('part-*.aes')):
+                      with p.open('rb') as src:shutil.copyfileobj(src,dst,1048576)
+              sql_gz=private/'verified.sql.gz'
+              assert restore(combined,sql_gz,secret=secret)=='0692dcbf7b872f69af61a525d0925bab81d53a2fbaf46591bbf43c7db3cc61a0'
+              raw_sha,sql_bytes=hash_gzip(sql_gz)
+              assert raw_sha=='bf95c241d4ab0e8a61ff5eac5d8a01d226e374e3b347f1d09ded67b10ba7a06d'
+              report['canonical_sql_authenticated_decryption_and_raw_sha_verified']=True;report['sql_plaintext_bytes']=sql_bytes
+              combined.unlink();sql_gz.unlink()
+              oaep=padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None)
+              envelope=json.loads((main/'existing-local-captures.receiver.aes.json').read_text())
+              key=receiver_key.decrypt(base64.b64decode(envelope['wrapped_key']),oaep)
+              packed=AESGCM(key).decrypt(base64.b64decode(envelope['nonce']),base64.b64decode(envelope['ciphertext']),b'veschi-offline-receiver-v1')
+              assert hashlib.sha256(packed).hexdigest()==envelope['packed_sha256']
+              payload_raw=gzip.decompress(packed);assert hashlib.sha256(payload_raw).hexdigest()==envelope['plaintext_sha256']
+              payload=json.loads(payload_raw)
+              report['existing_captures_authenticated_decryption_verified']=True
+              report['existing_capture_tables']=len(payload['tables']);report['existing_capture_components']=len(payload['components'])
+              codefiles={}
+              for name,wrapper in payload['components'].items():
+                  if name.startswith('edge-'):
+                      def collect(value):
+                          if isinstance(value,dict):
+                              for k,v in value.items():
+                                  if k in ('content','source','code') and isinstance(v,str) and ('Deno.' in v or 'serve(' in v):yield v
+                                  yield from collect(v)
+                          elif isinstance(value,list):
+                              for v in value:yield from collect(v)
+                          elif isinstance(value,str):
+                              try:
+                                  obj=json.loads(value)
+                                  if obj!=value:yield from collect(obj)
+                              except (ValueError,TypeError):pass
+                      texts=list(collect(wrapper))
+                      for index,text in enumerate(texts):codefiles['deployed-edge/'+name+'/'+str(index)+'.ts']=text
+              envelope=json.loads((main/'local-stock-current.offsite.aes.json').read_text())
+              key=receiver_key.decrypt(base64.b64decode(envelope['receiver_wrapped_key']),oaep)
+              packed=AESGCM(key).decrypt(base64.b64decode(envelope['nonce']),base64.b64decode(envelope['ciphertext'])+base64.b64decode(envelope['tag']),None)
+              assert hashlib.sha256(packed).hexdigest()==envelope['plaintext_sha256']
+              raw=gzip.decompress(packed);assert hashlib.sha256(raw).hexdigest()=='16d571eda15598a5965b3d5bbe1b9586155073fa06a460fd9833d158416dc7c0'
+              journal=private/'journal.sqlite';journal.write_bytes(raw)
+              db=sqlite3.connect(journal.as_uri()+'?mode=ro',uri=True)
+              try:
+                  assert db.execute('pragma quick_check').fetchone()[0]=='ok'
+                  columns={r[1] for r in db.execute('pragma table_info(operations)')};column='state' if 'state' in columns else 'status'
+                  states=dict(db.execute('select "'+column+'",count(*) from operations group by "'+column+'"'))
+                  assert states=={'confirmed':257,'invalidated':335,'prepared':286,'uncertain':1}
+              finally:db.close();journal.unlink()
+              report['journal_authenticated_decryption_verified']=True;report['journal_states']=states
+              report['phase']='nested_external_archive'
+              with tarfile.open(plain['external/external-kit.tar.gz.aes']) as tar:
+                  members={m.name:m for m in tar.getmembers() if m.isfile()}
+                  assert set(members)=={'private_main.tar.gz','pr20.tar.gz','runner.tar.gz','runtime-secrets.json','runner-variables.json','manifest.json'}
+                  data={name:tar.extractfile(m).read() for name,m in members.items()}
+              source_manifest=json.loads(data['manifest.json']);secrets_map=json.loads(data['runtime-secrets.json'])
+              assert sorted(k for k,v in secrets_map.items() if v)==sorted(source_manifest['available_secret_names'])
+              report['sealed_secret_dictionary_verified']=True;report['sealed_secret_count']=len(source_manifest['available_secret_names'])
+              del secrets_map;del data['runtime-secrets.json']
+              report['source_archive_members']={}
+              for source in ('private_main','pr20','runner'):
+                  value=data[source+'.tar.gz']
+                  assert hashlib.sha256(value).hexdigest()==source_manifest['sources'][source]['sha256']
+                  with tarfile.open(fileobj=io.BytesIO(value)) as tar:
+                      count=0
+                      for m in tar.getmembers():
+                          if not m.isfile():continue
+                          body=tar.extractfile(m).read();count+=1
+                          if m.name.endswith(('.py','.ts','.js','.sql','.yml','.yaml','.toml','.json')) and len(body)<3000000:
+                              try:codefiles[source+'/'+m.name]=body.decode('utf-8')
+                              except UnicodeDecodeError:pass
+                      assert count==source_manifest['sources'][source]['files']
+                  report['source_archive_members'][source]=count
+              report['all_nested_source_archives_sha_and_members_verified']=True
+              # Read-only dependency evidence. No source module is imported or executed.
+              patterns={
+                'supabase_auth_api':r'/auth/v1|supabase\.auth\b|\.auth\.(?:get_user|sign_in|sign_up)|@supabase/auth|gotrue',
+                'supabase_storage_api':r'/storage/v1|\.storage\.from_?\(|StorageClient|supabase\.storage\b',
+                'supabase_realtime_api':r'/realtime/v1|RealtimeClient|supabase\.channel\(|\.realtime\.',
+                'supabase_sdk_import':r'from\s+supabase\b|import\s+supabase\b|@supabase/supabase-js',
+                'postgrest':r'/rest/v1|postgrest|Postgrest',
+                'postgres_dsn':r'STOCK_DATABASE_URL|psycopg|DATABASE_URL',
+                'vault_dependency':r'vault\.decrypted_secrets|stock_clock_trigger_key',
+                'edge_env':r'Deno\.env\.get',
+                'external_service':r'api\.telegram\.org|api\.openai\.com|api\.moysklad\.ru|mpstats|wildberries|wb\.ru',
+                'dynamic_import':r'importlib|__import__|runpy|subprocess\.',
+                'auth_other':r'HTTPBasicAuth|requests\.auth|auth\.jwt\(|auth\.uid\(|auth\.role\('}
+              evidence={k:[] for k in patterns}
+              py_imports={};parse_errors=[]
+              for path,text in sorted(codefiles.items()):
+                  if not path.endswith(('.py','.ts','.js','.sql','.yml','.yaml','.toml')):continue
+                  is_test=bool(re.search(r'(^|/)(tests?|test_[^/]*)(/|\.|$)',path))
+                  for number,line in enumerate(text.splitlines(),1):
+                      for kind,pattern in patterns.items():
+                          if re.search(pattern,line,re.I):evidence[kind].append({'path':path,'line':number,'test_file':is_test})
+                  if path.endswith('.py'):
+                      try:
+                          tree=ast.parse(text)
+                          py_imports[path]=sorted(set(n.module for n in ast.walk(tree) if isinstance(n,ast.ImportFrom) and n.module)|set(a.name for n in ast.walk(tree) if isinstance(n,ast.Import) for a in n.names))
+                      except SyntaxError:parse_errors.append(path)
+              (out/'dependency-evidence.json').write_text(json.dumps({'source_revisions':source_manifest['revisions'],'files_scanned':len(codefiles),'evidence':evidence,'python_imports':py_imports,'python_parse_errors':parse_errors,'method':'Static patterns/import inventory over all archived code plus captured deployed Edge; dynamic imports require entrypoint review; no absence proof from empty DB tables.'},sort_keys=True))
+              report['dependency_scan_files']=len(codefiles)
+              report['dependency_hits_non_test']={k:sum(not v['test_file'] for v in vs) for k,vs in evidence.items()}
+              report['phase']='runtime_archive'
+              runtime=download(11949460361,127014647,'a40e9338c798b6773fa14f50107c11334f3a70426ceb9f07cbe10977b1a86406','runtime.zip')
+              wheel_manifest=json.loads((runtime/'wheel-sha256.json').read_text())
+              wheels=list((runtime/'wheels').iterdir());assert {p.name for p in wheels}==set(wheel_manifest)
+              for p in wheels:assert sha(p)==wheel_manifest[p.name]
+              report['runtime_zip_and_all_wheel_sha_verified']=True;report['wheels_verified']=len(wheels)
+              report['all_archive_encrypted_payloads_authenticated_and_sha_verified']=True
+              report['verification_scope']='Entire downloaded independent ZIP, every manifest entry, all encrypted logical components, canonical SQL through raw SHA, nested source tars, sealed secrets dictionary, local captures, journal; plus runtime ZIP and every wheel. No PostgreSQL rows/FK/Vault logic re-restored.'
+              report['phase']='complete';report['complete']=True
+          except Exception as exc:
+              report['complete']=False;report['error_type']=type(exc).__name__
+              import traceback
+              report['error_line']=traceback.extract_tb(exc.__traceback__)[-1].lineno
+              # Fixed category only, no values or decrypted source data in logs.
+          finally:
+              shutil.rmtree(private,ignore_errors=True)
+              (out/'summary.json').write_text(json.dumps(report,sort_keys=True))
+              print(json.dumps(report,sort_keys=True))
+          
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: whole-independent-archive-proof
+          path: ${{ runner.temp }}/whole-independent-check/public
+          retention-days: 90

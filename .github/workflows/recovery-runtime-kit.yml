@@ -1,0 +1,48 @@
+name: Freeze and verify offline recovery runtime only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-runtime-kit.yml']
+permissions:
+  contents: read
+jobs:
+  freeze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 755b69c266ad39beafd334e60aa900c07814cae8
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve separate recovery environment and prove offline reinstall
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/runtime-kit/wheels"
+          python -m venv "$RUNNER_TEMP/runtime-build"
+          "$RUNNER_TEMP/runtime-build/bin/pip" install -r requirements.txt requests==2.32.5 'psycopg[binary]==3.2.9' pillow > "$RUNNER_TEMP/runtime-build.log" 2>&1
+          "$RUNNER_TEMP/runtime-build/bin/pip" freeze > "$RUNNER_TEMP/runtime-kit/requirements.recovery.lock.txt"
+          "$RUNNER_TEMP/runtime-build/bin/pip" download -r "$RUNNER_TEMP/runtime-kit/requirements.recovery.lock.txt" --dest "$RUNNER_TEMP/runtime-kit/wheels" > "$RUNNER_TEMP/runtime-download.log" 2>&1
+          python -m venv "$RUNNER_TEMP/runtime-offline"
+          "$RUNNER_TEMP/runtime-offline/bin/pip" install --no-index --find-links "$RUNNER_TEMP/runtime-kit/wheels" -r "$RUNNER_TEMP/runtime-kit/requirements.recovery.lock.txt" > "$RUNNER_TEMP/runtime-offline.log" 2>&1
+          "$RUNNER_TEMP/runtime-offline/bin/pip" check > "$RUNNER_TEMP/runtime-check.log" 2>&1
+          "$RUNNER_TEMP/runtime-offline/bin/python" - <<'PY'
+          import streamlit,openai,requests,dotenv,aiogram,apscheduler,PIL,psycopg
+          import os,json,sys,hashlib
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'runtime-kit'
+          manifest={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'wheels').iterdir()}
+          (root/'wheel-sha256.json').write_text(json.dumps(manifest,sort_keys=True))
+          report={'offline_reinstall_verified':True,'pip_check_passed':True,'runtime_import_smoke_passed':True,'business_calls':0,'database_calls':0,'secrets_in_environment':False,'python':sys.version,'platform':'Linux x86_64','wheel_count':len(manifest),'source_commit':'755b69c266ad39beafd334e60aa900c07814cae8','scope':'New tested frozen recovery environment; original production dependency versions were not locked and cannot be claimed identical.'}
+          (root/'runtime-summary.json').write_text(json.dumps(report,sort_keys=True));print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offline-recovery-runtime-kit
+          path: ${{ runner.temp }}/runtime-kit
+          retention-days: 90

@@ -1,0 +1,154 @@
+name: Owner authorized journal import without execution
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-import-stock-journal.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: f2c82b7d0f1044886e4a2a3cc2aabd850ff91491
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 88e147f344f7a7492932c6eb812d7d02ee76e224
+          path: recovery-input-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cryptography 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: offline-restore-receiver
+          run-id: 38588520250
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/receiver
+      - name: Recover actual unchanged journal only in protected temporary environment
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,struct,json,hashlib,base64,gzip
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization,hashes
+          from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+          from cryptography.hazmat.primitives.ciphers import Cipher,algorithms,modes
+          root=Path(os.environ['RUNNER_TEMP']);src=root/'receiver/receiver-private.pem.aes'
+          assert hashlib.sha256(src.read_bytes()).hexdigest()=='e315bdaf4bcc4ced0733a46a0a6d51c7e352d06fdb1d8ff3f65d51148fe8241e'
+          raw=src.read_bytes();magic=b'VESCHI-BACKUP-1\n';offset=len(magic);assert raw[:offset]==magic
+          length=struct.unpack('>I',raw[offset:offset+4])[0];offset+=4;encoded=raw[offset:offset+length];offset+=length
+          header=json.loads(encoded);decode=lambda k:base64.b64decode(header[k])
+          derived=HKDF(algorithm=hashes.SHA256(),length=32,salt=decode('salt'),info=b'veschi-recovery-worker-key-v1').derive(os.environ['SUPABASE_SECRET_KEY'].encode())
+          key=AESGCM(derived).decrypt(decode('wrap_nonce'),decode('worker_key'),magic)
+          dec=Cipher(algorithms.AES(key),modes.GCM(decode('nonce'),raw[-16:])).decryptor();dec.authenticate_additional_data(encoded)
+          pem=dec.update(raw[offset:-16])+dec.finalize();receiver=serialization.load_pem_private_key(pem,password=None)
+          folder=Path('recovery-input-source/recovery-input/2026-10-15')
+          data=b''.join(p.read_bytes() for p in sorted(folder.glob('local-journal.part-*.aes.txt')))
+          assert hashlib.sha256(data).hexdigest()=='735e088e7c8e956ec9577b8c63b9f78670e83b9e72e86e82b36578917ca0241e'
+          env=json.loads(data);oaep=padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None)
+          key=receiver.decrypt(base64.b64decode(env['receiver_wrapped_key']),oaep)
+          packed=AESGCM(key).decrypt(base64.b64decode(env['nonce']),base64.b64decode(env['ciphertext'])+base64.b64decode(env['tag']),None)
+          raw=gzip.decompress(packed);assert hashlib.sha256(raw).hexdigest()=='16d571eda15598a5965b3d5bbe1b9586155073fa06a460fd9833d158416dc7c0'
+          (root/'current-journal.sqlite').write_bytes(raw)
+          print('Protected journal staged; no source status or business state modified.')
+          PY
+
+      - name: Import and verify all IDs, source states and events twice; no executor
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          PGHOST: aws-0-eu-central-1.pooler.supabase.com
+          PGPORT: '5432'
+          PGDATABASE: postgres
+          PGUSER: postgres.abxgjoqlddhtcmjcjwxw
+          PGSSLMODE: require
+        run: |
+          python - <<'PY'
+          import os,sqlite3,hashlib,json,sys
+          from pathlib import Path
+          import psycopg
+          from stock_operation_store import Store
+          root=Path(os.environ['RUNNER_TEMP']);path=root/'current-journal.sqlite';out=root/'journal-import-proof';out.mkdir(exist_ok=True)
+          report={'success':False,'executor_called':False,'wb_calls':0,'telegram_calls':0,'source_statuses_modified':False,'namespace':'owner20261014','method':'Existing Store importer validates exact rows in local staging; batched client COPY transports without altering semantics'}
+          source=None;stage=None;db=None
+          try:
+              source_sha=hashlib.sha256(path.read_bytes()).hexdigest();assert source_sha=='16d571eda15598a5965b3d5bbe1b9586155073fa06a460fd9833d158416dc7c0'
+              source=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True);source.execute('pragma query_only=on');assert source.execute('pragma quick_check').fetchone()[0]=='ok'
+              stage=sqlite3.connect(':memory:');store=Store(stage);store.initialize_test_schema()
+              store.import_local(source,'owner20261014')
+              for run,snapshot in stage.execute("SELECT DISTINCT r.id,r.snapshot FROM stock_operations o JOIN stock_runs r ON r.id=o.run WHERE o.state IN ('sent','uncertain')"):
+                  article=str(json.loads(snapshot)['article']).strip().casefold();stage.execute('INSERT INTO stock_sku_locks VALUES(?,?)',(article,run))
+              stage.commit()
+              tables=('stock_runs','stock_operations','stock_events','stock_sku_locks')
+              expected={t:sorted(stage.execute('SELECT * FROM '+t).fetchall()) for t in tables}
+              store.import_local(source,'owner20261014')
+              assert expected=={t:sorted(stage.execute('SELECT * FROM '+t).fetchall()) for t in tables}
+              assert [len(expected[t]) for t in tables]==[1117,879,1733,1]
+              def fingerprint(rows):return hashlib.sha256(json.dumps(rows,ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest()
+              db=psycopg.connect(connect_timeout=15,application_name='owner_stock_journal_import_batched')
+              with db.transaction():
+                  with db.cursor(binary=True) as cur:
+                      cur.execute('SET LOCAL search_path=stock_execution,pg_catalog')
+                      cur.execute('SET LOCAL extra_float_digits=3')
+                      cur.execute('SET LOCAL statement_timeout=30000')
+                      cur.execute("SELECT current_schema(),current_setting('extra_float_digits')");assert cur.fetchone()==('stock_execution','3')
+                      cur.execute("SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='stock_execution' AND NOT t.tgisinternal");assert cur.fetchone()[0]==0
+                      for role in ('anon','authenticated','service_role'):
+                          cur.execute("SELECT has_schema_privilege(%s,'stock_execution','USAGE')",(role,));assert cur.fetchone()[0] is False
+                      for t in tables:
+                          cur.execute('SELECT count(*) FROM stock_execution.'+t);assert cur.fetchone()[0]==0,'Expected empty pre-import journal; existing state requires reconciliation'
+                          cur.execute('CREATE TEMP TABLE import_'+t+' (LIKE stock_execution.'+t+') ON COMMIT DROP')
+                          with cur.copy('COPY pg_temp.import_'+t+' FROM STDIN') as copy:
+                              for row in expected[t]:copy.write_row(row)
+                      def apply():
+                          for t in tables:cur.execute('INSERT INTO stock_execution.'+t+' SELECT * FROM pg_temp.import_'+t+' ON CONFLICT DO NOTHING')
+                      def inventory():
+                          got={}
+                          for t in tables:
+                              cur.execute('SELECT * FROM stock_execution.'+t);got[t]=sorted(cur.fetchall())
+                          return got
+                      apply();first=inventory();assert first==expected
+                      apply();second=inventory();assert second==first
+                      cur.execute("SELECT state,count(*) FROM stock_execution.stock_operations GROUP BY state")
+                      states=dict(cur.fetchall());assert states=={'confirmed':257,'invalidated':335,'replan_required':286,'uncertain':1}
+                      cur.execute("SELECT source_state,count(*) FROM stock_execution.stock_operations GROUP BY source_state")
+                      original_states=dict(cur.fetchall());assert original_states==dict(source.execute('SELECT state,count(*) FROM operations GROUP BY state'))
+                      cur.execute("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='stock_execution' AND c.relkind='r' AND NOT c.relrowsecurity");assert cur.fetchone()[0]==0
+              # Independent readback after COMMIT, not just reads of an uncommitted transaction.
+              with db.cursor(binary=True) as cur:
+                  actual={}
+                  for t in tables:
+                      cur.execute('SELECT * FROM stock_execution.'+t);actual[t]=sorted(cur.fetchall())
+                  assert actual==expected
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==source_sha
+              report.update(success=True,committed_readback_verified=True,all_ids_payloads_events_and_locks_verified=True,source_sqlite_sha256=source_sha,counts={t:len(expected[t]) for t in tables},full_row_sha256={t:fingerprint(expected[t]) for t in tables},source_states=original_states,target_states=states,second_import_identical=True,closed_schema_verified=True,uncertain_lock_retained=True,execution_enabled=False)
+          except Exception as exc:
+              report.update(error_type=type(exc).__name__,error_line=__import__('traceback').extract_tb(exc.__traceback__)[-1].lineno,automatic_retry=False)
+          finally:
+              if source:source.close()
+              if stage:stage.close()
+              if db:db.close()
+              path.unlink(missing_ok=True)
+          (out/'summary.json').write_text(json.dumps(report,sort_keys=True));print(json.dumps(report,sort_keys=True))
+          sys.exit(0 if report['success'] else 1)
+          
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-authorized-journal-import-proof
+          path: ${{ runner.temp }}/journal-import-proof
+          retention-days: 90

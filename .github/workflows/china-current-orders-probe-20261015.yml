@@ -1,0 +1,89 @@
+name: China current-day orders probe only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-current-orders-probe-20261015.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  investigate:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 6cbdff742243f03be73c783620ad6569842ff9f4
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Read exact current-day China orders only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,json,traceback
+          from datetime import datetime,timezone
+          from urllib.parse import urlparse
+          import requests
+          from advertising_agent.notify import db,cache_get,cache_set
+          from analytics.mpstats_probe import discover
+          from analytics.mpstats_gaps import execute_reads
+          NOW=datetime.now(timezone.utc);KEY='china_agent:current_orders_probe:2026-10-15'
+          report=dict(observed_at=NOW.isoformat(),cabinet='token_3',targets=[],observations=[],errors=[],wb_calls=0,telegram_calls=0)
+          orig=requests.sessions.Session.request
+          def guard(self,method,url,*a,**kw):
+              host=urlparse(url).hostname or '';path=urlparse(url).path
+              assert host in ('mcp.mpstats.io',urlparse(os.environ['SUPABASE_URL']).hostname)
+              if host!='mcp.mpstats.io':
+                  assert '/rpc/' not in path
+                  if method.upper()!='GET':assert path.split('/')[-1] in ('analytics_snapshots','telegram_api_cache')
+              return orig(self,method,url,*a,**kw)
+          requests.sessions.Session.request=guard
+          def persist():
+              value=json.loads(json.dumps(report))
+              cache_set(KEY,value,365)
+              assert cache_get(KEY)==value
+          try:
+              persist()
+              from datetime import timedelta
+              from zoneinfo import ZoneInfo
+              from analytics.mpstats_recovery import normalize
+              today=NOW.astimezone(ZoneInfo('Europe/Moscow')).date();start=today-timedelta(days=3)
+              pending=[dict(cabinet='token_3',tool='lk_wb_products',arguments=dict(date_from=str(start),date_to=str(today),start_row=0,end_row=1500),key='china:current-orders:'+str(today),priority=90)]
+              def save(cabinet,observation):
+                  assert cabinet=='token_3'
+                  report['observations'].append(observation)
+                  args=observation['arguments']
+                  db('POST','analytics_snapshots',body=dict(source='mpstats_'+observation['tool'],cabinet=cabinet,run_id='current-orders-probe-'+os.environ['GITHUB_RUN_ID'],period_from=args['date_from'],period_to=args['date_to'],status='complete' if observation['status']=='received' else 'error',payload=[observation],detail='Raw scoped order/sale linkage evidence; pagination and individual identity require verification'))
+                  if observation.get('status')=='received' and observation['tool']=='lk_wb_products':
+                      source,normalized=normalize(observation,cabinet)
+                      report['normalized']=normalized
+                      db('POST','analytics_snapshots',body=dict(source=source,cabinet=cabinet,run_id='current-orders-probe-'+os.environ['GITHUB_RUN_ID'],period_from=args['date_from'],period_to=args['date_to'],status='complete',payload=[normalized],detail='Current-day provisional order range; not four complete days'))
+                  persist()
+              pause=db('GET','telegram_api_cache',params=dict(cache_key='eq.mpstats:cooldown',expires_at='gt.'+NOW.isoformat(),select='cache_key',limit=1))
+              if pause:report['connection']=dict(status='shared_cooldown')
+              else:
+                  def reader(call,checks,known):return execute_reads(call,checks,known,pending,{},save,max_requests=3)
+                  result=discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=reader)
+                  report['connection']={k:result.get(k) for k in ('status','connected','detail','retry_after','executed_data_tools')}
+          except BaseException as exc:
+              report['errors'].append(type(exc).__name__)
+              value=traceback.format_exc()
+              for k,v in os.environ.items():
+                  if len(v)>5 and any(t in k for t in ('TOKEN','SECRET','PASSWORD')):value=value.replace(v,'[redacted]')
+              report['private_error']=value[-10000:]
+          finally:
+              persist()
+              print(json.dumps(dict(saved=True,observations=len(report['observations']),errors=report['errors'],wb_calls=0,telegram_calls=0)))
+          
+          PY

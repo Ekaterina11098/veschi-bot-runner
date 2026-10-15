@@ -39,6 +39,14 @@ try:
     saved=admin.execute("SELECT payload FROM public.telegram_api_cache WHERE cache_key='reviews:telegram-approval:config:v1'").fetchone()[0]
     assert saved['destination_verified'] is True and saved['owner_id']==str(chat['id']) and saved['bot_id']==str(bot['id'])
     report['runtime_config']=saved
+    probe_signature=hmac.new(secret,b'veschi:review-approval-probe:20261015:v1',hashlib.sha256).hexdigest()
+    probe_url='https://abxgjoqlddhtcmjcjwxw.supabase.co/functions/v1/telegram-webhook'
+    probe=requests.post(probe_url,headers={'X-Review-Approval-Deploy':probe_signature},json={'review_approval_probe':True},timeout=(5,15))
+    probe.raise_for_status();report['edge_probe']=probe.json()
+    assert report['edge_probe'].get('authenticated') is True and report['edge_probe'].get('review_configuration_present') is True
+    invalid=requests.post(probe_url,headers={'X-Review-Approval-Deploy':'invalid'},json={'review_approval_probe':True},timeout=(5,15))
+    assert invalid.status_code==401
+    report['edge_probe_invalid_rejected']=True
     report.update(role_write_readback=True,role_isolation_verified=True,old_destination_verified=True,
       config={'REVIEW_APPROVAL_DSN':dsn,'REVIEW_APPROVAL_INGRESS_KEY':ingress,'REVIEW_APPROVAL_OWNER_ID':str(chat['id']),'REVIEW_APPROVAL_BOT_ID':str(bot['id'])},
       technical_event=actual,success=True)

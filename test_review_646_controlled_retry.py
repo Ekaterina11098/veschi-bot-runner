@@ -13,6 +13,7 @@ class Tests(unittest.TestCase):
             card_token=m.CARD,answer=self.answer,answer_sha256=self.hash,status='verify',ref=self.ref,owner_id='owner',chat_id='chat',source_sha256=sha({'text':'source'}))
         self.c=dict(cabinet='token_1',kind='feedbacks',item_id=m.ITEM,version=m.VERSION,message_id=646,hashes=[self.hash],ref=self.ref,source={'text':'source'},texts=[self.answer])
         self.repo.put('intents',m.INTENT,self.i);self.repo.put('cards',m.CARD,self.c);self.repo.put('items',self.ref,dict(status='uncertain'));self.conn.commit()
+        self.repo.put('events',m.PRIOR_AUTH,dict(status='rejected',post_http_status=429,post_consumed=True,rejection_readback_empty=True));self.conn.commit()
         self.wb=SimpleNamespace(pause=lambda cabinet:0,read=self.read,post=self.post)
         self.reads=0;self.posts=0;self.actual='';self.response=204;self.timeout=False
         self.r=m.Retry(SimpleNamespace(repo=self.repo,owner='owner',chat='chat'),self.wb,lambda card:True,clock=lambda:self.now)
@@ -128,3 +129,5 @@ class Tests(unittest.TestCase):
         self.assertTrue(self.r.operation()['post_consumed']);self.assertTrue(self.r.operation()['http_post_started'])
 
 if __name__=='__main__':unittest.main(verbosity=2)
+
+

@@ -1,0 +1,129 @@
+name: Remaining acceptance checks offline
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-remaining-acceptance.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: recovery-remaining-acceptance
+  cancel-in-progress: false
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cryptography > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-consistent-point
+          run-id: 38592132657
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/point
+      - name: Test only mismatched role flags and pg_net availability in isolated PostgreSQL
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          import os,json,subprocess,time,secrets
+          from pathlib import Path
+          from analytics.storage_backup_crypto import restore,digest_file,seal
+          root=Path(os.environ['RUNNER_TEMP']);out=root/'remaining-result';out.mkdir()
+          src=root/'point/point-receipt.json.aes';plain=root/'receipt.json'
+          assert digest_file(src)=='cdbf10a41dc3bd800f57e79e81e42741c6bb85595d5a453f8ae92022e5ded495'
+          assert restore(src,plain,secret=os.environ['SUPABASE_SECRET_KEY'])=='50ec68275a005d2cb31f6102ae6cc583d5689bfc26f3507e9fa276a019f79d27'
+          receipt=json.loads(plain.read_text())
+          name='roles-'+secrets.token_hex(4);log=root/'targeted-private.log'
+          report={'production_calls':0,'network':'none','full_restore_repeated':False,'vault_check_repeated':False,'roles':{},'source_pg_net_version':'0.20.4'}
+          def command(args):
+              with log.open('ab') as dst:return subprocess.run(args,stdout=dst,stderr=dst,timeout=600)
+          def query(sql):
+              with log.open('ab') as dst:r=subprocess.run(['docker','exec',name,'psql','-X','-A','-t','-U','supabase_admin','-d','postgres','-v','ON_ERROR_STOP=1','-c',sql],stdout=subprocess.PIPE,stderr=dst,timeout=120)
+              assert r.returncode==0
+              return r.stdout.decode().strip()
+          try:
+              assert command(['docker','pull','supabase/postgres:17.6.1.136']).returncode==0
+              assert command(['docker','run','-d','--name',name,'--network','none','-e','POSTGRES_PASSWORD='+secrets.token_hex(24),'supabase/postgres:17.6.1.136','postgres','-c','shared_preload_libraries=pg_cron,pg_net','-c','cron.launch_active_jobs=off']).returncode==0
+              for i in range(90):
+                  if command(['docker','exec',name,'pg_isready','-h','127.0.0.1','-U','postgres']).returncode==0:break
+                  time.sleep(1)
+              else:raise RuntimeError('Final startup not ready')
+              capture=json.loads("{\"settings\":[{\"role\":\"anon\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"statement_timeout\",\"setting_value\":\"3s\"},{\"role\":\"authenticated\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"statement_timeout\",\"setting_value\":\"8s\"},{\"role\":\"authenticator\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"lock_timeout\",\"setting_value\":\"8s\"},{\"role\":\"authenticator\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"session_preload_libraries\",\"setting_value\":\"supautils, safeupdate\"},{\"role\":\"authenticator\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"statement_timeout\",\"setting_value\":\"8s\"},{\"role\":\"postgres\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"search_path\",\"setting_value\":\"\\\"\\\\$user\\\", public, extensions\"},{\"role\":\"supabase_admin\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"log_statement\",\"setting_value\":\"none\"},{\"role\":\"supabase_admin\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"search_path\",\"setting_value\":\"\\\"$user\\\", public, auth, extensions\"},{\"role\":\"supabase_auth_admin\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"idle_in_transaction_session_timeout\",\"setting_value\":\"60000\"},{\"role\":\"supabase_auth_admin\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"log_statement\",\"setting_value\":\"none\"},{\"role\":\"supabase_auth_admin\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"search_path\",\"setting_value\":\"auth\"},{\"role\":\"supabase_read_only_user\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"default_transaction_read_only\",\"setting_value\":\"on\"},{\"role\":\"supabase_realtime_admin\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"search_path\",\"setting_value\":\"public, extensions, realtime\"},{\"role\":\"supabase_storage_admin\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"log_statement\",\"setting_value\":\"none\"},{\"role\":\"supabase_storage_admin\",\"database\":\"ALL_DATABASES\",\"setting_name\":\"search_path\",\"setting_value\":\"storage\"},{\"role\":\"ALL_ROLES\",\"database\":\"postgres\",\"setting_name\":\"app.settings.jwt_exp\",\"setting_value\":\"3600\"}],\"memberships\":[{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"authenticator\",\"admin_option\":false,\"granted_role\":\"anon\",\"inherit_option\":false},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"postgres\",\"admin_option\":true,\"granted_role\":\"anon\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"supabase_realtime_admin\",\"admin_option\":false,\"granted_role\":\"anon\",\"inherit_option\":false},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"authenticator\",\"admin_option\":false,\"granted_role\":\"authenticated\",\"inherit_option\":false},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"postgres\",\"admin_option\":true,\"granted_role\":\"authenticated\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"supabase_realtime_admin\",\"admin_option\":false,\"granted_role\":\"authenticated\",\"inherit_option\":false},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"postgres\",\"admin_option\":true,\"granted_role\":\"authenticator\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"supabase_storage_admin\",\"admin_option\":false,\"granted_role\":\"authenticator\",\"inherit_option\":false},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"postgres\",\"admin_option\":true,\"granted_role\":\"pg_create_subscription\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"postgres\",\"admin_option\":true,\"granted_role\":\"pg_monitor\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"supabase_etl_admin\",\"admin_option\":false,\"granted_role\":\"pg_monitor\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"supabase_read_only_user\",\"admin_option\":false,\"granted_role\":\"pg_monitor\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"postgres\",\"admin_option\":true,\"granted_role\":\"pg_read_all_data\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"supabase_etl_admin\",\"admin_option\":false,\"granted_role\":\"pg_read_all_data\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"supabase_read_only_user\",\"admin_option\":false,\"granted_role\":\"pg_read_all_data\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"pg_monitor\",\"admin_option\":false,\"granted_role\":\"pg_read_all_settings\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"pg_monitor\",\"admin_option\":false,\"granted_role\":\"pg_read_all_stats\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"postgres\",\"admin_option\":true,\"granted_role\":\"pg_signal_backend\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"pg_monitor\",\"admin_option\":false,\"granted_role\":\"pg_stat_scan_tables\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"authenticator\",\"admin_option\":false,\"granted_role\":\"service_role\",\"inherit_option\":false},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"postgres\",\"admin_option\":true,\"granted_role\":\"service_role\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"supabase_realtime_admin\",\"admin_option\":false,\"granted_role\":\"service_role\",\"inherit_option\":false},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"postgres\",\"admin_option\":false,\"granted_role\":\"supabase_privileged_role\",\"inherit_option\":true},{\"grantor\":\"supabase_admin\",\"set_option\":true,\"member_role\":\"supabase_etl_admin\",\"admin_option\":false,\"granted_role\":\"supabase_privileged_role\",\"inherit_option\":true}],\"observed_at\":\"2026-10-15T04:37:55.515298+00:00\"}")
+              ident=lambda x:'"'+x.replace('"','""')+'"'
+              literal=lambda x:"'"+x.replace("'","''")+"'"
+              for edge in capture['memberships']:
+                  for role in (edge['granted_role'],edge['member_role']):
+                      query("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname="+literal(role)+") THEN CREATE ROLE "+ident(role)+"; END IF; END $$;")
+                  statement="GRANT "+ident(edge['granted_role'])+" TO "+ident(edge['member_role'])+" WITH ADMIN "+str(edge['admin_option']).upper()+", INHERIT "+str(edge['inherit_option']).upper()+", SET "+str(edge['set_option']).upper()+";"
+                  query(statement)
+              actual=json.loads(query("SELECT coalesce(json_agg(json_build_array(p.rolname,u.rolname,m.admin_option,m.inherit_option,m.set_option)),'[]') FROM pg_auth_members m JOIN pg_roles p ON p.oid=m.roleid JOIN pg_roles u ON u.oid=m.member"))
+              report['memberships_recreated']=all([e['granted_role'],e['member_role'],e['admin_option'],e['inherit_option'],e['set_option']] in actual for e in capture['memberships'])
+              report['membership_count']=len(capture['memberships'])
+              statements=[]
+              for item in capture['settings']:
+                  if item['role']=='ALL_ROLES':prefix="ALTER DATABASE "+ident(item['database'])
+                  else:
+                      prefix="ALTER ROLE "+ident(item['role'])
+                      if item['database']!='ALL_DATABASES':prefix+=" IN DATABASE "+ident(item['database'])
+                  statement=prefix+" SET "+ident(item['setting_name'])+" TO "+literal(item['setting_value'])+";"
+                  query(statement);statements.append(statement)
+              actual=json.loads(query("SELECT coalesce(json_agg(json_build_array(coalesce(d.datname,'ALL_DATABASES'),coalesce(r.rolname,'ALL_ROLES'),s.setting)),'[]') FROM pg_db_role_setting p LEFT JOIN pg_database d ON d.oid=p.setdatabase LEFT JOIN pg_roles r ON r.oid=p.setrole CROSS JOIN LATERAL unnest(p.setconfig) s(setting)"))
+              report['role_database_settings_recreated']=all([s['database'],s['role'],s['setting_name']+'='+s['setting_value']] in actual for s in capture['settings'])
+              report['setting_count']=len(capture['settings'])
+              report['authenticator_can_set_service_role']=query("SELECT pg_has_role('authenticator','service_role','SET')")=='t'
+              report['authenticator_does_not_inherit_service_role']=query("SELECT NOT pg_has_role('authenticator','service_role','USAGE')")=='t'
+              report['readonly_default_enforced']=query("SELECT 'default_transaction_read_only=on'=ANY(rolconfig) FROM pg_roles WHERE rolname='supabase_read_only_user'")=='t'
+              query("CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;")
+              report['tested_pg_net_version']=query("SELECT extversion FROM pg_extension WHERE extname='pg_net'")
+              query("SELECT 1/CASE WHEN to_regclass('net.http_request_queue') IS NOT NULL AND to_regclass('net._http_response') IS NOT NULL THEN 1 ELSE 0 END")
+              # Worker contract on loopback only: deliberately closed port, no external networking.
+              request_id=int(query("SET ROLE postgres; SELECT net.http_post(url:='http://127.0.0.1:1/offline-contract',body:='{\\\"fixture\\\":true}'::jsonb,headers:='{\\\"Content-Type\\\":\\\"application/json\\\",\\\"X-Test\\\":\\\"synthetic\\\"}'::jsonb,timeout_milliseconds:=500);").splitlines()[-1])
+              observed=False
+              for attempt in range(30):
+                  if query("SELECT EXISTS(SELECT FROM net._http_response WHERE id="+str(request_id)+" AND error_msg IS NOT NULL)")=='t':observed=True;break
+                  time.sleep(1)
+              report['pg_net_post_worker_loopback_failure_recorded']=observed
+              transaction="BEGIN; SET LOCAL ROLE postgres; SELECT net.http_post(url:='http://127.0.0.1:1/rollback',body:='{}'::jsonb,headers:='{}'::jsonb,timeout_milliseconds:=500); ROLLBACK;"
+              query(transaction)
+              report['pg_net_transaction_rollback_no_pending_request']=query("SELECT count(*) FROM net.http_request_queue")=='0'
+              report['pg_net_compatibility_scope']='Used http_post named parameters, JSON encoding, postgres caller, background delivery/error receipt and transactional rollback; net schema must retain extension tables. 0.20.4 only adds guard for missing tables.'
+              report['supplement_observed_at']=capture['observed_at']
+              report['same_point_global_metadata']=False
+              report['source_db_writes']=0
+              report['targeted_checks_completed']=True
+          except Exception as exc:
+              report['targeted_checks_completed']=False;report['error_type']=type(exc).__name__
+          finally:
+              with log.open('ab') as dst:subprocess.run(['docker','logs',name],stdout=dst,stderr=dst)
+              command(['docker','rm','-f',name])
+              report['private_diagnostic']=seal(log,out/'targeted-private.log.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])
+              (out/'summary.json').write_text(json.dumps(report,sort_keys=True));print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: remaining-acceptance-result
+          path: ${{ runner.temp }}/remaining-result
+          retention-days: 7

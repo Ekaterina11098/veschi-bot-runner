@@ -40,7 +40,8 @@ jobs:
           from analytics.mpstats_gaps import execute_reads
           from analytics.mpstats_recovery import normalize
           NOW=datetime.now(timezone.utc);KEY='china_agent:loss_123:2026-10-15'
-          report=dict(nm_id=1556488210,article='123-Zont-pink',cabinet='token_3',period_from='2026-10-11',period_to='2026-10-14',observed_at=NOW.isoformat(),wb_calls=0,telegram_calls=0,queue_claims=0,observations=[],errors=[])
+          prior=cache_get(KEY) or {}
+          report=dict(nm_id=1556488210,article='123-Zont-pink',cabinet='token_3',period_from='2026-10-11',period_to='2026-10-14',observed_at=NOW.isoformat(),wb_calls=0,telegram_calls=0,queue_claims=0,observations=prior.get('observations',[]),errors=[])
           original=requests.sessions.Session.request
           def guarded(self,method,url,*args,**kw):
               host=urlparse(url).hostname or '';path=urlparse(url).path
@@ -80,13 +81,16 @@ jobs:
                                 ('wbbidder_campaign_stats',dict(campaign_id=12282366,report='products',nm_id=1556488210,zone='all',d1='2026-10-11',d2='2026-10-14')),
                                 ('wbbidder_campaign_stats',dict(campaign_id=12282366,report='days',nm_id=1556488210,zone='all',d1='2026-10-11',d2='2026-10-14'))]:
                   pending.append(dict(cabinet='token_3',tool=kind,arguments=args,key='china:loss123:'+kind+':'+json.dumps(args,sort_keys=True),priority=80))
+              pending.append(dict(cabinet='token_3',tool='wbbidder_events',arguments=dict(campaign_id=12282366,category='all',d1='2026-10-13',d2='2026-10-15',limit=100,start_row=0),key='china:loss123:events:2026-10-13:2026-10-15',priority=80))
+              received={(o['tool'],json.dumps(o['arguments'],sort_keys=True)) for o in report['observations'] if o.get('status')=='received'}
+              pending=[p for p in pending if (p['tool'],json.dumps(p['arguments'],sort_keys=True)) not in received]
               def save(cabinet,observation):
                   assert cabinet=='token_3'
                   report['observations'].append(observation)
                   a,b=observation['arguments'].get('d1',str(NOW.date())),observation['arguments'].get('d2',str(NOW.date()))
                   marker=dict(cabinet=cabinet,run_id='loss123-'+os.environ['GITHUB_RUN_ID'],period_from=a,period_to=b,detail='Exact isolated China 123 loss investigation; no WB or Telegram')
                   db('POST','analytics_snapshots',body=dict(marker,source='mpstats_'+observation['tool'],status='complete' if observation['status']=='received' else 'error',payload=[observation]))
-                  if observation['status']=='received':
+                  if observation['status']=='received' and observation['arguments'].get('nm_id') is None:
                       source,normalized=normalize(observation,cabinet)
                       if source:db('POST','analytics_snapshots',body=dict(marker,source=source,status='complete',payload=[normalized]))
                   if observation.get('retry_after'):cache_set('mpstats:cooldown',dict(pending=True),max(1,observation['retry_after'])/86400)

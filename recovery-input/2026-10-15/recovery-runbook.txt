@@ -1,0 +1,68 @@
+ВНЕШНИЙ КОМПЛЕКТ: ИНСТРУКЦИЯ ВОССТАНОВЛЕНИЯ — 15.10.2026
+Значения секретов здесь отсутствуют. Ни один шаг этой инструкции не означает разрешения включить рабочие процессы.
+
+НЕЗАВИСИМЫЕ КОМПОНЕНТЫ
+A. https://github.com/Ekaterina11098/veschi-bot-runner/actions/runs/38683163657
+Artifact independent-protected-recovery-copy, ID11948952796, SHA256 ZIP01bebc005bf8498af7f2b7d2821012cb316e932a7add495aa4446cfa618117dc, expires2027-01-13T04:45:44Z.
+B. https://github.com/Ekaterina11098/veschi-bot-runner/actions/runs/38683221497
+Artifact offline-recovery-runtime-kit, ID11949460361, SHA256 ZIPa40e9338c798b6773fa14f50107c11334f3a70426ceb9f07cbe10977b1a86406, expires2027-01-13T04:46:23Z.
+C. Дополнительные сведения о настройках платформы: recovery-input/2026-10-15/platform-settings-readonly.json, commit e1b170b78298817c8ac6f05762185c68b92e34af.
+D. Диагностика ACL: workflow recovery-database-acl-check.yml, commit63e3c8d84ee78e1ca8bfbe647236ada1908b6f4a, run38683634548. Итоговый отчёт и database-properties-acl JSON сохраняются также отдельно.
+A содержит файл acceptance-supplement.json с прежними доказательствами и source commit references; C/D — более поздние дополнения, их не выдавать за часть исходного pg_snapshot.
+
+ДОСТУП ПРИ ПОТЕРЕ КОМПЬЮТЕРА
+Нужен доступ владельца к GitHub Actions/Secrets. Два варианта:
+• private RSA владельца, если он независимо сохранён; в архиве его нет;
+• защищённый worker, которому передан существующий SUPABASE_SECRET_KEY из GitHub Secrets. Этот путь реально проверен без компьютера владельца и без его private RSA.
+Не заменять/удалять этот ключ до миграции шифрования архива. Ни секрет, ни расшифрованные данные не отдавать в stdout или незашифрованные артефакты. Ключи в командной строке/URL не передавать. GH account recovery и второй провайдер хранения не входят в доказанную независимость от компьютера.
+Срок90дней конечен. До указанной даты сделать новое защищённое место хранения и проверить SHA/readback. Автоматическое продление не настроено.
+
+ПРОВЕРКА АРХИВОВ
+Скачать A/B через GitHub Actions Artifacts в защищённое рабочее место. Проверить SHA ZIP и file-manifest.json/wheel-sha256.json до расшифрования.
+В A три parts/part-00..02.aes конкатенировать строго00,01,02:832144388байт, SHA457875d0b572a422eb0fc76137143776c4a697db9b16b76745d851228220c8ce.
+Они представляют gzip проверенного SQL. Для чтения использовать storage_backup_crypto.py restore с private_pem в памяти либо secret из защищённого env. Проверять gzip SHA0692dcbf7b872f69af61a525d0925bab81d53a2fbaf46591bbf43c7db3cc61a0, после распаковки rawSQL SHAbf95c241d4ab0e8a61ff5eac5d8a01d226e374e3b347f1d09ded67b10ba7a06d.
+Сохранённые point schema/receipt/delta и portable Vault имеют свои SHA в манифестах. Нельзя заменять их свежими source-версиями, сохраняя прежнюю дату.
+В этой приёмке повторного полного расшифрования SQL/восстановления данных не выполнялось.
+
+ИСХОДНИКИ И СРЕДА
+Расшифровать external/external-kit.tar.gz.aes в закрытое временное место. Внутри:
+• private_main.tar.gz: commit755b69c266ad39beafd334e60aa900c07814cae8;
+• pr20.tar.gz: commit8988d457f104532a4a0e5979ab6305c662ec1787;
+• runner.tar.gz: commit2407c6d0a1dffd2075dbfaa9a406a944117c61eb;
+• manifest.json, runtime-secrets.json, runner-variables.json.
+Проверить SHA деревьев по external-kit-proof, восстановить файлы и миграции в отдельный каталог. Git archive — точное дерево выбранного commit, не полная история Git. Не менять автора/ревизию, пытаясь выдать эти файлы за более поздний код.
+B содержит requirements.recovery.lock.txt и59 wheels: установить в новую Python3.12/Linuxx86_64 venv через pip --no-index --find-links, затем pip check и import smoke. Это воспроизводимая новая среда; идентичность старой production dependency graph не установлена. Не запускать entrypoints задач при установке.
+Отдельная existing-local-captures.receiver.aes.json содержит фактически развёрнутые Edge code/metadata и другие прежние компоненты. Их не заменять произвольно версиями из git.
+Исходные расписания сохранить как данные. Новый scheduler/cron должен оставаться отключённым, cron.launch_active_jobs=off в тесте.
+
+РОЛИ/БАЗА
+Применять только к целевой изолированной базе. Сопоставлять роли по имени, не по OID. Сначала исходные роли/флаги, затем24 членства с ADMIN/INHERIT/SET и10 database ACL, затем16 role/database settings. Восстановление списковых GUC должно сохранить список элементов; одно значение 'public, extensions' ошибочно означает один идентификатор.
+Изоляционные рецепты и проверки находятся в recovery-remaining-acceptance.yml и recovery-database-acl-check.yml; доказательства run38682796216/38683634548.
+Права восстановления выполнять supabase_admin, рабочие проверки — фактическими app roles. Не расширять anon/authenticated ради обхода ошибок. Ожидается authenticator SET service_role без автоматического наследования; service_role CONNECT без CREATE базы/схем; read-only role default_read_only.
+Исходный ICU en-US153.121 совпал с тестовым образом. Не переносить datcollversion как произвольную строку на несовместимую ICU; сравнивать реальную целевую библиотеку.
+Не изменять production postgres.search_path: исходный необычный литерал обратного слэша сохранён, а не исправлен этой работой.
+
+НЕОБХОДИМЫЕ СЕКРЕТЫ И СПОСОБЫ ВОССТАНОВЛЕНИЯ
+16 значений находятся только в защищённом runtime-secrets.json. Импортировать их в целевой secret store без echo/cat/print и без shell tracing. Отдельные значения здесь не приводятся.
+Supabase DB password относится к исходному проекту; целевой проект/отдельная роль могут иметь новый пароль. Сохранённый пароль исходника не сбрасывался. STOCK_DATABASE_URL формировать для согласованной роли постоянного журнала после установки закрытой схемы. Нельзя случайно направить тестовый DSN на production.
+SUPABASE_URL/SERVICE_ROLE/SECRET_KEYS в новом проекте брать у нового проекта; Supabase автоматически внедряет зарезервированные SUPABASE_ переменные в Edge. Старые URL/ключи не дадут доступ к новому проекту. Новые ключи согласованно передать всем разрешённым потребителям после проверки.
+GITHUB_WORKFLOW_DISPATCH_TOKEN: владелец создаёт новый токен, ограниченный runner и необходимым Actions:write; хранит в целевом Edge secret store. SOURCE_READ_TOKEN перевыпускается отдельно только для чтения приватного кода. Архив уже содержит код и helper и не требует Source read token для распаковки.
+TELEGRAM_WEBHOOK_SECRET: новый случайный секрет в целевом Edge и согласованная регистрация webhook после разрешения Telegram. Здесь регистрация/токены не менялись. Пока нет согласованного нового webhook — этот путь не включать.
+WB_FEEDBACK_TOKEN имеет сохранённый в runner fallback WB_TOKEN_1. Отдельное пустое значение не является потерей WB_TOKEN_1.
+WB/МойСклад/MPStats/OpenAI/Telegram токены восстановить из защищённого набора; при их отзыве перевыпускать у владельца соответствующего сервиса, с тем же назначением кабинетов и складов. Не переставлять token1/2/3 по предположению.
+Signing/JWT ключи платформы не экспортировались; новая платформа выдаёт новые. Старые подписанные токены и регистрации требуют согласованной смены; не обещать их автоматическую переносимость.
+
+ПЛАТФОРМА И ОСТАВШИЙСЯ ПРОБЕЛ
+Параметры, реально прочитанные в Dashboard, сохранены в C. Данные Auth/Storage пусты на момент принятой копии, однако это не доказывает пустоту настроек.
+Не сохранены полностью/не воспроизведены все Auth templates/hooks/rate limits/MFA/protection/third-party settings и глобальные Storage/Realtime settings. Их нужно получить отдельным read-only экспортом настроек через уполномоченный Management API либо зафиксировать через Dashboard и проверить на целевой изолированной платформе. Не читать значения секретов в чат и не заменять проверку фразой «по умолчанию».
+Отдельно нужен тест стека Auth/PostgREST/Storage/Edge с актуальной конфигурацией и запрещёнными внешними бизнес-вызовами. В этой работе тестировался PostgreSQL и offline runtime, а не полный Supabase gateway. Поэтому полный проект пока не принят.
+Справка: https://supabase.com/docs/guides/platform/migrating-within-supabase
+Справка Edge env: https://supabase.com/docs/guides/functions/secrets
+
+ЖУРНАЛ ОСТАТКОВ
+local-stock-current.offsite.aes.json: проверяется SHA735e088e7c8e956ec9577b8c63b9f78670e83b9e72e86e82b36578917ca0241e.
+Для worker пути расшифровать receiver/receiver-private.pem.aes только в защищённом worker, затем RSA-OAEP-SHA256 unwrap receiver_wrapped_key, AES-GCM nonce/ciphertext+tag, gzip. Приватный RSA владельца для этого не требуется. Receiver private key не публиковать; после проверки удалить временный plaintext.
+Проверить SQLite SHA16d571eda15598a5965b3d5bbe1b9586155073fa06a460fd9833d158416dc7c0 и quick_check. Ожидается879 операций:257confirmed/335invalidated/286prepared/1uncertain;1733event,1117run. Это уже проверено удалённо.
+Импорт — только после согласованного развёртывания permanent store. Стабильные namespace/source IDs/events hashes; второй импорт без дублей. confirmed/invalidated не переочередять. prepared пересчитать по свежим источникам. uncertain требует фактического WB read перед любой записью; неизвестность блокирует повтор.
+МСК<15 — ручная конкретная рекомендация, без WB auto и уведомлений о нулевом изменении. При>=15 — согласованный защищённый executor, уменьшения с подтверждением до зависимых увеличений.
+Права на реальный WB read/write, Telegram, очереди и включение расписания эта инструкция не предоставляет.

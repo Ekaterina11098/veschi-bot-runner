@@ -1,0 +1,107 @@
+{
+  "import_run": 38690248852,
+  "repeat_run": 38690718230,
+  "import": {
+    "all_ids_payloads_events_and_locks_verified": true,
+    "closed_schema_verified": true,
+    "committed_readback_verified": true,
+    "counts": {
+      "stock_events": 1733,
+      "stock_operations": 879,
+      "stock_runs": 1117,
+      "stock_sku_locks": 1
+    },
+    "execution_enabled": false,
+    "executor_called": false,
+    "full_row_sha256": {
+      "stock_events": "84d715625fef3171653911ca3f7bd2ebb4049aba26caf88d07389ff0ac42a97c",
+      "stock_operations": "4b7776eed54983ae99eebc77f813cacceb98a43d478e1f6c30df5950471739bb",
+      "stock_runs": "5baa440872ef181f70732767e564b2c28a84210cc33d36233bca117cda42cbb5",
+      "stock_sku_locks": "bb8ddcac5cf8636dace738b88715fab931691054f7187e60b6ff5b4f96b2add3"
+    },
+    "method": "Existing Store importer validates exact rows in local staging; batched client COPY transports without altering semantics",
+    "namespace": "owner20261014",
+    "second_import_identical": true,
+    "source_sqlite_sha256": "16d571eda15598a5965b3d5bbe1b9586155073fa06a460fd9833d158416dc7c0",
+    "source_states": {
+      "confirmed": 257,
+      "invalidated": 335,
+      "prepared": 286,
+      "uncertain": 1
+    },
+    "source_statuses_modified": false,
+    "success": true,
+    "target_states": {
+      "confirmed": 257,
+      "invalidated": 335,
+      "replan_required": 286,
+      "uncertain": 1
+    },
+    "telegram_calls": 0,
+    "uncertain_lock_retained": true,
+    "wb_calls": 0
+  },
+  "repeat": {
+    "all_ids_payloads_events_and_locks_verified": true,
+    "closed_schema_verified": true,
+    "committed_readback_verified": true,
+    "counts": {
+      "stock_events": 1733,
+      "stock_operations": 879,
+      "stock_runs": 1117,
+      "stock_sku_locks": 1
+    },
+    "execution_enabled": false,
+    "executor_called": false,
+    "full_row_sha256": {
+      "stock_events": "84d715625fef3171653911ca3f7bd2ebb4049aba26caf88d07389ff0ac42a97c",
+      "stock_operations": "4b7776eed54983ae99eebc77f813cacceb98a43d478e1f6c30df5950471739bb",
+      "stock_runs": "5baa440872ef181f70732767e564b2c28a84210cc33d36233bca117cda42cbb5",
+      "stock_sku_locks": "bb8ddcac5cf8636dace738b88715fab931691054f7187e60b6ff5b4f96b2add3"
+    },
+    "method": "Existing Store importer validates exact rows in local staging; batched client COPY transports without altering semantics",
+    "namespace": "owner20261014",
+    "preexisting_counts": {
+      "stock_events": 1733,
+      "stock_operations": 879,
+      "stock_runs": 1117,
+      "stock_sku_locks": 1
+    },
+    "repeat_after_prior_commit_verified": true,
+    "second_import_identical": true,
+    "source_sqlite_sha256": "16d571eda15598a5965b3d5bbe1b9586155073fa06a460fd9833d158416dc7c0",
+    "source_states": {
+      "confirmed": 257,
+      "invalidated": 335,
+      "prepared": 286,
+      "uncertain": 1
+    },
+    "source_statuses_modified": false,
+    "success": true,
+    "target_states": {
+      "confirmed": 257,
+      "invalidated": 335,
+      "replan_required": 286,
+      "uncertain": 1
+    },
+    "telegram_calls": 0,
+    "uncertain_lock_retained": true,
+    "wb_calls": 0
+  },
+  "uncertain_read": {
+    "run": 38688911335,
+    "observed_at": "2026-10-15T05:50:03.003180+00:00",
+    "article": "20-furbigscarf-khaki",
+    "cabinet": "Китай",
+    "current": 1,
+    "target": 3,
+    "uncertain_retained": true,
+    "lock_retained": true,
+    "wb_writes": 0
+  },
+  "fresh_context_commit": "9b432a3be553c24be75389c87f99c8d7c84de80f",
+  "reviewed_plan_commit": "fb4d2efd533b257b211cc045a527d67a05fc1975",
+  "reviewed_plan_cipher_sha256": "42fb59f3748f5319e73f18e3389095d1f85309ee76e3eff2ce83395af29e8d9b",
+  "pr_merge": false,
+  "runtime_enabled": false
+}

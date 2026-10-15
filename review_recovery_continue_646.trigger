@@ -1,2 +1,2 @@
-# Resume646 VERIFY: ONLY WB GET, never POST. Shared pause expired.
-# 2026-10-15T18:47:35UTC
+# Continue646 VERIFY: GET only after exact pause expiry; no repeated POST.
+# 2026-10-15T19:02:40UTC

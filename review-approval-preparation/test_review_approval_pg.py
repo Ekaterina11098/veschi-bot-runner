@@ -138,9 +138,11 @@ class PostgreSQLTests(unittest.TestCase):
         nonce=self.repo.get('cards',self.token)['nonce']
         result=process(self.a,self.bridge,tg,self.wb,self.update('ok.'+nonce,'confirm'),True,preserve)
         self.assertEqual(result['publication_status'],'confirmed');self.assertEqual(self.wb.posts,1)
-        self.assertEqual(len(backups),4)
-        self.assertEqual(backups[2]['tables']['intents'][0]['payload']['status'],'awaiting_preflight')
-        self.assertEqual(backups[3]['tables']['intents'][0]['payload']['status'],'confirmed')
+        intent_backups=[b for b in backups if b['tables']['intents']]
+        self.assertEqual(intent_backups[0]['tables']['intents'][0]['payload']['status'],'awaiting_preflight')
+        self.assertEqual(intent_backups[-1]['tables']['intents'][0]['payload']['status'],'confirmed')
+        self.assertTrue(any(b['tables']['cards'][0]['payload'].get('telegram_card_removal',{}).get('status')=='sending' for b in intent_backups))
+        self.assertEqual(intent_backups[-1]['tables']['cards'][0]['payload']['telegram_card_removal']['status'],'confirmed')
     def test_targeted_resume_unknown_is_read_only(self):
         from review_approval_process import process
         intent=self.approve();self.wb.mode='unknown-accepted';self.executor.run(intent)

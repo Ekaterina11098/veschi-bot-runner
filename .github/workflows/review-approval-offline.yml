@@ -36,6 +36,7 @@ jobs:
         env:
           TEST_DSN: host=${{ runner.temp }}/review-pg-socket dbname=review_approval_test user=postgres
         run: |
+          set -euo pipefail
           python -m unittest -v test_review_telegram.py test_review_approval_pg.py 2>&1 | tee "$RUNNER_TEMP/review-approval-tests.txt"
           node --test test_review_callback_route.mjs 2>&1 | tee "$RUNNER_TEMP/review-approval-route.txt"
       - uses: actions/upload-artifact@v4

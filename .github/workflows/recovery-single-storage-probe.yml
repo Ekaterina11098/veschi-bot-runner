@@ -1,0 +1,89 @@
+name: One authorized technical storage probe
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-single-storage-probe.yml']
+permissions:
+  contents: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 85e94e969e8a9673b860087ef61c0861c9ca79c1
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests python-dotenv simplejson 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Insert one isolated technical key and read exact payload, never execute work
+        env:
+          SUPABASE_URL: https://abxgjoqlddhtcmjcjwxw.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          PGHOST: aws-0-eu-central-1.pooler.supabase.com
+          PGPORT: '5432'
+          PGDATABASE: postgres
+          PGUSER: postgres.abxgjoqlddhtcmjcjwxw
+          PGSSLMODE: require
+          PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=10000'
+        run: |
+          python - <<'PY'
+          import os,json,uuid,hashlib,sys
+          from pathlib import Path
+          from datetime import datetime,timedelta,timezone
+          import psycopg,requests
+          from analytics.storage_collection_gate import CollectionGate
+          from wb_runtime_state import cache_get
+          out=Path(os.environ['RUNNER_TEMP'])/'probe-proof';out.mkdir()
+          result={'success':False,'write_attempts':0,'rows_inserted_confirmed':0,'business_calls':0,'ttl_seconds':300,'ttl_physical_delete':False}
+          phase='metadata'
+          try:
+              with psycopg.connect(connect_timeout=15,application_name='recovery_single_cache_probe') as conn:
+                  with conn.cursor() as c:
+                      c.execute('SET TRANSACTION READ ONLY')
+                      c.execute("select count(*) from pg_trigger where tgrelid='public.telegram_api_cache'::regclass and not tgisinternal")
+                      assert c.fetchone()[0]==0,'Unexpected cache trigger'
+                      c.execute("select count(*) from pg_rewrite where ev_class='public.telegram_api_cache'::regclass and rulename<>'_RETURN'")
+                      assert c.fetchone()[0]==0,'Unexpected cache rule'
+                  conn.rollback()
+              result['cache_triggers_and_rules_absent']=True
+              key='recovery:storage-probe:'+str(uuid.uuid4())
+              payload={'format':'technical-storage-probe-v1','nonce':str(uuid.uuid4()),'technical_only':True}
+              now=datetime.now(timezone.utc)
+              expiry=now+timedelta(seconds=300)
+              base=os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache'
+              headers={'apikey':os.environ['SUPABASE_SECRET_KEY'],'Content-Type':'application/json','Prefer':'return=representation'}
+              phase='insert'
+              def write(value):
+                  result['write_attempts']+=1
+                  # Plain INSERT: NO on_conflict and NO merge-duplicates. Unique collision fails.
+                  r=requests.post(base,headers=headers,json={'cache_key':key,'payload':value,'updated_at':now.isoformat(),'expires_at':expiry.isoformat()},timeout=(5,20),allow_redirects=False)
+                  assert r.status_code==201
+                  rows=r.json()
+                  assert len(rows)==1 and rows[0]['cache_key']==key and rows[0]['payload']==payload
+                  result['rows_inserted_confirmed']=1
+              gate=CollectionGate(out/'gate.json',scope='one-authorized-technical-probe')
+              gate.verify_storage(write,lambda:cache_get(key),payload)
+              gate.before_collection() # only verify gate; do NOT start any collector.
+              result.update(success=True,readback_exact=True,gate_verified=True,key=key,created_at=now.isoformat(),expires_at=expiry.isoformat(),payload_sha256=hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(',',':')).encode()).hexdigest(),no_upsert=True,no_job_payload=True,no_executor_imported=True)
+          except Exception as e:
+              result.update(failure_phase=phase,error_type=type(e).__name__,automatic_retry=False,write_outcome_requires_readonly_reconciliation=result['write_attempts']>0 and result['rows_inserted_confirmed']==0)
+          (out/'summary.json').write_text(json.dumps(result,sort_keys=True))
+          print(json.dumps(result,sort_keys=True))
+          sys.exit(0 if result['success'] else 1)
+          
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: authorized-single-storage-probe
+          path: ${{ runner.temp }}/probe-proof
+          retention-days: 90

@@ -1,0 +1,134 @@
+name: China price readiness only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-price-readiness-20261015.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  check:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b1f54e3770fba9aabbe7773c2106fc6d56c92911
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Isolated storage and China readiness with no delivery
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,json,uuid,traceback,copy
+          from datetime import datetime,timedelta,timezone
+          from urllib.parse import urlparse
+          import requests
+          from business_agents.sales import MSK
+          from china_agent import demand
+          from advertising_agent.notify import db,cache_get,cache_set
+          from analytics.mpstats_probe import discover
+          from analytics.mpstats_gaps import execute_reads
+          from analytics.mpstats_recovery import normalize,import_products
+          from analytics.mpstats_primary import products
+          NOW=datetime.now(MSK);KEY='china_agent:readiness:'+str(NOW.date())
+          report=dict(checked_at=NOW.isoformat(),wb_writes=0,telegram_messages=0,queue_claims=0,errors=[])
+          original=requests.sessions.Session.request
+          def guard(self,method,url,*a,**kw):
+              host=urlparse(url).hostname or '';path=urlparse(url).path
+              if host.endswith('wildberries.ru') and (method.upper()!='GET' or host!='discounts-prices-api.wildberries.ru' or path!='/api/v2/list/goods/filter'):raise RuntimeError('WB route forbidden')
+              if host=='api.telegram.org' and path.split('/')[-1] not in ('getMe','getChat','getChatMember'):raise RuntimeError('Telegram send forbidden')
+              if '.supabase.' in host and ('/rpc/' in path or (method.upper() not in ('GET','HEAD') and path.split('/')[-1] not in ('telegram_api_cache','analytics_snapshots'))):raise RuntimeError('Queue or DB operation forbidden')
+              return original(self,method,url,*a,**kw)
+          requests.sessions.Session.request=guard
+          def checked_save(key,value,ttl_days=30):
+              cache_set(key,value,ttl_days)
+              assert cache_get(key)==value,'Storage readback mismatch'
+          def read(table,params):return db('GET',table,params=params)
+          try:
+              checked_save(KEY+':probe',dict(technical_only=True,nonce=str(uuid.uuid4())),1)
+              report['storage_write_readback']=True
+              cfg,=read('business_agent_config',dict(agent_id='eq.china',active='eq.true',limit=2))
+              report['config']={k:cfg[k] for k in ('agent_id','active','chat_id','owner_user_id')}
+              old=read('business_agent_jobs',dict(agent_id='eq.china',status='eq.done',request_text='eq./china_price_daily_report',order='id.desc',limit=1,select='id,chat_id,completed_at'))
+              assert old and old[0]['chat_id']==cfg['chat_id'],'Destination differs from report history'
+              report['destination_matches_history']=True
+              tg=os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()
+              def telegram(method,params=None):
+                  r=requests.get('https://api.telegram.org/bot'+tg+'/'+method,params=params,timeout=(5,20))
+                  body=r.json()
+                  if not r.ok or body.get('ok') is not True:raise RuntimeError('Telegram HTTP '+str(r.status_code))
+                  return body['result']
+              me=telegram('getMe');chat=telegram('getChat',dict(chat_id=cfg['chat_id']));member=telegram('getChatMember',dict(chat_id=cfg['chat_id'],user_id=me['id']))
+              report['telegram']=dict(bot_id=me['id'],chat_id=chat['id'],title=chat.get('title'),membership=member['status'])
+              assert chat['id']==cfg['chat_id'] and member['status'] not in ('left','kicked')
+              memo={}
+              def get(key):
+                  if key not in memo:memo[key]=copy.deepcopy(cache_get(key))
+                  return memo[key]
+              def put(key,value,ttl_days=30):memo[key]=copy.deepcopy(value)
+              state=get(demand.STATE_KEY) or {}
+              report['last_watch_checked_at']=state.get('last_checked_at')
+              report['tracked_increases']={k:v['increase'] for k,v in state.get('price_history',{}).items() if v.get('increase')}
+              try:
+                  fresh=demand.live_prices(NOW,get,put)
+                  report['prices']=dict(available=bool(fresh.get('rows')),observed_at=fresh.get('observed_at'),rows=len(fresh.get('rows',[])))
+              except Exception as exc:
+                  report['errors'].append(dict(stage='prices',type=type(exc).__name__))
+                  fresh=dict(cabinet='token_3',rows=[])
+              windows={(str(NOW.date()-timedelta(days=4)),str(NOW.date()-timedelta(days=1)))}
+              windows.update((v['baseline_from'],v['baseline_to']) for v in report['tracked_increases'].values())
+              pending=[]
+              for start,end in sorted(windows):
+                  if products(read,'token_3',start,end,NOW)[1]:continue
+                  pending.append(dict(key='china-readiness:'+start+':'+end,tool='lk_wb_products',cabinet='token_3',arguments=dict(date_from=start,date_to=end,start_row=0,end_row=1500),priority=80))
+              report['requested_periods']=sorted(windows);report['collection']=[]
+              def save(cabinet,observation):
+                  assert cabinet=='token_3' and observation.get('scope_verified') is True
+                  args=observation['arguments'];assert (args['date_from'],args['date_to']) in windows
+                  report['collection'].append(dict(period_from=args['date_from'],period_to=args['date_to'],status=observation['status']))
+                  marker=dict(cabinet=cabinet,run_id='china-readiness-'+os.environ['GITHUB_RUN_ID'],period_from=args['date_from'],period_to=args['date_to'],detail='Isolated China readiness; no queue or delivery')
+                  db('POST','analytics_snapshots',body=dict(marker,source='mpstats_'+observation['tool'],status='complete' if observation['status']=='received' else 'error',payload=[observation]))
+                  if observation['status']=='received':
+                      source,normalized=normalize(observation,cabinet)
+                      db('POST','analytics_snapshots',body=dict(marker,source=source,status='complete',payload=[normalized]))
+                      if source=='mpstats_products_validated':import_products(normalized,get,put)
+                  if observation.get('retry_after'):checked_save('mpstats:cooldown',dict(pending=True),max(1,observation['retry_after'])/86400)
+              pause=read('telegram_api_cache',dict(cache_key='eq.mpstats:cooldown',expires_at='gt.'+datetime.now(timezone.utc).isoformat(),select='cache_key',limit=1))
+              if pause:report['mpstats']=dict(status='shared_cooldown')
+              elif pending:
+                  def extra(call,checks,known):return execute_reads(call,checks,known,pending,{},save,max_requests=5)
+                  result=discover(os.environ.get('MPSTATS_API_TOKEN',''),read_checks=True,extra_reader=extra)
+                  report['mpstats']={k:result.get(k) for k in ('status','connected','executed_data_tools','retry_after','detail')}
+              else:report['mpstats']=dict(status='exact_periods_reused')
+              memo[demand.STATE_KEY]=copy.deepcopy(state);memo[demand.STATE_KEY].pop('pending_notice',None)
+              answer,trace=demand.run_watch(read=read,cache_get=get,cache_set=put,prices=fresh,now=NOW,collect_sources=False,daily_report=True,deduplicate_daily=False)
+              report.update(preview=answer,trace=trace,assessment=memo[demand.STATE_KEY]['latest'])
+              report['legacy_wb_funnel_present']=get('china_agent:funnel_daily:v1') is not None
+              report['mpstats_funnel_present']=get('mpstats:funnel_periods:token_3:v1') is not None
+              report['ready_for_schedule']=False
+          except BaseException as exc:
+              report['errors'].append(dict(stage='audit',type=type(exc).__name__))
+              trace=traceback.format_exc()
+              for name,value in os.environ.items():
+                  if len(value)>5 and any(x in name for x in ('TOKEN','SECRET','PASSWORD')):trace=trace.replace(value,'[redacted]')
+              report['private_error']=trace[-10000:]
+          finally:
+              checked_save(KEY,report,30)
+              print(json.dumps({k:report.get(k) for k in ('storage_write_readback','destination_matches_history','ready_for_schedule','errors','wb_writes','telegram_messages','queue_claims')}))
+          
+          PY

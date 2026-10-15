@@ -1,69 +1,65 @@
-"""Recover the owner's exact visible variant-1 confirmation after stale nonce failure.
-Only the fixed card / version / SHA below. Never fabricate a Telegram event.
-"""
-import os,json,time
+"""One renewed exact646 attempt. No old queues, other reviews or Telegram calls."""
+import os,sys,json,time,copy
 from pathlib import Path
 import psycopg,wildberries
-from review_telegram_approval import Approval,Repository,Rejected,sha
+from review_telegram_approval import Approval,Repository,sha
 from review_approval_bridge import SQLSource,DurableBridge
-from review_telegram_runtime import CanonicalGuard,TelegramTransport
-from review_approval_process import process
+from review_telegram_runtime import CanonicalGuard
 from review_approval_executor import WBAdapter
-import sys
-sys.path.insert(0,str(Path(__file__).resolve().parent))
-import review_approval_process as process_module
-from review_646_executor import Executor as Scoped646Executor
-process_module.Executor=Scoped646Executor # scoped controller only; general runtime unchanged
 from review_approval_backup import snapshot,encrypt
-TOKEN='359dfd9c3eee92d596247c388dd9b6f4'
-EXPECTED='9b224203e606ce4c6a132f2d782f86b20e24e8830e329883bf948829f5005e5d'
-VERSION='owner-telegram-first-20261015-1792066028'
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from review_646_controlled_retry import Retry,INTENT,AUTH
 conn=psycopg.connect(os.environ['REVIEW_APPROVAL_DSN'],autocommit=True,connect_timeout=15,options='-c statement_timeout=30000')
-out=Path(os.environ['RUNNER_TEMP'])/'review-approval-output';out.mkdir(exist_ok=True)
 repo=Repository(conn,postgres=True)
 a=Approval(repo,os.environ['REVIEW_APPROVAL_INGRESS_KEY'],os.environ['REVIEW_APPROVAL_OWNER_ID'],os.environ['TELEGRAM_ALLOWED_CHAT_ID'],os.environ['REVIEW_APPROVAL_BOT_ID'],enabled=True)
 bridge=DurableBridge(a,SQLSource(conn))
-diagnostic={}
+out=Path(os.environ['RUNNER_TEMP'])/'review-approval-output';out.mkdir(exist_ok=True)
+last_good=None;retry=None;fatal=None
 def preserve():
-    data=snapshot(repo)
-    data['target_read_diagnostic']=diagnostic
-    (out/'approval-supplement.aes.json').write_text(json.dumps(encrypt(data,os.environ['RECOVERY_PUBLIC_KEY'].encode())))
+    global last_good
+    try:
+        data=snapshot(repo);last_good=copy.deepcopy(data)
+    except Exception as exc:
+        if last_good is None:raise
+        data=copy.deepcopy(last_good);data['snapshot_fallback_error_type']=type(exc).__name__
+    data['controlled_retry_http_diagnostic']=copy.deepcopy(retry.http_buffer if retry else [])
+    data['controlled_retry_authorization']=AUTH
+    data['fatal_error_type']=fatal
+    sealed=encrypt(data,os.environ['RECOVERY_PUBLIC_KEY'].encode())
+    target=out/'approval-supplement.aes.json';temporary=out/'approval-supplement.tmp'
+    temporary.write_text(json.dumps(sealed));temporary.replace(target)
 try:
     conn.execute("SELECT pg_advisory_lock(hashtextextended('review-approval-process-ui-v1',0))")
-    card=repo.get('cards',TOKEN)
-    assert card and card['cabinet']=='token_1' and card['kind']=='feedbacks'
-    assert card['version']==VERSION and card['message_id']==646 and card['hashes'][0]==EXPECTED and sha(card['texts'][0])==EXPECTED
-    iid=sha([card['ref'],card['version'],EXPECTED])
-    if not repo.get('intents',iid):
-        assert CanonicalGuard(a,bridge.project)(card)
-        with repo.transaction():
-            item=repo.get('items',card['ref'],lock=True);card=repo.get('cards',TOKEN,lock=True)
-            assert item['status']=='open' and item['token']==TOKEN and card['status']=='selected' and card['selected']==0
-            assert time.time()<card['expires_at']
-            intent={'id':iid,'ref':card['ref'],'cabinet':card['cabinet'],'kind':card['kind'],'item_id':card['item_id'],'version':VERSION,'answer':card['texts'][0],'answer_sha256':EXPECTED,'source_sha256':sha(card['source']),'owner_id':a.owner,'chat_id':a.chat,'status':'awaiting_preflight','created_at':time.time(),'card_token':TOKEN,'authorization_source':'owner_chat_recovery','authorization_evidence':{'owner_reported_confirm_click':True,'screenshot_message_id':646,'selected_variant':1,'failed_run':38734401627,'failure':'Outdated confirmation','original_selection_events':['3554943945523907184','3554943943142644140']}}
-            repo.put('intents',iid,intent);card['status']='approved';item['status']='approved'
-            repo.put('cards',TOKEN,card);repo.put('items',card['ref'],item)
-            repo.put('events','owner-chat-recovery:20261015:'+TOKEN,{'created_at':time.time(),'result':{'decision':'approved','intent_id':iid},'authorization_source':'owner_chat_recovery','answer_sha256':EXPECTED})
-    preserve()
-    deadline=time.monotonic()+420
-    from review_rate_diagnostic import install as install_rate_diagnostic
-    install_rate_diagnostic(diagnostic,card['item_id']) # observe existing exact GET only, no extra calls
+    baseline=snapshot(repo)
     adapter=WBAdapter(wildberries)
-    for iteration in range(4):
-        result=process(a,bridge,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),adapter,{'resume_intent':iid,'owner_id':a.owner,'chat_id':a.chat},publication_enabled=True,preserve=preserve)
-        current=repo.get('intents',iid)
-        if current['status'] in ('confirmed','manual_present','blocked'):break
-        delay=max(0,current.get('retry_at',0)-time.time(),adapter.pause(current['cabinet']))
-        # Short server pauses can finish this exact operation; long pauses seal and exit.
-        # Verify status always remains GET-only inside Executor.
-        if not 0<delay<=90 or time.monotonic()+delay+30>deadline:break
+    retry=Retry(a,adapter,CanonicalGuard(a,bridge.project),preserve)
+    retry.initialize()
+    from urllib.parse import urlsplit
+    import requests
+    undo=retry.install_http_journal(requests,urlsplit(os.environ['SUPABASE_URL']).hostname)
+    deadline=time.monotonic()+29*60
+    while time.monotonic()<deadline:
+        result=retry.step()
+        if result['status'] in ('confirmed','manual_present','rejected','needs_diagnosis','blocked'):break
+        delay=max(0,result.get('wait_seconds',0),result.get('not_before',0)-time.time(),adapter.pause('token_1'))
+        if delay<=0:raise RuntimeError('Recovery did not make a durable transition')
         preserve()
-        time.sleep(delay+1)
-    current=repo.get('intents',iid)
-    print(json.dumps({'publication_status':current['status'],'retry_at':current.get('retry_at'),'readback_confirmed':current.get('actual_answer_sha256')==EXPECTED,'ui_delivery':result.get('ui_delivery')}))
+        if time.monotonic()+delay+45>deadline:break
+        until=time.monotonic()+delay+1
+        while time.monotonic()<until:time.sleep(min(45,until-time.monotonic()))
+    after=snapshot(repo)
+    for key in ('source_cache','source_journal'):
+        if baseline['manifest'][key]!=after['manifest'][key]:raise RuntimeError('Untargeted source state changed')
+    current=repo.get('intents',INTENT);operation=repo.get('events',AUTH)
+    print(json.dumps({'publication_status':current['status'],'controlled_retry_status':operation['status'],
+        'post_consumed':operation['post_consumed'],'http_post_started':operation['http_post_started'],
+        'post_http_status':operation.get('post_http_status'),
+        'readback_confirmed':current.get('actual_answer_sha256')==operation['answer_sha256'],
+        'telegram_calls':0,'other_source_state_unchanged':True}))
+except Exception as exc:
+    fatal=type(exc).__name__
+    print(json.dumps({'completed':False,'error_type':fatal,'telegram_calls':0}))
 finally:
-    preserve();conn.close()
-
-# Continue same durable intent only after saved RetryAfter 2026-10-15T12:34:58UTC.
-
-# Continue same intent with verified bounded-preflight fix;83 isolated checks passed.
+    try:preserve()
+    finally:conn.close()
+if fatal:raise SystemExit(1)

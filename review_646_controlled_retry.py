@@ -117,6 +117,23 @@ class Retry:
             c['status']='sent' if status=='confirmed' else 'manual_present';self.repo.put('cards',CARD,c)
         if self.repo.get('intents',INTENT)!=i:raise RuntimeError('Final646 intent readback mismatch')
         return self.save(op,status=status,actual_answer_sha256=sha(actual),readback_at=self.clock())
+    def verify_rejection(self):
+        """Read the result of the consumed attempt; NEVER rearm a POST."""
+        i,c=self.binding();op=self.operation()
+        if not op or op['status']!='rejected' or not op.get('post_consumed'):
+            raise Rejected('No consumed rejected attempt')
+        if op.get('rejection_checked_at'):return op
+        pause=max(0,self.wb.pause('token_1'))
+        if pause:return dict(op,wait_seconds=pause)
+        try:actual=self.wb.read(i)
+        except Exception as exc:
+            pause=max(0,self.wb.pause('token_1'))
+            self.save(op,rejection_read_error_type=type(exc).__name__)
+            return dict(op,wait_seconds=pause) if pause else self.save(op,rejection_read_needs_diagnosis=True)
+        if not isinstance(actual,str):return self.save(op,rejection_read_needs_diagnosis=True)
+        if actual:return self.complete(actual,'confirmed' if actual==i['answer'] else 'manual_present')
+        return self.save(op,rejection_checked_at=self.clock(),rejection_readback_empty=True,
+            rejection_readback_sha256=sha(actual),no_further_post_authorized=True)
     def step(self):
         i,c=self.binding();op=self.initialize();now=self.clock()
         if i['status'] in ('confirmed','manual_present'):

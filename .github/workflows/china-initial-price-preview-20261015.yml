@@ -1,0 +1,46 @@
+name: China initial price rule preview only 2026-10-15
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-initial-price-preview-20261015.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: c8d2ab210ec22432b51180ce1b541829a7f62bea
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Verify first and repeat price rules and delivery safeguards
+        run: |
+          python - <<'PY'
+          import sys,subprocess,tempfile
+          for pattern in ('test_china_initial_raise.py','test_china_sales_demand.py','test_china_price_readiness.py','test_china_daily_worker.py','test_business_agents.py','test_mpstats_primary_policy.py','test_china_postclick.py'):
+              with tempfile.TemporaryFile() as log:
+                  result=subprocess.run([sys.executable,'-m','unittest','discover','-s','tests','-p',pattern],stdout=log,stderr=log)
+                  log.seek(0);value=log.read().decode(errors='replace')
+                  print(pattern+': '+str(result.returncode))
+                  if result.returncode:print(value[-16000:]);sys.exit(result.returncode)
+          PY
+      - name: Recalculate China preview only, without Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python -m china_agent.daily_report_worker --verify

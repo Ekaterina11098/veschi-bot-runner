@@ -33,11 +33,14 @@ def save_snapshot(source,value,a,b,status='complete'):
 def wanted(tool,args):
  key='token_2:'+tool+':'+json.dumps(args,sort_keys=True)
  # Received, explicit rejected parameter errors and retries are all preserved.
- old=database('GET','analytics_snapshots',params={'source':'eq.mpstats_'+tool,'cabinet':'eq.token_2','payload->0->>request_key':'eq.'+key,'select':'id,payload,collected_at','order':'id.desc','limit':1}) or []
+ from analytics.collect import _database_transport
+ a,b=period(args)
+ candidates=_database_transport('GET','analytics_snapshots',params={'source':'eq.mpstats_'+tool,'cabinet':'eq.token_2','period_from':'eq.'+a,'period_to':'eq.'+b,'select':'id,request_key:payload->0->>request_key,observation_status:payload->0->>status,retry_after:payload->0->>retry_after,observed_at:payload->0->>observed_at','order':'id.desc','limit':100}) or []
+ old=[row for row in candidates if row.get('request_key')==key]
  if old:
-  obs=old[0]['payload'][0]
-  if obs.get('status')=='received':return None
-  retry=obs.get('retry_after')
+  obs=old[0]
+  if obs.get('observation_status')=='received':return None
+  retry=float(obs.get('retry_after') or 0)
   if not retry or (now-datetime.fromisoformat(obs['observed_at'])).total_seconds()<retry:return None
  return dict(key=key,cabinet='token_2',tool=tool,arguments=args)
 hidden=io.StringIO()

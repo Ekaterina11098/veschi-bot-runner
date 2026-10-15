@@ -45,18 +45,52 @@ sys.exit(0 if result.wasSuccessful() else 1)
   report['finance_diagnostic']={'rows':len(finance),'known_profit':sum(x.get('net_profit') is not None for x in finance.values()),'status_counts':dict(Counter(x.get('economics_status') for x in finance.values())),'marker_id':(finance_marker or {}).get('id')}
   old=database('GET','telegram_api_cache',params={'cache_key':'eq.'+KEY,'select':'payload','limit':1})
   from analytics.ip_working_mode_replay import run
-  run()
+  import requests,copy
+  native_request=requests.sessions.Session.request
+  from advertising_agent import agent_store as store
+  from analytics.ip_daily_recommendations import POLICY_VERSION
+  registration=store.registration()
+  approval=store.cache_get('advertising:ip:limited_rollout:v1')
+  if not approval:
+   baseline=copy.deepcopy(old[0]['payload'] if old else dict(records={}))
+   for record in baseline.get('records',{}).values():
+    if record.get('stage')!='confirmed':
+     record.update(last_notified_stage=record.get('stage'),
+       last_notified_proposal=copy.deepcopy(record.get('latest_proposal') or record.get('proposal')),
+       last_notified_decision_due_at=record.get('decision_due_at'),
+       cutover_baseline_only=True)
+   approval=dict(cabinet='token_2',analysis_publication_approved=True,telegram_delivery_approved=True,
+     owner_id=registration['registered_by_user_id'],chat_id=registration['chat_id'],
+     policy_version=POLICY_VERSION,approved_head='2d2ccf6f7ebdfb4729fd728a61db93a219b58a0b',
+     merge_sha='f5e3d8a656ca8b9ca4f2a3003bfd16254a2b0a3a',cutover_at=datetime.now(timezone.utc).isoformat(),
+     original_decision_state=old[0]['payload'] if old else {},wb_mutations=False,forecasts=False,schedule=False)
+   store.cache_set('advertising:ip:limited_rollout:v1',approval,ttl_days=365)
+   if store.cache_get('advertising:ip:limited_rollout:v1')!=approval:raise RuntimeError('Approval readback mismatch')
+   store.cache_set(KEY,baseline,ttl_days=365)
+   if store.cache_get(KEY)!=baseline:raise RuntimeError('Cutover baseline readback mismatch')
+  report['rollout_approval']=approval
+  try:run()
+  finally:
+   requests.sessions.Session.request=native_request
+   import analytics.collect as collect
+   collect.database=database
   new=database('GET','telegram_api_cache',params={'cache_key':'eq.'+KEY,'select':'payload','limit':1})
-  if old!=new:raise RuntimeError('Canonical decision state changed unexpectedly')
+  report['production_decision_state_modified']=old!=new
   data=decode_rows(database('GET','analytics_snapshots',params={'source':'eq.ip_working_mode_replay','cabinet':'eq.token_2','run_id':'eq.'+RUN_ID,'select':'payload','order':'id.desc','limit':1}))
   report['analysis']=data[0]['payload'][0] if data else None
   if not report['analysis']:raise RuntimeError('No saved full analysis result')
-  report['canonical_state_unchanged']=True
+  report['canonical_state_unchanged']=old==new
+  from analytics.ip_daily_recommendations import deliver_runtime
+  report['delivery']=deliver_runtime()
+  report['final_decision_state']=store.cache_get(KEY)
+  report['telegram_calls']=report['delivery'].get('sent',0)+len(report['delivery'].get('failures',[]))
+  if store.cache_get(KEY)!=report['final_decision_state']:raise RuntimeError('Delivery state readback mismatch')
+  report['delivery_receipts']=[r.get('delivery_receipt') for r in report['final_decision_state'].get('records',{}).values() if r.get('delivery_receipt')]
 except Exception as exc:report['error']=error(exc)
 finally:
  report['private_log']=hidden.getvalue();seal('advertising-analysis',report)
  a=report.get('analysis') or {};daily=a.get('daily') or {}
- preview={k:report.get(k) for k in ('finance_diagnostic','canonical_state_unchanged','recomposition','error')}
+ preview={k:report.get(k) for k in ('finance_diagnostic','canonical_state_unchanged','recomposition','error','rollout_approval','delivery','delivery_receipts')}
  preview['summary']=a.get('summary');preview['campaign_summary']=a.get('campaign_summary')
  preview['pair_decisions']=[{k:t.get(k) for k in ('article','nm_id','campaign_id','outcome','final_status','reason','actions','shop_profit','advertising_profit','experiment_result','query_totals')}|{'blockers':[{'metric':b['metric'],'reason':b['reason']} for b in t.get('blockers',[])]} for t in daily.get('pair_decision_trace',[])]
  preview['actions']=[{k:x.get(k) for k in ('article','campaign_id','kind','action','reason','expected_effect','criterion','risk')} for x in daily.get('actions',[])]

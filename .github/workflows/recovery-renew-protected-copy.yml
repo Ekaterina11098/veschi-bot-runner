@@ -1,0 +1,100 @@
+name: Renew protected recovery copies manually before expiry
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Run containing independent-protected-recovery-copy
+        required: true
+        default: '38683163657'
+      runtime_run_id:
+        description: Run containing offline-recovery-runtime-kit
+        required: true
+        default: '38683221497'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: independent-protected-recovery-copy
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/renew/source
+      - uses: actions/download-artifact@v4
+        with:
+          name: offline-recovery-runtime-kit
+          run-id: ${{ inputs.runtime_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/renew/runtime
+      - name: Verify every retained ciphertext and runtime member; never re-export source
+        run: |
+          python - <<'PY'
+          import os,json,hashlib
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'renew'
+          def sha(p):
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                  for b in iter(lambda:f.read(1048576),b''):h.update(b)
+              return h.hexdigest()
+          source=root/'source';manifest=json.loads((source/'file-manifest.json').read_text())
+          assert {str(p.relative_to(source)) for p in source.rglob('*') if p.is_file()}==set(manifest)|{'file-manifest.json','independent-copy-summary.json'}
+          for name,item in manifest.items():
+              p=source/name;assert p.stat().st_size==item['bytes'] and sha(p)==item['sha256']
+          runtime=root/'runtime';wheels=json.loads((runtime/'wheel-sha256.json').read_text())
+          assert {p.name for p in (runtime/'wheels').iterdir()}==set(wheels)
+          for name,digest in wheels.items():assert sha(runtime/'wheels'/name)==digest
+          print(json.dumps({'ciphertext_manifest_verified':True,'runtime_wheels_verified':len(wheels),'source_calls':0,'business_calls':0,'decryption_repeated':False}))
+          PY
+      - id: app
+        uses: actions/upload-artifact@v4
+        with:
+          name: independent-protected-recovery-copy
+          path: ${{ runner.temp }}/renew/source
+          retention-days: 90
+      - id: runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-recovery-runtime-kit
+          path: ${{ runner.temp }}/renew/runtime
+          retention-days: 90
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.app.outputs.artifact-id }}
+          path: ${{ runner.temp }}/renew/readback-source
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.runtime.outputs.artifact-id }}
+          path: ${{ runner.temp }}/renew/readback-runtime
+      - name: Accept renewal only after downloading and comparing new copies
+        env:
+          APP_ARTIFACT_ID: ${{ steps.app.outputs.artifact-id }}
+          RUNTIME_ARTIFACT_ID: ${{ steps.runtime.outputs.artifact-id }}
+        run: |
+          python - <<'PY'
+          import os,json,hashlib,datetime
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'renew'
+          def inventory(folder):
+              result={}
+              for p in folder.rglob('*'):
+                  if p.is_file():
+                      h=hashlib.sha256()
+                      with p.open('rb') as f:
+                          for b in iter(lambda:f.read(1048576),b''):h.update(b)
+                      result[str(p.relative_to(folder))]=h.hexdigest()
+              return result
+          assert inventory(root/'source')==inventory(root/'readback-source')
+          assert inventory(root/'runtime')==inventory(root/'readback-runtime')
+          report={'new_download_readback_verified':True,'owner_action_required':'Record this run ID and artifact expires_at from GitHub; use this run for BOTH inputs on next renewal. Retain previous copy until receipt accepted.','new_app_artifact_id':os.environ['APP_ARTIFACT_ID'],'new_runtime_artifact_id':os.environ['RUNTIME_ARTIFACT_ID'],'retention_days':90,'source_or_business_calls':0,'old_artifacts_deleted':False}
+          (root/'renewal-receipt.json').write_text(json.dumps(report));print(json.dumps(report))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: renewal-receipt
+          path: ${{ runner.temp }}/renew/renewal-receipt.json
+          retention-days: 90

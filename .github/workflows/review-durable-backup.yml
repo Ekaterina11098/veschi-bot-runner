@@ -30,7 +30,7 @@ jobs:
           from review_queue import _request
           from review_durable_workflow import digest
           from stock_deploy_support import seal
-          prefixes=['reviews:draft:','reviews:approval:','reviews:manual-history:','reviews:manual-observed:','reviews:source:','reviews:notice:','reviews:controlled-run:']
+          prefixes=['reviews:draft:','reviews:approval:','reviews:manual-history:','reviews:manual-observed:','reviews:source:','reviews:notice:','reviews:controlled-run:','reviews:hold:','reviews:hold-history:']
           data={}
           data['durable_rows']=_request('GET','/telegram_api_cache',params={'or':'('+','.join('cache_key.like.'+p+'*' for p in prefixes)+')','select':'*','order':'cache_key.asc','limit':2000}) or []
           if len(data['durable_rows'])>=2000:raise RuntimeError('Backup pagination required; not complete')

@@ -78,3 +78,5 @@ path=seal('reviews-recovery',report)
 print(json.dumps({'manual_closed':sum(x.get('status')=='manual_confirmed' for x in report.get('manual',[])),'inbox_complete':sum(x.get('status') in ('complete','fresh_cache') for x in report.get('inboxes',[])),'wb_writes':0,'telegram_sends':0}))
 
 # Sequential continuation after saved WB RetryAfter, 2026-10-15T09:49UTC.
+
+# Resume only missing IP inboxes after 2026-10-15T10:01:56UTC RetryAfter.

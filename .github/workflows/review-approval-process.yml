@@ -9,7 +9,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: bot-review-replies
+  group: review-approval-event-${{ github.run_id }}
   cancel-in-progress: false
 jobs:
   approval:
@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 3ad2bd3a15948cca7cb9888488b65884cf5301e9
+          ref: f11db564db9e5029cb5b823b341fdfb02ac95d67
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI

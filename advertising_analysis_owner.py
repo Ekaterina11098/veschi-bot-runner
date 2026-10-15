@@ -43,6 +43,17 @@ sys.exit(0 if result.wasSuccessful() else 1)
   finance,finance_marker=profit_rows(read,'token_2',start,end)
   from collections import Counter
   report['finance_diagnostic']={'rows':len(finance),'known_profit':sum(x.get('net_profit') is not None for x in finance.values()),'status_counts':dict(Counter(x.get('economics_status') for x in finance.values())),'marker_id':(finance_marker or {}).get('id')}
+  # Supabase-only readiness wait; never starts another WB collector.
+  import time
+  deadline=time.monotonic()+12*60
+  while True:
+   config=database('GET','analytics_snapshots',params={'source':'eq.advertising_active_configuration','cabinet':'eq.token_2','select':'collected_at,id','order':'id.desc','limit':1}) or []
+   if config and datetime.fromisoformat(config[0]['collected_at'].replace('Z','+00:00'))>=datetime(2026,10,15,22,35,tzinfo=timezone.utc):break
+   if time.monotonic()>deadline:raise RuntimeError('Fresh approved campaign membership still pending; no analysis or delivery executed')
+   time.sleep(30)
+  from analytics.stage_one import daily_ready
+  report['new_day_complete']=daily_ready('token_2',str(end),datetime.now(timezone.utc))
+  report['membership_readiness']=config[0]
   old=database('GET','telegram_api_cache',params={'cache_key':'eq.'+KEY,'select':'payload','limit':1})
   from analytics.ip_working_mode_replay import run
   import requests,copy

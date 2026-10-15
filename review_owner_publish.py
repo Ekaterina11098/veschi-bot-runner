@@ -40,6 +40,13 @@ def main():
     state=STORE.read(KEY) or {'phase':'preflight','authorized_sha256':digest(answer)}
     if state.get('authorized_sha256')!=digest(answer):raise RuntimeError('Publication text changed')
     if state['phase'] in ('confirmed','manual_present','needs_check'):report['state']=state;return
+    if state['phase']=='ready' and time.time()-state['preflight_at']>1800:
+        # Refresh only a PROVEN rejected write, never an ambiguous or accepted POST.
+        rows=_request('GET','/review_replies',params={'feedback_id':'eq.'+ID,'select':'state,error,answer','limit':1}) or []
+        if state.get('last_explicit_rejection')!='HTTP429' or state.get('post_http_accepted') or not rows or rows[0]['state']!='pending' or rows[0]['error']!='WB_READY: explicit HTTP429 rejection' or rows[0]['answer']!=answer:
+            raise RuntimeError('Expired preflight cannot be safely renewed')
+        state.update(phase='preflight',previous_preflight_at=state['preflight_at'],preflight_renewal_reason='proven_HTTP429_rejection_no_unknown')
+        save(state)
     if state['phase']=='preflight':
         if not pause():return
         actual=wb.get_reply_answer(ID,'feedbacks',cabinet='token_1')

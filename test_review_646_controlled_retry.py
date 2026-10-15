@@ -106,5 +106,15 @@ class Tests(unittest.TestCase):
             with self.assertRaises(Rejected):Session().request('POST','https://feedbacks-api.wildberries.ru/api/v1/feedbacks/answer',json={'id':m.ITEM,'text':self.answer})
         finally:undo()
         self.assertEqual(calls,['POST'])
+    def test_rejected_attempt_verified_empty_without_another_post(self):
+        self.ready();self.response=429;self.r.step();before=self.reads
+        result=self.r.verify_rejection()
+        self.assertTrue(result['rejection_readback_empty']);self.assertEqual(self.posts,1)
+        self.r.verify_rejection();self.assertEqual(self.reads,before+1)
+    def test_rejection_readback_obeys_shared_pause(self):
+        self.ready();self.response=400;self.r.step();before=self.reads
+        self.wb.pause=lambda cabinet:45
+        self.assertEqual(self.r.verify_rejection()['wait_seconds'],45)
+        self.assertEqual(self.reads,before);self.assertEqual(self.posts,1)
 
 if __name__=='__main__':unittest.main(verbosity=2)

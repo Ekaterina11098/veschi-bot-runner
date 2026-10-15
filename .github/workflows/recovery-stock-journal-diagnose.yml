@@ -128,6 +128,17 @@ jobs:
               report.update(diagnostic_rollback_only=True,success=True,source_sqlite_sha256=sha,counts={'runs':1117,'operations':879,'events':1733},source_states=dict(source.execute('SELECT state,count(*) FROM operations GROUP BY state')),target_states=dict(store.sql('SELECT state,count(*) FROM stock_operations GROUP BY state').fetchall()),source_states_in_target=dict(store.sql('SELECT source_state,count(*) FROM stock_operations GROUP BY source_state').fetchall()),all_ids_payloads_events_verified=True,repeat_import_identical=True,uncertain_locks=len(first['stock_sku_locks']),closed_schema_verified=True,execution_enabled=False)
           except Exception as exc:
               report.update(error_type=type(exc).__name__,automatic_retry=False,error_line=__import__('traceback').extract_tb(exc.__traceback__)[-1].lineno,reason=str(exc) if type(exc).__name__=='Stopped' and str(exc) in ['Local plan checksum mismatch','Local operation does not match plan','Unknown local operation state','Conflicting imported run','Conflicting imported operation','Conflicting event history','Stable source namespace required'] else 'see fixed code line')
+              if source and db:
+                  for ident,snapshot,plan,checksum,created in source.execute('SELECT id,snapshot,plan,digest,created FROM runs ORDER BY created,id'):
+                      got=db.execute('SELECT snapshot,plan,digest,origin,created FROM stock_execution.stock_runs WHERE id=%s',('owner20261014:'+ident,)).fetchone()
+                      want=(snapshot,plan,checksum,'local',created)
+                      if got is not None and got!=want:
+                          report['mismatch_fields']=[i for i,(a,b) in enumerate(zip(got,want)) if a!=b]
+                          report['target_types']=[type(x).__name__ for x in got]
+                          report['source_types']=[type(x).__name__ for x in want]
+                          report['float_difference']=got[-1]-want[-1] if type(got[-1]) is float else None
+                          report['client_encoding']=db.info.encoding
+                          break
           finally:
               if source:source.close()
               if db:db.rollback();db.close()

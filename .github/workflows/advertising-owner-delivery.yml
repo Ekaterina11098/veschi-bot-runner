@@ -29,7 +29,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
-          APPROVED_ANALYSIS_RUN_ID: '38818518560'
+          APPROVED_ANALYSIS_RUN_ID: '38818518560:1'
           IP_LIMITED_TELEGRAM_DELIVERY: 'true'
           SUPABASE_EGRESS_OPTIMIZED: 'true'
         run: python advertising_delivery_owner.py

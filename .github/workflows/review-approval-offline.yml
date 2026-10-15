@@ -53,3 +53,5 @@ jobs:
           docker rm -f review-approval-pg
 
 # Final acceptance requires encrypted backup hook before every NEW review notification.
+
+# Deployment regression: local owner hold blocks notices for newer draft versions before any send.

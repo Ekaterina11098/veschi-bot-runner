@@ -188,6 +188,11 @@ class PostgreSQLTests(unittest.TestCase):
     def test_new_notice_without_backup_forbidden(self):
         from review_approval_notice import NewNotice
         with self.assertRaises(Rejected):NewNotice(self.a,self.bridge,TG(),enabled=True).deliver(self.item,'token_1','feedbacks',self.version,1100,1000)
+    def test_local_hold_blocks_new_version_notice_before_send(self):
+        from review_approval_notice import NewNotice
+        self.a.set_item_state(self.repo.get('cards',self.token)['ref'],'held','owner button')
+        self.seed(self.item,'token_1','v2')
+        with self.assertRaises(Rejected):NewNotice(self.a,self.bridge,TG(),enabled=True,preserve=lambda:snapshot(self.repo)).deliver(self.item,'token_1','feedbacks','v2',1100,1000)
     def test_pg_competing_executor_lock(self):
         intent=self.approve();other=psycopg.connect(os.environ['TEST_DSN'],autocommit=True)
         try:

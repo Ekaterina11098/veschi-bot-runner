@@ -18,6 +18,8 @@ class NewNotice:
         if not draft or draft.get('source_sha256')!=sha(item):raise Rejected('Exact durable draft required')
         context=dict(buyer=item.get('userName',''),rating=item.get('productValuation',0),text=item.get('text',''),pros=item.get('pros',''),cons=item.get('cons',''),article=(item.get('productDetails') or {}).get('supplierArticle',''))
         ref=identity(cabinet,kind,item['id'])
+        existing=self.a.repo.get('items',ref)
+        if existing and existing.get('status') in ('held','sent','uncertain','publishing','approved'):raise Rejected('Existing local hold or publication blocks new notifications')
         card=dict(ref=ref,cabinet=cabinet,kind=kind,item_id=str(item['id']),version=version,source=context,texts=draft['variants'],hashes=[sha(t) for t in draft['variants']],binding={'draft_key':key,'raw_source_sha256':sha(item)},message_id=1,status='awaiting')
         state=self.bridge.project(card)
         if not state.get('complete') or state['hold'] or state['answered'] or state['publication_state']!='idle':raise Rejected('Review blocked')

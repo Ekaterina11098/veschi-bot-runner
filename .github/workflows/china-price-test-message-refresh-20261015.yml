@@ -1,0 +1,97 @@
+name: Correct owner test China report with verified fresh receipt
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-price-test-message-refresh-20261015.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  correct:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 2ae6967e3df0c58c8a834d8631c7df8ba50a95f6
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Update only the already delivered owner test message, with verified text readback
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,json,hashlib
+          from datetime import datetime,timezone
+          from zoneinfo import ZoneInfo
+          from urllib.parse import urlparse
+          import requests
+          from advertising_agent.notify import db,cache_get,cache_set
+          now=datetime.now(timezone.utc)
+          assert str(now.astimezone(ZoneInfo('Europe/Moscow')).date())=='2026-10-15'
+          cfg,=db('GET','business_agent_config',params=dict(agent_id='eq.china',active='eq.true',limit=2))
+          job,=db('GET','business_agent_jobs',params=dict(agent_id='eq.china',update_id='eq.-9440002479',status='eq.done',limit=2))
+          receipt=cache_get('china_agent:daily_worker:2026-10-15:manual')
+          checked=cache_get('china_agent:daily_worker:2026-10-15:manual:verify')
+          assert receipt['status']=='delivered' and receipt['job_id']==job['id'] and len(receipt['telegram_message_ids'])==1
+          assert job['chat_id']==cfg['chat_id']==receipt['chat_id'] and job['sender_id']==cfg['owner_user_id']
+          assert checked['status']=='preview_verified' and checked['errors']==[]
+          assert (now-datetime.fromisoformat(checked['calculated_at'])).total_seconds()<1200
+          assert datetime.fromisoformat(checked['source_collected_at'])<=datetime.fromisoformat(checked['calculated_at'])
+          assert (now-datetime.fromisoformat(checked['source_collected_at'])).total_seconds()<1200
+          answer=checked['preview']
+          assert 'Проверено товаров:' in answer and 'Разбор возможного снижения:' in answer
+          answer+='\nСтабильность цены внутри периода пока не подтверждена.'
+          message_id=receipt['telegram_message_ids'][0]
+          key='china_agent:daily_worker:2026-10-15:manual:message_refresh'
+          digest=hashlib.sha256(answer.encode()).hexdigest()
+          prior=cache_get(key)
+          if prior and prior.get('verified') is True and prior.get('answer_sha256')==digest:
+              print('Already verified; no Telegram operation');raise SystemExit(0)
+          audit=dict(job_id=job['id'],chat_id=cfg['chat_id'],message_id=message_id,answer_sha256=digest,
+              before_answer=job['answer'],before_trace=job['tool_trace'],new_answer=answer,
+              source_snapshot_id=checked['source_snapshot_id'],prepared_at=now.isoformat(),verified=False)
+          cache_set(key,audit,365)
+          assert cache_get(key)==audit
+          original=requests.sessions.Session.request
+          def guarded(self,method,url,*args,**kw):
+              host=urlparse(url).hostname or '';path=urlparse(url).path
+              if host=='api.telegram.org':
+                  assert method.upper()=='POST' and path.endswith('/editMessageText')
+                  assert str(kw['json']['chat_id'])==str(cfg['chat_id']) and kw['json']['message_id']==message_id
+              else:
+                  assert host==urlparse(os.environ['SUPABASE_URL']).hostname and '/rpc/' not in path
+                  if method.upper() not in ('GET','HEAD'):
+                      if path.endswith('/business_agent_jobs'):
+                          assert method.upper()=='PATCH' and kw['params']['id']=='eq.'+str(job['id'])
+                      else:assert path.endswith('/telegram_api_cache')
+              return original(self,method,url,*args,**kw)
+          requests.sessions.Session.request=guarded
+          response=requests.post('https://api.telegram.org/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/editMessageText',
+              json=dict(chat_id=cfg['chat_id'],message_id=message_id,text=answer),timeout=(5,20))
+          value=response.json()
+          assert response.ok and value.get('ok') is True,'Telegram edit not confirmed; do not blindly replay'
+          result=value['result']
+          assert result['message_id']==message_id and result['chat']['id']==cfg['chat_id'] and result['text']==answer
+          trace=job['tool_trace']
+          for event in trace:
+              if event.get('name')=='china_demand_watch':event['result']=checked['assessment']
+          trace.append(dict(name='china_report_edit',message_id=message_id,source_snapshot_id=checked['source_snapshot_id'],edited_at=now.isoformat()))
+          db('PATCH','business_agent_jobs',body=dict(answer=answer,tool_trace=trace),
+              params=dict(id='eq.'+str(job['id']),agent_id='eq.china',status='eq.done'))
+          saved,=db('GET','business_agent_jobs',params=dict(id='eq.'+str(job['id']),limit=1))
+          assert saved['answer']==answer
+          audit.update(verified=True,edited_at=now.isoformat(),telegram_message_count=0,telegram_edit_count=1)
+          cache_set(key,audit,365);assert cache_get(key)==audit
+          print(json.dumps(dict(edited=True,new_messages=0,source_snapshot_id=checked['source_snapshot_id'],wb_calls=0)))
+          PY

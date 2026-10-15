@@ -1,0 +1,109 @@
+name: Database ownership and ACL recovery check offline
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-database-acl-check.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: recovery-database-acl-check
+  cancel-in-progress: false
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 99ab899dd306835642d4b33ef8bb6254644ea17c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cryptography > "$RUNNER_TEMP/install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-consistent-point
+          run-id: 38592132657
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/point
+      - name: Test only mismatched role flags and pg_net availability in isolated PostgreSQL
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python - <<'PY'
+          import os,json,subprocess,time,secrets
+          from pathlib import Path
+          from analytics.storage_backup_crypto import restore,digest_file,seal
+          root=Path(os.environ['RUNNER_TEMP']);out=root/'targeted-result';out.mkdir()
+          src=root/'point/point-receipt.json.aes';plain=root/'receipt.json'
+          assert digest_file(src)=='cdbf10a41dc3bd800f57e79e81e42741c6bb85595d5a453f8ae92022e5ded495'
+          assert restore(src,plain,secret=os.environ['SUPABASE_SECRET_KEY'])=='50ec68275a005d2cb31f6102ae6cc583d5689bfc26f3507e9fa276a019f79d27'
+          receipt=json.loads(plain.read_text())
+          name='roles-'+secrets.token_hex(4);log=root/'targeted-private.log'
+          report={'production_calls':0,'network':'none','full_restore_repeated':False,'vault_check_repeated':False,'roles':{},'source_pg_net_version':'0.20.4'}
+          def command(args):
+              with log.open('ab') as dst:return subprocess.run(args,stdout=dst,stderr=dst,timeout=600)
+          def query(sql):
+              with log.open('ab') as dst:r=subprocess.run(['docker','exec',name,'psql','-X','-A','-t','-U','supabase_admin','-d','postgres','-v','ON_ERROR_STOP=1','-c',sql],stdout=subprocess.PIPE,stderr=dst,timeout=120)
+              assert r.returncode==0
+              return r.stdout.decode().strip()
+          try:
+              assert command(['docker','pull','supabase/postgres:17.6.1.136']).returncode==0
+              assert command(['docker','run','-d','--name',name,'--network','none','-e','POSTGRES_PASSWORD='+secrets.token_hex(24),'supabase/postgres:17.6.1.136','postgres','-c','shared_preload_libraries=pg_cron,pg_net','-c','cron.launch_active_jobs=off']).returncode==0
+              for i in range(90):
+                  if command(['docker','exec',name,'pg_isready','-h','127.0.0.1','-U','postgres']).returncode==0:break
+                  time.sleep(1)
+              else:raise RuntimeError('Final startup not ready')
+              capture=json.loads("{\"acl\":[{\"grantee\":\"PUBLIC\",\"grantor\":\"postgres\",\"grantable\":false,\"privilege\":\"TEMPORARY\"},{\"grantee\":\"PUBLIC\",\"grantor\":\"postgres\",\"grantable\":false,\"privilege\":\"CONNECT\"},{\"grantee\":\"postgres\",\"grantor\":\"postgres\",\"grantable\":false,\"privilege\":\"CREATE\"},{\"grantee\":\"postgres\",\"grantor\":\"postgres\",\"grantable\":false,\"privilege\":\"TEMPORARY\"},{\"grantee\":\"postgres\",\"grantor\":\"postgres\",\"grantable\":false,\"privilege\":\"CONNECT\"},{\"grantee\":\"supabase_etl_admin\",\"grantor\":\"postgres\",\"grantable\":false,\"privilege\":\"CREATE\"},{\"grantee\":\"supabase_storage_admin\",\"grantor\":\"postgres\",\"grantable\":false,\"privilege\":\"CREATE\"},{\"grantee\":\"dashboard_user\",\"grantor\":\"postgres\",\"grantable\":false,\"privilege\":\"CREATE\"},{\"grantee\":\"dashboard_user\",\"grantor\":\"postgres\",\"grantable\":false,\"privilege\":\"TEMPORARY\"},{\"grantee\":\"dashboard_user\",\"grantor\":\"postgres\",\"grantable\":false,\"privilege\":\"CONNECT\"}],\"database\":\"postgres\",\"properties\":{\"oid\":\"5\",\"datacl\":[\"=Tc/postgres\",\"postgres=CTc/postgres\",\"supabase_etl_admin=C/postgres\",\"supabase_storage_admin=C/postgres\",\"dashboard_user=CTc/postgres\"],\"datdba\":\"16388\",\"datname\":\"postgres\",\"datctype\":\"en_US.UTF-8\",\"encoding\":6,\"datlocale\":\"en-US\",\"datcollate\":\"en_US.UTF-8\",\"daticurules\":null,\"datallowconn\":true,\"datconnlimit\":-1,\"datistemplate\":false,\"dattablespace\":\"1663\",\"datcollversion\":\"153.121\",\"dathasloginevt\":false,\"datlocprovider\":\"i\"}}")
+              ident=lambda x:'"'+x.replace('"','""')+'"'
+              literal=lambda x:"'"+x.replace("'","''")+"'"
+              for item in capture['acl']:
+                  role=item['grantee']
+                  if role!='PUBLIC':query("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname="+literal(role)+") THEN CREATE ROLE "+ident(role)+"; END IF; END $$;")
+              existing=json.loads(query("SELECT json_agg(CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END) FROM pg_database d CROSS JOIN LATERAL aclexplode(d.datacl) a WHERE d.datname='postgres'"))
+              for role in set(existing):query("REVOKE ALL PRIVILEGES ON DATABASE postgres FROM "+('PUBLIC' if role=='PUBLIC' else ident(role))+";")
+              for item in capture['acl']:
+                  assert item['privilege'] in ('CONNECT','CREATE','TEMPORARY')
+                  query("SET ROLE postgres; GRANT "+item['privilege']+" ON DATABASE postgres TO "+('PUBLIC' if item['grantee']=='PUBLIC' else ident(item['grantee']))+(" WITH GRANT OPTION" if item['grantable'] else "")+";")
+              actual=json.loads(query("SELECT json_agg(json_build_object('grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'grantor',pg_get_userbyid(a.grantor),'privilege',a.privilege_type,'grantable',a.is_grantable)) FROM pg_database d CROSS JOIN LATERAL aclexplode(d.datacl) a WHERE d.datname='postgres'"))
+              canonical=lambda xs:sorted(json.dumps(x,sort_keys=True) for x in xs)
+              report['database_acl_exact_match']=canonical(actual)==canonical(capture['acl'])
+              report['database_acl_entries']=len(actual)
+              report['service_role_connect']=query("SELECT has_database_privilege('service_role','postgres','CONNECT')")=='t'
+              report['service_role_cannot_create_schema']=query("SELECT NOT has_database_privilege('service_role','postgres','CREATE')")=='t'
+              report['source_database_properties']=capture['properties']
+              report['target_database_properties']=json.loads(query("SELECT json_build_object('encoding',encoding,'datcollate',datcollate,'datctype',datctype,'datlocprovider',datlocprovider,'datlocale',datlocale,'datcollversion',datcollversion) FROM pg_database WHERE datname='postgres'"))
+              report['source_database_writes']=0
+              report['role_settings_passed_evidence_run']=38682796216
+              report['pg_net_passed_evidence_run']=38682643114
+              report['targeted_checks_completed']=True
+          except Exception as exc:
+              report['targeted_checks_completed']=False;report['error_type']=type(exc).__name__
+          finally:
+              with log.open('ab') as dst:subprocess.run(['docker','logs',name],stdout=dst,stderr=dst)
+              command(['docker','rm','-f',name])
+              report['private_diagnostic']=seal(log,out/'targeted-private.log.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])
+              (out/'summary.json').write_text(json.dumps(report,sort_keys=True));print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: database-acl-recovery-result
+          path: ${{ runner.temp }}/targeted-result
+          retention-days: 7

@@ -1,8 +1,6 @@
 name: Owner authorized journal import without execution
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/recovery-import-stock-journal.yml']
+  workflow_dispatch:
 permissions:
   contents: read
   actions: read

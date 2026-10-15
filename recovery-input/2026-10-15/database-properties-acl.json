@@ -1,0 +1,89 @@
+{
+  "acl": [
+    {
+      "grantee": "PUBLIC",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TEMPORARY"
+    },
+    {
+      "grantee": "PUBLIC",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "CONNECT"
+    },
+    {
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "CREATE"
+    },
+    {
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TEMPORARY"
+    },
+    {
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "CONNECT"
+    },
+    {
+      "grantee": "supabase_etl_admin",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "CREATE"
+    },
+    {
+      "grantee": "supabase_storage_admin",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "CREATE"
+    },
+    {
+      "grantee": "dashboard_user",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "CREATE"
+    },
+    {
+      "grantee": "dashboard_user",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TEMPORARY"
+    },
+    {
+      "grantee": "dashboard_user",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "CONNECT"
+    }
+  ],
+  "database": "postgres",
+  "properties": {
+    "oid": "5",
+    "datacl": [
+      "=Tc/postgres",
+      "postgres=CTc/postgres",
+      "supabase_etl_admin=C/postgres",
+      "supabase_storage_admin=C/postgres",
+      "dashboard_user=CTc/postgres"
+    ],
+    "datdba": "16388",
+    "datname": "postgres",
+    "datctype": "en_US.UTF-8",
+    "encoding": 6,
+    "datlocale": "en-US",
+    "datcollate": "en_US.UTF-8",
+    "daticurules": null,
+    "datallowconn": true,
+    "datconnlimit": -1,
+    "datistemplate": false,
+    "dattablespace": "1663",
+    "datcollversion": "153.121",
+    "dathasloginevt": false,
+    "datlocprovider": "i"
+  }
+}

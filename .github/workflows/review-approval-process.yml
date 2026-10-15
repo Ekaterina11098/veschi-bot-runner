@@ -53,7 +53,26 @@ jobs:
           WB_FEEDBACK_TOKEN: ${{ secrets.WB_FEEDBACK_TOKEN }}
         run: |
           export RECOVERY_PUBLIC_KEY="$(PYTHONPATH="$GITHUB_WORKSPACE" python -c 'from stock_deploy_support import OWNER_PUBLIC; print(OWNER_PUBLIC)')"
-          python review_approval_process.py
+          python - <<'PY'
+          import os,hmac,hashlib,base64
+          import psycopg
+          from review_approval_process import main
+          root=os.environ['SUPABASE_SECRET_KEY'].encode()
+          password=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
+          dsn=os.environ.get('REVIEW_APPROVAL_DSN') or ('postgresql://review_approval_login_20261015.abxgjoqlddhtcmjcjwxw:'+password+'@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require')
+          with psycopg.connect(dsn,autocommit=True,connect_timeout=15) as conn:
+              row=conn.execute("SELECT payload FROM review_approval.source_cache WHERE cache_key='reviews:telegram-approval:config:v1'").fetchone()
+          config=row[0] if row else {}
+          if not config.get('enabled') or not config.get('destination_verified'):raise SystemExit('Review integration is disabled or destination unverified')
+          os.environ['REVIEW_APPROVAL_DSN']=dsn
+          os.environ['REVIEW_APPROVAL_INGRESS_KEY']=os.environ.get('REVIEW_APPROVAL_INGRESS_KEY') or base64.b64encode(hmac.new(root,b'veschi:review-approval-ingress:20261015:v1',hashlib.sha256).digest()).decode()
+          os.environ['REVIEW_APPROVAL_OWNER_ID']=str(config['owner_id'])
+          os.environ['REVIEW_APPROVAL_BOT_ID']=str(config['bot_id'])
+          os.environ['REVIEW_APPROVAL_CUTOVER']=str(config['cutover'])
+          os.environ['REVIEW_PUBLICATION_ENABLED']='1' if config.get('publication_enabled') and os.getenv('REVIEW_PUBLICATION_ENABLED')=='1' else '0'
+          os.environ['REVIEW_NEW_NOTICES_ENABLED']='1' if config.get('new_notices_enabled') and os.getenv('REVIEW_NEW_NOTICES_ENABLED')=='1' else '0'
+          main()
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:

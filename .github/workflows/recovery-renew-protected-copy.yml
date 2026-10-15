@@ -9,7 +9,7 @@ on:
       runtime_run_id:
         description: Run containing offline-recovery-runtime-kit
         required: true
-        default: '38683221497'
+        default: '38686760314'
 permissions:
   contents: read
   actions: read
@@ -65,10 +65,12 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           artifact-ids: ${{ steps.app.outputs.artifact-id }}
+          merge-multiple: true
           path: ${{ runner.temp }}/renew/readback-source
       - uses: actions/download-artifact@v4
         with:
           artifact-ids: ${{ steps.runtime.outputs.artifact-id }}
+          merge-multiple: true
           path: ${{ runner.temp }}/renew/readback-runtime
       - name: Accept renewal only after downloading and comparing new copies
         env:

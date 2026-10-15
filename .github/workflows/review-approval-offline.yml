@@ -1,0 +1,50 @@
+name: Review approval isolated PostgreSQL acceptance
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/review-approval-offline.yml']
+permissions:
+  contents: read
+concurrency:
+  group: review-approval-offline-only
+  cancel-in-progress: false
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install isolated test dependencies
+        run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2
+      - name: Start network-disabled PostgreSQL
+        run: |
+          mkdir -p "$RUNNER_TEMP/review-pg-socket"
+          chmod 777 "$RUNNER_TEMP/review-pg-socket"
+          docker pull postgres:17.6
+          docker run -d --name review-approval-pg --network none -e POSTGRES_HOST_AUTH_METHOD=trust -v "$RUNNER_TEMP/review-pg-socket:/socket" postgres:17.6 postgres -c unix_socket_directories=/socket -c listen_addresses=''
+          for i in $(seq 1 90); do
+            if docker exec review-approval-pg pg_isready -h /socket -U postgres; then break; fi
+            sleep 1
+          done
+          docker exec review-approval-pg createdb -h /socket -U postgres review_approval_test
+      - name: Real PostgreSQL, mocked WB and Telegram, no production credentials
+        working-directory: review-approval-preparation
+        env:
+          TEST_DSN: host=${{ runner.temp }}/review-pg-socket dbname=review_approval_test user=postgres
+        run: |
+          python -m unittest -v test_review_telegram.py test_review_approval_pg.py 2>&1 | tee "$RUNNER_TEMP/review-approval-tests.txt"
+          node --test test_review_callback_route.mjs 2>&1 | tee "$RUNNER_TEMP/review-approval-route.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: review-approval-offline-acceptance
+          path: |
+            ${{ runner.temp }}/review-approval-tests.txt
+            ${{ runner.temp }}/review-approval-route.txt
+          retention-days: 90
+      - name: Remove disposable database
+        if: always()
+        run: docker rm -f review-approval-pg

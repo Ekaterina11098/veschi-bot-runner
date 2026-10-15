@@ -54,10 +54,13 @@ class Receiver:
                     'chat_id': a.chat, 'message_id': view['message_id'],
                     'text': view['text'], 'reply_markup': view['reply_markup'],
                 })
-                self.telegram.call('answerCallbackQuery', result['answer_callback_query'])
-                return dict(result, ui_delivery='confirmed')
             except Exception:
                 return dict(result, ui_delivery='uncertain', automatic_retry=False)
+            try:
+                self.telegram.call('answerCallbackQuery', result['answer_callback_query'])
+                ack='confirmed'
+            except Exception:ack='unconfirmed'
+            return dict(result, ui_delivery='confirmed', callback_ack=ack)
         msg = update.get('message') or {}
         # Ordinary commands are deliberately ignored, never added to telegram_jobs.
         reply = msg.get('reply_to_message') or {}

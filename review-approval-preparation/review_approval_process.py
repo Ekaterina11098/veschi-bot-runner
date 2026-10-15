@@ -18,7 +18,11 @@ def decrypt_update(raw,key):
 
 def process(approval,bridge,telegram,wb,update,publication_enabled=False,preserve=None):
     guard=CanonicalGuard(approval,bridge.project)
-    result=Receiver(approval,telegram,guard).receive(update,approval.secret)
+    if update.get('resume_intent'):
+        intent=approval.repo.get('intents',update['resume_intent'])
+        if not intent or str(update.get('owner_id'))!=approval.owner or str(update.get('chat_id'))!=approval.chat or intent['owner_id']!=approval.owner or intent['chat_id']!=approval.chat:raise Rejected('Invalid targeted continuation')
+        result={'result':{'decision':'approved','intent_id':intent['id']},'targeted_resume':True}
+    else:result=Receiver(approval,telegram,guard).receive(update,approval.secret)
     # Persist encrypted supplement BEFORE a possible publication.
     if preserve:preserve()
     decision=result.get('result',{})
@@ -61,3 +65,4 @@ if __name__=='__main__':
     except Exception as exc:
         print(json.dumps({'error_type':type(exc).__name__,'completed':False}))
         raise SystemExit(1)
+

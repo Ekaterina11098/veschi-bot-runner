@@ -126,6 +126,17 @@ class PostgreSQLTests(unittest.TestCase):
         self.assertEqual(len(backups),4)
         self.assertEqual(backups[2]['tables']['intents'][0]['payload']['status'],'awaiting_preflight')
         self.assertEqual(backups[3]['tables']['intents'][0]['payload']['status'],'confirmed')
+    def test_targeted_resume_unknown_is_read_only(self):
+        from review_approval_process import process
+        intent=self.approve();self.wb.mode='unknown-accepted';self.executor.run(intent)
+        update={'resume_intent':intent,'owner_id':'11','chat_id':'22'}
+        result=process(self.a,self.bridge,TG(),self.wb,update,True)
+        self.assertEqual(result['publication_status'],'confirmed');self.assertEqual(self.wb.posts,1)
+    def test_targeted_resume_wrong_owner_rejected(self):
+        from review_approval_process import process
+        intent=self.approve()
+        with self.assertRaises(Rejected):process(self.a,self.bridge,TG(),self.wb,{'resume_intent':intent,'owner_id':'99','chat_id':'22'},True)
+        self.assertEqual(self.wb.posts,0)
     def test_confirm_save_failure_get_only(self):
         intent=self.approve();original=self.executor.save
         def save(value,status,**extra):

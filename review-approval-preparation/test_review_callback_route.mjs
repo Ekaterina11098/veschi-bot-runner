@@ -26,9 +26,11 @@ test('GitHub receives only encrypted callback, no source or owner text',async()=
  let sent;
  const result=await routeReviewApproval(request(),update(),config,async(url,payload)=>{sent=payload;return new Response(null,{status:204})});
  assert.equal(result.status,200);
+ assert.equal((await result.json()).method,'answerCallbackQuery');
  assert.ok(sent);assert.equal(JSON.stringify(sent.body).includes('callback_query'),false);
  const envelope=JSON.parse(JSON.parse(sent.body).inputs.sealed_update);
  const key=await crypto.subtle.importKey('raw',Buffer.alloc(32,1),'AES-GCM',false,['decrypt']);
  const raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:Buffer.from(envelope.nonce,'base64'),additionalData:new TextEncoder().encode('review-approval-update-v1')},key,Buffer.from(envelope.ciphertext,'base64'));
  assert.deepEqual(JSON.parse(new TextDecoder().decode(raw)),update());
 });
+

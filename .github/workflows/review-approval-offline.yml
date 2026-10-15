@@ -52,4 +52,4 @@ jobs:
           docker logs review-approval-pg
           docker rm -f review-approval-pg
 
-# Acceptance includes new-only notice delivery, durable uncertain state and no legacy replay.
+# Final exact deployment code: ack latency guard and authenticated targeted continuation.

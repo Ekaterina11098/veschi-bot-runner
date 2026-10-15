@@ -33,6 +33,7 @@ export async function routeReviewApproval(request, update, config, forward = fet
       const b64=value=>btoa(String.fromCharCode(...new Uint8Array(value)));
       const sealed=JSON.stringify({format:'review-approval-update-v1',nonce:b64(nonce),ciphertext:b64(ciphertext)});
       const result=await forward(expected,{method:'POST',headers:{'Authorization':'Bearer '+config.dispatchToken,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{sealed_update:sealed}}),signal:AbortSignal.timeout(8000),redirect:'error'});
+      if(result.ok && q?.id)return Response.json({method:'answerCallbackQuery',callback_query_id:q.id,text:'Проверяю согласование…'});
       return new Response(result.ok?'OK':'Review dispatch unavailable',{status:result.ok?200:503});
     }
     const result = await forward(config.receiverURL, {
@@ -44,3 +45,4 @@ export async function routeReviewApproval(request, update, config, forward = fet
     return new Response('Review receiver unavailable', {status: 503});
   }
 }
+

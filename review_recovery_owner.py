@@ -80,3 +80,5 @@ print(json.dumps({'manual_closed':sum(x.get('status')=='manual_confirmed' for x 
 # Sequential continuation after saved WB RetryAfter, 2026-10-15T09:49UTC.
 
 # Resume only missing IP inboxes after 2026-10-15T10:01:56UTC RetryAfter.
+
+# Final missing IP questions only; saved pause expired 2026-10-15T10:16:59UTC.

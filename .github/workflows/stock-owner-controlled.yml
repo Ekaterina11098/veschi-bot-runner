@@ -1,0 +1,75 @@
+name: One owner controlled stock trial only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-owner-controlled.yml']
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: bot-stock
+  cancel-in-progress: false
+jobs:
+  controlled:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b1f54e3770fba9aabbe7773c2106fc6d56c92911
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/controlled-install.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: stock-owner-deployment-proof
+          run-id: 38695390708
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/deployment-proof
+      - uses: actions/download-artifact@v4
+        with:
+          name: offline-restore-receiver
+          run-id: 38588520250
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/receiver
+      - name: Exact approved scope with fresh preflight, durable intents, no blind retries
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MOYSKLAD_STORE_NAME: МСК
+          WB_STOCK_WAREHOUSE_1: ${{ vars.WB_STOCK_WAREHOUSE_1 }}
+          WB_STOCK_WAREHOUSE_2: ${{ vars.WB_STOCK_WAREHOUSE_2 }}
+          WB_STOCK_WAREHOUSE_3: ${{ vars.WB_STOCK_WAREHOUSE_3 }}
+          AUTO_STOCK_FAIL_FAST: '1'
+          LOCAL_WRITER_LOCK_HELD: 'true'
+          PYTHONPATH: ${{ github.workspace }}/private-source
+        run: python stock_owner_controlled.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stock-owner-controlled-proof
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90
+      - name: Independently retain sealed actual results only
+        if: always()
+        run: |
+          mkdir -p recovery-output/2026-10-15
+          cp "$RUNNER_TEMP/stock-deploy-proof/controlled.aes.json" "recovery-output/2026-10-15/controlled-$GITHUB_RUN_ID.aes.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add recovery-output/2026-10-15
+          git commit -m "Preserve sealed actual controlled stock trial results" && git push

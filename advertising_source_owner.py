@@ -78,6 +78,21 @@ try:
    for kind in ('stats','state'):
     req=wanted('wbbidder_campaigns',dict(tokens=[152922],report=kind,d1=str(start),d2=str(end),limit=100,start_row=0,bidder_only=False,sort='wb_id',sort_dir='asc'))
     if req:requests_plan.append(req)
+   existing_catalogs=read('analytics_snapshots',dict(source='eq.mpstats_campaign_catalog',cabinet='eq.token_2',period_from='eq.'+str(start),period_to='eq.'+str(end),select='id,payload',order='id.desc',limit=30)) or []
+   catalogs_by_page={}
+   for row in existing_catalogs:
+    for cat in row.get('payload') or []:
+     if isinstance(cat,dict):catalogs_by_page.setdefault((cat.get('report'),cat.get('start_row')),cat)
+   report['catalogs']=list(catalogs_by_page.values())
+   for kind in ('stats','state'):
+    first=catalogs_by_page.get((kind,0))
+    if first:
+     for offset in range(100,first.get('total',0),100):
+      args=dict(tokens=[152922],report=kind,d1=str(start),d2=str(end),limit=100,start_row=offset,bidder_only=False,sort='wb_id',sort_dir='asc')
+      req=wanted('wbbidder_campaigns',args)
+      if req:requests_plan.append(req)
+   for cat in report['catalogs']:
+    bidder['token_2']['campaign_ids']=sorted(set(bidder['token_2']['campaign_ids'])|{r['id'] for r in cat.get('rows',[])})
    report['planned']=requests_plan
    def saved(cabinet,obs):
     if cabinet!='token_2':raise RuntimeError('Unexpected cabinet')
@@ -105,9 +120,17 @@ try:
    def reader(call,checks,known):
     results=execute_reads(call,checks,known,requests_plan,bidder,saved,max_requests=12)
     # No product statistics until the complete cabinet-wide catalog is evidenced.
-    catalogs=[c for c in report.get('catalogs',[]) if c.get('report')=='stats' and c.get('start_row')==0 and c.get('returned')==c.get('total')]
-    if catalogs and not any(x['status']!='received' for x in results):
-     active=[r['id'] for r in catalogs[-1]['rows'] if r.get('status_id')==9]
+    pages={}
+    for cat in report.get('catalogs',[]):
+     if cat.get('report')=='stats':pages[cat.get('start_row')]=cat
+    rows=[r for offset,cat in sorted(pages.items()) for r in cat.get('rows',[])]
+    full=bool(pages.get(0)) and len(rows)==pages[0].get('total') and len({r['id'] for r in rows})==len(rows)
+    if full and not any(x['status']!='received' for x in results):
+     configuration=read('analytics_snapshots',dict(source='eq.advertising_active_configuration',cabinet='eq.token_2',select='payload,collected_at',order='id.desc',limit=1)) or []
+     cp=configuration[0]['payload'] if configuration else {}
+     wbactive=set(cp.get('campaign_ids',[])) if isinstance(cp,dict) else set()
+     active=[r['id'] for r in rows if (r.get('wb_id') in wbactive if wbactive else r.get('status_id')==9)]
+     report['full_catalog_count']=len(rows)
      more=[]
      for cid in active:
       req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,report='products',d1=str(start),d2=str(end)))
@@ -120,7 +143,8 @@ try:
    if result.get('retry_after'):
     put('mpstats:cooldown',dict(pending=True,retry_after=result['retry_after']))
     database('PATCH','telegram_api_cache',body={'expires_at':(datetime.now(timezone.utc)+timedelta(seconds=result['retry_after'])).isoformat()},params={'cache_key':'eq.mpstats:cooldown'})
-   report['finance_composition']=compose_cached_finance('token_2',start,end,datetime.now(timezone.utc))
+   composed=read('analytics_snapshots',dict(source='eq.mpstats_products_composed',cabinet='eq.token_2',period_from='eq.'+str(start),period_to='eq.'+str(end),select='id,collected_at',order='id.desc',limit=1)) or []
+   report['finance_composition']={'status':'reused','id':composed[0]['id']} if composed else compose_cached_finance('token_2',start,end,datetime.now(timezone.utc))
   report['traffic']=traffic
 except Exception as exc:report['error']=error(exc)
 finally:

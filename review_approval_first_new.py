@@ -109,3 +109,5 @@ finally:
     print(json.dumps({'status':report.get('status'),'wb_writes':0,'telegram_attempts':report['telegram_attempts'],'error_type':report.get('error',{}).get('type'),'retry_after':report.get('retry_after')}))
 
 # Continue saved exact new-review preflight after WB pause 2026-10-15T12:08:07.625236Z; no repeated list collection.
+
+# Resume ONLY saved 209-JessicaBag-grey preflight after exact RetryAfter 2026-10-15T12:19:08.549099Z; no list replay.

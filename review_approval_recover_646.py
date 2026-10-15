@@ -40,8 +40,11 @@ try:
     deadline=time.monotonic()+29*60
     while time.monotonic()<deadline:
         result=retry.step()
-        if result['status'] in ('confirmed','manual_present','rejected','needs_diagnosis','blocked'):break
-        delay=max(0,result.get('wait_seconds',0),result.get('not_before',0)-time.time(),adapter.pause('token_1'))
+        if result['status']=='rejected':
+            result=retry.verify_rejection()
+            if result.get('rejection_checked_at') or result.get('rejection_read_needs_diagnosis'):break
+        elif result['status'] in ('confirmed','manual_present','needs_diagnosis','blocked'):break
+        delay=max(0,result.get('wait_seconds',0),0 if result['status']=='rejected' else result.get('not_before',0)-time.time(),adapter.pause('token_1'))
         if delay<=0:raise RuntimeError('Recovery did not make a durable transition')
         preserve()
         if time.monotonic()+delay+45>deadline:break

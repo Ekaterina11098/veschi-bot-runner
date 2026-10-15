@@ -96,6 +96,8 @@ jobs:
               source=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True);source.execute('pragma query_only=on')
               assert source.execute('pragma quick_check').fetchone()[0]=='ok'
               db=psycopg.connect(connect_timeout=15,application_name='owner_stock_journal_import',options='-c search_path=stock_execution,pg_catalog -c statement_timeout=30000')
+              db.execute('SET extra_float_digits=3')
+              report['session_setting_after_explicit_set']=db.execute("SELECT current_setting('extra_float_digits')").fetchone()[0]
               store=Store(db,postgres=True)
               assert store.sql("select current_schema()").fetchone()[0]=='stock_execution'
               assert store.sql("select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='stock_execution' and not t.tgisinternal").fetchone()[0]==0

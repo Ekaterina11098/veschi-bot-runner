@@ -1,0 +1,51 @@
+name: Complete offline runtime for prepared storage and stock modules
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-module-runtime-kit.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: offline-recovery-runtime-kit
+          run-id: 38683221497
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/base-runtime
+      - name: Add missing prepared-module dependencies, freeze and test offline reinstall
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/module-build"
+          "$RUNNER_TEMP/module-build/bin/pip" install --no-index --find-links "$RUNNER_TEMP/base-runtime/wheels" -r "$RUNNER_TEMP/base-runtime/requirements.recovery.lock.txt" > "$RUNNER_TEMP/base-install.log" 2>&1
+          "$RUNNER_TEMP/module-build/bin/pip" install cryptography simplejson > "$RUNNER_TEMP/addons.log" 2>&1
+          mkdir -p "$RUNNER_TEMP/module-runtime/wheels"
+          cp "$RUNNER_TEMP/base-runtime/wheels/"* "$RUNNER_TEMP/module-runtime/wheels/"
+          "$RUNNER_TEMP/module-build/bin/pip" freeze > "$RUNNER_TEMP/module-runtime/requirements.recovery.lock.txt"
+          "$RUNNER_TEMP/module-build/bin/pip" download -r "$RUNNER_TEMP/module-runtime/requirements.recovery.lock.txt" --dest "$RUNNER_TEMP/module-runtime/wheels" > "$RUNNER_TEMP/module-download.log" 2>&1
+          python -m venv "$RUNNER_TEMP/module-reinstall"
+          "$RUNNER_TEMP/module-reinstall/bin/pip" install --no-index --find-links "$RUNNER_TEMP/module-runtime/wheels" -r "$RUNNER_TEMP/module-runtime/requirements.recovery.lock.txt" > "$RUNNER_TEMP/module-reinstall.log" 2>&1
+          "$RUNNER_TEMP/module-reinstall/bin/pip" check > "$RUNNER_TEMP/module-pipcheck.log" 2>&1
+          "$RUNNER_TEMP/module-reinstall/bin/python" - <<'PY'
+          import cryptography,simplejson,streamlit,openai,requests,dotenv,aiogram,apscheduler,PIL,psycopg
+          import os,json,hashlib,sys
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'module-runtime'
+          manifest={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'wheels').iterdir()}
+          (root/'wheel-sha256.json').write_text(json.dumps(manifest,sort_keys=True))
+          report={'offline_reinstall_verified':True,'pip_check_passed':True,'runtime_import_smoke_passed':True,'business_calls':0,'database_calls':0,'python':sys.version,'wheel_count':len(manifest),'cryptography':cryptography.__version__,'simplejson':simplejson.__version__,'scope':'Base deployed runtime plus prepared PR16 storage dependencies; original production version identity not claimed'}
+          (root/'runtime-summary.json').write_text(json.dumps(report,sort_keys=True));print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offline-recovery-runtime-kit
+          path: ${{ runner.temp }}/module-runtime
+          retention-days: 90

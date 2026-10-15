@@ -53,3 +53,5 @@ jobs:
 
 
 # Reuse deployed source/storage components; prior import failure occurred before all source calls.
+
+# Verified successful retained contract examples12184/12182: type=products, value=productID; exact Dblack p_id from17419.

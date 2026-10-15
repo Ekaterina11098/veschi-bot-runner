@@ -116,5 +116,15 @@ class Tests(unittest.TestCase):
         self.wb.pause=lambda cabinet:45
         self.assertEqual(self.r.verify_rejection()['wait_seconds'],45)
         self.assertEqual(self.reads,before);self.assertEqual(self.posts,1)
+    def test_stale_operation_cannot_erase_http_log(self):
+        stale=copy.deepcopy(self.r.initialize())
+        self.r.record(dict(request_id='r',method='GET',phase='after_http',http_status=200))
+        self.r.save(stale,status='preflight_verified')
+        self.assertEqual(len(self.r.operation()['http_log']),1)
+    def test_stale_operation_cannot_rearm_post_budget(self):
+        stale=copy.deepcopy(self.r.initialize())
+        self.r.save(self.r.operation(),post_consumed=True,http_post_started=True)
+        self.r.save(stale,status='verify')
+        self.assertTrue(self.r.operation()['post_consumed']);self.assertTrue(self.r.operation()['http_post_started'])
 
 if __name__=='__main__':unittest.main(verbosity=2)

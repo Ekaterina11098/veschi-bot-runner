@@ -61,3 +61,5 @@ jobs:
 # Regression: preserve bounded preflight across successful GET-induced WB pause.
 
 # Regression: approval UI explicitly explains disabled publication and WB pause.
+
+# Owner-approved: dismiss committed approval card; keep journal; no routine pause notices.

@@ -46,6 +46,54 @@ class Tests(unittest.TestCase):
         self.assertIn('Отправка WB сейчас выключена',text)
         self.assertIn('Пауза WB',text)
         self.assertIn('МСК',text)
+    def test_confirm_deletes_only_bound_card_and_keeps_journal(self):
+        self.receiver.receive(self.update('v2','select'),'secret')
+        nonce=self.repo.get('cards',self.token)['nonce']
+        self.tg.calls=[]
+        self.receiver.receive(self.update('ok.'+nonce,'confirm'),'secret')
+        self.assertEqual([m for m,p in self.tg.calls],['deleteMessage','answerCallbackQuery'])
+        self.assertEqual(self.tg.calls[0][1],{'chat_id':'22','message_id':101})
+        card=self.repo.get('cards',self.token)
+        self.assertEqual(card['telegram_card_removal']['status'],'confirmed')
+        self.assertEqual(card['texts'],['Ответ один','Ответ два'])
+        self.assertEqual(self.repo.count('intents'),1)
+    def test_delete_backup_before_network_and_no_duplicate(self):
+        nonce=self.selected();self.handle('ok.'+nonce,'confirm')
+        from review_approval_card_delivery import dismiss_approved
+        checks=[]
+        def preserve():checks.append((self.repo.get('cards',self.token)['telegram_card_removal']['status'],len(self.tg.calls)))
+        dismiss_approved(self.a,self.tg,self.token,preserve)
+        dismiss_approved(self.a,self.tg,self.token,preserve)
+        self.assertEqual(checks[0],('sending',0))
+        self.assertEqual(len(self.tg.calls),1)
+    def test_delete_timeout_does_not_erase_approval_or_retry(self):
+        nonce=self.selected();self.handle('ok.'+nonce,'confirm')
+        from review_approval_card_delivery import dismiss_approved
+        self.tg.fail=True
+        self.assertEqual(dismiss_approved(self.a,self.tg,self.token)['status'],'uncertain')
+        dismiss_approved(self.a,self.tg,self.token)
+        self.assertEqual(len(self.tg.calls),1)
+        self.assertEqual(self.repo.get('cards',self.token)['status'],'approved')
+    def test_unapproved_card_cannot_be_deleted(self):
+        from review_approval_card_delivery import dismiss_approved
+        with self.assertRaises(ValueError):dismiss_approved(self.a,self.tg,self.token)
+        self.assertEqual(self.tg.calls,[])
+    def test_routine_pause_never_notifies(self):
+        from review_approval_card_delivery import notify_owner_problem
+        self.assertIsNone(notify_owner_problem(self.a,self.tg,{'status':'awaiting_preflight','retry_at':1200}))
+        self.assertIsNone(notify_owner_problem(self.a,self.tg,{'status':'verify'}))
+        self.assertEqual(self.tg.calls,[])
+    def test_owner_problem_sends_once_to_bound_chat(self):
+        nonce=self.selected();result=self.handle('ok.'+nonce,'confirm')
+        intent=self.repo.get('intents',result['result']['intent_id']);intent['status']='blocked'
+        self.repo.put('intents',intent['id'],intent);self.conn.commit()
+        from review_approval_card_delivery import notify_owner_problem
+        # Unknown Telegram delivery also must not be sent again blindly.
+        notify_owner_problem(self.a,self.tg,intent)
+        notify_owner_problem(self.a,self.tg,intent)
+        self.assertEqual(len(self.tg.calls),1)
+        self.assertEqual(self.tg.calls[0][0],'notifyOwnerReviewProblem')
+        self.assertEqual(self.tg.calls[0][1]['chat_id'],'22')
     def test_duplicate_confirmation(self):
         nonce=self.selected();self.handle('ok.'+nonce,'confirm')
         self.assertTrue(self.handle('ok.'+nonce,'confirm')['duplicate']);self.assertEqual(self.repo.count('intents'),1)

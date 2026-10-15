@@ -27,10 +27,15 @@ def process(approval,bridge,telegram,wb,update,publication_enabled=False,preserv
         intent=approval.repo.get('intents',update['resume_intent'])
         if not intent or str(update.get('owner_id'))!=approval.owner or str(update.get('chat_id'))!=approval.chat or intent['owner_id']!=approval.owner or intent['chat_id']!=approval.chat:raise Rejected('Invalid targeted continuation')
         result={'result':{'decision':'approved','intent_id':intent['id']},'targeted_resume':True}
-    else:result=Receiver(approval,telegram,guard).receive(update,approval.secret)
+    else:result=Receiver(approval,telegram,guard,preserve=preserve).receive(update,approval.secret)
     # Persist encrypted supplement BEFORE a possible publication.
     if preserve:preserve()
     decision=result.get('result',{})
+    if decision.get('decision')=='approved':
+        from review_approval_card_delivery import dismiss_approved
+        token=approval.repo.get('intents',decision['intent_id'])['card_token']
+        removal=dismiss_approved(approval,telegram,token,preserve)
+        result['card_removal']=removal['status']
     if decision.get('decision')=='approved' and publication_enabled:
         outcome=Executor(approval,guard,wb,enabled=True).run(decision['intent_id'])
         result['publication_status']=outcome['status']
@@ -41,21 +46,14 @@ def process(approval,bridge,telegram,wb,update,publication_enabled=False,preserv
             card['publication_enabled']=True
             card['retry_at']=outcome.get('retry_at',0)
             approval.repo.put('cards',card_token,card)
-        view=approval.view(card_token)
-        try:
-            telegram.call('editMessageText',{'chat_id':approval.chat,'message_id':view['message_id'],'text':view['text'],'reply_markup':view['reply_markup']})
-            result['ui_delivery']='confirmed'
-        except Exception:result['ui_delivery']='uncertain'
+        from review_approval_card_delivery import notify_owner_problem
+        problem=notify_owner_problem(approval,telegram,outcome,preserve)
+        if problem:result['owner_problem_delivery']=problem['status']
     elif decision.get('decision')=='approved':
         token=approval.repo.get('intents',decision['intent_id'])['card_token']
         with approval.repo.transaction():
             card=approval.repo.get('cards',token,lock=True);card['publication_enabled']=False
             approval.repo.put('cards',token,card)
-        view=approval.view(token)
-        try:
-            telegram.call('editMessageText',{'chat_id':approval.chat,'message_id':view['message_id'],'text':view['text'],'reply_markup':view['reply_markup']})
-            result['ui_delivery']='confirmed'
-        except Exception:result['ui_delivery']='uncertain'
     if preserve:preserve()
     return result
 

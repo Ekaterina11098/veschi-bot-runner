@@ -9,9 +9,10 @@ from review_telegram_approval import Rejected
 
 
 class Receiver:
-    def __init__(self, approval, telegram, reconcile):
+    def __init__(self, approval, telegram, reconcile, preserve=None):
         self.approval = approval
         self.telegram = telegram
+        self.preserve = preserve
         # Must read canonical draft version, holds, publication journal and WB/manual state.
         # Return False if incomplete/unavailable. No mutation of WB is allowed here.
         self.reconcile = reconcile
@@ -50,10 +51,15 @@ class Receiver:
             # re-enqueues publication; render current state, not an old selection.
             view = a.view(token)
             try:
-                self.telegram.call('editMessageText', {
-                    'chat_id': a.chat, 'message_id': view['message_id'],
-                    'text': view['text'], 'reply_markup': view['reply_markup'],
-                })
+                if a.repo.get('cards',token)['status']=='approved':
+                    from review_approval_card_delivery import dismiss_approved
+                    removal=dismiss_approved(a,self.telegram,token,self.preserve)
+                    if removal['status']!='confirmed':raise RuntimeError('Card removal unconfirmed')
+                else:
+                    self.telegram.call('editMessageText', {
+                        'chat_id': a.chat, 'message_id': view['message_id'],
+                        'text': view['text'], 'reply_markup': view['reply_markup'],
+                    })
             except Exception:
                 return dict(result, ui_delivery='uncertain', automatic_retry=False)
             try:
@@ -99,4 +105,3 @@ class Receiver:
             status = '503 Service Unavailable'
         start_response(status, [('Content-Type', 'text/plain')])
         return [b'OK']
-

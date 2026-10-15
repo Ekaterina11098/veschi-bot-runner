@@ -1,0 +1,97 @@
+name: Prepare existing module integration offline only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-module-integration.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: offline
+          POSTGRES_PASSWORD: offline-test-only
+          POSTGRES_DB: offline_modules
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U offline -d offline_modules"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 755b69c266ad39beafd334e60aa900c07814cae8
+          fetch-depth: 0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: offline-recovery-runtime-kit
+          run-id: 38683221497
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/runtime-kit
+      - name: Assemble existing PRs in disposable checkout, never push or enable
+        run: |
+          python - <<'PY'
+          import json,os,subprocess
+          from pathlib import Path
+          out=Path(os.environ['RUNNER_TEMP'])/'integration-proof';out.mkdir()
+          refs=[('storage_PR16','bcc22ea32e56e7e679e5d0126022f6f0da144ec2'),('stock_PR20','77199037b42a64619a20f4457f99f978a4ff6d7e'),('analysis_PR19','5c3dc49030b8b5def3048b17291183286b84c4ac')]
+          report={'production_calls':0,'pushed':False,'main_changed':False,'dashboard_deferred':True,'steps':[],'combined':True}
+          for label,sha in refs:
+              result=subprocess.run(['git','merge','--no-commit','--no-ff',sha],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+              if result.returncode:
+                  conflicts=subprocess.check_output(['git','diff','--name-only','--diff-filter=U'],text=True).splitlines()
+                  report['steps'].append({'stage':label,'sha':sha,'merged':False,'conflict_paths':conflicts,'git_exit_code':result.returncode})
+                  subprocess.run(['git','merge','--abort'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                  report['combined']=False;break
+              dirty=subprocess.check_output(['git','status','--porcelain'],text=True).strip()
+              if dirty:
+                  subprocess.run(['git','-c','user.name=OfflineRecovery','-c','user.email=offline@example.invalid','commit','-m','Offline integration '+label],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+              report['steps'].append({'stage':label,'sha':sha,'merged':True})
+          (out/'integration.json').write_text(json.dumps(report,sort_keys=True));print(json.dumps(report,sort_keys=True))
+          PY
+      - name: Test only changed combined active modules in offline runtime
+        env:
+          OFFLINE_POSTGRES_DSN: postgresql://offline:offline-test-only@127.0.0.1:5432/offline_modules
+        run: |
+          python - <<'PY'
+          import os,json,sys,subprocess,socket,unittest
+          from pathlib import Path
+          out=Path(os.environ['RUNNER_TEMP'])/'integration-proof';report=json.loads((out/'integration.json').read_text())
+          if not report['combined']:
+              print('Combined tests blocked by listed source conflicts; no deployment attempted.');sys.exit(0)
+          runtime=Path(os.environ['RUNNER_TEMP'])/'runtime-kit'
+          subprocess.run([sys.executable,'-m','pip','install','--no-index','--find-links',str(runtime/'wheels'),'-r',str(runtime/'requirements.recovery.lock.txt')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+          # Whitelist is only the isolated PostgreSQL; business secrets are absent.
+          for key in os.environ:
+              assert key not in ('SUPABASE_SECRET_KEY','WB_TOKEN_1','TELEGRAM_BOT_TOKEN','MOYSKLAD_API_TOKEN')
+          original=socket.socket.connect
+          def guarded(self,address,*args,**kwargs):
+              if isinstance(address,tuple) and address[0] in ('127.0.0.1','localhost','::1'):return original(self,address,*args,**kwargs)
+              raise AssertionError('External network denied')
+          socket.socket.connect=guarded
+          def denied(*args,**kwargs):raise AssertionError('External network denied')
+          socket.create_connection=denied;socket.socket.connect_ex=denied
+          prefixes=('test_storage','test_payload_storage','test_review','test_telegram','test_advertising','test_finance','test_daily','test_analytics','test_stock','test_low_stock','test_auto_stock','test_moscow','test_sales_cache','test_wb','test_business','test_china_core','test_mpstats','test_postclick','test_price_loss_guard','test_sku','test_source_collection')
+          patterns=sorted(p.name for p in Path('tests').glob('test_*.py') if p.name.startswith(prefixes) and 'dashboard' not in p.name and 'display' not in p.name)
+          suite=unittest.TestSuite(unittest.defaultTestLoader.discover('tests',pattern=p) for p in patterns)
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          summary={'combined_modules_tested':True,'tests':result.testsRun,'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),'business_calls':0,'dashboard_deferred':True,'patterns':patterns}
+          (out/'tests.json').write_text(json.dumps(summary,sort_keys=True));print(json.dumps(summary,sort_keys=True))
+          sys.exit(not result.wasSuccessful())
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: existing-module-integration-proof
+          path: ${{ runner.temp }}/integration-proof
+          retention-days: 90

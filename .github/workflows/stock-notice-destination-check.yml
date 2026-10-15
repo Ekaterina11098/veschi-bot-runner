@@ -1,0 +1,38 @@
+name: Existing stock notice destination read-only check
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-notice-destination-check.yml']
+permissions:
+  contents: write
+jobs:
+  check:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 cryptography > "$RUNNER_TEMP/telegram-read-install.log" 2>&1
+      - name: getMe, getChat and getChatMember only; no sendMessage
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+        run: python stock_notice_destination_check.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sealed-stock-notice-destination-proof
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90
+      - name: Independently retain sealed proof
+        if: always()
+        run: |
+          mkdir -p recovery-output/2026-10-15
+          cp "$RUNNER_TEMP/stock-deploy-proof/stock-notice-destination.aes.json" "recovery-output/2026-10-15/stock-notice-destination-$GITHUB_RUN_ID.aes.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add recovery-output/2026-10-15
+          git commit -m "Retain encrypted read-only stock destination proof" && git push

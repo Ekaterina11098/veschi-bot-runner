@@ -29,6 +29,11 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 9b921d4f093e98cda196c4abd601866c4d8f1d7a
+          persist-credentials: false
+          path: public-runner
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -44,7 +49,7 @@ jobs:
           import json,os,subprocess
           from pathlib import Path
           out=Path(os.environ['RUNNER_TEMP'])/'integration-proof';out.mkdir()
-          refs=[('storage_PR16','bcc22ea32e56e7e679e5d0126022f6f0da144ec2'),('stock_PR20','77199037b42a64619a20f4457f99f978a4ff6d7e'),('analysis_PR19','5c3dc49030b8b5def3048b17291183286b84c4ac')]
+          refs=[('storage_PR16','bcc22ea32e56e7e679e5d0126022f6f0da144ec2'),('stock_PR20','f2c82b7d0f1044886e4a2a3cc2aabd850ff91491'),('analysis_PR19','5c3dc49030b8b5def3048b17291183286b84c4ac')]
           identity=subprocess.run(['git','var','GIT_COMMITTER_IDENT'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
           subprocess.run(['git','config','user.name','OfflineRecovery'],check=True)
           subprocess.run(['git','config','user.email','offline@example.invalid'],check=True)
@@ -65,6 +70,7 @@ jobs:
       - name: Test only changed combined active modules in offline runtime
         env:
           OFFLINE_POSTGRES_DSN: postgresql://offline:offline-test-only@127.0.0.1:5432/offline_modules
+          PYTHONPATH: ${{ github.workspace }}/public-runner
         run: |
           python - <<'PY'
           import os,json,sys,subprocess,socket,unittest
@@ -74,6 +80,7 @@ jobs:
               print('Combined tests blocked by listed source conflicts; no deployment attempted.');sys.exit(0)
           runtime=Path(os.environ['RUNNER_TEMP'])/'runtime-kit'
           subprocess.run([sys.executable,'-m','pip','install','--no-index','--find-links',str(runtime/'wheels'),'-r',str(runtime/'requirements.recovery.lock.txt')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+          subprocess.run([sys.executable,'-m','pip','install','cryptography','simplejson'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
           # Whitelist is only the isolated PostgreSQL; business secrets are absent.
           for key in os.environ:
               assert key not in ('SUPABASE_SECRET_KEY','WB_TOKEN_1','TELEGRAM_BOT_TOKEN','MOYSKLAD_API_TOKEN')
@@ -88,7 +95,7 @@ jobs:
           patterns=sorted(p.name for p in Path('tests').glob('test_*.py') if p.name.startswith(prefixes) and 'dashboard' not in p.name and 'display' not in p.name)
           suite=unittest.TestSuite(unittest.defaultTestLoader.discover('tests',pattern=p) for p in patterns)
           result=unittest.TextTestRunner(verbosity=2).run(suite)
-          summary={'combined_modules_tested':True,'tests':result.testsRun,'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),'business_calls':0,'dashboard_deferred':True,'patterns':patterns}
+          summary={'combined_modules_tested':True,'tests':result.testsRun,'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),'business_calls':0,'dashboard_deferred':True,'patterns':patterns,'failure_ids':[test.id() for test,_ in result.failures],'error_ids':[test.id() for test,_ in result.errors]}
           (out/'tests.json').write_text(json.dumps(summary,sort_keys=True));print(json.dumps(summary,sort_keys=True))
           sys.exit(not result.wasSuccessful())
           PY

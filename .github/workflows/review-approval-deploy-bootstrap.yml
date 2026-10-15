@@ -1,0 +1,42 @@
+name: Approved restricted review deployment bootstrap
+on:
+  push:
+    paths: ['review_approval_deploy_bootstrap.py']
+permissions:
+  contents: write
+concurrency:
+  group: review-approval-deployment
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 requests==2.32.5
+      - name: Restricted role proof and old destination GET only
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+        run: python review_approval_deploy_bootstrap.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-review-approval-deployment
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90
+      - name: Preserve only owner ciphertext
+        if: always()
+        run: |
+          mkdir -p recovery-output/review-approval
+          cp "$RUNNER_TEMP/stock-deploy-proof/review-approval-deployment.aes.json" "recovery-output/review-approval/deployment-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/review-approval/
+          git commit -m "Preserve encrypted approved restricted review deployment proof"
+          git pull --rebase origin main
+          git push origin HEAD:main

@@ -1,9 +1,9 @@
-"""Cache-only historical evidence, existing experiment journal and shared cache."""
+"""Owner-authorized cache-only execution of existing experiment learning refresh."""
 import os,sys,json,hashlib,io,contextlib,gzip,base64
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parent/'private-source'))
 from stock_deploy_support import seal,error
-report={'source_calls':0,'wb_writes':0,'telegram_calls':0,'private_pin':'8aa1eecb8215adc1dad89b8c812de050d99f18cc'}
+report={'source_calls':0,'wb_writes':0,'telegram_calls':0,'private_pin':'6a9015bdd0eab870d44a06e43b92a1d930ecd58d'}
 hidden=io.StringIO()
 try:
  with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):
@@ -11,37 +11,24 @@ try:
   from urllib.parse import urlsplit
   host=urlsplit(os.environ['SUPABASE_URL']).hostname;native=requests.sessions.Session.request
   def guarded(session,method,url,*a,**kw):
-   if urlsplit(url).hostname!=host:raise RuntimeError('History audit cannot collect marketplace or Telegram data')
+   if urlsplit(url).hostname!=host:raise RuntimeError('Cache-only historical learning cannot collect marketplace or Telegram data')
    return native(session,method,url,*a,**kw)
   requests.sessions.Session.request=guarded
+  from advertising_agent.experiments import refresh_learning,experiment_rows
   from analytics.stage_one import read
-  from analytics.collect import database,RUN_ID
   from analytics.payload_storage import decode_rows
-  from analytics.ip_history_learning import build_memory, timestamp, validate_current_policy
-  rows=read('advertising_experiments',{'cabinet':'eq.token_2','select':'id,campaign_id,nm_id,article,change_log_id,experiment_type,change_field,old_value,new_value,started_at,baseline,checkpoints','order':'id.asc','limit':1000}) or []
-  if len(rows)>=1000:raise RuntimeError('Pagination required; refuse incomplete learning audit')
-  result=build_memory(rows)
-  from advertising_agent.experiments import decision_for
-  result['current_policy_validation']=validate_current_policy(rows,decision_for)
-  dates=[timestamp(r.get('started_at')).date().isoformat() for r in rows if timestamp(r.get('started_at'))]
-  if not dates:raise RuntimeError('History period unavailable')
+  from advertising_agent.agent_store import cache_get
+  saved=refresh_learning()
+  if saved.get('status')!='advisory_saved':raise RuntimeError('No saved historical evidence')
+  records=decode_rows(read('analytics_snapshots',{'id':'eq.'+str(saved['snapshot_id']),'source':'eq.ip_historical_learning_audit','cabinet':'eq.token_2','select':'id,payload','limit':1}) or [])
+  result=records[0]['payload'][0]
   digest=lambda x:hashlib.sha256(json.dumps(x,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
-  sha=digest(result)
-  database('POST','analytics_snapshots',body={'source':'ip_historical_learning_audit','cabinet':'token_2','period_from':min(dates),'period_to':max(dates),'run_id':RUN_ID,'status':'partial','payload':[result],'detail':'Cache-only advisory observations, not causal learning or proven recommendation improvement'})
-  saved=decode_rows(read('analytics_snapshots',{'source':'eq.ip_historical_learning_audit','cabinet':'eq.token_2','run_id':'eq.'+RUN_ID,'select':'id,payload','order':'id.desc','limit':1}) or [])
-  if not saved or digest(saved[0]['payload'][0])!=sha:raise RuntimeError('Historical evidence full readback SHA mismatch')
-  summary={k:v for k,v in result.items() if k not in ('evidence','backtests','pair_profiles','current_policy_validation')}
-  summary.update(pair_profiles_count=len(result.get('pair_profiles') or {}),
-   current_policy_comparison={k:v for k,v in result['current_policy_validation'].items() if k!='comparisons'},
-   snapshot_id=saved[0]['id'],sha256=sha,full_readback_verified=True,
-   evaluated_predictions={m:r['evaluated'] for m,r in result['backtests'].items()},
-   note='Use only conditional hypotheses; no learned demand forecast or intervention benefit proven')
-  from advertising_agent.agent_store import cache_set,cache_get
-  key='advertising:ip:historical_learning:v1'
-  cache_set(key,summary,ttl_days=365)
-  if digest(cache_get(key))!=digest(summary):raise RuntimeError('Common memory readback mismatch')
+  if digest(result)!=saved['sha256']:raise RuntimeError('Full historical evidence SHA mismatch')
+  summary=cache_get('advertising:ip:historical_learning:v1')
+  if summary.get('sha256')!=saved['sha256'] or summary.get('snapshot_id')!=saved['snapshot_id']:raise RuntimeError('Common memory identity mismatch')
+  rows=experiment_rows({'cabinet':'eq.token_2','select':'id,campaign_id,nm_id,article,change_log_id,experiment_type,change_field,old_value,new_value,started_at,baseline,checkpoints','order':'id.asc'})
   report['evidence_backup_gzip_b64']=base64.b64encode(gzip.compress(json.dumps({'experiments':rows,'learning':result,'memory':summary},sort_keys=True,ensure_ascii=False,separators=(',',':')).encode(),mtime=0)).decode()
-  report.update(status='advisory_audit_saved',summary=summary,full_readback_verified=True,experiment_rows=len(rows))
+  report.update(status='advisory_audit_saved',summary=summary,full_readback_verified=True,experiment_rows=len(rows),existing_journal_refresh_used=True)
 except Exception as exc:report['error']=error(exc)
 finally:
  report['private_log']=hidden.getvalue();seal('advertising-history-learning',report)

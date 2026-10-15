@@ -135,7 +135,20 @@ try:
      for cid in active:
       req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,report='products',d1=str(start),d2=str(end)))
       if req:more.append(req)
-     report['active_mpstats_campaign_ids']=active;report['missing_campaign_aggregate_requests']=more
+     report['active_mpstats_campaign_ids']=active;report['missing_campaign_aggregate_requests']=list(more)
+     mapping={r.get('wb_id'):r['id'] for r in rows}
+     experiments=database('GET','advertising_experiments',params={'cabinet':'eq.token_2','status':'eq.active','select':'id,campaign_id,nm_id,started_at','order':'id.asc','limit':100}) or []
+     seen=set()
+     for exp in experiments:
+      cid=mapping.get(exp.get('campaign_id'));nm=exp.get('nm_id')
+      if cid is None or not isinstance(nm,int):continue
+      first=max(str(start),exp['started_at'][:10])
+      identity=(cid,nm,first,str(end))
+      if identity in seen:continue
+      seen.add(identity)
+      req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,nm_id=nm,report='days',d1=first,d2=str(end)))
+      if req:more.append(req)
+     report['pending_experiment_scopes']=[r for r in more if r['arguments'].get('report')=='days']
      results+=execute_reads(call,checks,known,more,bidder,saved,max_requests=max(0,20-len(results)))
     return results
    result=discover(os.environ.get('MPSTATS_API_TOKEN',''),read_checks=True,catalog=catalog,extra_reader=reader)

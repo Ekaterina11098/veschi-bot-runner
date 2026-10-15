@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: c27c4e34977ff6f78a123dc6fbd45fb78c472d40
+          ref: 3a2a077f49b307c33feffeb676b0309f7bd1e4c9
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI

@@ -1,0 +1,51 @@
+name: Advertising retained operation reasons quality proof
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/advertising-owner-operation-quality.yml']
+permissions:
+  contents: write
+concurrency:
+  group: advertising-owner-quality-read
+  cancel-in-progress: false
+jobs:
+  cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 5b0c24c67408c28a709ab37db62999a02e2e0bd7
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install cryptography==46.0.2 -r private-source/requirements.txt > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Inspect retained Finance operations without marketplace calls
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_EGRESS_OPTIMIZED: 'true'
+        run: python advertising_operation_quality_owner.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-advertising-operation-quality
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Independent ciphertext only
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          cp "$RUNNER_TEMP/stock-deploy-proof/advertising-operation-quality.aes.json" "recovery-output/advertising/operations-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/
+          git commit -m "Preserve encrypted advertising operation diagnosis"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+          done
+          exit 1

@@ -1,0 +1,53 @@
+name: Verify unknown stock evidence and article-wide block offline
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-stock-unknown-audit.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b19f4930622a70b2c2c0c9c321c1d86a666e307c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: offline-recovery-runtime-kit
+          run-id: 38686760314
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/runtime
+      - name: New and affected stock tests; fake services only
+        run: |
+          python - <<'PY'
+          import os,sys,json,socket,subprocess,unittest
+          from pathlib import Path
+          runtime=Path(os.environ['RUNNER_TEMP'])/'runtime'
+          subprocess.run([sys.executable,'-m','pip','install','--no-index','--find-links',str(runtime/'wheels'),'-r',str(runtime/'requirements.recovery.lock.txt')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+          def denied(*a,**k):raise AssertionError('No external calls in offline audit')
+          socket.socket.connect=denied;socket.socket.connect_ex=denied;socket.create_connection=denied
+          assert not any(os.getenv(x) for x in ['WB_TOKEN_1','WB_TOKEN_2','WB_TOKEN_3','SUPABASE_SECRET_KEY','TELEGRAM_BOT_TOKEN'])
+          sys.path.insert(0,'tests')
+          names=['test_stock_unknown_evidence','test_auto_stock.AllocationTests','test_stock_operation_store.JournalTests','test_stock_cloud_paths']
+          suite=unittest.defaultTestLoader.loadTestsFromNames(names)
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          out=Path(os.environ['RUNNER_TEMP'])/'unknown-proof';out.mkdir()
+          report={'commit':'b19f4930622a70b2c2c0c9c321c1d86a666e307c','tests':result.testsRun,'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),'failure_ids':[t.id() for t,_ in result.failures],'error_ids':[t.id() for t,_ in result.errors],'business_calls':0,'production_database_calls':0,'wb_writes':0,'policy':'stock-cloud-owner-2026-10-15-v4-unknown-is-blocked'}
+          (out/'summary.json').write_text(json.dumps(report,sort_keys=True));print(json.dumps(report,sort_keys=True))
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stock-unknown-evidence-offline-proof
+          path: ${{ runner.temp }}/unknown-proof
+          retention-days: 90

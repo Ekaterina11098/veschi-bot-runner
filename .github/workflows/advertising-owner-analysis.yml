@@ -51,6 +51,7 @@ jobs:
         run: |
           mkdir -p recovery-output/advertising
           cp "$RUNNER_TEMP/stock-deploy-proof/advertising-analysis.aes.json" "recovery-output/advertising/analysis-${{ github.run_id }}.aes.json"
+          cp "$RUNNER_TEMP/stock-deploy-proof/advertising-preview.aes.json" "recovery-output/advertising/preview-${{ github.run_id }}.aes.json"
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add recovery-output/advertising/

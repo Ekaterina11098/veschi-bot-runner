@@ -26,6 +26,7 @@ jobs:
           docker pull postgres:17.6
           docker run -d --name review-approval-pg --network none -e POSTGRES_HOST_AUTH_METHOD=trust -v "$RUNNER_TEMP/review-pg-socket:/socket" postgres:17.6 postgres -c unix_socket_directories=/socket -c listen_addresses=''
           for i in $(seq 1 90); do
+            if [ "$(docker inspect --format '{{.State.Running}}' review-approval-pg)" != true ]; then docker logs review-approval-pg; exit 1; fi
             if docker exec review-approval-pg pg_isready -h /socket -U postgres; then break; fi
             sleep 1
           done
@@ -47,4 +48,6 @@ jobs:
           retention-days: 90
       - name: Remove disposable database
         if: always()
-        run: docker rm -f review-approval-pg
+        run: |
+          docker logs review-approval-pg
+          docker rm -f review-approval-pg

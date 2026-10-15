@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS review_approval.events(id text PRIMARY KEY,payload te
 CREATE TABLE IF NOT EXISTS review_approval.intents(id text PRIMARY KEY,payload text NOT NULL);
 REVOKE ALL ON ALL TABLES IN SCHEMA review_approval FROM PUBLIC;
 GRANT USAGE ON SCHEMA review_approval TO review_approval_runtime;
-GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA review_approval TO review_approval_runtime;
+GRANT SELECT,INSERT,UPDATE ON review_approval.items,review_approval.cards,review_approval.events,review_approval.intents TO review_approval_runtime;
 CREATE OR REPLACE VIEW review_approval.source_cache WITH (security_barrier=true) AS
 SELECT cache_key,payload,updated_at FROM public.telegram_api_cache WHERE starts_with(cache_key,'reviews:');
 CREATE OR REPLACE VIEW review_approval.source_journal WITH (security_barrier=true) AS

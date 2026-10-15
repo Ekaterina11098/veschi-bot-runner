@@ -51,7 +51,7 @@ class Executor:
         return intent
     def _run(self,intent):
         card=self.repo.get('cards',intent['card_token'])
-        if not card or sha(intent['answer'])!=intent['answer_sha256'] or intent['answer_sha256'] not in card['hashes']:raise Rejected('Immutable answer binding failed')
+        if not card or any(intent[key]!=card[key] for key in ('ref','cabinet','kind','item_id','version')) or sha(intent['answer'])!=intent['answer_sha256'] or intent['answer_sha256'] not in card['hashes'] or intent['source_sha256']!=sha(card['source']):raise Rejected('Immutable answer binding failed')
         # Verification is read-only even if a hold appeared after sending.
         if intent['status']=='verify':return self.verify(intent)
         if intent.get('retry_at',0)>self.a.clock():return intent

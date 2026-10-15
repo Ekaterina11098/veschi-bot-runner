@@ -1,0 +1,63 @@
+"""Dedicated event entry, disabled unless both deployment flags are explicitly set."""
+import base64,json,os
+from pathlib import Path
+from review_telegram_approval import Approval,Repository,Rejected
+from review_approval_bridge import SQLSource,DurableBridge
+from review_telegram_runtime import TelegramTransport,CanonicalGuard
+from review_telegram_receiver import Receiver
+from review_approval_executor import Executor,WBAdapter
+from review_approval_backup import snapshot,encrypt
+
+def decrypt_update(raw,key):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    envelope=json.loads(raw)
+    if envelope.get('format')!='review-approval-update-v1':raise ValueError('Ingress format')
+    data=AESGCM(base64.b64decode(key,validate=True)).decrypt(base64.b64decode(envelope['nonce'],validate=True),base64.b64decode(envelope['ciphertext'],validate=True),b'review-approval-update-v1')
+    if len(data)>65536:raise ValueError('Ingress size')
+    return json.loads(data)
+
+def process(approval,bridge,telegram,wb,update,publication_enabled=False,preserve=None):
+    guard=CanonicalGuard(approval,bridge.project)
+    result=Receiver(approval,telegram,guard).receive(update,approval.secret)
+    # Persist encrypted supplement BEFORE a possible publication.
+    if preserve:preserve()
+    decision=result.get('result',{})
+    if decision.get('decision')=='approved' and publication_enabled:
+        outcome=Executor(approval,guard,wb,enabled=True).run(decision['intent_id'])
+        result['publication_status']=outcome['status']
+        card_token=approval.repo.get('intents',decision['intent_id'])['card_token']
+        with approval.repo.transaction():
+            card=approval.repo.get('cards',card_token,lock=True)
+            card['status']={'confirmed':'sent','manual_present':'manual_present','verify':'uncertain','blocked':'held'}.get(outcome['status'],'approved')
+            approval.repo.put('cards',card_token,card)
+        view=approval.view(card_token)
+        try:telegram.call('editMessageText',{'chat_id':approval.chat,'message_id':view['message_id'],'text':view['text'],'reply_markup':view['reply_markup']})
+        except Exception:result['ui_delivery']='uncertain'
+    if preserve:preserve()
+    return result
+
+def main():
+    if os.getenv('REVIEW_APPROVAL_ENABLED')!='1':raise Rejected('Review approval disabled')
+    import psycopg
+    import wildberries
+    conn=psycopg.connect(os.environ['REVIEW_APPROVAL_DSN'],autocommit=True,connect_timeout=10,options='-c statement_timeout=30000')
+    try:
+        approval=Approval(Repository(conn,postgres=True),os.environ['REVIEW_APPROVAL_INGRESS_KEY'],os.environ['REVIEW_APPROVAL_OWNER_ID'],os.environ['TELEGRAM_ALLOWED_CHAT_ID'],os.environ['REVIEW_APPROVAL_BOT_ID'],enabled=True)
+        bridge=DurableBridge(approval,SQLSource(conn))
+        output=Path(os.environ['RUNNER_TEMP'])/'review-approval-output';output.mkdir(exist_ok=True)
+        def preserve():
+            sealed=encrypt(snapshot(approval.repo),os.environ['RECOVERY_PUBLIC_KEY'].encode())
+            target=output/'approval-supplement.aes.json';target.write_text(json.dumps(sealed))
+        update=decrypt_update(os.environ['SEALED_UPDATE'],os.environ['REVIEW_APPROVAL_INGRESS_KEY'])
+        try:
+            result=process(approval,bridge,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),WBAdapter(wildberries),update,publication_enabled=os.getenv('REVIEW_PUBLICATION_ENABLED')=='1',preserve=preserve)
+            # Categories only, no answer/source/identity or credential in public log.
+            print(json.dumps({'decision':result.get('result',{}).get('decision'),'publication_status':result.get('publication_status'),'ui_delivery':result.get('ui_delivery')}))
+        finally:preserve()
+    finally:conn.close()
+
+if __name__=='__main__':
+    try:main()
+    except Exception as exc:
+        print(json.dumps({'error_type':type(exc).__name__,'completed':False}))
+        raise SystemExit(1)

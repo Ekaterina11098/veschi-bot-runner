@@ -37,7 +37,7 @@ jobs:
           from urllib.parse import urlparse
           import requests
           from advertising_agent.notify import db,cache_get,cache_set
-          KEY='china_agent:approved_two_reports:2026-10-15:164210'
+          KEY='china_agent:approved_two_reports:2026-10-15:170729'
           CHAT=-5340821012
           original=requests.sessions.Session.request
           def guard(self,method,url,*args,**kw):
@@ -82,7 +82,7 @@ jobs:
               assert state['status']=='approved' and not state['receipts']
               messages=state['messages']
               assert len(messages)==2 and all(isinstance(t,str) and 1<=len(t)<=3500 for t in messages)
-              expected=['f4a5a372f2ae626d4be2b887fb76613c','bf4cad2bb7201dc0b2ee87b868f057a0']
+              expected=['08efbd10e79e3b5aad18e00a0dcb70ec','4f1cb2a72a0127b45c9b59d170408164']
               assert [hashlib.md5(t.encode()).hexdigest() for t in messages]==expected
               configs=db('GET','business_agent_config',params=dict(agent_id='eq.china',active='eq.true',limit=2))
               assert len(configs)==1 and configs[0]['chat_id']==CHAT and configs[0]['owner_user_id']==5122667182

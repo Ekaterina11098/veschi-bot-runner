@@ -47,6 +47,13 @@ class Tests(unittest.TestCase):
     def test_old_nonce(self):
         nonce=self.selected();self.handle('v1','new-selection')
         with self.assertRaises(Rejected):self.handle('ok.'+nonce,'confirm')
+    def test_repeated_same_choice_preserves_visible_confirmation(self):
+        nonce=self.selected()
+        self.handle('v2','second-selection')
+        self.assertEqual(self.repo.get('cards',self.token)['nonce'],nonce)
+        result=self.handle('ok.'+nonce,'confirm')
+        self.assertEqual(result['result']['decision'],'approved')
+        self.assertEqual(self.repo.count('intents'),1)
     def test_back_invalidates_nonce(self):
         nonce=self.selected();self.handle('back','back')
         with self.assertRaises(Rejected):self.handle('ok.'+nonce,'confirm')
@@ -203,4 +210,3 @@ class Tests(unittest.TestCase):
             conn=sqlite3.connect(path);self.assertEqual(Repository(conn).count('intents'),1);conn.close()
 
 if __name__=='__main__':unittest.main(verbosity=2)
-

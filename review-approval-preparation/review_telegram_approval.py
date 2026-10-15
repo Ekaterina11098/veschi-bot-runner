@@ -120,7 +120,10 @@ class Approval:
             if item['status']=='approved':raise Rejected('Approval already recorded; do not enqueue again')
             if action in ('v1','v2'):
                 if card['status'] not in ('awaiting','selected'):raise Rejected('Card not selectable')
-                card.update(status='selected',selected=int(action[-1])-1,nonce=secrets.token_hex(6))
+                selected=int(action[-1])-1
+                # A repeated choice must not invalidate the confirmation already displayed.
+                if card['status']!='selected' or card['selected']!=selected:
+                    card.update(status='selected',selected=selected,nonce=secrets.token_hex(6))
                 result={'decision':'selected','variant':card['selected']+1,'publication_created':False}
             elif action=='back':
                 if card['status']!='selected':raise Rejected('No selection')
@@ -165,4 +168,3 @@ class Approval:
             if self.repo.get('events',key):return {'status':'revision_requested','old_version_approvable':False,'publication_created':False,'duplicate':True}
             self.repo.put('events',key,{'decision':'revision_requested','token':token,'version':card['version'],'instruction':text,'actor':self.owner,'created_at':self.clock()})
             return {'status':'revision_requested','old_version_approvable':False,'publication_created':False}
-

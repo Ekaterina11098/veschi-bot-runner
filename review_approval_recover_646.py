@@ -23,8 +23,11 @@ out=Path(os.environ['RUNNER_TEMP'])/'review-approval-output';out.mkdir(exist_ok=
 repo=Repository(conn,postgres=True)
 a=Approval(repo,os.environ['REVIEW_APPROVAL_INGRESS_KEY'],os.environ['REVIEW_APPROVAL_OWNER_ID'],os.environ['TELEGRAM_ALLOWED_CHAT_ID'],os.environ['REVIEW_APPROVAL_BOT_ID'],enabled=True)
 bridge=DurableBridge(a,SQLSource(conn))
+diagnostic={}
 def preserve():
-    (out/'approval-supplement.aes.json').write_text(json.dumps(encrypt(snapshot(repo),os.environ['RECOVERY_PUBLIC_KEY'].encode())))
+    data=snapshot(repo)
+    data['target_read_diagnostic']=diagnostic
+    (out/'approval-supplement.aes.json').write_text(json.dumps(encrypt(data,os.environ['RECOVERY_PUBLIC_KEY'].encode())))
 try:
     conn.execute("SELECT pg_advisory_lock(hashtextextended('review-approval-process-ui-v1',0))")
     card=repo.get('cards',TOKEN)
@@ -43,6 +46,8 @@ try:
             repo.put('events','owner-chat-recovery:20261015:'+TOKEN,{'created_at':time.time(),'result':{'decision':'approved','intent_id':iid},'authorization_source':'owner_chat_recovery','answer_sha256':EXPECTED})
     preserve()
     deadline=time.monotonic()+420
+    from review_rate_diagnostic import install as install_rate_diagnostic
+    install_rate_diagnostic(diagnostic,card['item_id']) # observe existing exact GET only, no extra calls
     adapter=WBAdapter(wildberries)
     for iteration in range(4):
         result=process(a,bridge,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),adapter,{'resume_intent':iid,'owner_id':a.owner,'chat_id':a.chat},publication_enabled=True,preserve=preserve)

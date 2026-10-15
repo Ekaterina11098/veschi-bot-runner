@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "mandatory_tables": [
+    "public.telegram_api_cache",
+    "public.review_replies",
+    "public.review_benchmarks"
+  ],
+  "mandatory_cache_prefixes": [
+    "reviews:draft:",
+    "reviews:approval:",
+    "reviews:manual-history:",
+    "reviews:manual-observed:",
+    "reviews:notice:",
+    "reviews:controlled-run:"
+  ],
+  "include_payload_and_confirmation_history": true,
+  "exclude_secrets_from_public_plaintext": true,
+  "backup_receipt": "owner-encrypted-review-drafts-notices-and-backup",
+  "owner_private_key_upload": false,
+  "fixed_point_baseline_unchanged": true,
+  "new_changes_are_separate_supplement": true
+}

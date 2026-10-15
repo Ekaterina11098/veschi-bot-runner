@@ -42,3 +42,5 @@ try:
     print(json.dumps({'publication_status':current['status'],'retry_at':current.get('retry_at'),'readback_confirmed':current.get('actual_answer_sha256')==EXPECTED,'ui_delivery':result.get('ui_delivery')}))
 finally:
     preserve();conn.close()
+
+# Continue same durable intent only after saved RetryAfter 2026-10-15T12:34:58UTC.

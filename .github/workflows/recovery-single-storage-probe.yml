@@ -1,8 +1,6 @@
 name: One authorized technical storage probe
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/recovery-single-storage-probe.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

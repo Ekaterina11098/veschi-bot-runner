@@ -1,8 +1,6 @@
 name: One owner authorized uncertain stock read only
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/recovery-uncertain-stock-read.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

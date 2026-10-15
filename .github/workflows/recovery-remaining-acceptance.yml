@@ -90,7 +90,19 @@ jobs:
                   statement=prefix+" SET "+ident(item['setting_name'])+" TO "+literal(item['setting_value'])+";"
                   query(statement);statements.append(statement)
               actual=json.loads(query("SELECT coalesce(json_agg(json_build_array(coalesce(d.datname,'ALL_DATABASES'),coalesce(r.rolname,'ALL_ROLES'),s.setting)),'[]') FROM pg_db_role_setting p LEFT JOIN pg_database d ON d.oid=p.setdatabase LEFT JOIN pg_roles r ON r.oid=p.setrole CROSS JOIN LATERAL unnest(p.setconfig) s(setting)"))
-              report['role_database_settings_recreated']=all([s['database'],s['role'],s['setting_name']+'='+s['setting_value']] in actual for s in capture['settings'])
+              def equivalent(a,b):
+                  if a==b:return True
+                  import re
+                  def milliseconds(v):
+                      m=re.fullmatch(r'(\\d+)(ms|s|min|h)?',v)
+                      return int(m[1])*{'ms':1,'s':1000,'min':60000,'h':3600000,None:1}[m[2]] if m else None
+                  return milliseconds(a) is not None and milliseconds(a)==milliseconds(b)
+              mismatches=[]
+              for s in capture['settings']:
+                  candidates=[x[2].split('=',1)[1] for x in actual if x[0]==s['database'] and x[1]==s['role'] and x[2].split('=',1)[0]==s['setting_name']]
+                  if not any(equivalent(s['setting_value'],v) for v in candidates):mismatches.append(s['role']+':'+s['setting_name'])
+              report['role_database_settings_recreated']=not mismatches
+              report['setting_mismatch_names']=mismatches
               report['setting_count']=len(capture['settings'])
               report['authenticator_can_set_service_role']=query("SELECT pg_has_role('authenticator','service_role','SET')")=='t'
               report['authenticator_does_not_inherit_service_role']=query("SELECT NOT pg_has_role('authenticator','service_role','USAGE')")=='t'
@@ -99,7 +111,7 @@ jobs:
               report['tested_pg_net_version']=query("SELECT extversion FROM pg_extension WHERE extname='pg_net'")
               query("SELECT 1/CASE WHEN to_regclass('net.http_request_queue') IS NOT NULL AND to_regclass('net._http_response') IS NOT NULL THEN 1 ELSE 0 END")
               # Worker contract on loopback only: deliberately closed port, no external networking.
-              request_id=int(query("SET ROLE postgres; SELECT net.http_post(url:='http://127.0.0.1:1/offline-contract',body:='{\\\"fixture\\\":true}'::jsonb,headers:='{\\\"Content-Type\\\":\\\"application/json\\\",\\\"X-Test\\\":\\\"synthetic\\\"}'::jsonb,timeout_milliseconds:=500);").splitlines()[-1])
+              request_id=int(query("SET ROLE postgres; SELECT net.http_post(url:='http://127.0.0.1:1/offline-contract',body:=jsonb_build_object('fixture',true),headers:=jsonb_build_object('Content-Type','application/json','X-Test','synthetic'),timeout_milliseconds:=500);").splitlines()[-1])
               observed=False
               for attempt in range(30):
                   if query("SELECT EXISTS(SELECT FROM net._http_response WHERE id="+str(request_id)+" AND error_msg IS NOT NULL)")=='t':observed=True;break

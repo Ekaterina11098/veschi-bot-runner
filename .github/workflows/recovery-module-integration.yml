@@ -94,9 +94,11 @@ jobs:
           prefixes=('test_storage','test_payload_storage','test_review','test_telegram','test_advertising','test_finance','test_daily','test_analytics','test_stock','test_low_stock','test_auto_stock','test_moscow','test_sales_cache','test_wb','test_business','test_china_core','test_mpstats','test_postclick','test_price_loss_guard','test_sku','test_source_collection')
           patterns=sorted(p.name for p in Path('tests').glob('test_*.py') if p.name.startswith(prefixes) and 'dashboard' not in p.name and 'display' not in p.name)
           sys.path.insert(0,'tests')
-          suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromName(name) for name in ('test_storage_runner_bootstrap.RunnerBootstrapTests.test_failed_guard_initialization_cannot_execute_child_body','test_storage_working_reader.NotificationAcceptanceTests.test_verified_resolution_requires_actual_reconciliation_and_is_once'))
+          patterns=sorted(p.name for p in Path('tests').glob('test_ip_*.py') if 'dashboard' not in p.name)
+          assert patterns
+          suite=unittest.TestSuite(unittest.defaultTestLoader.discover('tests',pattern=p) for p in patterns)
           result=unittest.TextTestRunner(verbosity=2).run(suite)
-          summary={'prior_combined_run':38686362215,'prior_unchanged_tests_passed':607,'changed_scope':'Two integration fixtures; production module code unchanged','combined_modules_tested':True,'tests':result.testsRun,'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),'business_calls':0,'dashboard_deferred':True,'patterns':patterns,'failure_ids':[test.id() for test,_ in result.failures],'error_ids':[test.id() for test,_ in result.errors]}
+          summary={'prior_combined_runs':[38686362215,38686670143],'prior_unchanged_tests_passed':609,'changed_scope':'IP recommendation and financial decision paths not included in previous combined suite','combined_modules_tested':True,'tests':result.testsRun,'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),'business_calls':0,'dashboard_deferred':True,'patterns':patterns,'failure_ids':[test.id() for test,_ in result.failures],'error_ids':[test.id() for test,_ in result.errors]}
           (out/'tests.json').write_text(json.dumps(summary,sort_keys=True));print(json.dumps(summary,sort_keys=True))
           sys.exit(not result.wasSuccessful())
           PY

@@ -17,13 +17,15 @@ try:
   from analytics.stage_one import read
   from analytics.collect import database,RUN_ID
   from analytics.payload_storage import decode_rows
-  from analytics.ip_history_learning import build_memory
+  from analytics.ip_history_learning import build_memory, timestamp
   rows=read('advertising_experiments',{'cabinet':'eq.token_2','select':'id,campaign_id,nm_id,article,change_log_id,experiment_type,change_field,old_value,new_value,started_at,baseline,checkpoints','order':'id.asc','limit':1000}) or []
   if len(rows)>=1000:raise RuntimeError('Pagination required; refuse incomplete learning audit')
   result=build_memory(rows)
+  dates=[timestamp(r.get('started_at')).date().isoformat() for r in rows if timestamp(r.get('started_at'))]
+  if not dates:raise RuntimeError('History period unavailable')
   digest=lambda x:hashlib.sha256(json.dumps(x,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
   sha=digest(result)
-  database('POST','analytics_snapshots',body={'source':'ip_historical_learning_audit','cabinet':'token_2','run_id':RUN_ID,'status':'partial','payload':[result],'detail':'Cache-only advisory observations, not causal learning or proven recommendation improvement'})
+  database('POST','analytics_snapshots',body={'source':'ip_historical_learning_audit','cabinet':'token_2','period_from':min(dates),'period_to':max(dates),'run_id':RUN_ID,'status':'partial','payload':[result],'detail':'Cache-only advisory observations, not causal learning or proven recommendation improvement'})
   saved=decode_rows(read('analytics_snapshots',{'source':'eq.ip_historical_learning_audit','cabinet':'eq.token_2','run_id':'eq.'+RUN_ID,'select':'id,payload','order':'id.desc','limit':1}) or [])
   if not saved or digest(saved[0]['payload'][0])!=sha:raise RuntimeError('Historical evidence full readback SHA mismatch')
   summary={k:v for k,v in result.items() if k not in ('evidence','backtests')}

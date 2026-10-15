@@ -1,0 +1,52 @@
+name: Approved IP offline readback proof only
+on:
+  push:
+    branches: [main]
+    paths: ['advertising_final_proof_continue.trigger']
+permissions:
+  contents: write
+concurrency:
+  group: advertising-owner-preparation
+  cancel-in-progress: false
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: f5e3d8a656ca8b9ca4f2a3003bfd16254a2b0a3a
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install simplejson==3.20.2 requests==2.32.5 python-dotenv cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Only approved necessary actions, no source collection or WB credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          APPROVED_ANALYSIS_RUN_ID: '38818518560:1'
+          SUPABASE_EGRESS_OPTIMIZED: 'true'
+        run: python advertising_final_proof_owner.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-advertising-final-proof
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Independent ciphertext
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          cp "$RUNNER_TEMP/stock-deploy-proof/advertising-final-proof.aes.json" "recovery-output/advertising/final-proof-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/
+          git commit -m "Preserve encrypted IP source readback receipts"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+          done
+          exit 1

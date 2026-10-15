@@ -82,6 +82,7 @@ jobs:
                                 ('wbbidder_campaign_stats',dict(campaign_id=12282366,report='days',nm_id=1556488210,zone='all',d1='2026-10-11',d2='2026-10-14'))]:
                   pending.append(dict(cabinet='token_3',tool=kind,arguments=args,key='china:loss123:'+kind+':'+json.dumps(args,sort_keys=True),priority=80))
               pending.append(dict(cabinet='token_3',tool='wbbidder_events',arguments=dict(campaign_id=12282366,category='all',d1='2026-10-13',d2='2026-10-15',limit=100,start_row=0),key='china:loss123:events:2026-10-13:2026-10-15',priority=80))
+              pending.append(dict(cabinet='token_3',tool='wbbidder_campaign_stats',arguments=dict(campaign_id=12282366,report='days',nm_id=1556488210,zone='all',d1='2026-10-15',d2='2026-10-15'),key='china:loss123:current_partial_day:2026-10-15',priority=80))
               received={(o['tool'],json.dumps(o['arguments'],sort_keys=True)) for o in report['observations'] if o.get('status')=='received'}
               pending=[p for p in pending if (p['tool'],json.dumps(p['arguments'],sort_keys=True)) not in received]
               def save(cabinet,observation):

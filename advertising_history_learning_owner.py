@@ -3,7 +3,7 @@ import os,sys,json,hashlib,io,contextlib,gzip,base64
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parent/'private-source'))
 from stock_deploy_support import seal,error
-report={'source_calls':0,'wb_writes':0,'telegram_calls':0,'private_pin':'6a9015bdd0eab870d44a06e43b92a1d930ecd58d'}
+report={'source_calls':0,'wb_writes':0,'telegram_calls':0,'private_pin':'a40ffd3ac5e5cbde9fa3eb84cf8bd142957c3060'}
 hidden=io.StringIO()
 try:
  with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):

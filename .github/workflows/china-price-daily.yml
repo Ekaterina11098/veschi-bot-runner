@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 02a3409356225e2da23f721e5e68407a88aa661d
+          ref: 583922a249e17e3ed9b66ced2b7d5d81d01a9395
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
       - uses: actions/setup-python@v5
@@ -57,7 +57,7 @@ jobs:
           VERIFY_ONLY: ${{ github.event_name == 'push' || inputs.mode == 'verify' }}
         run: |
           if [ "$VERIFY_ONLY" = true ]; then
-            python -m china_agent.daily_report_worker --verify
+            python -m china_agent.daily_report_worker --verify --send-now
           else
             python -m china_agent.daily_report_worker
           fi

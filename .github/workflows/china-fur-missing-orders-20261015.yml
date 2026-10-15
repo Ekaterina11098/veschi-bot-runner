@@ -1,0 +1,85 @@
+name: China missing fur accessory orders only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-fur-missing-orders-20261015.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  investigate:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b1f54e3770fba9aabbe7773c2106fc6d56c92911
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Read three excluded China fur accessories only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,json,traceback
+          from datetime import datetime,timezone
+          from urllib.parse import urlparse
+          import requests
+          from advertising_agent.notify import db,cache_get,cache_set
+          from analytics.mpstats_probe import discover
+          from analytics.mpstats_gaps import execute_reads
+          NOW=datetime.now(timezone.utc);KEY='china_agent:fur_missing_orders:2026-10-15'
+          report=dict(observed_at=NOW.isoformat(),cabinet='token_3',targets=[1535337777,1560345281,1560345282],observations=[],errors=[],wb_calls=0,telegram_calls=0)
+          orig=requests.sessions.Session.request
+          def guard(self,method,url,*a,**kw):
+              host=urlparse(url).hostname or '';path=urlparse(url).path
+              assert host in ('mcp.mpstats.io',urlparse(os.environ['SUPABASE_URL']).hostname)
+              if host!='mcp.mpstats.io':
+                  assert '/rpc/' not in path
+                  if method.upper()!='GET':assert path.split('/')[-1] in ('analytics_snapshots','telegram_api_cache')
+              return orig(self,method,url,*a,**kw)
+          requests.sessions.Session.request=guard
+          def persist():
+              value=json.loads(json.dumps(report))
+              cache_set(KEY,value,365)
+              assert cache_get(KEY)==value
+          try:
+              persist()
+              pending=[]
+              for pid in ('149503571','149503650','149503651'):
+                  args=dict(type='products',value=pid,date_from='2026-10-11',date_to='2026-10-14',start_row=0,end_row=300)
+                  pending.append(dict(cabinet='token_3',tool='lk_wb_card_orders',arguments=args,key='china:order-linkage:'+pid,priority=90))
+              assert len(pending)==3
+              def save(cabinet,observation):
+                  assert cabinet=='token_3'
+                  report['observations'].append(observation)
+                  args=observation['arguments']
+                  db('POST','analytics_snapshots',body=dict(source='mpstats_'+observation['tool'],cabinet=cabinet,run_id='fur-missing-orders-'+os.environ['GITHUB_RUN_ID'],period_from=args['date_from'],period_to=args['date_to'],status='complete' if observation['status']=='received' else 'error',payload=[observation],detail='Raw scoped order/sale linkage evidence; pagination and individual identity require verification'))
+                  persist()
+              pause=db('GET','telegram_api_cache',params=dict(cache_key='eq.mpstats:cooldown',expires_at='gt.'+NOW.isoformat(),select='cache_key',limit=1))
+              if pause:report['connection']=dict(status='shared_cooldown')
+              else:
+                  def reader(call,checks,known):return execute_reads(call,checks,known,pending,{},save,max_requests=3)
+                  result=discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=reader)
+                  report['connection']={k:result.get(k) for k in ('status','connected','detail','retry_after','executed_data_tools')}
+          except BaseException as exc:
+              report['errors'].append(type(exc).__name__)
+              value=traceback.format_exc()
+              for k,v in os.environ.items():
+                  if len(v)>5 and any(t in k for t in ('TOKEN','SECRET','PASSWORD')):value=value.replace(v,'[redacted]')
+              report['private_error']=value[-10000:]
+          finally:
+              persist()
+              print(json.dumps(dict(saved=True,observations=len(report['observations']),errors=report['errors'],wb_calls=0,telegram_calls=0)))
+          
+          PY

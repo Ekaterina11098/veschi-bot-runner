@@ -66,7 +66,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 755b69c266ad39beafd334e60aa900c07814cae8
+          ref: b1f54e3770fba9aabbe7773c2106fc6d56c92911
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: private-source
           persist-credentials: false
@@ -74,7 +74,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install runtime
-        run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/dependencies.log" 2>&1
+        run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Execute private task
         run: python run_private.py "$TASK"
         env:

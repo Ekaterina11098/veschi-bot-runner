@@ -135,6 +135,35 @@ class PostgreSQLTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):self.executor.run(intent)
         self.executor.save=original
         self.assertEqual(self.executor.run(intent)['status'],'confirmed');self.assertEqual(self.wb.posts,1)
+    def test_new_notice_create_buttons_and_no_replay(self):
+        from review_approval_notice import NewNotice
+        # Use a different new review; setUp card is not resent.
+        item=dict(self.item,id='new-review');self.seed(item,'token_1','v1')
+        calls=[]
+        class Telegram:
+            def call(inner,method,payload):
+                calls.append(method)
+                return {'getMe':{'id':33},'getChat':{'id':22,'type':'private'},'sendMessage':{'message_id':202,'chat':{'id':22},'from':{'id':33}},'editMessageText':True}[method]
+        notifier=NewNotice(self.a,self.bridge,Telegram(),enabled=True)
+        result=notifier.deliver(item,'token_1','feedbacks','v1',1100,1000)
+        self.assertEqual(result['buttons'],'confirmed');self.assertEqual(self.repo.get('cards',result['card_token'])['message_id'],202)
+        self.assertEqual(notifier.deliver(item,'token_1','feedbacks','v1',1100,1000)['status'],'blocked_existing_delivery')
+        self.assertEqual(calls.count('sendMessage'),1)
+    def test_unknown_new_notice_never_resends(self):
+        from review_approval_notice import NewNotice
+        item=dict(self.item,id='new-unknown');self.seed(item,'token_1','v1');calls=[]
+        class Telegram:
+            def call(inner,method,payload):
+                calls.append(method)
+                if method=='sendMessage':raise TimeoutError()
+                return {'id':33} if method=='getMe' else {'id':22,'type':'private'}
+        notifier=NewNotice(self.a,self.bridge,Telegram(),enabled=True)
+        self.assertEqual(notifier.deliver(item,'token_1','feedbacks','v1',1100,1000)['status'],'uncertain')
+        notifier.deliver(item,'token_1','feedbacks','v1',1100,1000);self.assertEqual(calls.count('sendMessage'),1)
+    def test_old_notice_excluded(self):
+        from review_approval_notice import NewNotice
+        self.admin.execute('INSERT INTO public.telegram_api_cache(cache_key,payload) VALUES(%s,%s)',('reviews:notice:old',Jsonb({'scope':'old-batch:token_1:synthetic-review','status':'confirmed'})))
+        with self.assertRaises(Rejected):NewNotice(self.a,self.bridge,TG(),enabled=True).deliver(self.item,'token_1','feedbacks',self.version,1100,1000)
     def test_pg_competing_executor_lock(self):
         intent=self.approve();other=psycopg.connect(os.environ['TEST_DSN'],autocommit=True)
         try:
@@ -207,3 +236,4 @@ class PostgreSQLTests(unittest.TestCase):
         finally:restore.close()
 
 if __name__=='__main__':unittest.main(verbosity=2)
+

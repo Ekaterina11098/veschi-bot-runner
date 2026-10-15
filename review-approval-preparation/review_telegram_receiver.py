@@ -96,3 +96,4 @@ class Receiver:
             status = '503 Service Unavailable'
         start_response(status, [('Content-Type', 'text/plain')])
         return [b'OK']
+

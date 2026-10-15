@@ -1,5 +1,5 @@
 """Consistent supplement, authenticated encryption; no plaintext writes to artifacts."""
-import base64,json,hashlib,secrets
+import base64,json,hashlib,secrets,os
 from review_telegram_approval import sha
 
 TABLES=('items','cards','events','intents')
@@ -14,7 +14,7 @@ def snapshot(repo):
         data['source_journal']=[{'feedback_id':key,'state':state,'error':error} for key,state,error in
             repo.conn.execute('SELECT feedback_id,state,error FROM review_approval.source_journal ORDER BY feedback_id').fetchall()]
         point=repo.conn.execute('SELECT pg_current_snapshot()::text,transaction_timestamp()::text').fetchone()
-    return dict(format='review-approval-supplement-v1',point=list(point),tables=data,
+    return dict(format='review-approval-supplement-v1',point=list(point),tables=data,code_commit=os.getenv('GITHUB_SHA','isolated-test'),private_wb_commit='1b4201067880e379d8dacbe5f6ca3f9848d6ffb0',
         manifest={key:{'count':len(rows),'sha256':sha(rows)} for key,rows in data.items()})
 
 def validate(data):
@@ -53,4 +53,5 @@ def restore_empty(repo,data):
         actual=[{'id':key,'payload':json.loads(payload)} for key,payload in repo.execute('SELECT id,payload FROM {p}'+table+' ORDER BY id').fetchall()]
         if sha(actual)!=data['manifest'][table]['sha256']:raise ValueError('Restore readback mismatch')
     return True
+
 

@@ -17,6 +17,9 @@ class SQLSource:
     def journal(self,key):
         row=self.conn.execute('SELECT state,error FROM review_approval.source_journal WHERE feedback_id=%s',(key,)).fetchone()
         return dict(state=row[0],error=row[1]) if row else None
+    def was_notified(self,cabinet,kind,item_id):
+        suffix=cabinet+':'+str(item_id)
+        return self.conn.execute("SELECT EXISTS(SELECT 1 FROM review_approval.source_cache WHERE starts_with(cache_key,'reviews:notice:') AND right(coalesce(payload->>'scope',''),%s)=%s)",(len(suffix),suffix)).fetchone()[0]
 
 class DurableBridge:
     def __init__(self,approval,source):self.approval=approval;self.source=source
@@ -50,4 +53,5 @@ class DurableBridge:
             if publication.get('phase') in ('confirmed','manual_present'):answered=True
             else:phase='uncertain'
         return dict(complete=True,ref=card.get('ref'),hold=bool((hold or {}).get('active')) or draft.get('confirmation_status')=='owner_hold',answered=answered,publication_state=phase,version=draft['version'],hashes=[sha(t) for t in draft['variants']],source_sha256=sha(card['source']))
+
 

@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 2ae6967e3df0c58c8a834d8631c7df8ba50a95f6
+          ref: eeafae8428df44608baf5e404d31f656808d7deb
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
       - uses: actions/setup-python@v5
@@ -49,9 +49,10 @@ jobs:
           assert (now-datetime.fromisoformat(checked['calculated_at'])).total_seconds()<1200
           assert datetime.fromisoformat(checked['source_collected_at'])<=datetime.fromisoformat(checked['calculated_at'])
           assert (now-datetime.fromisoformat(checked['source_collected_at'])).total_seconds()<1200
-          answer=checked['preview']
+          from china_agent.demand import daily_summary
+          assert checked['assessment']['candidate_count']==0
+          answer=daily_summary(dict(latest=checked['assessment'],price_history={}),{},now.astimezone(ZoneInfo('Europe/Moscow')))+'\nВсе изменения цены согласовываем.'
           assert 'Проверено товаров:' in answer and 'Разбор возможного снижения:' in answer
-          answer+='\nСтабильность цены внутри периода пока не подтверждена.'
           message_id=receipt['telegram_message_ids'][0]
           key='china_agent:daily_worker:2026-10-15:manual:message_refresh'
           digest=hashlib.sha256(answer.encode()).hexdigest()
@@ -60,7 +61,7 @@ jobs:
               print('Already verified; no Telegram operation');raise SystemExit(0)
           audit=dict(job_id=job['id'],chat_id=cfg['chat_id'],message_id=message_id,answer_sha256=digest,
               before_answer=job['answer'],before_trace=job['tool_trace'],new_answer=answer,
-              source_snapshot_id=checked['source_snapshot_id'],prepared_at=now.isoformat(),verified=False)
+              source_snapshot_id=checked['source_snapshot_id'],prepared_at=now.isoformat(),verified=False,previous_refresh=prior)
           cache_set(key,audit,365)
           assert cache_get(key)==audit
           original=requests.sessions.Session.request

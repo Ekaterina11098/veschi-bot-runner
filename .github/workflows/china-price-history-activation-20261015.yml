@@ -1,0 +1,64 @@
+name: Activate observed China price history only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-price-history-activation-20261015.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  activate:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Retain today's real price observation without sending or WB calls
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import copy,json,os
+          from datetime import datetime,timedelta,timezone
+          from advertising_agent.notify import db,cache_get,cache_set
+          from business_agents.data import Data
+          from china_agent import demand
+          KEY='china_agent:scheduled_price_activation:2026-10-15'
+          audit=dict(status='starting',wb_calls=0,telegram_calls=0,source_commit='b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c')
+          previous=cache_get(KEY)
+          if previous and previous.get('status')=='complete':
+              print(json.dumps(dict(status='already_activated')));raise SystemExit(0)
+          prices=cache_get('china_agent:prices:v1')
+          assert prices and prices.get('cabinet')=='token_3'
+          stamp=datetime.fromisoformat(prices['observed_at'])
+          assert 0<=(datetime.now(timezone.utc)-stamp).total_seconds()<3600
+          assert stamp.astimezone(demand.MSK).date().isoformat()=='2026-10-15'
+          read=lambda table,params:db('GET',table,params=params)
+          for attempt in range(2):
+              rows=db('GET','telegram_api_cache',params=dict(cache_key='eq.'+demand.STATE_KEY,select='payload,updated_at',limit=1))
+              assert len(rows)==1
+              before=rows[0]['payload'];state=demand.migrate(copy.deepcopy(before))
+              data=Data('china',read)
+              demand.observe_prices(data,state,prices,stamp,{})
+              state['scheduled_price_observation_at']=stamp.isoformat()
+              now=datetime.now(timezone.utc)
+              saved=db('PATCH','telegram_api_cache',params=dict(cache_key='eq.'+demand.STATE_KEY,updated_at='eq.'+rows[0]['updated_at']),body=dict(payload=state,updated_at=now.isoformat(),expires_at=(now+timedelta(days=365)).isoformat()),prefer='return=representation') or []
+              if len(saved)==1:
+                  assert cache_get(demand.STATE_KEY)==state
+                  audit.update(status='complete',price_observed_at=stamp.isoformat(),changed_history_entries=sum(before.get('price_history',{}).get(k)!=v for k,v in state.get('price_history',{}).items()),finished_at=now.isoformat())
+                  cache_set(KEY,audit,365);assert cache_get(KEY)==audit
+                  print(json.dumps(audit));break
+          else:raise RuntimeError('Price state changed concurrently; no overwrite')
+          PY

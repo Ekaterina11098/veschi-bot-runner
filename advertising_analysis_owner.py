@@ -37,9 +37,9 @@ sys.exit(0 if result.wasSuccessful() else 1)
   resolved=[g for g in (gaps[0]['payload'].get('gaps',[]) if gaps else []) if g.get('cabinet')=='token_2' and g.get('status')=='resolved_mpstats_daily' and str(start)<=g.get('day','')<=str(end) and g.get('mpstats_daily_snapshot_id')]
   from analytics.collect import _database_transport
   components=_database_transport('GET','analytics_snapshots',params={'source':'eq.mpstats_products_composed','cabinet':'eq.token_2','period_from':'eq.'+str(start),'period_to':'eq.'+str(end),'select':'id,components:payload->0->component_snapshot_ids','order':'id.desc','limit':1}) or []
-  if any(g['mpstats_daily_snapshot_id'] not in (components[0].get('components',[]) if components else []) for g in resolved):
-   from analytics.stage_one import compose_cached_finance
-   report['recomposition']=compose_cached_finance('token_2',start,end,datetime.now(timezone.utc))
+  # Recompose only already saved disjoint days to preserve new logistics detail fields.
+  from analytics.stage_one import compose_cached_finance
+  report['recomposition']=compose_cached_finance('token_2',start,end,datetime.now(timezone.utc))
   finance,finance_marker=profit_rows(read,'token_2',start,end)
   from collections import Counter
   report['finance_diagnostic']={'rows':len(finance),'known_profit':sum(x.get('net_profit') is not None for x in finance.values()),'status_counts':dict(Counter(x.get('economics_status') for x in finance.values())),'marker_id':(finance_marker or {}).get('id')}

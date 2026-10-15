@@ -1,0 +1,112 @@
+name: China WB current-day orders only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-wb-current-orders-20261015.yml']
+permissions:
+  contents: read
+concurrency:
+  group: wb-china-current-orders
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 6cbdff742243f03be73c783620ad6569842ff9f4
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Owner-authorized bounded current-day WB orders read
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python - <<'PY'
+          import os,json,base64,hashlib
+          from datetime import datetime,timezone
+          from zoneinfo import ZoneInfo
+          from urllib.parse import urlparse
+          import requests
+          from advertising_agent.notify import db,cache_get,cache_set
+          from analytics.collect import _fetch_transport
+          from business_agents.sales import event_day
+          NOW=datetime.now(timezone.utc);today=NOW.astimezone(ZoneInfo('Europe/Moscow')).date()
+          KEY='china_agent:wb_current_orders:2026-10-15'
+          report=dict(cabinet='token_3',status='started',started_at=NOW.isoformat(),period_from=str(today),period_to=str(today),source='WB Statistics API',owner_authorization='15.10.2026: проверить сегодняшние заказы в WB из-за задержки MPStats',wb_calls=0,telegram_calls=0,errors=[])
+          original=requests.sessions.Session.request
+          def guard(self,method,url,*a,**kw):
+              parsed=urlparse(url)
+              if parsed.hostname=='statistics-api.wildberries.ru':
+                  assert method.upper()=='GET' and parsed.path=='/api/v1/supplier/orders'
+                  assert kw.get('params')==dict(dateFrom=str(today),flag=1)
+                  assert report['wb_calls']==0
+                  report['wb_calls']+=1
+                  response=original(self,method,url,*a,**kw)
+                  report['http_status']=response.status_code
+                  report['rate_headers']={k:response.headers[k] for k in ('Retry-After','X-Ratelimit-Retry','X-Ratelimit-Reset','X-Ratelimit-Remaining') if k in response.headers}
+                  return response
+              assert parsed.hostname==urlparse(os.environ['SUPABASE_URL']).hostname and '/rpc/' not in parsed.path
+              if method.upper()!='GET':
+                  assert parsed.path.rsplit('/',1)[-1] in ('telegram_api_cache','analytics_snapshots')
+              return original(self,method,url,*a,**kw)
+          requests.sessions.Session.request=guard
+          def persist():
+              cache_set(KEY,report,365)
+              assert cache_get(KEY)==report
+          try:
+              assert str(today)=='2026-10-15'
+              previous=cache_get(KEY)
+              if previous:
+                  print(json.dumps(dict(status='existing_evidence',previous_status=previous.get('status'))))
+                  raise SystemExit(0)
+              persist()
+              token=os.environ['WB_TOKEN_3'].strip()
+              segment=token.split('.')[1]
+              claims=json.loads(base64.urlsafe_b64decode(segment+'='*(-len(segment)%4)))
+              identity=db('GET','analytics_snapshots',params=dict(source='eq.seller_identity',cabinet='eq.token_3',status='eq.complete',select='payload',order='id.desc',limit=1))
+              assert len(identity)==1 and identity[0]['payload']['name']=='VESCHI LIMITED'
+              assert str(claims.get('sid'))==identity[0]['payload']['sid']
+              report['seller_identity_verified']=True
+              # Explicit owner-authorized same-day exception; global MPStats-first policy is unchanged.
+              rows=_fetch_transport('GET','https://statistics-api.wildberries.ru/api/v1/supplier/orders',token,params=dict(dateFrom=str(today),flag=1),max_retry_wait=0)
+              assert isinstance(rows,list) and len(rows)<80000
+              unique={}
+              for row in rows:
+                  assert isinstance(row,dict) and row.get('srid') and row.get('nmId') is not None
+                  assert event_day(row['date'])==today and isinstance(row.get('isCancel'),bool)
+                  rid=str(row['srid'])
+                  if rid not in unique or str(row.get('lastChangeDate',''))>=str(unique[rid].get('lastChangeDate','')):
+                      unique[rid]=row
+              kept=('date','lastChangeDate','nmId','supplierArticle','srid','isCancel','cancelDate','barcode','gNumber','techSize')
+              report['rows']=[{k:r[k] for k in kept if k in r} for r in unique.values()]
+              report['row_count']=len(rows);report['unique_orders']=len(unique)
+              report['active_orders']=sum(r['isCancel'] is False for r in unique.values())
+              report['cancelled_orders']=sum(r['isCancel'] is True for r in unique.values())
+              report['latest_order_at']=max((r['date'] for r in unique.values()),default=None)
+              report['completeness_basis']='flag=1: all orders with requested Moscow order date; exact date, srid uniqueness and cancellation status validated'
+              report['observed_at']=datetime.now(timezone.utc).isoformat()
+              report['status']='complete'
+              report['scope_current_day_partial']=True
+              snapshots=db('POST','analytics_snapshots',body=dict(source='wb_price_orders_intraday',cabinet='token_3',run_id='wb-current-orders-'+os.environ['GITHUB_RUN_ID'],period_from=str(today),period_to=str(today),status='complete',payload=[report],detail='Owner authorized current-day WB order check; not a full-day or MPStats finance report'),prefer='return=representation') or []
+              report['snapshot_id']=snapshots[0]['id'] if snapshots else None
+          except SystemExit:
+              raise
+          except BaseException as exc:
+              report['status']='error'
+              report['errors'].append(dict(type=type(exc).__name__,detail=str(exc)[:180] if isinstance(exc,RuntimeError) else 'validation_failed'))
+          finally:
+              if report.get('status')!='started':
+                  report['finished_at']=datetime.now(timezone.utc).isoformat()
+                  persist()
+              print(json.dumps({k:report.get(k) for k in ('status','wb_calls','http_status','row_count','unique_orders','active_orders','cancelled_orders','snapshot_id','errors')}))
+          if report['status']=='error':raise SystemExit(1)
+          PY

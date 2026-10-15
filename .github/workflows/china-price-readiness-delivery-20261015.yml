@@ -1,0 +1,100 @@
+name: China one current report delivery check
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-price-readiness-delivery-20261015.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  deliver:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: dd95f4463e32ea6760964e9139dba2efcaed770c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Deliver exact verified China report once, never consume other jobs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,json,uuid
+          from datetime import datetime,timedelta,date,timezone
+          from zoneinfo import ZoneInfo
+          from urllib.parse import urlparse
+          import requests
+          from advertising_agent.notify import db,cache_get,cache_set
+          import business_agents.conversation as conv
+          today=datetime.now(ZoneInfo('Europe/Moscow')).date()
+          assert str(today)=='2026-10-15','One-day readiness delivery expired'
+          audit=cache_get('china_agent:readiness:2026-10-15:verified')
+          assert audit and audit.get('errors')==[] and audit['readiness']['data'] and audit['readiness']['prices']
+          assert (datetime.now(timezone.utc)-datetime.fromisoformat(audit['checked_at'])).total_seconds()<7200
+          cfg,=db('GET','business_agent_config',params=dict(agent_id='eq.china',active='eq.true',limit=2))
+          assert cfg['chat_id']==audit['config']['chat_id'] and cfg['owner_user_id']==audit['config']['owner_user_id']
+          assert audit['telegram']['title']=='VESCHI Китай' and audit['telegram']['permissions']['can_send_messages'] is True
+          update=-9400000000-(today-date(2020,1,1)).days
+          lease=str(uuid.uuid4())
+          body=dict(agent_id='china',update_id=update,chat_id=cfg['chat_id'],sender_id=cfg['owner_user_id'],request_text='/china_price_daily_report',status='running',answer=audit['preview'],tool_trace=audit['trace'],attempts=1,lease_token=lease,lease_until=(datetime.now(timezone.utc)+timedelta(minutes=10)).isoformat())
+          created=db('POST','business_agent_jobs',body=body,params=dict(on_conflict='agent_id,update_id'),prefer='resolution=ignore-duplicates,return=representation') or []
+          if not created:
+              found=db('GET','business_agent_jobs',params=dict(agent_id='eq.china',update_id='eq.'+str(update),limit=1))
+              assert found and found[0]['status']=='done','Existing job retained; no takeover or repeat send'
+              print(json.dumps(dict(already_delivered=True,wb_calls=0,queue_claims=0)));raise SystemExit(0)
+          job,=created
+          original=requests.sessions.Session.request
+          calls=[]
+          def guarded(self,method,url,*a,**kw):
+              host=urlparse(url).hostname or '';path=urlparse(url).path
+              if host=='api.telegram.org':
+                  assert method.upper()=='POST' and path.endswith('/sendMessage')
+                  assert str(kw['json']['chat_id'])==str(cfg['chat_id'])
+                  response=original(self,method,url,*a,**kw)
+                  try:
+                      value=response.json()
+                      if response.ok and value.get('ok') is True:
+                          assert value['result']['chat']['id']==cfg['chat_id']
+                          calls.append(value['result']['message_id'])
+                  except (ValueError,KeyError):pass
+                  return response
+              assert host==(urlparse(os.environ['SUPABASE_URL']).hostname or ''),'Unapproved network source'
+              assert '/rpc/' not in path,'No real queue claims'
+              return original(self,method,url,*a,**kw)
+          requests.sessions.Session.request=guarded
+          claimed=False
+          def isolated(method,table,body=None,params=None,prefer=None):
+              global claimed
+              if table=='rpc/claim_business_agent_job':
+                  assert not claimed
+                  claimed=True
+                  return job
+              assert table in ('business_agent_config','business_agent_jobs')
+              if method!='GET':
+                  assert table=='business_agent_jobs' and method=='PATCH'
+                  assert params.get('id')=='eq.'+str(job['id']) and params.get('lease_token')=='eq.'+lease
+              return db(method,table,body=body,params=params,prefer=prefer)
+          conv.database=isolated
+          conv.process_jobs(limit=1)
+          saved,=db('GET','business_agent_jobs',params=dict(id='eq.'+str(job['id']),limit=1))
+          assert saved['status']=='done','Delivery not completed; leave existing job for diagnosis'
+          delivery=[event for event in saved['tool_trace'] if event.get('name')=='china_report_delivery']
+          assert len(delivery)==1 and delivery[0]['sent_parts']==len(calls) and calls
+          receipt=dict(verified=True,job_id=job['id'],message_ids=calls,sent_parts=len(calls),chat_id=cfg['chat_id'],daily_update_id=update,wb_calls=0,queue_claims=0)
+          cache_set('china_agent:readiness:2026-10-15:delivery',receipt,365)
+          assert cache_get('china_agent:readiness:2026-10-15:delivery')==receipt
+          print(json.dumps(dict(delivered=True,parts=len(calls),wb_calls=0,queue_claims=0)))
+          
+          PY

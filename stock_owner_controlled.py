@@ -47,9 +47,19 @@ def main():
             cur.execute("SELECT pg_try_advisory_lock(hashtext('veschi-stock-owner-global-writer'))")
             assert cur.fetchone()[0] is True
             # Stable owner authorization claim: no rerun, even under a new Actions run.
-            cur.execute("SELECT 1 FROM stock_execution.stock_runs WHERE id=%s",(auth['authorization'],))
-            assert cur.fetchone() is None,'Owner batch already claimed; reconcile only'
-            cur.execute('INSERT INTO stock_execution.stock_runs VALUES(%s,%s,%s,%s,%s,%s)',(auth['authorization'],'{}','{}',hashlib.sha256(b'{}').hexdigest(),'technical-no-executor',time.time()))
+            cur.execute("SELECT snapshot,origin,created FROM stock_execution.stock_runs WHERE id=%s",(auth['authorization'],))
+            previous=cur.fetchone()
+            if previous is None:
+                raise RuntimeError('Expected paused owner batch is missing')
+            assert previous[1]=='technical-no-executor'
+            old=json.loads((ROOT/'prior-controlled/controlled-summary.json').read_text())
+            assert old.get('wb_write_attempts')==0 and old.get('confirmed')==0 and old.get('error_type')=='RateLimited' and old.get('not_executed')==3
+            cur.execute("SELECT count(*) FROM stock_execution.stock_runs WHERE origin='cloud' AND created>=%s",(previous[2],))
+            assert cur.fetchone()[0]==0,'New cloud activity requires reconciliation'
+            claim=hashlib.sha256((auth['authorization']+':rate-limit-resume-1').encode()).hexdigest()
+            cur.execute("INSERT INTO stock_execution.stock_events VALUES(%s,%s,NULL,%s,%s,%s) ON CONFLICT DO NOTHING",(claim,auth['authorization'],'technical_rate_limit_resume',time.time(),'{}'))
+            assert cur.rowcount==1,'Continuation already claimed; no blind retry'
+            cache_saved=json.loads(previous[0]).get('cache',{})
         db.commit()
         os.environ['STOCK_CLOUD_EXECUTION_ENABLED']='true'
         os.environ['STOCK_JOURNAL_IMPORT_ACCEPTED']='true'
@@ -78,7 +88,7 @@ def main():
         def persist_cache(key,value,ttl):
             cache[key]=value
             write(dict(probe,cache=cache))
-        cache={};g._CACHE_SET=persist_cache
+        cache=cache_saved;g._CACHE_SET=persist_cache
         g.cached_wb_metadata=lambda token,kind,ttl,loader:loader()
         original_api=g.api;current={'article':None,'allow_write':False,'location':None,'target':None}
         # Final independent HTTP fence, including any accidentally imported client.

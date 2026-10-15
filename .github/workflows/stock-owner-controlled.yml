@@ -13,7 +13,7 @@ jobs:
   controlled:
     if: github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -39,7 +39,17 @@ jobs:
           run-id: 38588520250
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/receiver
-      - name: Exact approved scope with fresh preflight, durable intents, no blind retries
+      - uses: actions/download-artifact@v4
+        with:
+          name: stock-owner-controlled-proof
+          run-id: 38695973987
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/prior-controlled
+      - name: Respect recorded WB RetryAfter before any source call
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python stock_owner_wait.py
+      - name: Continue same unconsumed owner batch; no new batch or blind write retry
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

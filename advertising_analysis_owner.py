@@ -11,6 +11,15 @@ try:
   if p.returncode:raise RuntimeError('Combined source merge failed: '+p.stdout)
  os.chdir(source);sys.path.insert(0,str(source))
  with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):
+  import socket,unittest
+  from unittest.mock import patch
+  suite=unittest.TestSuite()
+  for pattern in ('test_ip_unknown_identity_controls.py','test_ip_price_event_analysis.py','test_ip_full_offline_pipeline.py'):
+   suite.addTests(unittest.defaultTestLoader.discover('tests',pattern=pattern))
+  with patch.object(socket.socket,'connect',side_effect=AssertionError('External test network forbidden')):
+   result=unittest.TextTestRunner(verbosity=2).run(suite)
+  report['regression_count']=result.testsRun
+  if not result.wasSuccessful():raise RuntimeError('Targeted regression failed')
   from analytics.collect import database,RUN_ID
   from analytics.payload_storage import decode_rows
   from analytics.ip_daily_recommendations import KEY

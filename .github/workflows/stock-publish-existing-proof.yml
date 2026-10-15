@@ -1,0 +1,31 @@
+name: Publish existing sealed controlled stock result only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-publish-existing-proof.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: stock-owner-controlled-proof
+          run-id: 38696536333
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/existing-proof
+      - name: Existing sealed result only, no source services
+        run: |
+          mkdir -p recovery-output/2026-10-15
+          cp "$RUNNER_TEMP/existing-proof/controlled.aes.json" "recovery-output/2026-10-15/controlled-38696536333.aes.json"
+          cat "$RUNNER_TEMP/existing-proof/controlled-summary.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add recovery-output/2026-10-15
+          git commit -m "Recover already sealed controlled trial receipt without source calls"
+          git pull --rebase origin main
+          git push

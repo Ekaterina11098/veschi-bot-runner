@@ -2,7 +2,7 @@ name: Owner authorized journal import without execution
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/recovery-import-stock-journal-run-authorized.yml']
+    paths: ['.github/workflows/recovery-import-stock-journal.yml']
 permissions:
   contents: read
   actions: read
@@ -89,7 +89,7 @@ jobs:
               assert sha=='16d571eda15598a5965b3d5bbe1b9586155073fa06a460fd9833d158416dc7c0'
               source=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True);source.execute('pragma query_only=on')
               assert source.execute('pragma quick_check').fetchone()[0]=='ok'
-              db=psycopg.connect(connect_timeout=15,application_name='owner_stock_journal_import',options='-c search_path=stock_execution,pg_catalog -c statement_timeout=30000')
+              db=psycopg.connect(connect_timeout=15,application_name='owner_stock_journal_import',options='-c search_path=stock_execution,pg_catalog -c statement_timeout=30000 -c extra_float_digits=3')
               store=Store(db,postgres=True)
               assert store.sql("select current_schema()").fetchone()[0]=='stock_execution'
               assert store.sql("select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='stock_execution' and not t.tgisinternal").fetchone()[0]==0
@@ -119,7 +119,7 @@ jobs:
               second=inventory();assert first==second
               assert [len(first[t]) for t in ('stock_runs','stock_operations','stock_events')]==[1117,879,1733]
               assert hashlib.sha256(path.read_bytes()).hexdigest()==sha
-              report.update(success=True,source_sqlite_sha256=sha,counts={'runs':1117,'operations':879,'events':1733},source_states=dict(source.execute('SELECT state,count(*) FROM operations GROUP BY state')),target_states=dict(store.sql('SELECT state,count(*) FROM stock_operations GROUP BY state').fetchall()),source_states_in_target=dict(store.sql('SELECT source_state,count(*) FROM stock_operations GROUP BY source_state').fetchall()),all_ids_payloads_events_verified=True,repeat_import_identical=True,uncertain_locks=len(first['stock_sku_locks']),closed_schema_verified=True,execution_enabled=False)
+              report.update(session_extra_float_digits=store.sql("SELECT current_setting('extra_float_digits')").fetchone()[0],success=True,source_sqlite_sha256=sha,counts={'runs':1117,'operations':879,'events':1733},source_states=dict(source.execute('SELECT state,count(*) FROM operations GROUP BY state')),target_states=dict(store.sql('SELECT state,count(*) FROM stock_operations GROUP BY state').fetchall()),source_states_in_target=dict(store.sql('SELECT source_state,count(*) FROM stock_operations GROUP BY source_state').fetchall()),all_ids_payloads_events_verified=True,repeat_import_identical=True,uncertain_locks=len(first['stock_sku_locks']),closed_schema_verified=True,execution_enabled=False)
           except Exception as exc:
               report.update(error_type=type(exc).__name__,automatic_retry=False,error_line=__import__('traceback').extract_tb(exc.__traceback__)[-1].lineno,reason=str(exc) if type(exc).__name__=='Stopped' and str(exc) in ['Local plan checksum mismatch','Local operation does not match plan','Unknown local operation state','Conflicting imported run','Conflicting imported operation','Conflicting event history','Stable source namespace required'] else 'see fixed code line')
           finally:

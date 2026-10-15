@@ -51,3 +51,5 @@ jobs:
         run: |
           docker logs review-approval-pg
           docker rm -f review-approval-pg
+
+# Final acceptance: immutable identity, callback race, durable backup with held/rework/uncertain states.

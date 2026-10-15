@@ -153,10 +153,29 @@ class PostgreSQLTests(unittest.TestCase):
             finally:conn.close()
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(click,['c1','c2']))
         self.assertEqual(sorted(results),['approved','rejected']);self.assertEqual(self.repo.count('intents'),1)
+    def test_pg_same_callback_id_different_reviews(self):
+        import concurrent.futures
+        token2,_=self.a.create('token_2','feedbacks','other','v1',self.a.repo.get('cards',self.token)['source'],['A','B'],102)
+        def click(pair):
+            token,message=pair;conn=psycopg.connect(os.environ['TEST_DSN'],autocommit=True)
+            try:
+                app=Approval(Repository(conn,postgres=True),'secret',11,22,33,enabled=True,clock=lambda:self.now)
+                update=self.update('v1','shared-event');update['callback_query']['data']='rv1:'+token+':v1';update['callback_query']['message']['message_id']=message
+                try:app.handle(update,'secret');return 'selected'
+                except Rejected:return 'rejected'
+            finally:conn.close()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(click,[(self.token,101),(token2,102)]))
+        self.assertEqual(sorted(results),['rejected','selected']);self.assertEqual(self.repo.count('events'),1)
     def test_backup_encrypt_restore_and_resume(self):
         from cryptography.hazmat.primitives.asymmetric import rsa
         from cryptography.hazmat.primitives import serialization
         intent=self.approve();self.wb.mode='unknown-accepted';self.executor.run(intent)
+        held,_=self.a.create('token_2','questions','held-review','v1',self.repo.get('cards',self.token)['source'],['A','B'],102)
+        self.a.set_item_state(self.repo.get('cards',held)['ref'],'held','owner instruction')
+        revision,_=self.a.create('token_3','questions','edit-review','v1',self.repo.get('cards',self.token)['source'],['A','B'],103)
+        update=self.update('edit','edit-event');update['callback_query']['data']='rv1:'+revision+':edit';update['callback_query']['message']['message_id']=103
+        self.a.handle(update,'secret');self.a.record_edit(revision,11,22,103,'Уточнить исходный отзыв')
+        self.admin.execute("INSERT INTO public.review_replies VALUES('old-sent','sent','manual'),('old-pending','pending','old'),('old-unknown','needs_check','uncertain')")
         data=snapshot(self.repo)
         key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
         pem=key.public_key().public_bytes(serialization.Encoding.PEM,serialization.PublicFormat.SubjectPublicKeyInfo)
@@ -172,13 +191,19 @@ class PostgreSQLTests(unittest.TestCase):
             for row in decoded['tables']['source_cache']:restore.execute('INSERT INTO public.telegram_api_cache VALUES(%s,%s,%s)',(row['cache_key'],Jsonb(row['payload']),row['updated_at']))
             for row in decoded['tables']['source_journal']:restore.execute('INSERT INTO public.review_replies VALUES(%s,%s,%s)',(row['feedback_id'],row['state'],row['error']))
             repo=Repository(restore,postgres=True);self.assertTrue(restore_empty(repo,decoded))
+            self.assertEqual(repo.get('items',self.repo.get('cards',held)['ref'])['status'],'held')
+            self.assertEqual(repo.get('cards',revision)['status'],'rework')
+            self.assertEqual({x['state'] for x in decoded['tables']['source_journal']},{'sent','pending','needs_check'})
             app=Approval(repo,'secret',11,22,33,enabled=True,clock=lambda:self.now)
             bridge=DurableBridge(app,SQLSource(restore))
             executor=Executor(app,CanonicalGuard(app,bridge.project),self.wb,enabled=True)
             self.assertEqual(executor.run(intent)['status'],'confirmed');self.assertEqual(self.wb.posts,1)
             corrupt=copy.deepcopy(envelope);corrupt['plaintext_sha256']='0'*64
             with self.assertRaises(ValueError):decrypt(corrupt,key)
+            import base64
+            from cryptography.exceptions import InvalidTag
+            corrupt=copy.deepcopy(envelope);cipher=bytearray(base64.b64decode(corrupt['ciphertext']));cipher[-1]^=1;corrupt['ciphertext']=base64.b64encode(cipher).decode()
+            with self.assertRaises(InvalidTag):decrypt(corrupt,key)
         finally:restore.close()
 
 if __name__=='__main__':unittest.main(verbosity=2)
-

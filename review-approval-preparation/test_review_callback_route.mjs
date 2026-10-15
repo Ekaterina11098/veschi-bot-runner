@@ -32,4 +32,3 @@ test('GitHub receives only encrypted callback, no source or owner text',async()=
  const raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:Buffer.from(envelope.nonce,'base64'),additionalData:new TextEncoder().encode('review-approval-update-v1')},key,Buffer.from(envelope.ciphertext,'base64'));
  assert.deepEqual(JSON.parse(new TextDecoder().decode(raw)),update());
 });
-

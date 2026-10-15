@@ -35,9 +35,17 @@ class Receiver:
             card = a.repo.get('cards', token)
             if not card:
                 raise Rejected('Unknown card')
+            if msg.get('message_id') != card['message_id'] or msg.get('chat',{}).get('type')!='private' or str(msg.get('from',{}).get('id'))!=a.bot or msg.get('forward_origin'):
+                raise Rejected('Wrong message binding')
             if not self.reconcile(card):
+                try:self.telegram.call('answerCallbackQuery',{'callback_query_id':q.get('id',''),'text':'Согласование остановлено: данные изменились, ответ уже есть или действует блокировка.','show_alert':True})
+                except Exception:pass
                 raise Rejected('Canonical review state unavailable or blocked')
-            result = a.handle(update, header)
+            try:result = a.handle(update, header)
+            except Rejected:
+                try:self.telegram.call('answerCallbackQuery',{'callback_query_id':q.get('id',''),'text':'Эта кнопка устарела или действие уже завершено. Используйте актуальную версию.','show_alert':True})
+                except Exception:pass
+                raise
             # A delivery failure cannot roll back a decision. Duplicate callback never
             # re-enqueues publication; render current state, not an old selection.
             view = a.view(token)

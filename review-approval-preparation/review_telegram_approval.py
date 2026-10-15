@@ -102,6 +102,7 @@ class Approval:
         if not match or len(data.encode())>64 or not isinstance(q.get('id'),str) or not q['id']:raise Rejected('Invalid callback')
         token,action=match.groups()
         with self.repo.transaction():
+            if self.repo.pg:self.repo.execute('SELECT pg_advisory_xact_lock(hashtextextended(?,0))',('review-callback:'+q['id'],))
             card=self.repo.get('cards',token)
             if not card:raise Rejected('Unknown card')
             item=self.repo.get('items',card['ref'],lock=True)
@@ -163,4 +164,3 @@ class Approval:
             key='edit:'+sha([token,str(actor),message_id,text])
             self.repo.put('events',key,{'decision':'revision_requested','token':token,'version':card['version'],'instruction':text,'actor':self.owner,'created_at':self.clock()})
             return {'status':'revision_requested','old_version_approvable':False,'publication_created':False}
-

@@ -1,1 +1,1 @@
-{"source_commit":"583922a249e17e3ed9b66ced2b7d5d81d01a9395","reason":"Verify post-acquisition clock with fresh MPStats receipt; no Telegram send"}
+{"source_commit":"2ae6967e3df0c58c8a834d8631c7df8ba50a95f6","reason":"Verify clearer zero-candidate explanation, fresh source clock, no send"}

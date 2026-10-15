@@ -1,0 +1,67 @@
+name: Finalize existing stock notice647 only - no WB
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-notice-647-finalize.yml']
+permissions:
+  contents: read
+jobs:
+  notice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 'psycopg[binary]==3.2.9' cryptography==46.0.2
+      - name: Edit only confirmed stock notice, journal before Telegram, never repeat
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import os,json,time,hashlib,requests
+          from stock_deploy_support import runtime_db,seal,error
+          key='stock-notice:d398f87bac80d31850d1acaa1887ee001b34fec95f5d5018a0e6fd5e46cff816'
+          eid='stock-final-notice:20261015:647'
+          report={'wb_calls':0,'message_id':647,'delivery':'not_started'}
+          try:
+              with runtime_db() as db:
+                  old=json.loads(db.execute('SELECT snapshot FROM stock_runs WHERE id=%s',(key,)).fetchone()[0])
+                  assert str(old['chat'])==str(os.environ['TELEGRAM_ALLOWED_CHAT_ID'])
+                  events=db.execute('SELECT detail FROM stock_events WHERE run=%s AND state=%s',(key,'confirmed')).fetchall()
+                  assert any(json.loads(row[0]).get('message_id')==647 for row in events)
+                  data=json.loads(db.execute('SELECT snapshot FROM stock_runs WHERE id=%s',('technical:stock-daily:2026-10-15',)).fetchone()[0])
+                  reason=data['result']['reason']
+                  assert '502' in reason and data['result']['automatic_complete'] is False
+                  count=db.execute("SELECT count(*) FROM stock_operations o JOIN stock_runs r ON r.id=o.run WHERE r.origin='cloud' AND r.created>=%s",(data['started'],)).fetchone()[0]
+                  assert count==0
+                  text='Проверка остатков не завершена.\nПричина: '+reason+' при итоговом чтении остатков Китая.\nПодтверждённых изменений WB: ООО — 0, ИП — 0, Китай — 0.\nНеизвестный МСК не заменён нулём; четыре предупреждения сохранены в журнале.\nПовторный полный запуск сегодня не выполнен: разрешён один контролируемый проход.'
+                  payload={'type':'stock-final-notice-edit','message_id':647,'text':text,'no_retry':True}
+                  inserted=db.execute('INSERT INTO stock_events(id,run,seq,state,at,detail) VALUES(%s,%s,NULL,%s,%s,%s) ON CONFLICT(id) DO NOTHING',(eid,key,'sent',time.time(),json.dumps(payload,ensure_ascii=False))).rowcount
+              if inserted!=1:
+                  report['delivery']='already_claimed'
+              else:
+                  seal('stock-notice-final',report)
+                  try:
+                      response=requests.post('https://api.telegram.org/bot'+os.environ['TELEGRAM_BOT_TOKEN']+'/editMessageText',json={'chat_id':old['chat'],'message_id':647,'text':text},timeout=(5,20))
+                      body=response.json()
+                      assert response.ok and body.get('ok') is True and body['result']['message_id']==647 and body['result']['text']==text
+                      report['delivery']='confirmed'
+                  except Exception:
+                      report['delivery']='uncertain'
+                  with runtime_db() as db:
+                      db.execute('INSERT INTO stock_events(id,run,seq,state,at,detail) VALUES(%s,%s,NULL,%s,%s,%s) ON CONFLICT(id) DO NOTHING',(eid+':result',key,report['delivery'],time.time(),json.dumps({'type':'stock-final-notice-edit','message_id':647,'text_sha256':hashlib.sha256(text.encode()).hexdigest(),'no_retry':True})))
+          except Exception as exc:report['error']=error(exc)
+          finally:
+              seal('stock-notice-final',report)
+              print(json.dumps({'delivery':report['delivery'],'wb_calls':0}))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-stock-notice-final
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90

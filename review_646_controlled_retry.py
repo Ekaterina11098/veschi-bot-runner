@@ -12,11 +12,12 @@ CARD='359dfd9c3eee92d596247c388dd9b6f4'
 ANSWER='9b224203e606ce4c6a132f2d782f86b20e24e8830e329883bf948829f5005e5d'
 VERSION='owner-telegram-first-20261015-1792066028'
 ITEM='FCFR5A3pNgvsDFnWShPZ'
-AUTH='owner-controlled-retry:646:20261016:v1'
+AUTH='owner-controlled-retry:646:20261016:v2'
+PRIOR_AUTH='owner-controlled-retry:646:20261016:v1'
 # Exact646 owner previously allowed <=900sec after proven429. Prior scoped
 # receipts prove649/654sec burst waits; no global rate-limit change is made.
 FRESH_SECONDS=900
-BURST_GAP=660
+BURST_GAP=780
 HEADERS=('x-ratelimit-retry','x-ratelimit-reset','x-ratelimit-limit','x-ratelimit-remaining','retry-after')
 
 class Retry:
@@ -60,7 +61,10 @@ class Retry:
     def initialize(self):
         i,c=self.binding();op=self.operation()
         if op:return op
-        op=dict(id=AUTH,authorization_source='owner_chat_20261016_one_controlled_repeat',
+        prior=self.repo.get('events',PRIOR_AUTH)
+        if not prior or prior.get('status')!='rejected' or prior.get('post_http_status')!=429 or not prior.get('post_consumed') or not prior.get('rejection_readback_empty'):
+            raise Rejected('Prior explicit429 and empty readback evidence unavailable')
+        op=dict(id=AUTH,prior_authorization_id=PRIOR_AUTH,prior_authorization_sha256=sha(prior),authorization_source='owner_chat_20261016_new_attempt_fresh_check_13_minutes',
             owner_ui_absence_sha256='b4bb827a1328f64d70485c6225ce7b650ca9161e8ae0b0178f33cf663f08fc3e',
             intent_id=INTENT,answer_sha256=ANSWER,created_at=self.clock(),
             original_unknown_attempt=copy.deepcopy(i),status='preflight',post_consumed=False,
@@ -196,3 +200,5 @@ class Retry:
             current['controlled_retry_http_accepted']=isinstance(code,int) and 200<=code<300
             self.repo.put('intents',INTENT,current)
         return self.save(op,status='verify',**fields)
+
+

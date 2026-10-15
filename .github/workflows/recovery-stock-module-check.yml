@@ -1,0 +1,157 @@
+name: Verify restored stock policy and actual journal offline
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-stock-module-check.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  stock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: offline
+          POSTGRES_PASSWORD: offline-test-only
+          POSTGRES_DB: offline_stock_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U offline -d offline_stock_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 3ca3775f273add5ab1a31ee658bed53905d1d149
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 88e147f344f7a7492932c6eb812d7d02ee76e224
+          persist-credentials: false
+          path: recovery-input-source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 pillow apscheduler cryptography 'psycopg[binary]==3.2.9' > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - uses: actions/download-artifact@v4
+        with:
+          name: offline-restore-receiver
+          run-id: 38588520250
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/receiver
+      - uses: actions/download-artifact@v4
+        with:
+          name: whole-independent-archive-proof
+          run-id: 38684940069
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/dependency-proof
+      - name: Test changed policy with fake WB, denied external network and isolated PostgreSQL
+        env:
+          OFFLINE_POSTGRES_DSN: postgresql://offline:offline-test-only@127.0.0.1:5432/offline_stock_test
+        run: |
+          python - <<'PY'
+          import socket,unittest,sys,json,os
+          from pathlib import Path
+          def denied(*args,**kwargs):raise AssertionError('External business network disabled')
+          socket.socket.connect=denied;socket.socket.connect_ex=denied;socket.create_connection=denied
+          assert not any(name in os.environ for name in ('SUPABASE_SECRET_KEY','WB_TOKEN_1','TELEGRAM_BOT_TOKEN'))
+          patterns=('test_low_stock_policy.py','test_stock_operation_store.py','test_stock_cloud_paths.py','test_auto_stock.py','test_moscow_stock_source.py','test_stock_presence_policy.py','test_stock_fbo_allocation.py')
+          suite=unittest.TestSuite(unittest.defaultTestLoader.discover('tests',pattern=p) for p in patterns)
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          out=Path(os.environ['RUNNER_TEMP'])/'module-proof';out.mkdir(exist_ok=True)
+          report={'commit':'3ca3775f273add5ab1a31ee658bed53905d1d149','tests_run':result.testsRun,'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),'business_calls':0,'live_credentials':False}
+          (out/'stock-tests.json').write_text(json.dumps(report));print(json.dumps(report))
+          sys.exit(not result.wasSuccessful())
+          PY
+      - name: Recover actual unchanged journal only in protected temporary environment
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,struct,json,hashlib,base64,gzip
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization,hashes
+          from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+          from cryptography.hazmat.primitives.ciphers import Cipher,algorithms,modes
+          root=Path(os.environ['RUNNER_TEMP']);src=root/'receiver/receiver-private.pem.aes'
+          assert hashlib.sha256(src.read_bytes()).hexdigest()=='e315bdaf4bcc4ced0733a46a0a6d51c7e352d06fdb1d8ff3f65d51148fe8241e'
+          raw=src.read_bytes();magic=b'VESCHI-BACKUP-1\n';offset=len(magic);assert raw[:offset]==magic
+          length=struct.unpack('>I',raw[offset:offset+4])[0];offset+=4;encoded=raw[offset:offset+length];offset+=length
+          header=json.loads(encoded);decode=lambda k:base64.b64decode(header[k])
+          derived=HKDF(algorithm=hashes.SHA256(),length=32,salt=decode('salt'),info=b'veschi-recovery-worker-key-v1').derive(os.environ['SUPABASE_SECRET_KEY'].encode())
+          key=AESGCM(derived).decrypt(decode('wrap_nonce'),decode('worker_key'),magic)
+          dec=Cipher(algorithms.AES(key),modes.GCM(decode('nonce'),raw[-16:])).decryptor();dec.authenticate_additional_data(encoded)
+          pem=dec.update(raw[offset:-16])+dec.finalize();receiver=serialization.load_pem_private_key(pem,password=None)
+          folder=Path('recovery-input-source/recovery-input/2026-10-15')
+          data=b''.join(p.read_bytes() for p in sorted(folder.glob('local-journal.part-*.aes.txt')))
+          assert hashlib.sha256(data).hexdigest()=='735e088e7c8e956ec9577b8c63b9f78670e83b9e72e86e82b36578917ca0241e'
+          env=json.loads(data);oaep=padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None)
+          key=receiver.decrypt(base64.b64decode(env['receiver_wrapped_key']),oaep)
+          packed=AESGCM(key).decrypt(base64.b64decode(env['nonce']),base64.b64decode(env['ciphertext'])+base64.b64decode(env['tag']),None)
+          raw=gzip.decompress(packed);assert hashlib.sha256(raw).hexdigest()=='16d571eda15598a5965b3d5bbe1b9586155073fa06a460fd9833d158416dc7c0'
+          (root/'current-journal.sqlite').write_bytes(raw)
+          print('Protected journal staged; no source status or business state modified.')
+          PY
+      - name: Import latest journal twice into isolated permanent-store schema; no executor
+        env:
+          OFFLINE_POSTGRES_DSN: postgresql://offline:offline-test-only@127.0.0.1:5432/offline_stock_test
+        run: |
+          python - <<'PY'
+          import os,sqlite3,hashlib,json,socket
+          from pathlib import Path
+          import psycopg
+          from stock_operation_store import Store
+          root=Path(os.environ['RUNNER_TEMP']);path=root/'current-journal.sqlite';out=root/'module-proof';out.mkdir(exist_ok=True)
+          report={'source_statuses_modified':False,'executor_called':False,'wb_calls':0,'telegram_calls':0,'production_calls':0}
+          source=None;db=None
+          try:
+              original_sha=hashlib.sha256(path.read_bytes()).hexdigest()
+              source=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True);source.execute('pragma query_only=on')
+              db=psycopg.connect(os.environ['OFFLINE_POSTGRES_DSN'])
+              with db.cursor() as cur:cur.execute('DROP SCHEMA IF EXISTS journal_acceptance CASCADE; CREATE SCHEMA journal_acceptance; SET search_path=journal_acceptance,pg_catalog')
+              db.commit();store=Store(db,postgres=True);store.initialize_test_schema()
+              states=dict(source.execute('SELECT state,count(*) FROM operations GROUP BY state'))
+              before=[source.execute('SELECT count(*) FROM '+t).fetchone()[0] for t in ('runs','operations','events')]
+              store.import_local(source,'owner20261014')
+              count=lambda:[store.sql('SELECT count(*) FROM '+t).fetchone()[0] for t in ('stock_runs','stock_operations','stock_events')]
+              first=count();store.import_local(source,'owner20261014');second=count()
+              assert before==[1117,879,1733] and first==before and second==first
+              target_states=dict(store.sql('SELECT state,count(*) FROM stock_operations GROUP BY state').fetchall())
+              assert target_states=={'confirmed':257,'invalidated':335,'replan_required':286,'uncertain':1}
+              for ident,snapshot,plan,digest,created in source.execute('SELECT id,snapshot,plan,digest,created FROM runs'):
+                  saved=store.sql('SELECT snapshot,plan,digest,created FROM stock_runs WHERE id=?',('owner20261014:'+ident,)).fetchone()
+                  assert saved==(snapshot,plan,digest,created)
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==original_sha
+              report.update({'actual_journal_import_verified':True,'idempotent_second_import_verified':True,'source_counts':before,'target_counts':first,'target_states':target_states,'saved_ids_and_payloads_preserved':True,'uncertain_not_executed':True})
+          except Exception as exc:report.update({'actual_journal_import_verified':False,'error_type':type(exc).__name__})
+          finally:
+              if source:source.close()
+              if db:db.close()
+              path.unlink(missing_ok=True)
+          (out/'actual-journal-import.json').write_text(json.dumps(report,sort_keys=True));print(json.dumps(report,sort_keys=True))
+          assert report['actual_journal_import_verified']
+          PY
+      - name: Publish only dependency paths and line references
+        if: always()
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP']);data=json.loads((root/'dependency-proof/dependency-evidence.json').read_text())
+          relevant=('supabase_auth_api','supabase_storage_api','supabase_realtime_api','supabase_sdk_import','postgrest','postgres_dsn','vault_dependency','auth_other')
+          paths={k:[x for x in data['evidence'][k] if not x['test_file'] and not '/.github/' in x['path']] for k in relevant}
+          print(json.dumps({'dependency_anchors':paths},sort_keys=True))
+          out=root/'module-proof';out.mkdir(exist_ok=True);(out/'dependency-anchors.json').write_text(json.dumps(paths,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: restored-stock-module-offline-proof
+          path: ${{ runner.temp }}/module-proof
+          retention-days: 90

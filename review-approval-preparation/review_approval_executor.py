@@ -82,3 +82,4 @@ class Executor:
         if actual==intent['answer']:return self.save(intent,'confirmed',actual_answer_sha256=sha(actual),confirmed_at=self.a.clock())
         if actual.strip():return self.save(intent,'manual_present',actual_answer_sha256=sha(actual))
         return intent
+

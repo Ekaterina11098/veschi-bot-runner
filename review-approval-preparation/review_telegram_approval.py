@@ -163,3 +163,4 @@ class Approval:
             key='edit:'+sha([token,str(actor),message_id,text])
             self.repo.put('events',key,{'decision':'revision_requested','token':token,'version':card['version'],'instruction':text,'actor':self.owner,'created_at':self.clock()})
             return {'status':'revision_requested','old_version_approvable':False,'publication_created':False}
+

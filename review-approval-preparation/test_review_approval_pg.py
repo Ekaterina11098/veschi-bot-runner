@@ -181,3 +181,4 @@ class PostgreSQLTests(unittest.TestCase):
         finally:restore.close()
 
 if __name__=='__main__':unittest.main(verbosity=2)
+

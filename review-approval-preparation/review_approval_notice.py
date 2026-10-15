@@ -6,10 +6,11 @@ class NewNoticeTransport(TelegramTransport):
     ALLOWED=frozenset(('sendMessage','getMe','getChat','editMessageText'))
 
 class NewNotice:
-    def __init__(self,approval,bridge,telegram,enabled=False):
-        self.a=approval;self.bridge=bridge;self.tg=telegram;self.enabled=enabled
+    def __init__(self,approval,bridge,telegram,enabled=False,preserve=None):
+        self.a=approval;self.bridge=bridge;self.tg=telegram;self.enabled=enabled;self.preserve=preserve
     def deliver(self,item,cabinet,kind,version,observed_at,cutover):
         if not self.enabled:raise Rejected('New review notices disabled')
+        if not callable(self.preserve):raise Rejected('Protected backup hook required before new notification')
         if observed_at<cutover:raise Rejected('Old observation before cutover')
         source=self.bridge.source
         if source.was_notified(cabinet,kind,str(item['id'])):raise Rejected('Existing notice: do not replay')
@@ -28,6 +29,7 @@ class NewNotice:
             if self.a.repo.get('events',notice_key):return {'status':'blocked_existing_delivery','automatic_retry':False}
             self.a.repo.put('events',notice_key,{'status':'sending','ref':ref,'version':version,'observed_at':observed_at,'cutover':cutover})
         if self.a.repo.get('events',notice_key)['status']!='sending':raise RuntimeError('Notice claim readback')
+        self.preserve()
         try:
             text=self.a.view('unbound',card)['text']
             if len(text.encode('utf-16-le'))//2>4096:raise ValueError('Card too long')
@@ -36,13 +38,16 @@ class NewNotice:
             message_id=message['message_id']
         except Exception:
             with self.a.repo.transaction():self.a.repo.put('events',notice_key,{'status':'uncertain','ref':ref,'version':version,'automatic_retry':False})
+            self.preserve()
             return {'status':'uncertain','automatic_retry':False}
         # Save confirmed delivery BEFORE attaching buttons. Never resend if binding fails.
         with self.a.repo.transaction():self.a.repo.put('events',notice_key,{'status':'confirmed','ref':ref,'version':version,'message_id':message_id})
+        self.preserve()
         token,view=self.bridge.create(item,cabinet,kind,version,message_id)
         try:
             self.tg.call('editMessageText',{'chat_id':self.a.chat,'message_id':message_id,'text':view['text'],'reply_markup':view['reply_markup']})
             attachment='confirmed'
         except Exception:attachment='uncertain'
+        self.preserve()
         return {'status':'confirmed','message_id':message_id,'card_token':token,'buttons':attachment,'automatic_retry':False}
 

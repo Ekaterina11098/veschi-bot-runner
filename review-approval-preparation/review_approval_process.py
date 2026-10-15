@@ -16,8 +16,13 @@ def decrypt_update(raw,key):
     if len(data)>65536:raise ValueError('Ingress size')
     return json.loads(data)
 
-def process(approval,bridge,telegram,wb,update,publication_enabled=False,preserve=None):
+def process(approval,bridge,telegram,wb,update,publication_enabled=False,preserve=None,new_notices_enabled=False,cutover=None):
     guard=CanonicalGuard(approval,bridge.project)
+    if update.get('new_notice'):
+        from review_approval_notice import NewNotice
+        data=update['new_notice']
+        if str(data.get('owner_id'))!=approval.owner or str(data.get('chat_id'))!=approval.chat or cutover is None:raise Rejected('Invalid new notice authorization/cutover')
+        return NewNotice(approval,bridge,telegram,enabled=new_notices_enabled,preserve=preserve).deliver(data['item'],data['cabinet'],data['kind'],data['version'],data['observed_at'],cutover)
     if update.get('resume_intent'):
         intent=approval.repo.get('intents',update['resume_intent'])
         if not intent or str(update.get('owner_id'))!=approval.owner or str(update.get('chat_id'))!=approval.chat or intent['owner_id']!=approval.owner or intent['chat_id']!=approval.chat:raise Rejected('Invalid targeted continuation')
@@ -54,7 +59,9 @@ def main():
             target=output/'approval-supplement.aes.json';target.write_text(json.dumps(sealed))
         update=decrypt_update(os.environ['SEALED_UPDATE'],os.environ['REVIEW_APPROVAL_INGRESS_KEY'])
         try:
-            result=process(approval,bridge,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),WBAdapter(wildberries),update,publication_enabled=os.getenv('REVIEW_PUBLICATION_ENABLED')=='1',preserve=preserve)
+            from review_approval_notice import NewNoticeTransport
+            transport=NewNoticeTransport if update.get('new_notice') else TelegramTransport
+            result=process(approval,bridge,transport(os.environ['TELEGRAM_BOT_TOKEN']),WBAdapter(wildberries),update,publication_enabled=os.getenv('REVIEW_PUBLICATION_ENABLED')=='1',preserve=preserve,new_notices_enabled=os.getenv('REVIEW_NEW_NOTICES_ENABLED')=='1',cutover=float(os.environ['REVIEW_APPROVAL_CUTOVER']) if os.getenv('REVIEW_APPROVAL_CUTOVER') else None)
             # Categories only, no answer/source/identity or credential in public log.
             print(json.dumps({'decision':result.get('result',{}).get('decision'),'publication_status':result.get('publication_status'),'ui_delivery':result.get('ui_delivery')}))
         finally:preserve()

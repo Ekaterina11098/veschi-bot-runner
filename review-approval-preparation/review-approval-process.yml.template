@@ -35,6 +35,8 @@ jobs:
           SEALED_UPDATE: ${{ inputs.sealed_update }}
           REVIEW_APPROVAL_ENABLED: '1'
           REVIEW_PUBLICATION_ENABLED: ${{ vars.REVIEW_PUBLICATION_ENABLED == 'true' && '1' || '0' }}
+          REVIEW_NEW_NOTICES_ENABLED: ${{ vars.REVIEW_NEW_NOTICES_ENABLED == 'true' && '1' || '0' }}
+          REVIEW_APPROVAL_CUTOVER: ${{ vars.REVIEW_APPROVAL_CUTOVER }}
           REVIEW_APPROVAL_DSN: ${{ secrets.REVIEW_APPROVAL_DSN }}
           REVIEW_APPROVAL_INGRESS_KEY: ${{ secrets.REVIEW_APPROVAL_INGRESS_KEY }}
           REVIEW_APPROVAL_OWNER_ID: ${{ secrets.REVIEW_APPROVAL_OWNER_ID }}
@@ -68,3 +70,4 @@ jobs:
           git pull --rebase origin main
           git push origin HEAD:main
 # TEMPLATE ONLY: no .github/workflows deployment, no schedule, both live flags absent/off.
+

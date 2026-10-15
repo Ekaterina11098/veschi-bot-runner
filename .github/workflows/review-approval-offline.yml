@@ -52,4 +52,4 @@ jobs:
           docker logs review-approval-pg
           docker rm -f review-approval-pg
 
-# Final exact deployment code: ack latency guard and authenticated targeted continuation.
+# Final acceptance requires encrypted backup hook before every NEW review notification.

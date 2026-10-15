@@ -60,7 +60,7 @@ try:
   paused=database('GET','telegram_api_cache',params={'cache_key':'eq.mpstats:cooldown','expires_at':'gt.'+now.isoformat(),'select':'expires_at','limit':1}) or []
   if paused:report['pending_pause']=paused
   else:
-   args={'type':'articles','value':'584-ReginaBag-dblack','date_from':'2026-10-13','date_to':'2026-10-13','start_row':0,'end_row':300}
+   args={'type':'products','value':'124410488','date_from':'2026-10-13','date_to':'2026-10-13','start_row':0,'end_row':300}
    request=wanted('lk_wb_card_orders',args)
    if not request:report['reused_or_explicit_error']='Existing exact scope is not repeated; inspect retained receipt'
    else:

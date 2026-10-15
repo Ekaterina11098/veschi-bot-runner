@@ -9,3 +9,5 @@
 # All12 campaign aggregates reused. Fill exact Oct12-14 SKU daily evidence for eight active saved experiments only.
 
 # Exact proven source gap: Oct10 finance reportszero adspend thoughowner confirmednonzero. One dated purpose-specific MPStats refresh; known days/12campaigns/eight experiments reused.
+
+# Checkpoint audit found four missing historical baselines Oct9-11. Reuse validated larger raw receipts first; request only proven missing pair scopes. Never repeat current/after data.

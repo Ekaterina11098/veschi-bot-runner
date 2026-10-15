@@ -12,7 +12,9 @@
     "reviews:manual-observed:",
     "reviews:notice:",
     "reviews:controlled-run:",
-    "reviews:source:"
+    "reviews:source:",
+    "reviews:hold:",
+    "reviews:hold-history:"
   ],
   "include_payload_and_confirmation_history": true,
   "exclude_secrets_from_public_plaintext": true,
@@ -29,5 +31,6 @@
     "article",
     "cabinet",
     "id"
-  ]
+  ],
+  "owner_hold_scope": "cabinet+kind+item_id; do not infer article-wide or cabinet-wide exclusion"
 }

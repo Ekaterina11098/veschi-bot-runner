@@ -81,7 +81,13 @@ class Approval:
         lines+=['Покупатель: '+str(s['buyer'] or 'не указано'),'Оценка: '+str(s['rating'])+'/5','Отзыв: '+str(s['text'] or '(без текста)'),'Достоинства: '+str(s['pros'] or '(не заполнены)'),'Недостатки: '+str(s['cons'] or '(не заполнены)')]
         if card['status']=='selected':
             lines+=['','Выбран вариант '+str(card['selected']+1)+':',card['texts'][card['selected']],'','Подтвердить именно этот текст? Перед отправкой проверим WB.']
-        elif card['status']=='approved':lines+=['','Согласование сохранено. Публикация ещё не подтверждена WB.']
+        elif card['status']=='approved':
+            lines+=['','Согласование сохранено. Публикация ещё не подтверждена WB.']
+            if card.get('publication_enabled') is False:lines+=['Отправка WB сейчас выключена. Повторно подтверждать текст не нужно.']
+            if card.get('retry_at',0)>self.clock():
+                from datetime import datetime,timezone,timedelta
+                stamp=datetime.fromtimestamp(card['retry_at'],timezone(timedelta(hours=3))).strftime('%H:%M:%S')
+                lines+=['Пауза WB. Проверку можно продолжить после '+stamp+' МСК. Повторно нажимать не нужно.']
         elif card['status']=='sent':lines+=['','Ответ опубликован. Точное совпадение текста подтверждено чтением WB.']
         elif card['status']=='manual_present':lines+=['','В WB уже есть другой ответ. Повторная публикация остановлена.']
         elif card['status']=='uncertain':lines+=['','Исход публикации пока не подтверждён. Повторная отправка запрещена; требуется чтение WB.']

@@ -38,9 +38,23 @@ def process(approval,bridge,telegram,wb,update,publication_enabled=False,preserv
         with approval.repo.transaction():
             card=approval.repo.get('cards',card_token,lock=True)
             card['status']={'confirmed':'sent','manual_present':'manual_present','verify':'uncertain','blocked':'held'}.get(outcome['status'],'approved')
+            card['publication_enabled']=True
+            card['retry_at']=outcome.get('retry_at',0)
             approval.repo.put('cards',card_token,card)
         view=approval.view(card_token)
-        try:telegram.call('editMessageText',{'chat_id':approval.chat,'message_id':view['message_id'],'text':view['text'],'reply_markup':view['reply_markup']})
+        try:
+            telegram.call('editMessageText',{'chat_id':approval.chat,'message_id':view['message_id'],'text':view['text'],'reply_markup':view['reply_markup']})
+            result['ui_delivery']='confirmed'
+        except Exception:result['ui_delivery']='uncertain'
+    elif decision.get('decision')=='approved':
+        token=approval.repo.get('intents',decision['intent_id'])['card_token']
+        with approval.repo.transaction():
+            card=approval.repo.get('cards',token,lock=True);card['publication_enabled']=False
+            approval.repo.put('cards',token,card)
+        view=approval.view(token)
+        try:
+            telegram.call('editMessageText',{'chat_id':approval.chat,'message_id':view['message_id'],'text':view['text'],'reply_markup':view['reply_markup']})
+            result['ui_delivery']='confirmed'
         except Exception:result['ui_delivery']='uncertain'
     if preserve:preserve()
     return result

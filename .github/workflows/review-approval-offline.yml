@@ -59,3 +59,5 @@ jobs:
 # Regression: identical selection keeps nonce; callback runs never replace pending clicks.
 
 # Regression: preserve bounded preflight across successful GET-induced WB pause.
+
+# Regression: approval UI explicitly explains disabled publication and WB pause.

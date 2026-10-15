@@ -38,6 +38,14 @@ class Tests(unittest.TestCase):
         nonce=self.selected();result=self.handle('ok.'+nonce,'confirm')
         intent=self.repo.get('intents',result['result']['intent_id'])
         self.assertEqual(intent['answer'],'Ответ два');self.assertEqual(intent['status'],'awaiting_preflight')
+    def test_approved_ui_explains_disabled_and_pause(self):
+        nonce=self.selected();self.handle('ok.'+nonce,'confirm')
+        card=self.repo.get('cards',self.token)
+        card.update(publication_enabled=False,retry_at=self.now+62)
+        text=self.a.view(self.token,card)['text']
+        self.assertIn('Отправка WB сейчас выключена',text)
+        self.assertIn('Пауза WB',text)
+        self.assertIn('МСК',text)
     def test_duplicate_confirmation(self):
         nonce=self.selected();self.handle('ok.'+nonce,'confirm')
         self.assertTrue(self.handle('ok.'+nonce,'confirm')['duplicate']);self.assertEqual(self.repo.count('intents'),1)

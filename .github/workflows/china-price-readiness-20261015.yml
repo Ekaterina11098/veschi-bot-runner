@@ -17,13 +17,25 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: b1f54e3770fba9aabbe7773c2106fc6d56c92911
+          ref: dd95f4463e32ea6760964e9139dba2efcaed770c
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Test only China recommendations, scope and delivery safeguards offline
+        run: |
+          python - <<'PY'
+          import os,sys,subprocess,tempfile,json
+          from pathlib import Path
+          for pattern in ('test_china_price_readiness.py','test_china_sales_demand.py','test_business_agents.py','test_mpstats_primary_policy.py','test_china_postclick.py'):
+              with tempfile.TemporaryFile() as log:
+                  result=subprocess.run([sys.executable,'-m','unittest','discover','-s','tests','-p',pattern],stdout=log,stderr=log)
+                  log.seek(0);value=log.read().decode(errors='replace')
+                  print(pattern+': '+str(result.returncode))
+                  if result.returncode:print(value[-18000:]);sys.exit(result.returncode)
+          PY
       - name: Isolated storage and China readiness with no delivery
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -45,19 +57,19 @@ jobs:
           from analytics.mpstats_gaps import execute_reads
           from analytics.mpstats_recovery import normalize,import_products
           from analytics.mpstats_primary import products
-          NOW=datetime.now(MSK);KEY='china_agent:readiness:'+str(NOW.date())
+          NOW=datetime.now(MSK);KEY='china_agent:readiness:'+str(NOW.date())+':verified'
           report=dict(checked_at=NOW.isoformat(),wb_writes=0,telegram_messages=0,queue_claims=0,errors=[])
           original=requests.sessions.Session.request
           def guard(self,method,url,*a,**kw):
               host=urlparse(url).hostname or '';path=urlparse(url).path
-              if host.endswith('wildberries.ru') and (method.upper()!='GET' or host!='discounts-prices-api.wildberries.ru' or path!='/api/v2/list/goods/filter'):raise RuntimeError('WB route forbidden')
+              if host.endswith('wildberries.ru') and not ((method.upper()=='GET' and host=='discounts-prices-api.wildberries.ru' and path=='/api/v2/list/goods/filter') or (method.upper()=='POST' and host=='content-api.wildberries.ru' and path=='/content/v2/get/cards/list')):raise RuntimeError('WB route forbidden')
               if host=='api.telegram.org' and path.split('/')[-1] not in ('getMe','getChat','getChatMember'):raise RuntimeError('Telegram send forbidden')
               if '.supabase.' in host and ('/rpc/' in path or (method.upper() not in ('GET','HEAD') and path.split('/')[-1] not in ('telegram_api_cache','analytics_snapshots'))):raise RuntimeError('Queue or DB operation forbidden')
               return original(self,method,url,*a,**kw)
           requests.sessions.Session.request=guard
           def checked_save(key,value,ttl_days=30):
               cache_set(key,value,ttl_days)
-              assert cache_get(key)==value,'Storage readback mismatch'
+              assert cache_get(key)==json.loads(json.dumps(value)),'Storage readback mismatch'
           def read(table,params):return db('GET',table,params=params)
           try:
               checked_save(KEY+':probe',dict(technical_only=True,nonce=str(uuid.uuid4())),1)
@@ -74,8 +86,10 @@ jobs:
                   if not r.ok or body.get('ok') is not True:raise RuntimeError('Telegram HTTP '+str(r.status_code))
                   return body['result']
               me=telegram('getMe');chat=telegram('getChat',dict(chat_id=cfg['chat_id']));member=telegram('getChatMember',dict(chat_id=cfg['chat_id'],user_id=me['id']))
-              report['telegram']=dict(bot_id=me['id'],chat_id=chat['id'],title=chat.get('title'),membership=member['status'])
+              report['telegram']=dict(bot_id=me['id'],chat_id=chat['id'],title=chat.get('title'),membership=member['status'],permissions=chat.get('permissions'),restricted_can_send=member.get('can_send_messages'))
               assert chat['id']==cfg['chat_id'] and member['status'] not in ('left','kicked')
+              from analytics.collect import cards
+              cards('token_3',os.environ['WB_TOKEN_3'].strip())
               memo={}
               def get(key):
                   if key not in memo:memo[key]=copy.deepcopy(cache_get(key))
@@ -120,6 +134,7 @@ jobs:
               report.update(preview=answer,trace=trace,assessment=memo[demand.STATE_KEY]['latest'])
               report['legacy_wb_funnel_present']=get('china_agent:funnel_daily:v1') is not None
               report['mpstats_funnel_present']=get('mpstats:funnel_periods:token_3:v1') is not None
+              report['readiness']={'data':bool(report['assessment']['data_available']),'prices':bool(fresh.get('rows')),'conversion_primary_fixed':True,'daily_dispatcher_enabled':False,'delivery_tested':False}
               report['ready_for_schedule']=False
           except BaseException as exc:
               report['errors'].append(dict(stage='audit',type=type(exc).__name__))

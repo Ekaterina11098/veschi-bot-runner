@@ -1,0 +1,123 @@
+name: Seal external recovery kit without business execution
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-external-kit.yml']
+permissions:
+  contents: read
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 755b69c266ad39beafd334e60aa900c07814cae8
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: source
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 8988d457f104532a4a0e5979ab6305c662ec1787
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: pr20
+      - uses: actions/checkout@v4
+        with:
+          ref: 2407c6d0a1dffd2075dbfaa9a406a944117c61eb
+          persist-credentials: false
+          path: runner
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cryptography > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Protected archive and readback, no source service calls
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          STOCK_DATABASE_URL: ${{ secrets.STOCK_DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          WB_FEEDBACK_TOKEN: ${{ secrets.WB_FEEDBACK_TOKEN }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          GITHUB_WORKFLOW_DISPATCH_TOKEN: ${{ secrets.GITHUB_WORKFLOW_DISPATCH_TOKEN }}
+          RECOVERY_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAst6VhelAueCkrgeGYeMm
+            BBn16lRh8KaLjidOXiKiAtzBSRvtvGpcz4JsdOtfs4zi0CHAcs60iD4Kdh+UlJMm
+            0z8ekieLrY4DWqmuXyRH63TYGQyqOS+O5gtHpEXo6aHZSW6IooPJC2/rI5NtAVFr
+            TV76dCAE+8cQXQGKUerWcRQ1Amb4s5gWcDzg81R9VwhDJgDyttlrlvkmY5BWWjqy
+            VCJnrMPgwKVDaoh5KMAHH+O5AZJuGOrjC1exbJ4N7UkglOgGvWGllIeaRNttuPSV
+            Lmn5epyhasMfeVXyYaVqgoQcDfIexkTWgESr8+xPk663tr5OTbbfYEkWKordC7AD
+            yUe9aT73GMnk0rXwCZzGKpw3rOukkHn40CUJPK7NLmSwE5RwSCuyxHpF+WutDzl6
+            6ZCXZhgzYh9brD/hvbB6q7xoPxweqfD+71ONlf8WC1S3dWDo8sCKGWToqLncFce8
+            eAI8KPT+ymfjEqA3/sGKw1z/FkKvcuCMZpfHlTBFbdJjAgMBAAE=
+            -----END PUBLIC KEY-----
+          RESTORE_STOCK_CLOUD_EXECUTION_ENABLED: ${{ vars.STOCK_CLOUD_EXECUTION_ENABLED || 'false' }}
+          RESTORE_STOCK_JOURNAL_IMPORT_ACCEPTED: ${{ vars.STOCK_JOURNAL_IMPORT_ACCEPTED || 'false' }}
+          RESTORE_MOYSKLAD_STORE_NAME: ${{ vars.MOYSKLAD_STORE_NAME || 'МСК' }}
+          RESTORE_WB_STOCK_WAREHOUSE_1: ${{ vars.WB_STOCK_WAREHOUSE_1 }}
+          RESTORE_WB_STOCK_WAREHOUSE_2: ${{ vars.WB_STOCK_WAREHOUSE_2 }}
+          RESTORE_WB_STOCK_WAREHOUSE_3: ${{ vars.WB_STOCK_WAREHOUSE_3 }}
+          RESTORE_ADVERTISING_AI_MODEL: ${{ vars.ADVERTISING_AI_MODEL || 'gpt-4o-mini' }}
+        run: |
+          python - <<'PY'
+          import os,sys,json,subprocess,tarfile,hashlib,tempfile,shutil
+          from pathlib import Path
+          sys.path.insert(0,str(Path('source').resolve()))
+          from analytics.storage_backup_crypto import seal,restore,digest_file
+          root=Path(os.environ['RUNNER_TEMP']);private=root/'external-kit-private';private.mkdir();out=root/'external-kit-sealed';out.mkdir()
+          revisions=json.loads("{\"private_main\":\"755b69c266ad39beafd334e60aa900c07814cae8\",\"pr20\":\"8988d457f104532a4a0e5979ab6305c662ec1787\",\"runner\":\"2407c6d0a1dffd2075dbfaa9a406a944117c61eb\"}")
+          names=json.loads("[\"SUPABASE_URL\",\"SUPABASE_SECRET_KEY\",\"SUPABASE_DB_PASSWORD\",\"STOCK_DATABASE_URL\",\"TELEGRAM_BOT_TOKEN\",\"TELEGRAM_ALLOWED_CHAT_ID\",\"ADVERTISING_TELEGRAM_BOT_TOKEN\",\"CHINA_TELEGRAM_BOT_TOKEN\",\"MPSTATS_API_TOKEN\",\"OPENAI_API_KEY\",\"WB_FEEDBACK_TOKEN\",\"WB_TOKEN_1\",\"WB_TOKEN_2\",\"WB_TOKEN_3\",\"WB_FINANCE_TOKEN_1\",\"WB_FINANCE_TOKEN_2\",\"WB_FINANCE_TOKEN_3\",\"MOYSKLAD_API_TOKEN\",\"TELEGRAM_WEBHOOK_SECRET\",\"GITHUB_WORKFLOW_DISPATCH_TOKEN\"]")
+          report={'production_calls':0,'business_execution':False,'secrets_logged':False,'owner_private_key_uploaded':False,'revisions':revisions,'sources':{}}
+          try:
+              for name,folder in [('private_main','source'),('pr20','pr20'),('runner','runner')]:
+                  actual=subprocess.check_output(['git','-C',folder,'rev-parse','HEAD'],text=True).strip()
+                  assert actual==revisions[name]
+                  path=private/(name+'.tar.gz')
+                  subprocess.run(['git','-C',folder,'archive','--format=tar.gz','--output',str(path),actual],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                  with tarfile.open(path) as tar:
+                      members=[x.name for x in tar.getmembers() if x.isfile()]
+                  assert members
+                  report['sources'][name]={'commit':actual,'files':len(members),'migrations':sum(x.startswith('supabase/migrations/') for x in members),'edge_files':sum(x.startswith('supabase/functions/') for x in members),'workflow_files':sum(x.startswith('.github/workflows/') for x in members),'sha256':digest_file(path)}
+              secretmap={name:os.environ.get(name,'') for name in names}
+              (private/'runtime-secrets.json').write_text(json.dumps(secretmap,sort_keys=True))
+              (private/'runner-variables.json').write_text(json.dumps({key.removeprefix('RESTORE_'):value for key,value in os.environ.items() if key.startswith('RESTORE_')},sort_keys=True))
+              report['available_secret_names']=[name for name in names if secretmap[name]]
+              report['missing_secret_names']=[name for name in names if not secretmap[name]]
+              report['secret_count']=len(report['available_secret_names'])
+              (private/'manifest.json').write_text(json.dumps(report,sort_keys=True))
+              archive=root/'external-kit.tar.gz'
+              with tarfile.open(archive,'w:gz') as tar:
+                  for p in private.iterdir():tar.add(p,arcname=p.name)
+              report['encrypted_component']=seal(archive,out/'external-kit.tar.gz.aes',os.environ['RECOVERY_PUBLIC_KEY'],os.environ['SUPABASE_SECRET_KEY'])
+              restored=root/'external-kit-readback.tar.gz'
+              assert restore(out/'external-kit.tar.gz.aes',restored,secret=os.environ['SUPABASE_SECRET_KEY'])==report['encrypted_component']['plaintext_sha256']
+              with tarfile.open(restored) as tar:
+                  recovered=json.load(tar.extractfile('runtime-secrets.json'))
+                  assert recovered==secretmap
+              report['encrypted_readback_verified']=True
+              archive.unlink();restored.unlink()
+          finally:
+              shutil.rmtree(private)
+          (out/'summary.json').write_text(json.dumps(report,sort_keys=True));print(json.dumps(report,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: owner-encrypted-external-recovery-kit
+          path: ${{ runner.temp }}/external-kit-sealed
+          retention-days: 90

@@ -2,7 +2,7 @@ name: Recover owner-confirmed review646 only
 on:
   push:
     branches: [main]
-    paths: ['review_approval_recover_646.py']
+    paths: ['review_recovery_continue_646.trigger']
 permissions:
   contents: write
 concurrency:

@@ -9,9 +9,6 @@ on:
         type: choice
         options: [verify, run]
         default: verify
-  schedule:
-    - cron: '0,15,30,45 11 * * *'
-    - cron: '0 12,13 * * *'
 permissions:
   contents: read
 concurrency:

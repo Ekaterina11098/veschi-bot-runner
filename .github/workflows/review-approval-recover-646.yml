@@ -12,7 +12,7 @@ jobs:
   approval:
     if: vars.REVIEW_APPROVAL_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,6 +31,19 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 requests==2.32.5 python-dotenv==1.1.1
+      - name: Check exact646 one-attempt and HTTP journal boundaries without network
+        working-directory: review-approval-preparation
+        run: |
+          export PYTHONPATH="$PWD:$GITHUB_WORKSPACE/recovery-launcher"
+          python - <<'PY'
+          import socket,unittest,sys
+          from unittest.mock import patch
+          import test_review_646_controlled_retry
+          suite=unittest.defaultTestLoader.loadTestsFromModule(test_review_646_controlled_retry)
+          with patch.object(socket.socket,'connect',side_effect=AssertionError('Test network forbidden')):
+              result=unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
       - name: Process one authenticated new approval, never old queues
         working-directory: review-approval-preparation
         env:

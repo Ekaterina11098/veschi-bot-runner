@@ -1,0 +1,58 @@
+name: Preserve durable review data and original context
+on:
+  push:
+    paths: ['.github/workflows/review-durable-backup.yml']
+permissions:
+  contents: write
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 1b4201067880e379d8dacbe5f6ca3f9848d6ffb0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 cryptography > "$RUNNER_TEMP/review-backup-install.log" 2>&1
+      - name: Read and encrypt durable review data only, no WB or Telegram calls
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          from review_queue import _request
+          from review_durable_workflow import digest
+          from stock_deploy_support import seal
+          prefixes=['reviews:draft:','reviews:approval:','reviews:manual-history:','reviews:manual-observed:','reviews:source:','reviews:notice:','reviews:controlled-run:']
+          data={}
+          data['durable_rows']=_request('GET','/telegram_api_cache',params={'or':'('+','.join('cache_key.like.'+p+'*' for p in prefixes)+')','select':'*','order':'cache_key.asc','limit':2000}) or []
+          if len(data['durable_rows'])>=2000:raise RuntimeError('Backup pagination required; not complete')
+          data['review_replies']=_request('GET','/review_replies',params={'select':'*','limit':2000}) or []
+          data['review_benchmarks']=_request('GET','/review_benchmarks',params={'select':'*','limit':2000}) or []
+          if len(data['review_replies'])>=2000 or len(data['review_benchmarks'])>=2000:raise RuntimeError('Backup pagination required')
+          data['manifest']={'source_commit':'1b4201067880e379d8dacbe5f6ca3f9848d6ffb0','mandatory_prefixes':prefixes,'prefix_counts':{p:sum(r['cache_key'].startswith(p) for r in data['durable_rows']) for p in prefixes},'durable_sha256':digest(data['durable_rows']),'replies_sha256':digest(data['review_replies']),'benchmarks_sha256':digest(data['review_benchmarks']),'wb_calls':0,'telegram_calls':0,'supplement_to_fixed_point':True}
+          seal('review-durable-backup',data)
+          print('Owner encrypted review supplement preserved; WB=0 Telegram=0')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: owner-encrypted-durable-reviews-backup
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90
+      - name: Preserve independent ciphertext
+        run: |
+          mkdir -p recovery-output/2026-10-15
+          cp "$RUNNER_TEMP/stock-deploy-proof/review-durable-backup.aes.json" "recovery-output/2026-10-15/review-durable-backup-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/2026-10-15/
+          git commit -m "Preserve encrypted review drafts approvals original contexts and delivery history"
+          git pull --rebase origin main
+          git push origin HEAD:main

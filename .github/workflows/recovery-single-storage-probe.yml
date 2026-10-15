@@ -41,7 +41,6 @@ jobs:
           from datetime import datetime,timedelta,timezone
           import psycopg,requests
           from analytics.storage_collection_gate import CollectionGate
-          from wb_runtime_state import cache_get
           out=Path(os.environ['RUNNER_TEMP'])/'probe-proof';out.mkdir()
           result={'success':False,'write_attempts':0,'rows_inserted_confirmed':0,'business_calls':0,'ttl_seconds':300,'ttl_physical_delete':False}
           phase='metadata'
@@ -54,6 +53,8 @@ jobs:
                       c.execute("select count(*) from pg_rewrite where ev_class='public.telegram_api_cache'::regclass and rulename<>'_RETURN'")
                       assert c.fetchone()[0]==0,'Unexpected cache rule'
                   conn.rollback()
+              from wb_runtime_state import cache_get
+              from analytics.storage_worker_bootstrap import direct_startup
               result['cache_triggers_and_rules_absent']=True
               key='recovery:storage-probe:'+str(uuid.uuid4())
               payload={'format':'technical-storage-probe-v1','nonce':str(uuid.uuid4()),'technical_only':True}
@@ -70,7 +71,7 @@ jobs:
                   rows=r.json()
                   assert len(rows)==1 and rows[0]['cache_key']==key and rows[0]['payload']==payload
                   result['rows_inserted_confirmed']=1
-              gate=CollectionGate(out/'gate.json',scope='one-authorized-technical-probe')
+              gate=direct_startup()
               gate.verify_storage(write,lambda:cache_get(key),payload)
               gate.before_collection() # only verify gate; do NOT start any collector.
               result.update(success=True,readback_exact=True,gate_verified=True,key=key,created_at=now.isoformat(),expires_at=expiry.isoformat(),payload_sha256=hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(',',':')).encode()).hexdigest(),no_upsert=True,no_job_payload=True,no_executor_imported=True)

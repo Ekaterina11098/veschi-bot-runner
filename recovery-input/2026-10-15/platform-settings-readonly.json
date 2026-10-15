@@ -1,0 +1,87 @@
+{
+  "observed_date_msk": "2026-10-15",
+  "method": "Read-only Supabase Dashboard; no Save, Apply, Restart, Upgrade, credential reveal or reset actions",
+  "project": {
+    "name": "veschi-wb-bot",
+    "ref": "abxgjoqlddhtcmjcjwxw",
+    "region": "eu-central-1",
+    "branch": "main PRODUCTION",
+    "auth_version": "2.197.0",
+    "postgrest_version": "14.17",
+    "postgres_version": "17.6.1.166",
+    "custom_domain_enabled": false
+  },
+  "database": {
+    "pool_size": 15,
+    "max_client_connections": 200,
+    "enforce_ssl": false,
+    "network_restrictions": "all IP addresses allowed",
+    "connection_logging": false,
+    "disconnection_logging": false,
+    "network_bans": 0
+  },
+  "infrastructure": {
+    "compute": "Nano / t3a.nano",
+    "disk_gb": 8,
+    "type": "gp3",
+    "iops": 3000,
+    "throughput_mbps": 125,
+    "read_replicas": 0,
+    "spend_cap_enabled": true,
+    "autoscale_input_values_empty": true,
+    "displayed_growth_gb": 4
+  },
+  "data_api": {
+    "enabled": true,
+    "exposed_schemas": [
+      "graphql_public",
+      "public"
+    ],
+    "extra_search_path": [
+      "public",
+      "extensions"
+    ],
+    "max_rows": 1000,
+    "pool_size": "automatic/unset",
+    "auto_expose_new_tables": true,
+    "exposed_table_count": 1,
+    "exposed_table_checkmark": "public.review_inbox_cache",
+    "exposed_function_count": 0,
+    "scope": "UI exposure counts; not a replacement for restored SQL grants and service_role privilege proof"
+  },
+  "auth": {
+    "site_url": "http://localhost:3000",
+    "redirect_urls": [],
+    "new_signups": true,
+    "manual_linking": false,
+    "anonymous_signins": false,
+    "confirm_email": true,
+    "email_provider": true,
+    "all_other_listed_providers_disabled": true,
+    "smtp": "built-in; custom SMTP not configured",
+    "security_email_notification_switches": false,
+    "single_session": false,
+    "timebox_hours": 0,
+    "inactivity_hours": 0,
+    "jwt_expiry_seconds": 3600,
+    "refresh_token_reuse_detection": true,
+    "refresh_reuse_interval_seconds": 10
+  },
+  "gaps": [
+    "No complete machine-readable platform configuration export captured",
+    "Full Auth templates/hooks/rate limits/MFA/protection/third-party configuration not preserved or recreated",
+    "Global Storage/Realtime service configuration not fully captured",
+    "JWT signing material not exported; new-project recovery requires new platform keys and synchronized callers",
+    "No isolated full platform (Auth/PostgREST/Storage/Edge) deployment test"
+  ],
+  "sources": [
+    "settings/general",
+    "database/settings",
+    "settings/infrastructure",
+    "integrations/data_api/settings",
+    "auth/url-configuration",
+    "auth/providers",
+    "auth/templates",
+    "auth/sessions"
+  ]
+}

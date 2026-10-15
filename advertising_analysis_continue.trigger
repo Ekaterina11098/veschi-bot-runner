@@ -1,1 +1,1 @@
-# Owner-authorized quality followup 2026-10-15T20:40Z. Cache only, known support history, logistics detail. No WB/TG.
+# Owner approved exact PR19 2d / mergef5: one limited live analysis after fresh membership, necessary MPStats gaps, new-only guarded registered chat delivery; no WB mutations or schedule.

@@ -50,3 +50,5 @@ jobs:
           done
           exit 1
 
+
+# Save required observation-period fields after confirmed schema rejection; no source reads.

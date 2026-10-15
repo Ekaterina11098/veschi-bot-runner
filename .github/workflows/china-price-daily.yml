@@ -1,0 +1,60 @@
+name: China daily price report only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-price-daily.yml']
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [verify, run]
+        default: verify
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  china:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 7f0443ebfbcec36cd0c67e2b3128da79f21e9a2b
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Verify China daily worker and retained pricing rules
+        if: github.event_name == 'push' || inputs.mode == 'verify'
+        run: |
+          python - <<'PY'
+          import subprocess,sys,tempfile
+          for pattern in ('test_china_daily_worker.py','test_china_price_readiness.py','test_china_sales_demand.py','test_business_agents.py','test_mpstats_primary_policy.py','test_china_postclick.py'):
+              with tempfile.TemporaryFile() as log:
+                  result=subprocess.run([sys.executable,'-m','unittest','discover','-s','tests','-p',pattern],stdout=log,stderr=log)
+                  log.seek(0);value=log.read().decode(errors='replace')
+                  print(pattern+': '+str(result.returncode))
+                  if result.returncode:print(value[-18000:]);sys.exit(result.returncode)
+          PY
+      - name: Exact China daily task only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          VERIFY_ONLY: ${{ github.event_name == 'push' || inputs.mode == 'verify' }}
+        run: |
+          if [ "$VERIFY_ONLY" = true ]; then
+            python -m china_agent.daily_report_worker --verify
+          else
+            python -m china_agent.daily_report_worker
+          fi

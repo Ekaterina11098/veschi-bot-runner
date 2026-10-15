@@ -1,0 +1,117 @@
+name: China 123 loss analysis only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-123-loss-20261015.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  analyze:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b1f54e3770fba9aabbe7773c2106fc6d56c92911
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Exact financial bridge and scoped MPStats ad evidence
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,json,traceback,copy
+          from datetime import datetime,timedelta,timezone
+          from urllib.parse import urlparse
+          import requests
+          from advertising_agent.notify import db,cache_get,cache_set
+          from analytics.mpstats_probe import discover,unpack_tool,ProbeError
+          from analytics.mpstats_gaps import execute_reads
+          from analytics.mpstats_recovery import normalize
+          NOW=datetime.now(timezone.utc);KEY='china_agent:loss_123:2026-10-15'
+          report=dict(nm_id=1556488210,article='123-Zont-pink',cabinet='token_3',period_from='2026-10-11',period_to='2026-10-14',observed_at=NOW.isoformat(),wb_calls=0,telegram_calls=0,queue_claims=0,observations=[],errors=[])
+          original=requests.sessions.Session.request
+          def guarded(self,method,url,*args,**kw):
+              host=urlparse(url).hostname or '';path=urlparse(url).path
+              assert host=='mcp.mpstats.io' or host==urlparse(os.environ['SUPABASE_URL']).hostname,'Only MPStats and protected database are allowed'
+              if host!='mcp.mpstats.io':
+                  assert '/rpc/' not in path
+                  if method.upper()!='GET':assert path.split('/')[-1] in ('analytics_snapshots','telegram_api_cache')
+              return original(self,method,url,*args,**kw)
+          requests.sessions.Session.request=guarded
+          def checked_save(key,value):
+              normalized=json.loads(json.dumps(value))
+              cache_set(key,normalized,365)
+              assert cache_get(key)==normalized,'Storage readback failed'
+          try:
+              checked_save(KEY+':probe',dict(technical=True,at=NOW.isoformat()))
+              cost,=db('GET','analytics_costs',params=dict(article='eq.123-Zont-pink',select='article,cost,source,observed_at',limit=2))
+              report['own_cost']=cost
+              raw=[]
+              for a,b in [('2026-10-05','2026-10-08'),('2026-10-11','2026-10-14')]:
+                  snap,=db('GET','analytics_snapshots',params=dict(cabinet='eq.token_3',source='eq.mpstats_lk_wb_products',status='eq.complete',period_from='eq.'+a,period_to='eq.'+b,order='collected_at.desc',limit=1,select='id,payload,collected_at'))
+                  obs,=snap['payload']
+                  row,=[r for r in obs['data']['data']['data'] if r['nm_id']==1556488210]
+                  fields=('sales_count','returns_count','sales_ret_sum','for_pay','advertisement','total_commission_without_spp','acquiring','logistic_all','storage_fee','deduction','acceptance','penalty','open_card_count','add_to_cart_count','funnel_orders_count','funnel_buyouts_count','orders_count','sparkline','sparkline_orders','sparkline_open_card','sparkline_add_to_cart','sparkline_prices')
+                  values={k:row.get(k) for k in fields}
+                  values.update(period_from=a,period_to=b,source_snapshot_id=snap['id'],cost_per_unit=float(cost['cost']))
+                  values['own_cogs']=(row['sales_count']-row['returns_count'])*float(cost['cost'])
+                  values['net_profit']=round(row['for_pay']-values['own_cogs'],2)
+                  values['profit_before_ads']=round(values['net_profit']+row['advertisement'],2)
+                  residual=row['sales_ret_sum']-row['for_pay']-sum(row[k] for k in ('advertisement','total_commission_without_spp','acquiring','logistic_all','storage_fee','deduction','acceptance','penalty'))
+                  assert abs(residual)<=.05
+                  values['expense_balance_residual']=round(residual,4);raw.append(values)
+              report['financial_periods']=raw
+              pending=[]
+              for kind,args in [('wbbidder_campaign',dict(campaign_id=12282366)),
+                                ('wbbidder_campaign_stats',dict(campaign_id=12282366,report='products',zone='all',d1='2026-10-11',d2='2026-10-14')),
+                                ('wbbidder_campaign_stats',dict(campaign_id=12282366,report='days',zone='all',d1='2026-10-11',d2='2026-10-14')),
+                                ('wbbidder_campaign_stats',dict(campaign_id=12282366,report='products',nm_id=1556488210,zone='all',d1='2026-10-11',d2='2026-10-14')),
+                                ('wbbidder_campaign_stats',dict(campaign_id=12282366,report='days',nm_id=1556488210,zone='all',d1='2026-10-11',d2='2026-10-14'))]:
+                  pending.append(dict(cabinet='token_3',tool=kind,arguments=args,key='china:loss123:'+kind+':'+json.dumps(args,sort_keys=True),priority=80))
+              def save(cabinet,observation):
+                  assert cabinet=='token_3'
+                  report['observations'].append(observation)
+                  a,b=observation['arguments'].get('d1',str(NOW.date())),observation['arguments'].get('d2',str(NOW.date()))
+                  marker=dict(cabinet=cabinet,run_id='loss123-'+os.environ['GITHUB_RUN_ID'],period_from=a,period_to=b,detail='Exact isolated China 123 loss investigation; no WB or Telegram')
+                  db('POST','analytics_snapshots',body=dict(marker,source='mpstats_'+observation['tool'],status='complete' if observation['status']=='received' else 'error',payload=[observation]))
+                  if observation['status']=='received':
+                      source,normalized=normalize(observation,cabinet)
+                      if source:db('POST','analytics_snapshots',body=dict(marker,source=source,status='complete',payload=[normalized]))
+                  if observation.get('retry_after'):cache_set('mpstats:cooldown',dict(pending=True),max(1,observation['retry_after'])/86400)
+              pause=db('GET','telegram_api_cache',params=dict(cache_key='eq.mpstats:cooldown',expires_at='gt.'+NOW.isoformat(),select='cache_key',limit=1))
+              if pause:report['mpstats']=dict(status='shared_cooldown')
+              else:
+                  def reader(call,checks,known):
+                      scope=unpack_tool(call('tools/call',dict(name='wbbidder_cabinets',arguments={})))
+                      rows=scope.get('data',[]) if isinstance(scope,dict) else scope
+                      assert len([r for r in rows if r.get('id')==939742 and r.get('name')=='VESCHI Гонконг'])==1,'China bidder cabinet mismatch'
+                      listing=unpack_tool(call('tools/call',dict(name='wbbidder_campaigns',arguments=dict(tokens=[939742],report='state',nm_id=1556488210,limit=100,start_row=0,sort='wb_id',sort_dir='asc'))))
+                      report['current_catalog']=listing
+                      matches=[r for r in listing['data'] if r.get('id')==12282366 and r.get('wb_id')==40811856]
+                      assert len(matches)==1,'Current China campaign identity mismatch'
+                      return execute_reads(call,checks,known,pending,{'token_3':dict(id=939742,campaign_ids=[12282366])},save,max_requests=5)
+                  result=discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=reader)
+                  report['mpstats']={k:result.get(k) for k in ('status','connected','executed_data_tools','detail','retry_after')}
+          except BaseException as exc:
+              report['errors'].append(type(exc).__name__)
+              trace=traceback.format_exc()
+              for name,value in os.environ.items():
+                  if len(value)>5 and any(x in name for x in ('TOKEN','SECRET','PASSWORD')):trace=trace.replace(value,'[redacted]')
+              report['private_error']=trace[-10000:]
+          finally:
+              checked_save(KEY,report)
+              print(json.dumps(dict(saved=True,errors=report['errors'],observations=len(report['observations']),wb_calls=0,telegram_calls=0,queue_claims=0)))
+          
+          PY

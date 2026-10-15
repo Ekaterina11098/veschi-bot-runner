@@ -9,6 +9,11 @@ from review_approval_bridge import SQLSource,DurableBridge
 from review_telegram_runtime import CanonicalGuard,TelegramTransport
 from review_approval_process import process
 from review_approval_executor import WBAdapter
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+import review_approval_process as process_module
+from review_646_executor import Executor as Scoped646Executor
+process_module.Executor=Scoped646Executor # scoped controller only; general runtime unchanged
 from review_approval_backup import snapshot,encrypt
 TOKEN='359dfd9c3eee92d596247c388dd9b6f4'
 EXPECTED='9b224203e606ce4c6a132f2d782f86b20e24e8830e329883bf948829f5005e5d'

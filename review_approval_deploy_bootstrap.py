@@ -33,6 +33,12 @@ try:
     assert chat['type']=='private'
     fingerprint=hashlib.sha256((str(chat['id'])+'|'+str(bot['id'])).encode()).hexdigest()
     assert fingerprint=='96e17776da8ff52452990c88c38f1a2d4db9a4bf61f816e852a6ca65e946ea76'
+    from psycopg.types.json import Jsonb
+    runtime_config={'enabled':False,'new_notices_enabled':False,'publication_enabled':False,'owner_id':str(chat['id']),'bot_id':str(bot['id']),'chat_id':str(chat['id']),'destination_verified':True,'cutover':time.time(),'code_commit':'a66482bc1dba29a54348fee3c1e1ddd581b69de7'}
+    admin.execute("INSERT INTO public.telegram_api_cache(cache_key,payload,updated_at,expires_at) VALUES(%s,%s,now(),'9999-12-31') ON CONFLICT(cache_key) DO NOTHING",('reviews:telegram-approval:config:v1',Jsonb(runtime_config)))
+    saved=admin.execute("SELECT payload FROM public.telegram_api_cache WHERE cache_key='reviews:telegram-approval:config:v1'").fetchone()[0]
+    assert saved['destination_verified'] is True and saved['owner_id']==str(chat['id']) and saved['bot_id']==str(bot['id'])
+    report['runtime_config']=saved
     report.update(role_write_readback=True,role_isolation_verified=True,old_destination_verified=True,
       config={'REVIEW_APPROVAL_DSN':dsn,'REVIEW_APPROVAL_INGRESS_KEY':ingress,'REVIEW_APPROVAL_OWNER_ID':str(chat['id']),'REVIEW_APPROVAL_BOT_ID':str(bot['id'])},
       technical_event=actual,success=True)

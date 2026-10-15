@@ -16,15 +16,23 @@ jobs:
       - name: Authenticated encrypted no-op, no approval and no publication
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           python - <<'PY'
           import os,hmac,hashlib,requests
           from stock_deploy_support import seal
           signature=hmac.new(os.environ['SUPABASE_SECRET_KEY'].encode(),b'veschi:review-approval-probe:20261015:v1',hashlib.sha256).hexdigest()
-          r=requests.post('https://abxgjoqlddhtcmjcjwxw.supabase.co/functions/v1/telegram-webhook',headers={'X-Review-Approval-Deploy':signature},json={'review_approval_dispatch_probe':True},timeout=(5,20))
-          result=r.json();seal('review-ingress-probe',result)
+          r=requests.post('https://abxgjoqlddhtcmjcjwxw.supabase.co/functions/v1/telegram-webhook',headers={'X-Review-Approval-Deploy':signature},json={'review_approval_probe':True},timeout=(5,20))
+          result=r.json()
+          telegram=requests.post('https://api.telegram.org/bot'+os.environ['TELEGRAM_BOT_TOKEN']+'/getWebhookInfo',json={},timeout=(5,15))
+          telegram.raise_for_status();webhook=telegram.json();assert webhook.get('ok') is True
+          info=webhook['result'];result['webhook_info']=info
+          result['correct_webhook']=info.get('url')=='https://abxgjoqlddhtcmjcjwxw.supabase.co/functions/v1/telegram-webhook'
+          allowed=info.get('allowed_updates',[])
+          result['callback_updates_enabled']=not allowed or 'callback_query' in allowed
+          seal('review-ingress-probe',result)
           print({key:result.get(key) for key in ('authenticated','dispatch_probe_accepted','dispatch_http','telegram_sends','wb_writes')})
-          assert r.ok and result.get('dispatch_probe_accepted')
+          assert r.ok and result.get('authenticated') and result['correct_webhook'] and result['callback_updates_enabled']
           PY
       - uses: actions/upload-artifact@v4
         if: always()

@@ -1,0 +1,21 @@
+name: Owner stock repair offline regression 2026-10-15
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-repair-tests-20261015.yml']
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 631791e42b2819e2325c8642c0a629e65a298a4f
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest test_owner_low_rule -v

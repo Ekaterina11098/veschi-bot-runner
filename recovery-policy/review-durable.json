@@ -11,12 +11,23 @@
     "reviews:manual-history:",
     "reviews:manual-observed:",
     "reviews:notice:",
-    "reviews:controlled-run:"
+    "reviews:controlled-run:",
+    "reviews:source:"
   ],
   "include_payload_and_confirmation_history": true,
   "exclude_secrets_from_public_plaintext": true,
   "backup_receipt": "owner-encrypted-review-drafts-notices-and-backup",
   "owner_private_key_upload": false,
   "fixed_point_baseline_unchanged": true,
-  "new_changes_are_separate_supplement": true
+  "new_changes_are_separate_supplement": true,
+  "review_notice_requires_original_fields": [
+    "buyer",
+    "rating",
+    "text",
+    "pros",
+    "cons",
+    "article",
+    "cabinet",
+    "id"
+  ]
 }

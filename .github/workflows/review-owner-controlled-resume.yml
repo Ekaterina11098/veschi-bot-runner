@@ -1,0 +1,56 @@
+name: Resume approved IP review after WB pause
+on:
+  push:
+    paths: ['review_owner_controlled_resume.py']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: reviews-owner-controlled
+  cancel-in-progress: false
+jobs:
+  controlled:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 1b4201067880e379d8dacbe5f6ca3f9848d6ffb0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 openai==1.109.1 cryptography > "$RUNNER_TEMP/reviews-controlled-install.log" 2>&1
+      - name: Two exact WB preflights, durable drafts, new notices only
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FEEDBACK_TOKEN: ${{ secrets.WB_FEEDBACK_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+        run: python review_owner_controlled_resume.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-review-drafts-notices-and-backup
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90
+      - name: Preserve independent encrypted review backup and receipt
+        if: always()
+        run: |
+          mkdir -p recovery-output/2026-10-15
+          cp "$RUNNER_TEMP/stock-deploy-proof/reviews-controlled.aes.json" "recovery-output/2026-10-15/review-controlled-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/2026-10-15/
+          git commit -m "Preserve encrypted durable review drafts confirmations and new delivery receipts"
+          git pull --rebase origin main
+          git push origin HEAD:main

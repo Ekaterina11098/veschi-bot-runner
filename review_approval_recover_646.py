@@ -37,7 +37,18 @@ try:
             repo.put('cards',TOKEN,card);repo.put('items',card['ref'],item)
             repo.put('events','owner-chat-recovery:20261015:'+TOKEN,{'created_at':time.time(),'result':{'decision':'approved','intent_id':iid},'authorization_source':'owner_chat_recovery','answer_sha256':EXPECTED})
     preserve()
-    result=process(a,bridge,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),WBAdapter(wildberries),{'resume_intent':iid,'owner_id':a.owner,'chat_id':a.chat},publication_enabled=True,preserve=preserve)
+    deadline=time.monotonic()+420
+    adapter=WBAdapter(wildberries)
+    for iteration in range(4):
+        result=process(a,bridge,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),adapter,{'resume_intent':iid,'owner_id':a.owner,'chat_id':a.chat},publication_enabled=True,preserve=preserve)
+        current=repo.get('intents',iid)
+        if current['status'] in ('confirmed','manual_present','blocked'):break
+        delay=max(0,current.get('retry_at',0)-time.time(),adapter.pause(current['cabinet']))
+        # Short server pauses can finish this exact operation; long pauses seal and exit.
+        # Verify status always remains GET-only inside Executor.
+        if not 0<delay<=90 or time.monotonic()+delay+30>deadline:break
+        preserve()
+        time.sleep(delay+1)
     current=repo.get('intents',iid)
     print(json.dumps({'publication_status':current['status'],'retry_at':current.get('retry_at'),'readback_confirmed':current.get('actual_answer_sha256')==EXPECTED,'ui_delivery':result.get('ui_delivery')}))
 finally:

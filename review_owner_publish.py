@@ -100,3 +100,5 @@ finally:
     except Exception as exc:report['backup_error']=error(exc)
     report['private_log']=hidden.getvalue();checkpoint()
     print(json.dumps({'phase':report.get('state',{}).get('phase'),'retry_after':report.get('retry_after'),'wb_write_attempts':report['wb_write_attempts'],'error_type':report.get('error',{}).get('type')}))
+
+# Resume only existing Elena owner-v2 after exact shared pause expiry;2026-10-15T13:28:53UTC.

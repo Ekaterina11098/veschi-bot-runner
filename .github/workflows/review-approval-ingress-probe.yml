@@ -1,0 +1,34 @@
+name: Probe approved review ingress without messages
+on:
+  push:
+    paths: ['.github/workflows/review-approval-ingress-probe.yml']
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 cryptography==46.0.2
+      - name: Authenticated encrypted no-op, no approval and no publication
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,hmac,hashlib,requests
+          from stock_deploy_support import seal
+          signature=hmac.new(os.environ['SUPABASE_SECRET_KEY'].encode(),b'veschi:review-approval-probe:20261015:v1',hashlib.sha256).hexdigest()
+          r=requests.post('https://abxgjoqlddhtcmjcjwxw.supabase.co/functions/v1/telegram-webhook',headers={'X-Review-Approval-Deploy':signature},json={'review_approval_dispatch_probe':True},timeout=(5,20))
+          result=r.json();seal('review-ingress-probe',result)
+          print({key:result.get(key) for key in ('authenticated','dispatch_probe_accepted','dispatch_http','telegram_sends','wb_writes')})
+          assert r.ok and result.get('dispatch_probe_accepted')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-review-ingress-probe
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90

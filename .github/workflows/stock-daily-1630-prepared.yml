@@ -2,7 +2,9 @@ name: Stock daily 16:30 MSK
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 13 * * *'
+    - cron: '30 13 * * 0-6'
+    - cron: '40,50 13 * * *'
+# Primary stays daily16:30MSK;16:40/16:50 only recover an unclaimed day.
 # Owner approved daily stock execution and new stock notifications, 2026-10-15.
 permissions:
   contents: read
@@ -66,8 +68,15 @@ jobs:
               return data['result']['message_id']
           try:
               os.environ['STOCK_DATABASE_URL']=psycopg.conninfo.make_conninfo(host=HOST,port=5432,dbname='postgres',user=ROLE+'.'+PROJECT,password=password(),sslmode='require')
-              with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):
-                  report['result']=asyncio.run(run(runtime_db,send))
+              from datetime import datetime,timedelta,timezone
+              day=datetime.now(timezone(timedelta(hours=3))).date().isoformat()
+              with runtime_db() as gate:
+                  claimed=gate.execute('SELECT 1 FROM stock_runs WHERE id=%s',('technical:stock-daily:'+day,)).fetchone() is not None
+              if claimed:
+                  report['skipped']=True;report['skip_reason']='day_already_claimed'
+              else:
+                  with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):
+                      report['result']=asyncio.run(run(runtime_db,send))
               report['success']=True
           except BaseException as exc:report['error']=error(exc)
           finally:

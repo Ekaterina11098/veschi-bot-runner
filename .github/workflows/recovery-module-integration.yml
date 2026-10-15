@@ -45,12 +45,15 @@ jobs:
           from pathlib import Path
           out=Path(os.environ['RUNNER_TEMP'])/'integration-proof';out.mkdir()
           refs=[('storage_PR16','bcc22ea32e56e7e679e5d0126022f6f0da144ec2'),('stock_PR20','77199037b42a64619a20f4457f99f978a4ff6d7e'),('analysis_PR19','5c3dc49030b8b5def3048b17291183286b84c4ac')]
-          report={'production_calls':0,'pushed':False,'main_changed':False,'dashboard_deferred':True,'steps':[],'combined':True}
+          identity=subprocess.run(['git','var','GIT_COMMITTER_IDENT'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+          subprocess.run(['git','config','user.name','OfflineRecovery'],check=True)
+          subprocess.run(['git','config','user.email','offline@example.invalid'],check=True)
+          report={'committer_identity_was_missing':identity.returncode!=0,'production_calls':0,'pushed':False,'main_changed':False,'dashboard_deferred':True,'steps':[],'combined':True}
           for label,sha in refs:
               result=subprocess.run(['git','merge','--no-commit','--no-ff',sha],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
               if result.returncode:
                   conflicts=subprocess.check_output(['git','diff','--name-only','--diff-filter=U'],text=True).splitlines()
-                  report['steps'].append({'stage':label,'sha':sha,'merged':False,'conflict_paths':conflicts,'git_exit_code':result.returncode})
+                  report['steps'].append({'stage':label,'sha':sha,'merged':False,'conflict_paths':conflicts,'git_exit_code':result.returncode,'failure_category':next((tag for text,tag in [('identity unknown','committer_identity'),('auto-detect email','committer_identity'),('not something we can merge','commit_object_missing'),('unrelated histories','unrelated_history'),('CONFLICT','source_conflict'),('local changes','dirty_worktree')] if text in result.stdout),'other_git_error')})
                   subprocess.run(['git','merge','--abort'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
                   report['combined']=False;break
               dirty=subprocess.check_output(['git','status','--porcelain'],text=True).strip()

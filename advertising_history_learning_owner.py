@@ -1,9 +1,9 @@
 """Cache-only historical evidence, existing experiment journal and shared cache."""
-import os,sys,json,hashlib,io,contextlib
+import os,sys,json,hashlib,io,contextlib,gzip,base64
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parent/'private-source'))
 from stock_deploy_support import seal,error
-report={'source_calls':0,'wb_writes':0,'telegram_calls':0,'private_pin':'f9b183e2f2e04a8d3dcff430a80d20c5f3843825'}
+report={'source_calls':0,'wb_writes':0,'telegram_calls':0,'private_pin':'8aa1eecb8215adc1dad89b8c812de050d99f18cc'}
 hidden=io.StringIO()
 try:
  with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):
@@ -40,6 +40,7 @@ try:
   key='advertising:ip:historical_learning:v1'
   cache_set(key,summary,ttl_days=365)
   if digest(cache_get(key))!=digest(summary):raise RuntimeError('Common memory readback mismatch')
+  report['evidence_backup_gzip_b64']=base64.b64encode(gzip.compress(json.dumps({'experiments':rows,'learning':result,'memory':summary},sort_keys=True,ensure_ascii=False,separators=(',',':')).encode(),mtime=0)).decode()
   report.update(status='advisory_audit_saved',summary=summary,full_readback_verified=True,experiment_rows=len(rows))
 except Exception as exc:report['error']=error(exc)
 finally:

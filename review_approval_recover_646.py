@@ -44,3 +44,5 @@ finally:
     preserve();conn.close()
 
 # Continue same durable intent only after saved RetryAfter 2026-10-15T12:34:58UTC.
+
+# Continue same intent with verified bounded-preflight fix;83 isolated checks passed.

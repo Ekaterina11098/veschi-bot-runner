@@ -1,0 +1,41 @@
+{
+  "business_calls": 0,
+  "cache_triggers_and_rules_absent": true,
+  "created_at": "2026-10-15T05:44:11.165509+00:00",
+  "expires_at": "2026-10-15T05:49:11.165509+00:00",
+  "gate_verified": true,
+  "key": "recovery:storage-probe:3d20fd7f-74f9-48b2-8261-5fd6094d544d",
+  "no_executor_imported": true,
+  "no_job_payload": true,
+  "no_upsert": true,
+  "payload_sha256": "95cd0f539df3b7b48295665dd16376674cfc31dfc5265169ad18c074464b7399",
+  "readback_exact": true,
+  "rows_inserted_confirmed": 1,
+  "success": true,
+  "ttl_physical_delete": false,
+  "ttl_seconds": 300,
+  "write_attempts": 1,
+  "run_id": 38688377205,
+  "initial_attempt": {
+    "run_id": 38688302367,
+    "write_attempts": 0,
+    "reason": "Worker transport gate installed before readonly metadata preflight; order corrected"
+  }
+}
+
+ПОДГОТОВКА ПЕРЕНОСА ЖУРНАЛА — 15.10.2026
+Разрешение текущего этапа: одна техническая cache-строка/чтение. Импорт в рабочую базу и создание схемы НЕ разрешены этим этапом; ниже только подготовка.
+
+Источник: отдельная сохранённая SQLite-копия, SHA25616d571eda15598a5965b3d5bbe1b9586155073fa06a460fd9833d158416dc7c0.1117runs/879operations/1733events.257confirmed335invalidated286prepared1uncertain. Зашифрованная независимая копия проверена целиком38684940069. Исходный SQLite не изменять.
+Код импорта: PR20 f2c82b7d0f1044886e4a2a3cc2aabd850ff91491, stock_operation_store.Store.import_local. Исторический deployment.md содержит устаревшие числа/состояние подключения: использовать актуальные module-readiness-2026-10-15.txt и этот план. Новые тесты не нужны без изменений: реальный журнал дважды импортирован изолированно38685710778, ID/payload/events сохранены, дубликатов0, executor/WB/TG0.
+
+Перед реальным импортом:
+1. Зафиксировать source namespace один раз в защищённом манифесте, не генерировать его заново при повторном импорте. Сверить существующую копию с текущим файлом источника read-only; если изменился — сначала отдельный WAL-aware SQLite backup/контрольная сумма, не смешивать версии.
+2. Подготовить и отдельно согласовать закрытую схему stock_execution, owner/importer/runtime-роли, фиксированный search_path; REVOKE PUBLIC, никаких прав anon/authenticated и никакого включения PostgREST для этой схемы. STOCK_DATABASE_URL сохраняется только защищённым секретом, не в репозитории/чате. initialize_test_schema не использовать как рабочую миграцию.
+3. Импортеру передать только SQLite read-only и journal DSN. Не передавать WB/Telegram ключи, не импортировать исполнители/планировщики. Разрешить сетевой выход только к назначенному PostgreSQL; не вызывать execute/prepare_fresh/claim рабочих очередей.
+4. В транзакции import_local проверить source checksum планов и body соответствие; при конфликте stable ID/payload/event — полный rollback. Не делать ON CONFLICT UPDATE существующего тела.
+5. Сверить исходные идентификаторы/namespace mapping, все snapshot/plan/digest/created, operation bodies/source_state, все event IDs/hash/связи. Ожидаемая импортированная классификация:257confirmed335invalidated286replan_required1uncertain. prepared остаётся в source_state; исходные статусы сохранены, не подменены. Никакой записи WB.
+6. Повторный import того же манифеста должен дать идентичные множества ключей/полные digest и количества, без новых событий/дубликатов/возврата terminal в очередь. Создать защищённый receipt и отдельную резервную копию целевой схемы.
+7. После импорта оставить writers/расписания выключенными. uncertain требует отдельно разрешённого чтения фактического WB; совпадение target позволяет подтверждение без PUT, несовпадение/неизвестность — остановка/разбор, не повтор. Старые prepared не исполнять, только новый fresh scoped расчёт.
+8. Для нового плана: три кабинета/точный МСК/семь завершённых дней/FBO/фото/карточки/исключения/barcodes. МСК<15 — все изменения ручные, без автоматических уменьшений/переносов. При no-op уведомления нет. МСК>=15 — отдельно разрешённый scoped batch, подтверждённые уменьшения до зависимых увеличений.
+Разрешения на schema/import/readWB/writeWB/Telegram/schedules разделены. Успешная cache-проба не является разрешением этих действий и не доказывает готовность отдельного journal DSN.

@@ -4,7 +4,7 @@ from pathlib import Path
 from stock_deploy_support import seal,error
 root=Path(__file__).parent
 source=root/'combined';pr=root/'pr19'
-report={'main':'1b4201067880e379d8dacbe5f6ca3f9848d6ffb0','pr19':'48c69cafc68c3a8a83af33aa603952d1961d2862','source_calls':0,'telegram_calls':0,'wb_writes':0}
+report={'main':'1b4201067880e379d8dacbe5f6ca3f9848d6ffb0','pr19':'5b0c24c67408c28a709ab37db62999a02e2e0bd7','source_calls':0,'telegram_calls':0,'wb_writes':0}
 def command(args):
  p=subprocess.run(args,cwd=source,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
  return {'exit':p.returncode,'log':p.stdout}

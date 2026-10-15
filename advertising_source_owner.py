@@ -174,6 +174,32 @@ try:
       seen.add(identity)
       req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,nm_id=nm,report='days',d1=first,d2=str(end)))
       if req:more.append(req)
+     assessment=database('GET','analytics_snapshots',params={'source':'eq.ip_owner_checkpoint_preview','cabinet':'eq.token_2','select':'payload','order':'id.desc','limit':1}) or []
+     missing_before=[]
+     if assessment:
+      for exp in assessment[0]['payload'][0].get('experiments',[]):
+       missing=sorted({day for cp in exp.get('checkpoints',[]) for day in cp.get('before',{}).get('missing_days',[])})
+       cid=mapping.get(exp.get('campaign_id'))
+       if missing and cid is not None:
+        identity=next((e for e in experiments if e['id']==exp['experiment_id']),None)
+        if identity:missing_before.append((cid,identity['nm_id'],missing[0],missing[-1]))
+     for cid,nm,first,last in missing_before:
+      # Before requesting a smaller gap, reuse a valid longer retained raw receipt.
+      from analytics.collect import _database_transport
+      markers=_database_transport('GET','analytics_snapshots',params={'source':'eq.mpstats_wbbidder_campaign_stats','cabinet':'eq.token_2','period_from':'lte.'+first,'period_to':'gte.'+last,'select':'id,cid:payload->0->arguments->>campaign_id,nm:payload->0->arguments->>nm_id,kind:payload->0->arguments->>report,state:payload->0->>status','order':'id.desc','limit':1000}) or []
+      reused=False
+      for marker in markers:
+       if str(marker.get('cid'))!=str(cid) or str(marker.get('nm'))!=str(nm) or marker.get('kind')!='days' or marker.get('state')!='received':continue
+       raw=read('analytics_snapshots',dict(id='eq.'+str(marker['id']),select='payload',limit=1))
+       try:
+        source,valid=normalize(raw[0]['payload'][0],'token_2')
+        if source=='mpstats_campaign_report' and valid.get('spending_reconciled'):
+         valid['raw_snapshot_id']=marker['id'];save_snapshot(source,valid,valid['period_from'],valid['period_to'])
+         report.setdefault('reused_baseline_raw_ids',[]).append(marker['id']);reused=True;break
+       except (ValueError,KeyError,TypeError):continue
+      if not reused:
+       req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,nm_id=nm,report='days',d1=first,d2=last))
+       if req:more.append(req)
      report['pending_experiment_scopes']=[r for r in more if r['arguments'].get('report')=='days']
      results+=execute_reads(call,checks,known,more,bidder,saved,max_requests=max(0,20-len(results)))
     return results

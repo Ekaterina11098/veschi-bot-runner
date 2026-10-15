@@ -1,0 +1,122 @@
+name: Send two owner-approved China reports only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-approved-two-reports-20261015.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-approved-two-reports-20261015
+  cancel-in-progress: false
+jobs:
+  send:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 6cbdff742243f03be73c783620ad6569842ff9f4
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Verify destination and send exactly two approved messages
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,json,time,hashlib,re,html
+          from datetime import datetime,timezone
+          from zoneinfo import ZoneInfo
+          from urllib.parse import urlparse
+          import requests
+          from advertising_agent.notify import db,cache_get,cache_set
+          KEY='china_agent:approved_two_reports:2026-10-15:164210'
+          CHAT=-5340821012
+          original=requests.sessions.Session.request
+          def guard(self,method,url,*args,**kw):
+              host=urlparse(url).hostname or ''; path=urlparse(url).path
+              if host=='api.telegram.org':
+                  assert method.upper()=='POST'
+                  assert path.rsplit('/',1)[-1] in ('getMe','getChat','getChatMember','sendMessage')
+                  data=kw.get('json') or {}
+                  if 'chat_id' in data: assert data['chat_id']==CHAT
+              else:
+                  assert host==urlparse(os.environ['SUPABASE_URL']).hostname
+                  assert '/rpc/' not in path
+                  table=path.rsplit('/',1)[-1]
+                  assert table in ('telegram_api_cache','business_agent_config','business_agent_jobs')
+                  if method.upper()!='GET':
+                      assert table=='telegram_api_cache'
+                      assert (kw.get('json') or {}).get('cache_key')==KEY
+              return original(self,method,url,*args,**kw)
+          requests.sessions.Session.request=guard
+          state=None
+          def save():
+              cache_set(KEY,state,365)
+              assert cache_get(KEY)==state
+          token=os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()
+          def telegram(action,data):
+              try:
+                  response=requests.post('https://api.telegram.org/bot'+token+'/'+action,json=data,timeout=(5,30))
+                  value=response.json()
+              except Exception:
+                  raise RuntimeError('Telegram response unavailable') from None
+              if not response.ok or value.get('ok') is not True:
+                  raise RuntimeError('Telegram request rejected HTTP '+str(response.status_code))
+              return value['result']
+          try:
+              assert datetime.now(ZoneInfo('Europe/Moscow')).date().isoformat()=='2026-10-15'
+              state=cache_get(KEY)
+              assert state and state['chat_id']==CHAT and state['owner_user_id']==5122667182
+              if state['status']=='delivered':
+                  assert len(state['receipts'])==2
+                  print(json.dumps(dict(status='already_delivered',message_ids=[r['message_id'] for r in state['receipts']])))
+                  raise SystemExit(0)
+              assert state['status']=='approved' and not state['receipts']
+              messages=state['messages']
+              assert len(messages)==2 and all(isinstance(t,str) and 1<=len(t)<=3500 for t in messages)
+              expected=['f4a5a372f2ae626d4be2b887fb76613c','bf4cad2bb7201dc0b2ee87b868f057a0']
+              assert [hashlib.md5(t.encode()).hexdigest() for t in messages]==expected
+              configs=db('GET','business_agent_config',params=dict(agent_id='eq.china',active='eq.true',limit=2))
+              assert len(configs)==1 and configs[0]['chat_id']==CHAT and configs[0]['owner_user_id']==5122667182
+              history=db('GET','business_agent_jobs',params=dict(agent_id='eq.china',status='eq.done',request_text='eq./china_price_daily_report',select='chat_id',order='id.desc',limit=1))
+              assert history and history[0]['chat_id']==CHAT
+              me=telegram('getMe',{})
+              assert me['id']==state['expected_bot_id']
+              chat=telegram('getChat',dict(chat_id=CHAT))
+              assert chat['id']==CHAT and chat['title']=='VESCHI Китай' and chat['type'] in ('group','supergroup')
+              for uid in (5122667182,me['id']):
+                  member=telegram('getChatMember',dict(chat_id=CHAT,user_id=uid))
+                  assert member['status'] in ('creator','administrator','member')
+              state['verified_chat_title']=chat['title']
+              state['runner_id']=os.environ['GITHUB_RUN_ID']
+              state['status']='sending';save()
+              for index,message in enumerate(messages):
+                  if index:time.sleep(3.3)
+                  state['in_flight']=index+1;save()
+                  result=telegram('sendMessage',dict(chat_id=CHAT,text=message,parse_mode='HTML',disable_web_page_preview=True))
+                  plain=html.unescape(re.sub('<[^>]+>','',message))
+                  assert result['chat']['id']==CHAT and result.get('text')==plain
+                  state['receipts'].append(dict(index=index+1,message_id=result['message_id'],chat_id=CHAT,date=result['date'],md5=expected[index]))
+                  state.pop('in_flight',None);save()
+              state['status']='delivered';state['finished_at']=datetime.now(timezone.utc).isoformat();save()
+              print(json.dumps(dict(status=state['status'],message_ids=[r['message_id'] for r in state['receipts']],chat_id=CHAT,wb_calls=0)))
+          except SystemExit:
+              raise
+          except BaseException as exc:
+              if state:
+                  state['status']='delivery_requires_review'
+                  state['error_type']=type(exc).__name__
+                  state['failure_at']=datetime.now(timezone.utc).isoformat()
+                  try:save()
+                  except BaseException:pass
+              print(json.dumps(dict(status='delivery_requires_review',error_type=type(exc).__name__)))
+              raise SystemExit(1)
+          PY

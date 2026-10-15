@@ -85,6 +85,8 @@ sys.exit(0 if result.wasSuccessful() else 1)
    requests.sessions.Session.request=native_request
    import analytics.collect as collect
    collect.database=database
+   import analytics.stage_one as stage_one
+   stage_one.database=database
   new=database('GET','telegram_api_cache',params={'cache_key':'eq.'+KEY,'select':'payload','limit':1})
   report['production_decision_state_modified']=old!=new
   data=decode_rows(database('GET','analytics_snapshots',params={'source':'eq.ip_working_mode_replay','cabinet':'eq.token_2','run_id':'eq.'+RUN_ID,'select':'payload','order':'id.desc','limit':1}))

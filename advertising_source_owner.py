@@ -30,8 +30,8 @@ def save_snapshot(source,value,a,b,status='complete'):
  got=database('GET','analytics_snapshots',params={'source':'eq.'+source,'cabinet':'eq.token_2','run_id':'eq.'+RUN_ID,'order':'id.desc','select':'id,payload','limit':1}) or []
  if not got or digest(got[0]['payload'])!=digest([value]):gate.fail();raise RuntimeError('Snapshot full payload readback mismatch')
  return got[0]['id']
-def wanted(tool,args):
- key='token_2:'+tool+':'+json.dumps(args,sort_keys=True)
+def wanted(tool,args,purpose=None):
+ key='token_2:'+tool+':'+json.dumps(args,sort_keys=True)+((':'+purpose) if purpose else '')
  # Received, explicit rejected parameter errors and retries are all preserved.
  from analytics.collect import _database_transport
  a,b=period(args)
@@ -78,6 +78,11 @@ try:
    for kind in ('stats','state'):
     req=wanted('wbbidder_campaigns',dict(tokens=[152922],report=kind,d1=str(start),d2=str(end),limit=100,start_row=0,bidder_only=False,sort='wb_id',sort_dir='asc'))
     if req:requests_plan.append(req)
+   gap_state=get('analytics:source_gaps') or {}
+   for gap in gap_state.get('gaps',[]):
+    if gap.get('cabinet')=='token_2' and gap.get('metric')=='advertising_spend' and gap.get('status')=='open' and str(start)<=gap.get('day','')<=str(end):
+     day=gap['day'];req=wanted('lk_wb_products',dict(date_from=day,date_to=day,start_row=0,end_row=1500),purpose='confirmed-finance-gap:'+str(now.date()))
+     if req:req['priority']=100;requests_plan.insert(0,req)
    existing_catalogs=read('analytics_snapshots',dict(source='eq.mpstats_campaign_catalog',cabinet='eq.token_2',period_from='eq.'+str(start),period_to='eq.'+str(end),select='id,payload',order='id.desc',limit=30)) or []
    catalogs_by_page={}
    for row in existing_catalogs:
@@ -102,6 +107,27 @@ try:
      put('mpstats:cooldown',{'pending':True,'retry_after':obs['retry_after']})
      database('PATCH','telegram_api_cache',body={'expires_at':(datetime.now(timezone.utc)+timedelta(seconds=obs['retry_after'])).isoformat()},params={'cache_key':'eq.mpstats:cooldown'})
     if obs.get('status')=='received':
+     if ':confirmed-finance-gap:' in obs['request_key']:
+      import math
+      body=(obs.get('data') or {}).get('data') or {};items=body.get('data') or []
+      fields=('sales_ret_sum','for_pay','advertisement','total_commission_without_spp','acquiring','logistic_all','storage_fee','deduction','acceptance','penalty')
+      balanced=bool(items) and body.get('total')==len(items) and body.get('need_update')==0
+      try:
+       for item in items:
+        vals={k:float(item[k]) for k in fields}
+        if not all(math.isfinite(v) for v in vals.values()) or abs(vals['sales_ret_sum']-vals['for_pay']-sum(vals[k] for k in fields[2:]))>.05:balanced=False
+       spend=sum(float(item['advertisement']) for item in items)
+      except (TypeError,KeyError,ValueError):balanced=False;spend=None
+      report['finance_gap_observation']={'day':a,'snapshot_id':ident,'balanced':balanced,'advertising_spend':spend,'resolved':False}
+      if balanced and spend is not None and spend>0:
+       current=database('GET','telegram_api_cache',params={'cache_key':'eq.analytics:source_gaps','select':'payload,updated_at','limit':1}) or []
+       if current:
+        updated=copy.deepcopy(current[0]['payload'])
+        for gap in updated.get('gaps',[]):
+         if gap.get('cabinet')=='token_2' and gap.get('day')==a and gap.get('metric')=='advertising_spend' and gap.get('status')=='open':
+          gap.update(status='resolved_mpstats_daily',mpstats_daily_snapshot_id=ident,resolved_at=datetime.now(timezone.utc).isoformat(),resolution='Fresh exact-day complete MPStats financial report with nonzero expense and balanced components')
+        database('PATCH','telegram_api_cache',params={'cache_key':'eq.analytics:source_gaps','updated_at':'eq.'+current[0]['updated_at']},body={'payload':updated,'updated_at':datetime.now(timezone.utc).isoformat()})
+        report['finance_gap_observation']['resolved']=get('analytics:source_gaps')==updated
      try:
       source,normalized=normalize(obs,cabinet)
       if source:

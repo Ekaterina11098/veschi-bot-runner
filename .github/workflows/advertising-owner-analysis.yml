@@ -32,7 +32,7 @@ jobs:
           path: pr19
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install simplejson==3.20.2 cryptography==46.0.2 -r combined/requirements.txt > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: pip install cryptography==46.0.2 -r combined/requirements.txt > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Recompute from saved sources, preserve owner decisions, no external source credentials
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

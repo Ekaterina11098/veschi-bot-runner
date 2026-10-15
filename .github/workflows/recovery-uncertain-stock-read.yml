@@ -1,0 +1,52 @@
+name: One owner authorized uncertain stock read only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recovery-uncertain-stock-read.yml']
+permissions:
+  contents: read
+concurrency:
+  group: veshi-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Exact stock POST is read operation; no PUT, DELETE, PATCH or executor
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python - <<'PY'
+          import os,json,time
+          from pathlib import Path
+          from datetime import datetime,timezone,timedelta
+          import requests
+          out=Path(os.environ['RUNNER_TEMP'])/'uncertain-proof';out.mkdir()
+          report={'article':'20-furbigscarf-khaki','cabinet':'Китай','warehouse':2126188,'chrtId':2435480854,'saved_before':1,'saved_target':3,'wb_writes':0,'operation_state_changed':False,'execution_lock_retained':True,'success':False}
+          try:
+              token=os.environ['WB_TOKEN_3'];assert token
+              r=requests.post('https://marketplace-api.wildberries.cn/api/v3/stocks/2126188',headers={'Authorization':token},json={'chrtIds':[2435480854]},timeout=(5,30),allow_redirects=False)
+              report.update(http_status=r.status_code,observed_at=datetime.now(timezone.utc).isoformat())
+              if r.status_code==429:
+                  raw=r.headers.get('X-Ratelimit-Retry') or r.headers.get('Retry-After')
+                  try:wait=max(1,int(float(raw)))+1 if raw else 65
+                  except ValueError:wait=65
+                  report['retry_not_before']=(datetime.now(timezone.utc)+timedelta(seconds=wait)).isoformat()
+              elif r.status_code==200:
+                  data=r.json();rows=[x for x in data.get('stocks',[]) if x.get('chrtId')==2435480854]
+                  assert len(rows)==1 and type(rows[0].get('amount')) is int and rows[0]['amount']>=0
+                  report.update(success=True,actual=rows[0]['amount'],target_matches=rows[0]['amount']==3,before_matches=rows[0]['amount']==1,historical_causality_proven=False,result='Current state only; preserve uncertain until historical changes excluded')
+          except Exception as e:report['error_type']=type(e).__name__
+          (out/'summary.json').write_text(json.dumps(report,sort_keys=True));print(json.dumps(report,sort_keys=True))
+          
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: one-uncertain-read-proof
+          path: ${{ runner.temp }}/uncertain-proof
+          retention-days: 90

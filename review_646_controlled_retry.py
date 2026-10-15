@@ -40,7 +40,20 @@ class Retry:
     def operation(self):return self.repo.get('events',AUTH)
     def save(self,op,**fields):
         op.update(fields,updated_at=self.clock())
-        with self.repo.transaction():self.repo.put('events',AUTH,op)
+        with self.repo.transaction():
+            current=self.repo.get('events',AUTH,lock=True)
+            if current:
+                # HTTP observer commits while a caller holds an older operation
+                # object. Never let that object erase newly recorded requests.
+                logs=copy.deepcopy(current.get('http_log') or [])
+                identities={(r.get('request_id'),r.get('phase')) for r in logs}
+                for row in op.get('http_log') or []:
+                    key=(row.get('request_id'),row.get('phase'))
+                    if key not in identities:logs.append(copy.deepcopy(row));identities.add(key)
+                op['http_log']=logs
+                op['post_consumed']=bool(op.get('post_consumed') or current.get('post_consumed'))
+                op['http_post_started']=bool(op.get('http_post_started') or current.get('http_post_started'))
+            self.repo.put('events',AUTH,op)
         if self.repo.get('events',AUTH)!=op:raise RuntimeError('Retry journal readback mismatch')
         self.preserve()
         return op

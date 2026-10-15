@@ -10,6 +10,8 @@ KEY='reviews:publication:token_1:soHH5MsaEY08FASqdqtM:owner-v2'
 INPUT='reviews:publication-input:token_1:soHH5MsaEY08FASqdqtM:owner-v2'
 ID='soHH5MsaEY08FASqdqtM'
 report={'wb_write_attempts':0,'telegram_sends':0,'target':ID}
+from review_rate_diagnostic import install as install_rate_diagnostic
+install_rate_diagnostic(report,ID) # observes this exact request only; no additional WB calls
 def checkpoint():seal('review-publication',report)
 def save(state):
     now=datetime.now(timezone.utc).isoformat()

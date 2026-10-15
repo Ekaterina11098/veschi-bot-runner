@@ -112,6 +112,29 @@ class PostgreSQLTests(unittest.TestCase):
         self.assertEqual(self.conn.execute("SELECT count(*) FROM review_approval.source_cache WHERE cache_key='other:secret'").fetchone()[0],0)
     def test_runtime_no_schema_create(self):
         with self.assertRaises(psycopg.errors.InsufficientPrivilege):self.conn.execute('CREATE TABLE review_approval.unapproved(id int)')
+    def test_runtime_no_view_write_after_repeat_schema(self):
+        self.admin.execute(Path('schema-proposal.sql').read_text(encoding='utf-8-sig'))
+        with self.assertRaises(psycopg.errors.InsufficientPrivilege):self.conn.execute("UPDATE review_approval.source_journal SET state='sent'")
+    def test_process_callback_to_publication_and_backup(self):
+        from review_approval_process import process
+        backups=[];tg=TG()
+        def preserve():backups.append(snapshot(self.repo))
+        process(self.a,self.bridge,tg,self.wb,self.update('v2','select'),True,preserve)
+        nonce=self.repo.get('cards',self.token)['nonce']
+        result=process(self.a,self.bridge,tg,self.wb,self.update('ok.'+nonce,'confirm'),True,preserve)
+        self.assertEqual(result['publication_status'],'confirmed');self.assertEqual(self.wb.posts,1)
+        self.assertEqual(len(backups),4)
+        self.assertEqual(backups[2]['tables']['intents'][0]['payload']['status'],'awaiting_preflight')
+        self.assertEqual(backups[3]['tables']['intents'][0]['payload']['status'],'confirmed')
+    def test_confirm_save_failure_get_only(self):
+        intent=self.approve();original=self.executor.save
+        def save(value,status,**extra):
+            if status=='confirmed':raise RuntimeError('Simulated database save outage')
+            return original(value,status,**extra)
+        self.executor.save=save
+        with self.assertRaises(RuntimeError):self.executor.run(intent)
+        self.executor.save=original
+        self.assertEqual(self.executor.run(intent)['status'],'confirmed');self.assertEqual(self.wb.posts,1)
     def test_pg_competing_executor_lock(self):
         intent=self.approve();other=psycopg.connect(os.environ['TEST_DSN'],autocommit=True)
         try:

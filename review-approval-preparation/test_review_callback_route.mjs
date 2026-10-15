@@ -21,3 +21,14 @@ test('owner rework reply uses same isolated route',async()=>{
  const u={message:{from:{id:11},chat:{id:22,type:'private'},text:'Сократить',reply_to_message:{from:{id:33},text:'[Отзывы:согласование]\nООО'}}};
  assert.equal((await routeReviewApproval(request(),u,cfg,async()=>new Response('OK'))).status,200);
 });
+test('GitHub receives only encrypted callback, no source or owner text',async()=>{
+ const config={...cfg,mode:'github-encrypted',ingressKey:Buffer.alloc(32,1).toString('base64'),dispatchToken:'dispatch-secret',receiverURL:'https://api.github.com/repos/Ekaterina11098/veschi-bot-runner/actions/workflows/review-approval-process.yml/dispatches'};
+ let sent;
+ const result=await routeReviewApproval(request(),update(),config,async(url,payload)=>{sent=payload;return new Response('',{status:204})});
+ // Response 204 cannot contain a body in Node; the real GitHub response is empty.
+ assert.ok(sent);assert.equal(JSON.stringify(sent.body).includes('callback_query'),false);
+ const envelope=JSON.parse(JSON.parse(sent.body).inputs.sealed_update);
+ const key=await crypto.subtle.importKey('raw',Buffer.alloc(32,1),'AES-GCM',false,['decrypt']);
+ const raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:Buffer.from(envelope.nonce,'base64'),additionalData:new TextEncoder().encode('review-approval-update-v1')},key,Buffer.from(envelope.ciphertext,'base64'));
+ assert.deepEqual(JSON.parse(new TextDecoder().decode(raw)),update());
+});

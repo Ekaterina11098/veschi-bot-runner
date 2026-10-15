@@ -7,7 +7,9 @@ class ExplicitRateLimit(Exception):
 class WBAdapter:
     def __init__(self,module):self.wb=module
     def pause(self,cabinet):return self.wb.review_pause_seconds(cabinet=cabinet)
-    def read(self,intent):return self.wb.get_reply_answer(intent['item_id'],intent['kind'],cabinet=intent['cabinet'])
+    def read(self,intent):
+        try:return self.wb.get_reply_answer(intent['item_id'],intent['kind'],cabinet=intent['cabinet'])
+        except self.wb.ReviewRateLimit as exc:raise ExplicitRateLimit(exc.retry_seconds) from None
     def post(self,intent):
         function=self.wb.post_question_reply if intent['kind']=='questions' else self.wb.post_review_reply
         try:function(intent['item_id'],intent['answer'],cabinet=intent['cabinet'])

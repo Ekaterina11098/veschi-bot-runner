@@ -24,10 +24,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/review-pg-socket"
           chmod 777 "$RUNNER_TEMP/review-pg-socket"
           docker pull postgres:17.6
-          docker run -d --name review-approval-pg --network none -e POSTGRES_HOST_AUTH_METHOD=trust -v "$RUNNER_TEMP/review-pg-socket:/socket" postgres:17.6 postgres -c unix_socket_directories=/socket -c listen_addresses=''
+          docker run -d --name review-approval-pg --network none -e POSTGRES_HOST_AUTH_METHOD=trust -e PGHOST=/socket -v "$RUNNER_TEMP/review-pg-socket:/socket" postgres:17.6 postgres -c unix_socket_directories=/socket -c listen_addresses=''
           for i in $(seq 1 90); do
             if [ "$(docker inspect --format '{{.State.Running}}' review-approval-pg)" != true ]; then docker logs review-approval-pg; exit 1; fi
-            if docker exec review-approval-pg pg_isready -h /socket -U postgres; then break; fi
+            if docker logs review-approval-pg 2>&1 | grep -q 'PostgreSQL init process complete' && docker exec review-approval-pg pg_isready -h /socket -U postgres; then break; fi
             sleep 1
           done
           docker exec review-approval-pg createdb -h /socket -U postgres review_approval_test

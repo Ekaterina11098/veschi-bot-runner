@@ -1,0 +1,54 @@
+name: Validate compact China price report
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-price-compact-20261015.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 878cfb8c6b5a3bc35261e5df1ff7b048dae8ac54
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Test compact report and retained recommendation safeguards
+        run: |
+          python - <<'PY'
+          import json,subprocess,sys,tempfile
+          for pattern in ('test_china_price_readiness.py','test_china_sales_demand.py','test_business_agents.py'):
+              with tempfile.TemporaryFile() as log:
+                  done=subprocess.run([sys.executable,'-m','unittest','discover','-s','tests','-p',pattern],stdout=log,stderr=log)
+                  log.seek(0);text=log.read().decode(errors='replace')
+                  print(pattern+': '+str(done.returncode))
+                  if done.returncode:print(text[-20000:]);sys.exit(done.returncode)
+          
+          PY
+      - name: Preview only saved verified facts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          from datetime import datetime
+          from advertising_agent.notify import cache_get,cache_set
+          from china_agent.demand import daily_summary
+          audit=cache_get('china_agent:readiness:2026-10-15:verified')
+          state=dict(latest=audit['assessment'],price_history={})
+          text=daily_summary(state,dict(available=True),datetime.fromisoformat(audit['checked_at']))
+          assert len(text)<2000
+          key='china_agent:readiness:2026-10-15:compact'
+          value=dict(text=text,source_commit='878cfb8c6b5a3bc35261e5df1ff7b048dae8ac54',telegram_messages=0,wb_calls=0,source_calls=0)
+          cache_set(key,value,365)
+          assert cache_get(key)==value
+          print('Compact preview saved; Telegram/source calls=0; length='+str(len(text)))
+          
+          PY

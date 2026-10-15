@@ -1,0 +1,52 @@
+name: Owner review recovery read-only WB
+on:
+  push:
+    paths: ['review_recovery_owner.py']
+permissions:
+  contents: write
+concurrency:
+  group: reviews-owner-recovery
+  cancel-in-progress: false
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 1b1e908266a38a62c1eaa43353d19cce092e09ad
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 cryptography > "$RUNNER_TEMP/review-install.log" 2>&1
+      - name: Verify manual answers and refresh only missing inboxes
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FEEDBACK_TOKEN: ${{ secrets.WB_FEEDBACK_TOKEN }}
+        run: python review_recovery_owner.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-review-recovery
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90
+      - name: Preserve encrypted receipt only
+        if: always()
+        run: |
+          mkdir -p recovery-output/2026-10-15
+          cp "$RUNNER_TEMP/stock-deploy-proof/reviews-recovery.aes.json" "recovery-output/2026-10-15/reviews-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/2026-10-15/
+          git commit -m "Preserve encrypted owner review recovery receipt"
+          git pull --rebase origin main
+          git push origin HEAD:main

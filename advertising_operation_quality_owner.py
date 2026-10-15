@@ -20,7 +20,7 @@ try:
   from analytics.payload_storage import decode_rows
   from analytics.ip_operation_diagnosis import collect_cached
   source=read('analytics_snapshots',{'source':'eq.ip_working_mode_replay','cabinet':'eq.token_2',
-   'run_id':'eq.38803127207','select':'id,payload,period_from,period_to','order':'id.desc','limit':1}) or []
+   'id':'eq.17521','run_id':'eq.38803127207:1','select':'id,payload,period_from,period_to','order':'id.desc','limit':1}) or []
   source=decode_rows(source)
   if not source:raise RuntimeError('Required new cached analysis not complete yet; no source replay')
   replay=source[0]['payload'][0];start=date.fromisoformat(source[0]['period_from']);end=date.fromisoformat(source[0]['period_to'])

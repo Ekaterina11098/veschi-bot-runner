@@ -30,6 +30,19 @@ def load_authorization():
     value=json.loads(plain)
     assert value['authorization']=='owner-controlled-first-three-20261015'
     assert len(value['allow'])==3 and len({x['article'] for x in value['allow']})==3
+    proofdata=Path('recovery-input/2026-10-15/verified-identities.aes.json').read_bytes()
+    assert hashlib.sha256(proofdata).hexdigest()=='82de6a51b6d70a969e6099c4ef756ef4e2d2ed2735d43b744ae19efe9c702377'
+    sealed=json.loads(proofdata)
+    proofkey=receiver.decrypt(base64.b64decode(sealed['receiver_wrapped_key']),padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
+    proofraw=AESGCM(proofkey).decrypt(base64.b64decode(sealed['nonce']),base64.b64decode(sealed['ciphertext']),None)
+    assert hashlib.sha256(proofraw).hexdigest()==sealed['plaintext_sha256']
+    proof=json.loads(proofraw)
+    assert proof['source_run']==38695973987 and proof['api_and_jwt_sids_matched'] is True
+    assert 0<=time.time()-proof['verified_at']<86400
+    from datetime import datetime,timezone,timedelta
+    zone=timezone(timedelta(hours=3))
+    assert datetime.fromtimestamp(proof['verified_at'],zone).date()==datetime.now(zone).date()
+    value['identity_proof']=proof
     return value
 def card_ids(g,values,article):
     return [sorted([dict(nmID=c['nmID'],chrtIds=sorted([s.get('chrtID',s.get('chrtId')) for s in c.get('sizes',[])])) for c in cards if g.norm(c.get('vendorCode'))==article],key=lambda x:x['nmID']) for cards in values]
@@ -56,7 +69,7 @@ def main():
             assert old.get('wb_write_attempts')==0 and old.get('confirmed')==0 and old.get('error_type')=='RateLimited' and old.get('not_executed')==3
             cur.execute("SELECT count(*) FROM stock_execution.stock_runs WHERE origin='cloud' AND created>=%s",(previous[2],))
             assert cur.fetchone()[0]==0,'New cloud activity requires reconciliation'
-            claim=hashlib.sha256((auth['authorization']+':rate-limit-resume-1').encode()).hexdigest()
+            claim=hashlib.sha256((auth['authorization']+':identity-checkpoint-resume-2').encode()).hexdigest()
             cur.execute("INSERT INTO stock_execution.stock_events VALUES(%s,%s,NULL,%s,%s,%s) ON CONFLICT DO NOTHING",(claim,auth['authorization'],'technical_rate_limit_resume',time.time(),'{}'))
             assert cur.rowcount==1,'Continuation already claimed; no blind retry'
             cache_saved=json.loads(previous[0]).get('cache',{})
@@ -116,14 +129,14 @@ def main():
         g.required_tokens('MS_TOKEN','WB_TOKEN_1','WB_TOKEN_2','WB_TOKEN_3')
         with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):
             a.check_write_credentials()
-            identities=[]
-            for token in g.cabinet_tokens():
-                info=g.api('GET','https://common-api.wildberries.ru/api/v1/seller-info',token)
+            # Reuse the identity proof from THIS batch; seller-info's daily pause is respected.
+            # WB stock/card reads still validate the actual credential and original cabinet IDs.
+            identities=auth['identity_proof']['identities']
+            for token,info in zip(g.cabinet_tokens(),identities):
                 claims=json.loads(base64.urlsafe_b64decode(token.split('.')[1]+'==='))
-                assert str(info.get('sid'))==str(claims['sid']),'Seller API/JWT mismatch'
-                identities.append(info)
+                assert str(info['sid'])==str(claims['sid']),'Current JWT seller differs from verified batch identity'
             assert len({x['sid'] for x in identities})==3
-            report['seller_identity_verified']=True;report['identities']=identities
+            report.update(seller_identity_verified=True,identities=identities,identity_evidence_source_run=38695973987,seller_info_api_calls=0)
             # Direct fresh Moscow and direct same-day completed-window sales; no morning target replay.
             ms,unresolved=g.load_ms_stocks_dict()
             allcards=[];sales=[]

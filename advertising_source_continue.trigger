@@ -5,3 +5,5 @@
 # SQL57014 diagnosed before source calls; bounded exact-period metadata lookup replaces whole-history JSON filter.
 
 # First successful source preserved13/14Oct+page0. Resume only catalog pages100/200 and exact missing active campaign aggregates; never repeat days.
+
+# All12 campaign aggregates reused. Fill exact Oct12-14 SKU daily evidence for eight active saved experiments only.

@@ -1,0 +1,35 @@
+name: Review recovery offline regression
+on:
+  push:
+    paths: ['.github/workflows/review-recovery-offline.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b55f8afef275021bd61b7128c62460a02f7ee60c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1
+      - name: Offline review scope publication draft and notification checks
+        run: |
+          python - <<'PY'
+          import socket,unittest,sys
+          def denied(*a,**kw):raise AssertionError('External network forbidden')
+          socket.create_connection=denied
+          socket.socket.connect=denied
+          suite=unittest.TestSuite()
+          loader=unittest.defaultTestLoader
+          for pattern in ('test_review_publication.py','test_review_refresh.py','test_reviews_cabinet_scope.py','test_review_durable_workflow.py'):
+              suite.addTests(loader.discover('tests',pattern=pattern))
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          print('WB writes=0; Telegram sends=0; production calls=0')
+          sys.exit(not result.wasSuccessful())
+          PY

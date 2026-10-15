@@ -16,7 +16,7 @@ def persist(key,payload):
     if not rows or sha(rows[0]['payload'])!=sha(payload):raise RuntimeError('History readback mismatch')
 def wait_scope(cabinet):
     pause=wb.review_pause_seconds(cabinet=cabinet)
-    if pause>120:raise wb.ReviewRateLimit(pause)
+    if pause>900:raise wb.ReviewRateLimit(pause)
     if pause>0:time.sleep(pause+1)
 def main():
     report={'manual':[],'inboxes':[],'wb_writes':0,'telegram_sends':0}

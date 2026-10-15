@@ -33,7 +33,7 @@ try:
    adverts=(data or {}).get('adverts')
    if not isinstance(adverts,list) or {x.get('id') for x in adverts}!=set(active):raise RuntimeError('Incomplete current campaign membership')
    c.save('advertising_active_configuration',{'campaign_ids':active,'adverts':adverts})
-  c.collect_campaign_budgets(os.environ['WB_TOKEN_2'],active)
+  # Budgets remain exclusively owned by the already running sequential collector.
   report['configuration']=c.latest('advertising_active_configuration',status=None)
   report['budgets']=c.latest('advertising_campaign_budgets',status=None)
   report['storage_readback']=bool(report['configuration'] and report['budgets'])

@@ -14,6 +14,10 @@ def persist(key,payload):
     q._request('POST','/telegram_api_cache',params={'on_conflict':'cache_key'},payload={'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+timedelta(days=3650)).isoformat()},prefer='resolution=ignore-duplicates,return=minimal')
     rows=q._request('GET','/telegram_api_cache',params={'cache_key':'eq.'+key,'select':'payload','limit':1}) or []
     if not rows or sha(rows[0]['payload'])!=sha(payload):raise RuntimeError('History readback mismatch')
+def wait_scope(cabinet):
+    pause=wb.review_pause_seconds(cabinet=cabinet)
+    if pause>120:raise wb.ReviewRateLimit(pause)
+    if pause>0:time.sleep(pause+1)
 def main():
     report={'manual':[],'inboxes':[],'wb_writes':0,'telegram_sends':0}
     for key in IDS:
@@ -26,6 +30,7 @@ def main():
                 result['status']='already_closed';continue
             if before['state']!='needs_check':raise RuntimeError('Unexpected state; no mutation')
             cabinet,kind,item=parse_reply_key(key)
+            wait_scope(cabinet)
             actual=wb.get_reply_answer(item,kind,cabinet=cabinet)
             if not actual.strip():result['status']='no_answer_verified';continue
             receipt={'before':before,'observed_at':datetime.now(timezone.utc).isoformat(),'actual_answer_sha256':hashlib.sha256(actual.encode()).hexdigest(),'actual_answer':actual,'mode':'manual_confirmed'}
@@ -46,6 +51,7 @@ def main():
                     result.update(status='fresh_cache',count=len(cached),fetched_at=stamp);continue
                 items=[];skip=0;complete=False
                 for page in range(10):
+                    wait_scope(cabinet)
                     rows=fetch(take=100,skip=skip,cabinet=cabinet)
                     items.extend(rows);skip+=len(rows)
                     if len(rows)<100:complete=True;break

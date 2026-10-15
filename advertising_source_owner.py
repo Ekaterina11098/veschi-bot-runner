@@ -75,9 +75,13 @@ try:
      report.setdefault('reused_daily_ids',[]).extend(x['id'] for x in existing[:1]);continue
     req=wanted('lk_wb_products',dict(date_from=day,date_to=day,start_row=0,end_row=1500))
     if req:requests_plan.append(req)
+   prior_catalogs=read('analytics_snapshots',dict(source='eq.mpstats_campaign_catalog',cabinet='eq.token_2',period_from='eq.'+str(start),period_to='eq.'+str(end),select='payload',order='id.desc',limit=20)) or []
+   retained_catalogs=[v for row in prior_catalogs for v in row.get('payload',[]) if isinstance(v,dict)]
    for kind in ('stats','state'):
-    req=wanted('wbbidder_campaigns',dict(tokens=[152922],report=kind,d1=str(start),d2=str(end),limit=100,start_row=0,bidder_only=False,sort='wb_id',sort_dir='asc'))
-    if req:requests_plan.append(req)
+    total=max([x.get('total',0) for x in retained_catalogs if x.get('report')==kind]+[1])
+    for offset in range(0,total,100):
+     req=wanted('wbbidder_campaigns',dict(tokens=[152922],report=kind,d1=str(start),d2=str(end),limit=100,start_row=offset,bidder_only=False,sort='wb_id',sort_dir='asc'))
+     if req:requests_plan.append(req)
    gap_state=get('analytics:source_gaps') or {}
    for gap in gap_state.get('gaps',[]):
     if gap.get('cabinet')=='token_2' and gap.get('metric')=='advertising_spend' and gap.get('status')=='open' and str(start)<=gap.get('day','')<=str(end):

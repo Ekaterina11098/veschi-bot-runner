@@ -1,2 +1,2 @@
-# Continue646 VERIFY: GET only after exact pause expiry; no repeated POST.
-# 2026-10-15T19:02:40UTC
+# VERIFY646 GET-only, with sealed exact rate diagnostics; no POST.
+#2026-10-15T19:17:35UTC

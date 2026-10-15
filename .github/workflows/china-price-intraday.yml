@@ -1,0 +1,62 @@
+name: China price intraday report only
+on:
+  push:
+    branches: [main]
+    paths: ['china-price-intraday-request.json']
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  report:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate exact dated request
+        id: request
+        run: |
+          python - <<'PY'
+          import json,os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          with open('china-price-intraday-request.json') as f:value=json.load(f)
+          day=datetime.now(ZoneInfo('Europe/Moscow')).date().isoformat()
+          allowed=(value.get('report_date')==day and value.get('mode')=='intraday'
+                   and value.get('action')=='run' and value.get('source_commit')=='b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c'
+                   and isinstance(value.get('nonce'),str) and len(value['nonce'])>=8)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('allowed='+str(allowed).lower()+'\n')
+          print(json.dumps(dict(mode='intraday',report_date=value.get('report_date'),authorized_run=allowed)))
+          PY
+      - uses: actions/checkout@v4
+        if: steps.request.outputs.allowed == 'true'
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        if: steps.request.outputs.allowed == 'true'
+        with:
+          python-version: '3.12'
+      - name: Install pinned transport and existing worker dependencies
+        if: steps.request.outputs.allowed == 'true'
+        run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Deliver exact China intraday report
+        if: steps.request.outputs.allowed == 'true'
+        working-directory: source
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: python -m china_agent.scheduled_price_worker --mode intraday

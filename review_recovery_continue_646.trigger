@@ -1,1 +1,1 @@
-# 2026-10-15 controlled646 journal backup only: POST consumed, rejected readback already checked; no WB calls.
+# Owner explicitly renewed exact646 variant1 attempt v2; fresh absence, 780 seconds and saved RetryAfter; one POST only, HTTP journal and WB readback.

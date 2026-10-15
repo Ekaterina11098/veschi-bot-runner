@@ -1,0 +1,12 @@
+{
+  "context": {
+    "parts": 19,
+    "bytes": 4565596,
+    "sha256": "c4520021fb17287f4ac65671e490f2a41a9befe402b37626515f3f5fa4f8bc3f"
+  },
+  "plan": {
+    "bytes": 4698,
+    "sha256": "26ea985df5047b6d7f79cb66adfca27b2ba25b74fad818f0ebd76a0d37e5ffe4"
+  },
+  "encryption": "AES-GCM, owner RSA-OAEP and existing protected receiver public key; no private keys or plaintext"
+}

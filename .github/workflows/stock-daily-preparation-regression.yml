@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: c9aa01737a307997b0ef63cf9bff9954873f6de7
+          ref: 180f694a181b95a9a38824e4a1dc8819c312bec5
           fetch-depth: 0
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
@@ -50,7 +50,7 @@ jobs:
           assert all(p in files for p in deps)
           assert 'analytics/storage_transport_guards.py' not in files and 'analytics/storage_worker_bootstrap.py' not in files
           out=Path(os.environ['RUNNER_TEMP'])/'deployment-proof';out.mkdir()
-          (out/'composition.json').write_text(json.dumps({'commit':'c9aa01737a307997b0ef63cf9bff9954873f6de7','base':'755b69c266ad39beafd334e60aa900c07814cae8','files':files,'minimal_pr16_modules':deps,'pr16_head_reference':'85e94e969e8a9673b860087ef61c0861c9ca79c1','no_full_pr16_or_pr19_merge':True},sort_keys=True))
+          (out/'composition.json').write_text(json.dumps({'commit':'180f694a181b95a9a38824e4a1dc8819c312bec5','base':'755b69c266ad39beafd334e60aa900c07814cae8','files':files,'minimal_pr16_modules':deps,'pr16_head_reference':'85e94e969e8a9673b860087ef61c0861c9ca79c1','no_full_pr16_or_pr19_merge':True},sort_keys=True))
           print(json.dumps({'composition_verified':True,'changed_files':len(files),'only_stock_dependencies':True}))
           PY
       - name: Stock, storage proof and isolated PostgreSQL regression only
@@ -76,7 +76,7 @@ jobs:
           sys.path.insert(0,'tests')
           suite=unittest.TestSuite(unittest.defaultTestLoader.discover('tests',pattern=f) for f in files)
           result=unittest.TextTestRunner(verbosity=2).run(suite)
-          summary={'commit':'c9aa01737a307997b0ef63cf9bff9954873f6de7','tests':result.testsRun,'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),'failure_ids':[t.id() for t,_ in result.failures],'error_ids':[t.id() for t,_ in result.errors],'business_calls':0,'wb_writes':0,'telegram_calls':0,'production_db_calls':0,'files':files}
+          summary={'commit':'180f694a181b95a9a38824e4a1dc8819c312bec5','tests':result.testsRun,'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),'failure_ids':[t.id() for t,_ in result.failures],'error_ids':[t.id() for t,_ in result.errors],'business_calls':0,'wb_writes':0,'telegram_calls':0,'production_db_calls':0,'files':files}
           out=Path(os.environ['RUNNER_TEMP'])/'deployment-proof'
           (out/'summary.json').write_text(json.dumps(summary,sort_keys=True));print(json.dumps(summary,sort_keys=True))
           sys.exit(0 if result.wasSuccessful() else 1)

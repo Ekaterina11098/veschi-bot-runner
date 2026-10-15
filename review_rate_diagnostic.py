@@ -32,7 +32,14 @@ def install(report,target_id):
             (method.upper()=='POST' and parsed.path=='/api/v1/feedbacks/answer' and (kwargs.get('json') or {}).get('id')==target_id)
             or (method.upper()=='GET' and parsed.path=='/api/v1/feedback' and (kwargs.get('params') or {}).get('id')==target_id)))
         if exact:
-            try:report.setdefault('http_rate_diagnostic',[]).append(summarize(response,method,parsed.path,secrets))
+            try:
+                summary=summarize(response,method,parsed.path,secrets)
+                if target_id=='FCFR5A3pNgvsDFnWShPZ' and method.upper()=='GET' and response.status_code==200:
+                    body=response.json()
+                    data=body.get('data') if isinstance(body,dict) else None
+                    answer=data.get('answer') if isinstance(data,dict) else None
+                    summary['shape']={'body_type':type(body).__name__,'error_true':isinstance(body,dict) and body.get('error') is True,'data_type':type(data).__name__,'id_matches':isinstance(data,dict) and str(data.get('id',''))==target_id,'answer_type':type(answer).__name__,'answer_text_present':isinstance(answer,dict) and isinstance(answer.get('text'),str),'answer_text_nonempty':isinstance(answer,dict) and isinstance(answer.get('text'),str) and bool(answer['text'].strip())}
+                report.setdefault('http_rate_diagnostic',[]).append(summary)
             except Exception:report['diagnostic_capture_error']=True
         return response
     requests.sessions.Session.request=observed

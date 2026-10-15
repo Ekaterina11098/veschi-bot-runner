@@ -1,2 +1,1 @@
-# VERIFY646 GET-only, with sealed exact rate diagnostics; no POST.
-#2026-10-15T19:17:35UTC
+# 2026-10-15T21:39:00Z — resume exact intent646 VERIFY GET-only after database-confirmed pause expiry; no POST, no other reviews.

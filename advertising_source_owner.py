@@ -102,6 +102,21 @@ try:
       if req:requests_plan.append(req)
    for cat in report['catalogs']:
     bidder['token_2']['campaign_ids']=sorted(set(bidder['token_2']['campaign_ids'])|{r['id'] for r in cat.get('rows',[])})
+   focused=os.getenv('FOCUSED_DAILY_GAPS')=='20261012-15'
+   if focused:
+    requests_plan=[]
+    mapping={r['wb_id']:r['id'] for cat in report.get('catalogs',[]) for r in cat.get('rows',[])}
+    configuration=read('analytics_snapshots',dict(id='eq.17613',select='payload'))[0]['payload']
+    active_wb=configuration['campaign_ids']
+    scopes=[(mapping[cid],None) for cid in active_wb]
+    scopes += [(mapping[cid],nm) for cid,nm in ((40223314,1123677454),(39634287,1123677454),(40428505,1123677454),(39410834,320248210),(39483230,320248210),(39410834,1007948808),(39634287,1007948808))]
+    for cid,nm in scopes:
+     args=dict(campaign_id=cid,report='days',d1='2026-10-12',d2='2026-10-15')
+     if nm is not None:args['nm_id']=nm
+     req=wanted('wbbidder_campaign_stats',args)
+     if req:requests_plan.append(req)
+    report['daily_gap_cause']='Existing collector requested active products aggregates; days only for active experiments. Weekly finance, products and days coverage are independent.'
+    report['scope']='exact retained missing12-15October; no balances or full recollection'
    report['planned']=requests_plan
    def saved(cabinet,obs):
     if cabinet!='token_2':raise RuntimeError('Unexpected cabinet')
@@ -148,7 +163,8 @@ try:
      except (ValueError,KeyError,TypeError) as exc:report['normalization_errors'].append(dict(id=ident,error=str(exc)))
     seal('advertising-source',report)
    def reader(call,checks,known):
-    results=execute_reads(call,checks,known,requests_plan,bidder,saved,max_requests=12)
+    results=execute_reads(call,checks,known,requests_plan,bidder,saved,max_requests=20 if focused else 12)
+    if focused:return results
     # No product statistics until the complete cabinet-wide catalog is evidenced.
     pages={}
     for cat in report.get('catalogs',[]):

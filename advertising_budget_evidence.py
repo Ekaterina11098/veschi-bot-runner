@@ -12,7 +12,7 @@ def budget_analysis(report,now):
             cid=row.get('campaign_id')
             if type(cid) is not int or cid in found:continue
             total=row.get('total');stamp=row.get('observed_at')
-            known=(row.get('available') is True and type(total) in (int,float) and math.isfinite(total) and total>=0)
+            known=((row.get('available') is True or row.get('stale') is True) and not row.get('error') and type(total) in (int,float) and math.isfinite(total) and total>=0)
             try:age=(now-datetime.fromisoformat(stamp.replace('Z','+00:00'))).total_seconds()
             except (ValueError,TypeError,AttributeError):age=None
             if known and age is not None and age>=0:

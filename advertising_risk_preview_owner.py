@@ -19,7 +19,7 @@ try:
   from analytics.ip_financial_risk import risk_register,expense_test
   from datetime import datetime,timezone
   rows=read('analytics_snapshots',dict(id='eq.'+('17624' if os.getenv('BUDGET_REASSESSMENT')=='true' else '17603'),cabinet='eq.token_2',select='payload,period_from,period_to,id'))
-  assert rows==read('analytics_snapshots',dict(id='eq.17603',cabinet='eq.token_2',select='payload,period_from,period_to,id'))
+  assert rows==read('analytics_snapshots',dict(id='eq.'+('17624' if os.getenv('BUDGET_REASSESSMENT')=='true' else '17603'),cabinet='eq.token_2',select='payload,period_from,period_to,id'))
   full=rows[0]['payload'][0]
   if os.getenv('BUDGET_REASSESSMENT')=='true':
    from analytics.ip_daily_recommendations import budget_analysis

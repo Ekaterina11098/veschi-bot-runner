@@ -15,6 +15,60 @@ try:
    return native(session,method,url,*a,**kw)
   requests.sessions.Session.request=guard
   from analytics.stage_one import read
+  if os.getenv('FOCUS_FOLLOWUP')=='true':
+   import statistics
+   from datetime import timedelta
+   cat=read('analytics_snapshots',dict(source='eq.mpstats_campaign_catalog',cabinet='eq.token_2',select='id,payload,collected_at',order='id.desc',limit=5))
+   mapping={}
+   for snap in cat:
+    for pack in snap['payload']:
+     for item in pack.get('rows',[]):mapping.setdefault(item['wb_id'],item['id'])
+   budget=read('analytics_snapshots',dict(id='eq.17735',select='id,payload,collected_at'))[0]
+   rows=read('analytics_snapshots',{'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','payload->0->>report':'eq.days','select':'id,payload,collected_at,period_from,period_to','order':'id.desc','limit':1000})
+   daily={}
+   for snap in rows:
+    for pack in snap['payload']:
+     if pack.get('scope_nm_id') is not None:continue
+     for day in pack.get('rows',[]):
+      stamp=str(day.get('date',''))[:10];spend=day.get('ac_spending_sum')
+      if stamp and type(spend) in (int,float):daily.setdefault((pack.get('campaign_id'),stamp),dict(spend=spend,snapshot_id=snap['id'],observed_at=snap['collected_at']))
+   stats=[]
+   for b in budget['payload']['items']:
+    cid=b['campaign_id'];internal=mapping.get(cid)
+    observed=[dict(day=d,**daily[(internal,d)]) for d in ['2026-10-%02d'%n for n in range(9,16)] if (internal,d) in daily]
+    vals=[x['spend'] for x in observed];mean=statistics.mean(vals) if vals else None;sd=statistics.pstdev(vals) if vals else None
+    base=datetime.fromisoformat(b['observed_at']);scenarios={}
+    for label,rate in [('mean',mean),('observed_max',max(vals) if vals else None),('observed_min',min(vals) if vals else None)]:
+     scenarios[label]=dict(rub_per_day=rate,exhaustion_at=(base+timedelta(days=b['total']/rate)).isoformat() if rate and rate>0 else None)
+    stats.append(dict(campaign_id=cid,mpstats_id=internal,balance=b['total'],balance_at=b['observed_at'],days=observed,
+      coverage=len(vals),mean=mean,min=min(vals) if vals else None,max=max(vals) if vals else None,sd=sd,cv=sd/mean if mean else None,
+      last_retained_day=max((d for (i,d) in daily if i==internal),default=None),
+      current_day_evidence=[dict(day=d,**v) for (i,d),v in daily.items() if i==internal and d=='2026-10-16'],
+      scenario_only=True,scenarios=scenarios,current_rate_verified=False))
+   finance=[]
+   for day in ['2026-10-%02d'%n for n in range(9,16)]:
+    snaps=read('analytics_snapshots',dict(source='eq.mpstats_products_validated',cabinet='eq.token_2',period_from='eq.'+day,period_to='eq.'+day,select='id,payload,collected_at',order='id.desc',limit=1))
+    for snap in snaps:
+     for pack in snap['payload']:
+      for p in pack.get('products',[]):
+       if p.get('nm_id') in (1123677454,320248210,1007948808):finance.append(dict(day=day,snapshot_id=snap['id'],observed_at=snap['collected_at'],nm_id=p['nm_id'],article=p.get('article'),advertisement=p.get('advertisement'),for_pay=p.get('for_pay')))
+   sku=[]
+   for nm in (1123677454,320248210,1007948808):
+    exact={}
+    for snap in rows:
+     for pack in snap['payload']:
+      if pack.get('scope_nm_id')!=nm:continue
+      for d in pack.get('rows',[]):
+       day=str(d.get('date',''))[:10]
+       if '2026-10-09'<=day<='2026-10-15':exact.setdefault((pack.get('campaign_id'),day),dict(day=day,mpstats_id=pack.get('campaign_id'),snapshot_id=snap['id'],spend=d.get('ac_spending_sum')))
+    sku.append(dict(nm_id=nm,daily_ad_statistics=list(exact.values()),daily_finance=[x for x in finance if x['nm_id']==nm]))
+   raw=read('analytics_snapshots',dict(id='eq.17557',select='id,payload,collected_at'))[0]
+   bidder=[{k:x.get(k) for k in ('id','wb_id','auto_bidding_activated','schedule_enabled','scenario_enabled','last_parsed_at')} for x in raw['payload'][0]['data']['data'] if x.get('wb_id')==39410834]
+   report.update(mode='focus_followup',result=dict(budget_snapshot_id=17735,period_from='2026-10-09',period_to='2026-10-15',budget_pacing=stats,
+    sku_reconciliation=sku,bidder_history=dict(snapshot_id=17557,observed_at=raw['collected_at'],rows=bidder),
+    external_calls=0,wb_writes=0,telegram_calls=0,forecasts_enabled=False,test_authorized=False))
+   raise SystemExit(0)
+
   from analytics.collect import database
   from analytics.ip_financial_risk import risk_register,expense_test
   from datetime import datetime,timezone

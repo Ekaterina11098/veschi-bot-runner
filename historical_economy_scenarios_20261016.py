@@ -36,7 +36,11 @@ try:
    orders=len(rows),counts=dict(Counter(status(x) for x in rows)),seller_prices=sorted({x['retail_price_withdisc_rub'] for x in rows}),
    delivery_modes=dict(Counter(str(x.get('is_fbs')) for x in rows)),
    usable_for_mature_retention=False,reason='Small sample; unresolved orders and/or recent buyouts without retention finality. No denominator restricted to completed orders'))
- for nm,M,C,F in [(1123677454,2695.15,669,565.38),(320248210,2069.09,6946/9,379.29)]:
+ for unit in memory['decision_readiness_20261016']['retained_unit_examples']:
+  nm=unit['nm_id'];M=unit['pre_ad_contribution'];C=unit['ad_cost_per_order_context']
+  product=next(x for x in memory['validated_outcomes_20261016']['products'] if x['nm_id']==nm)
+  fee=next(x for x in product['failed_order_evidence'] if x['state']=='nonbuyout_reverse_observed' and x['confirmed']==1 and x['reported_logistics_sum'] is not None)
+  F=fee['reported_logistics_sum']
   r['scenarios'].append(dict(nm_id=nm,retained_unit_example=M,example_sample=1,historical_main_campaign_CPA=C,
    failed_order_fee_example=F,fee_is_scenario_parameter_not_population_mean=True,
    current_retention=None,forecast=False,

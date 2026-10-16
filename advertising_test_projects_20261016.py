@@ -55,7 +55,7 @@ try:
   captured.append(dict(filename=Path(args[1]).name,execution=kw['env']['ADVERTISING_EXECUTION_ENABLED'],telegram=kw['env']['IP_LIMITED_TELEGRAM_DELIVERY']))
   return SimpleNamespace(returncode=0,stdout=json.dumps(dict(saved=1,error_type=None,wb_calls=0,telegram_calls=0)))
  ns=dict(os=os,sys=sys,json=json,ROOT=Path('.').resolve(),started=datetime.now(timezone.utc).isoformat(),preserve_checkpoint=lambda *a:None,
-  subprocess=SimpleNamespace(run=offline_child,TimeoutExpired=subprocess.TimeoutExpired))
+  subprocess=SimpleNamespace(run=offline_child,TimeoutExpired=subprocess.TimeoutExpired,PIPE=subprocess.PIPE,STDOUT=subprocess.STDOUT))
  exec(compile(ast.Module(body=[stage_node],type_ignores=[]),'actual_daily_stage','exec'),ns)
  with patch.dict(os.environ,{'WB_TOKEN_2':'offline-fixture','ADVERTISING_TELEGRAM_BOT_TOKEN':'offline-fixture'},clear=False):
   ns['stage']('advertising_source_owner.py',900)()

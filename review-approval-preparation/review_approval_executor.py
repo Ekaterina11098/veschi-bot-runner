@@ -61,7 +61,7 @@ class Executor:
         if self.wb.pause(intent['cabinet']):return intent
         if not self.guard(card):return self.save(intent,'blocked',reason='Canonical hold/version/journal')
         verified_at=intent.get('preflight_verified_at')
-        fresh=(isinstance(verified_at,(int,float)) and 0<=self.a.clock()-verified_at<=(900 if intent['kind']=='feedbacks' else 120))
+        fresh=(isinstance(verified_at,(int,float)) and 0<=self.a.clock()-verified_at<=900)
         if not fresh:
             try:actual=self.wb.read(intent)
             except ExplicitRateLimit as exc:return self.save(intent,intent['status'],retry_at=self.a.clock()+exc.seconds)

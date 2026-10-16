@@ -48,7 +48,7 @@ sys.exit(0 if result.wasSuccessful() else 1)
   deadline=time.monotonic()+12*60
   while True:
    config=database('GET','analytics_snapshots',params={'source':'eq.advertising_active_configuration','cabinet':'eq.token_2','select':'collected_at,id','order':'id.desc','limit':1}) or []
-   if config and datetime.fromisoformat(config[0]['collected_at'].replace('Z','+00:00'))>=datetime(2026,10,15,22,35,tzinfo=timezone.utc):break
+   if config and datetime.fromisoformat(config[0]['collected_at'].replace('Z','+00:00'))>=datetime.fromisoformat(os.environ.get('ADVERTISING_MIN_CONFIGURATION_AT') or (datetime.now(timezone.utc)-timedelta(minutes=30)).isoformat()):break
    if time.monotonic()>deadline:raise RuntimeError('Fresh approved campaign membership still pending; no analysis or delivery executed')
    time.sleep(30)
   from analytics.stage_one import daily_ready

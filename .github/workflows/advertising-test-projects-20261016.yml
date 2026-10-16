@@ -63,3 +63,5 @@ jobs:
 # Verify recent-order priority remains within the same bounded daily source stages.
 
 # Recheck isolated wrapper fixture; exact twelve source read is already saved, never replay it.
+
+# Final sensitivity uses all nine refreshed FBO failure examples; external source is not repeated.

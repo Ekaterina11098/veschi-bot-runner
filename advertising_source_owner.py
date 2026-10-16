@@ -102,7 +102,7 @@ try:
       if req:requests_plan.append(req)
    for cat in report['catalogs']:
     bidder['token_2']['campaign_ids']=sorted(set(bidder['token_2']['campaign_ids'])|{r['id'] for r in cat.get('rows',[])})
-   focused=os.getenv('FOCUSED_DAILY_GAPS')=='20261012-15'
+   focused=os.getenv('FOCUSED_DAILY_GAPS') in ('20261012-15','20261009-11-focus')
    if focused:
     requests_plan=[]
     mapping={r['wb_id']:r['id'] for cat in report.get('catalogs',[]) for r in cat.get('rows',[])}
@@ -110,10 +110,17 @@ try:
     active_wb=configuration['campaign_ids']
     scopes=[(mapping[cid],None) for cid in active_wb]
     scopes += [(mapping[cid],nm) for cid,nm in ((40223314,1123677454),(39634287,1123677454),(40428505,1123677454),(39410834,320248210),(39483230,320248210),(39410834,1007948808),(39634287,1007948808))]
+    gap_start,gap_end='2026-10-12','2026-10-15'
+    if os.getenv('FOCUSED_DAILY_GAPS')=='20261009-11-focus':
+     scopes=[(mapping[cid],nm) for cid,nm in ((40223314,1123677454),(39634287,1123677454),(40428505,1123677454),(39410834,320248210),(39410834,1007948808),(39634287,1007948808))]
+     gap_start,gap_end='2026-10-09','2026-10-11'
     for cid,nm in scopes:
-     args=dict(campaign_id=cid,report='days',d1='2026-10-12',d2='2026-10-15')
+     args=dict(campaign_id=cid,report='days',d1=gap_start,d2=gap_end)
      if nm is not None:args['nm_id']=nm
      req=wanted('wbbidder_campaign_stats',args)
+     if req:requests_plan.append(req)
+    if os.getenv('FOCUSED_DAILY_GAPS')=='20261009-11-focus':
+     req=wanted('wbbidder_campaign_stats',dict(campaign_id=mapping[40696479],nm_id=320248210,report='days',d1='2026-10-09',d2='2026-10-15'))
      if req:requests_plan.append(req)
     report['daily_gap_cause']='Existing collector requested active products aggregates; days only for active experiments. Weekly finance, products and days coverage are independent.'
     report['scope']='exact retained missing12-15October; no balances or full recollection'

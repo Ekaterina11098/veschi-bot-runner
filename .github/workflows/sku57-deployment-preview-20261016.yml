@@ -1,0 +1,86 @@
+name: Recovery deployment preview and synthetic cloud wakeup only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sku57-deployment-preview-20261016.yml']
+permissions:
+  contents: write
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ADVERTISING_EXECUTION_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 6eb5f990aecfa1a92909169ffd76f05ac6da469d
+          fetch-depth: 0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: ac3b1c439b2ef1bd6ad9e7e8093c91ecb86ae0db
+          fetch-depth: 0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: pr26
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/veschi-bot-runner
+          ref: 559bdb873ebf831c15163daa4b35986ebc6485dd
+          fetch-depth: 0
+          persist-credentials: false
+          path: runner-preview
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/veschi-bot-runner
+          ref: 6fbad90af06ccbc7a06f6f3d33378dbe3043988f
+          fetch-depth: 0
+          persist-credentials: false
+          path: pr5
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Merge previews and actual recovery fault tests, no credentials
+        run: python sku57_merge_preview_20261016.py
+      - name: Process A simulated exclusion, synthetic local fixture only
+        run: python sku57_cloud_simulation_20261016.py exclude
+      - name: Process B simulated late cloud wakeup and targeted restoration
+        run: python sku57_cloud_simulation_20261016.py restore
+      - name: Saved linked cohort and failed-order evidence only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_EGRESS_OPTIMIZED: 'false'
+        run: python sku57_cohort_risk_20261016.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-sku57-deployment-preview
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Preserve only owner ciphertext
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          for file in "$RUNNER_TEMP"/stock-deploy-proof/*.aes.json; do
+            test -f "$file" || continue
+            base=$(basename "$file" .aes.json)
+            cp "$file" "recovery-output/advertising/preparation-$base-${{ github.run_id }}.aes.json"
+          done
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/
+          git diff --cached --quiet || git commit -m "Preserve synthetic deployment and saved cohort owner receipts"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+          done
+          exit 1

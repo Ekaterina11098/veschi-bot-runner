@@ -11,17 +11,18 @@ def target_day(now=None,manual=False):
     if not manual and not (450 <= local.hour*60+local.minute < 660):return None
     return local.date().isoformat()
 
-def eligible(item,cabinet,source,repo,read_hold):
+def eligible(item,cabinet,source,repo,read_hold,kind='feedbacks'):
     from review_telegram_approval import identity
     from review_approval_bridge import reply_key
     item_id=str(item.get('id') or '')
     if not item_id or item.get('isAnswered') is True or (item.get('answer') or {}).get('text','').strip():return False
-    if (read_hold('reviews:hold:'+cabinet+':feedbacks:'+item_id) or {}).get('active'):return False
-    if source.was_notified(cabinet,'feedbacks',item_id) or source.journal(reply_key(cabinet,'feedbacks',item_id)):return False
+    if (read_hold('reviews:hold:'+cabinet+':'+kind+':'+item_id) or {}).get('active'):return False
+    if source.was_notified(cabinet,kind,item_id) or source.journal(reply_key(cabinet,kind,item_id)):return False
     # Any existing card/hold/decision belongs to the existing approval workflow.
-    return repo.get('items',identity(cabinet,'feedbacks',item_id)) is None
+    return repo.get('items',identity(cabinet,kind,item_id)) is None
 
-def main():
+def main(kind='feedbacks'):
+    if kind not in ('feedbacks','questions'):raise ValueError('Unsupported morning scope')
     import psycopg,requests
     from stock_deploy_support import seal,OWNER_PUBLIC
     sys.path.insert(0,str(Path(__file__).parent/'review-approval-preparation'))
@@ -46,7 +47,7 @@ def main():
         if str(cfg['chat_id'])!=os.environ['TELEGRAM_ALLOWED_CHAT_ID']:raise RuntimeError('Destination mismatch')
         app=Approval(repo,base64.b64encode(hmac.new(root,b'veschi:review-approval-ingress:20261015:v1',hashlib.sha256).digest()).decode(),cfg['owner_id'],cfg['chat_id'],cfg['bot_id'],enabled=True)
         source=SQLSource(conn);bridge=DurableBridge(app,source);store=DurableReviews(_request)
-        control='reviews-morning:'+day
+        control=('questions-morning:' if kind=='questions' else 'reviews-morning:')+day
         state=repo.get('events',control) or {'status':'collecting','date':day,'scopes':{},'items':{},'created_at':time.time(),'telegram_confirmed':0}
         if state['status']=='complete':return {'status':'already_complete','telegram_confirmed':state['telegram_confirmed']}
         def preserve():
@@ -78,11 +79,12 @@ def main():
                     if scope.get('retry_at',0)>time.time() and (scope['status']=='collecting' or scope.get('last_error')!='WB 429'):continue
                     try:
                         if scope['status']=='collecting':
-                            rows=wb.get_unanswered_feedbacks(take=100,skip=scope['skip'],cabinet=cabinet)
+                            loader=wb.get_unanswered_questions if kind=='questions' else wb.get_unanswered_feedbacks
+                            rows=loader(take=100,skip=scope['skip'],cabinet=cabinet)
                             scope['items'].extend(rows);scope['skip']+=len(rows)
                             if len(rows)<100:
                                 scope.update(status='processing',observed_at=time.time())
-                                save_inbox('feedbacks',list({str(x['id']):x for x in scope['items']}.values()),cabinet=cabinet)
+                                save_inbox(kind,list({str(x['id']):x for x in scope['items']}.values()),cabinet=cabinet)
                             save()
                             # Respect shared WB cooldown before exact item preflights.
                             continue
@@ -97,7 +99,7 @@ def main():
                             remaining=True
                             candidate=prior or {'version':'morning-'+day+'-'+sha([cabinet,item_id])[:12],'status':'preflight'}
                             state['items'][key]=candidate
-                            if not eligible(item,cabinet,source,repo,store.read):
+                            if not eligible(item,cabinet,source,repo,store.read,kind):
                                 candidate['status']='skipped';save();continue
                             if candidate['status']=='preflight':
                                 # This is a notification, not a publication. The complete
@@ -107,11 +109,11 @@ def main():
                             if candidate['status']=='generate':
                                 # Canonical source and variants are durable before Telegram.
                                 version=candidate['version']
-                                store.insert('reviews:source:'+sha([cabinet,'feedbacks',item_id,version]),dict(cabinet=cabinet,kind='feedbacks',item_id=item_id,version=version,item=item,source_sha256=sha(item),observed_at=scope['observed_at']))
-                                if not store.read(bridge.draft_key(cabinet,'feedbacks',item_id,version)):
-                                    generate_and_persist(store,item,cabinet,'feedbacks',version,generation.generate_draft)
+                                store.insert('reviews:source:'+sha([cabinet,kind,item_id,version]),dict(cabinet=cabinet,kind=kind,item_id=item_id,version=version,item=item,source_sha256=sha(item),observed_at=scope['observed_at']))
+                                if not store.read(bridge.draft_key(cabinet,kind,item_id,version)):
+                                    generate_and_persist(store,item,cabinet,kind,version,generation.generate_question_drafts if kind=='questions' else generation.generate_draft)
                                 candidate['status']='notify';save()
-                            result=notice.deliver(item,cabinet,'feedbacks',candidate['version'],scope['observed_at'],cfg['cutover'])
+                            result=notice.deliver(item,cabinet,kind,candidate['version'],scope['observed_at'],cfg['cutover'])
                             candidate.update(status='confirmed' if result.get('status')=='confirmed' else 'uncertain',delivery=result)
                             state['telegram_confirmed']+=int(candidate['status']=='confirmed');save()
                             if time.monotonic()>=deadline:break
@@ -127,7 +129,7 @@ def main():
                     summary=repo.get('events',control+':summary')
                     if summary is None:
                         names={'token_1':'ООО','token_2':'ИП','token_3':'Китай'}
-                        text='📩 Утренние отзывы · '+day+'\n'
+                        text=('❓ Утренние вопросы · ' if kind=='questions' else '📩 Утренние отзывы · ')+day+'\n'
                         text+='\n'.join(names[c]+': без ответа в WB — '+str(len(state['scopes'][c]['items'])) for c in CABINETS)
                         text+='\nНовых карточек отправлено: '+str(state['telegram_confirmed'])+'. Уже присланные и отложенные повторно не отправлялись.\nhttps://veschi-ai.streamlit.app/review_manager'
                         summary={'status':'sending','created_at':time.time()}

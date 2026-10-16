@@ -120,9 +120,12 @@ def recover(db, get, save, start, end, prices, now=None):
         execute_reads(call, checks, known, [req], {}, persist, max_requests=1)
         if not observations or observations[-1]['status']!='received':
             return
-        _, mapping_rows, total = table(observations[-1]['data'])
-        if len(mapping_rows)!=total:
-            raise RuntimeError('Extended catalogue pagination incomplete')
+        comparison = observations[-1]['data']
+        mapping_rows = comparison.get('data')
+        if comparison.get('status')!='success' or not isinstance(mapping_rows,list):
+            raise RuntimeError('Extended catalogue not ready')
+        # Mapping is accepted per exact returned SKU/product_id. Missing rows
+        # remain unknown; an omitted card is never interpreted as zero orders.
         registry = {}
         for row in mapping_rows:
             registry.setdefault(str(row.get('nm_id')), []).append(row)

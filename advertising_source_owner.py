@@ -43,6 +43,26 @@ def wanted(tool,args,purpose=None):
   retry=float(obs.get('retry_after') or 0)
   if not retry or (now-datetime.fromisoformat(obs['observed_at'])).total_seconds()<retry:return None
  return dict(key=key,cabinet='token_2',tool=tool,arguments=args)
+def campaign_day_gaps(snapshots,campaign_id,first,last):
+ from datetime import date,timedelta
+ covered=set()
+ for snapshot in snapshots:
+  for pack in snapshot.get('payload') or []:
+   if (pack.get('campaign_id')!=campaign_id or pack.get('report')!='days'
+       or pack.get('scope_nm_id') is not None or pack.get('spending_reconciled') is not True):continue
+   for row in pack.get('rows') or []:
+    day=str(row.get('date',''))[:10]
+    if type(row.get('ac_spending_sum')) in (int,float):covered.add(day)
+ missing=[];day=date.fromisoformat(first);finish=date.fromisoformat(last)
+ while day<=finish:
+  if str(day) not in covered:missing.append(day)
+  day+=timedelta(days=1)
+ spans=[]
+ for day in missing:
+  if spans and day==spans[-1][1]+timedelta(days=1):spans[-1][1]=day
+  else:spans.append([day,day])
+ return [(str(a),str(b)) for a,b in spans]
+
 hidden=io.StringIO()
 try:
  with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):
@@ -185,7 +205,13 @@ try:
      active=[r['id'] for r in rows if (r.get('wb_id') in wbactive if wbactive else r.get('status_id')==9)]
      report['full_catalog_count']=len(rows)
      more=[]
+     retained_days=read('analytics_snapshots',{'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','payload->0->>report':'eq.days','select':'id,payload','order':'id.desc','limit':1000})
+     report['campaign_daily_gaps']={}
      for cid in active:
+      for first,last in campaign_day_gaps(retained_days,cid,str(start),str(end)):
+       report['campaign_daily_gaps'].setdefault(str(cid),[]).append([first,last])
+       day_req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,report='days',d1=first,d2=last))
+       if day_req:more.append(day_req)
       req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,report='products',d1=str(start),d2=str(end)))
       if req:more.append(req)
      report['active_mpstats_campaign_ids']=active;report['missing_campaign_aggregate_requests']=list(more)

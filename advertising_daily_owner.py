@@ -1,7 +1,7 @@
 """Prepared dedicated daily IP runner. OFF until separate owner activation."""
 import os,sys,json,subprocess,time
 from pathlib import Path
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 ROOT=Path(__file__).resolve().parent
 sys.path.insert(0,str(ROOT/'private-source'))
 from analytics.ip_daily_schedule import execute_day
@@ -12,7 +12,7 @@ approval=store.cache_get('advertising:ip:daily_rollout:v1') or {}
 if not (approval.get('enabled') is True and approval.get('source_sha')==os.environ['APPROVED_SOURCE_SHA']):
  raise RuntimeError('Dedicated daily owner approval and exact source pin required')
 from stock_deploy_support import seal
-started=datetime.now(timezone.utc).isoformat()
+started=(datetime.now(timezone.utc)-timedelta(hours=6)).isoformat()
 def stage(filename,timeout,single_step=False):
  def call():
   child=dict(os.environ)

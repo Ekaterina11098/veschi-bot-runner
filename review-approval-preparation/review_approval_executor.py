@@ -16,8 +16,8 @@ class WBAdapter:
         except self.wb.ReviewRateLimit as exc:raise ExplicitRateLimit(exc.retry_seconds) from None
 
 class Executor:
-    def __init__(self,approval,guard,wb,enabled=False):
-        self.a=approval;self.repo=approval.repo;self.guard=guard;self.wb=wb;self.enabled=enabled
+    def __init__(self,approval,guard,wb,enabled=False,preserve=None):
+        self.a=approval;self.repo=approval.repo;self.guard=guard;self.wb=wb;self.enabled=enabled;self.preserve=preserve
     def run(self,intent_id):
         if not self.enabled:raise Rejected('Publication disabled')
         if self.repo.pg:
@@ -50,6 +50,7 @@ class Executor:
             item['status']='sent' if status in ('confirmed','manual_present') else ('uncertain' if status=='verify' else item['status'])
             self.repo.put('items',intent['ref'],item)
         if self.repo.get('intents',intent['id'])!=intent:raise RuntimeError('Intent readback mismatch')
+        if self.preserve:self.preserve()
         return intent
     def _run(self,intent):
         card=self.repo.get('cards',intent['card_token'])
@@ -60,7 +61,7 @@ class Executor:
         if self.wb.pause(intent['cabinet']):return intent
         if not self.guard(card):return self.save(intent,'blocked',reason='Canonical hold/version/journal')
         verified_at=intent.get('preflight_verified_at')
-        fresh=(isinstance(verified_at,(int,float)) and 0<=self.a.clock()-verified_at<=120)
+        fresh=(isinstance(verified_at,(int,float)) and 0<=self.a.clock()-verified_at<=(900 if intent['kind']=='feedbacks' else 120))
         if not fresh:
             try:actual=self.wb.read(intent)
             except ExplicitRateLimit as exc:return self.save(intent,intent['status'],retry_at=self.a.clock()+exc.seconds)

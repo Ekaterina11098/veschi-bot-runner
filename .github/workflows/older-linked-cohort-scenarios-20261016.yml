@@ -1,0 +1,52 @@
+name: Advertising IP source recovery only, owner preparation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/older-linked-cohort-scenarios-20261016.yml']
+permissions:
+  contents: write
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 6eb5f990aecfa1a92909169ffd76f05ac6da469d
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install simplejson==3.20.2 requests==2.32.5 python-dotenv cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Bounded MPStats reads, no WB or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_EGRESS_OPTIMIZED: 'true'
+          FOCUSED_DAILY_GAPS: 'false'
+        run: python older_linked_cohort_scenarios_20261016.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-advertising-source
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Independent ciphertext
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          cp "$RUNNER_TEMP/stock-deploy-proof/older-linked-cohort-scenarios.aes.json" "recovery-output/advertising/older-linked-cohort-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/
+          git commit -m "Preserve encrypted IP source readback receipts"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+          done
+          exit 1

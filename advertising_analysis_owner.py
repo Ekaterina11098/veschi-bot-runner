@@ -32,6 +32,8 @@ sys.exit(0 if result.wasSuccessful() else 1)
   import analytics.stage_one as finance_stage
   from advertising_cached_finance_reader import install as install_bounded_finance
   install_bounded_finance(finance_stage)
+  from advertising_budget_evidence import install as install_dated_budgets
+  install_dated_budgets()
   from datetime import datetime,timedelta,timezone
   from zoneinfo import ZoneInfo
   today=datetime.now(timezone.utc).astimezone(ZoneInfo('Europe/Moscow')).date()

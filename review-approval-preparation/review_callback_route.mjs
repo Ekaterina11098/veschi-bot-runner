@@ -1,11 +1,14 @@
+export function isReviewApprovalUpdate(update) {
+  if (typeof update?.callback_query?.data === 'string' && update.callback_query.data.startsWith('rv1:')) return true;
+  const text = update?.message?.reply_to_message?.text;
+  return typeof text === 'string' && /^(?:Кабинет: (?:ООО|ИП|Китай)\n)?\[(?:Отзывы|Вопросы):согласование\](?:\n|$)/u.test(text);
+}
 // Isolated optional branch for the EXISTING webhook, before legacy message parsing.
 // null means unrelated update. No queue insertion, stock dispatch, WB or sendMessage.
 export async function routeReviewApproval(request, update, config, forward = fetch) {
   const q = update?.callback_query;
   const message = q?.message ?? update?.message;
-  const isReview = typeof q?.data === 'string' && q.data.startsWith('rv1:') ||
-    typeof update?.message?.reply_to_message?.text === 'string' &&
-    update.message.reply_to_message.text.startsWith('[Отзывы:согласование]\n');
+  const isReview = isReviewApprovalUpdate(update);
   if (!isReview) return null;
   // Consume our callbacks while disabled: they must NEVER fall through to old queues.
   if (config.enabled !== true) return new Response('Review approval disabled', {status: 200});

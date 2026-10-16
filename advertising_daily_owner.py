@@ -13,10 +13,10 @@ if not (approval.get('enabled') is True and approval.get('source_sha')==os.envir
  raise RuntimeError('Dedicated daily owner approval and exact source pin required')
 from stock_deploy_support import seal
 started=datetime.now(timezone.utc).isoformat()
-def stage(filename,timeout):
+def stage(filename,timeout,single_step=False):
  def call():
   child=dict(os.environ)
-  child.update(ADVERTISING_MIN_CONFIGURATION_AT=started,ADVERTISING_EXECUTION_ENABLED='false')
+  child.update(ADVERTISING_MIN_CONFIGURATION_AT=started,ADVERTISING_EXECUTION_ENABLED='false',ADVERTISING_BUDGET_STEP_ONLY='true' if single_step else 'false')
   if filename!='advertising_analysis_owner.py':
    child.pop('ADVERTISING_TELEGRAM_BOT_TOKEN',None)
    child['IP_LIMITED_TELEGRAM_DELIVERY']='false';child['IP_LIMITED_ANALYSIS_PUBLISH']='false'
@@ -39,8 +39,9 @@ def stage(filename,timeout):
 stages=dict(source=stage('advertising_source_owner.py',900),
  source_gaps=stage('advertising_source_owner.py',900),
  membership=stage('advertising_exclusive_owner.py',600),
- budgets=stage('advertising_budgets_owner.py',13800),
- analysis_and_delivery=stage('advertising_analysis_owner.py',1800))
+ budgets=stage('advertising_budgets_owner.py',180,True),
+ analysis_and_delivery=stage('advertising_analysis_owner.py',1800),
+ budget_completion=stage('advertising_budgets_owner.py',13800))
 result=execute_day(store.cache_get,lambda k,v:store.cache_set(k,v,ttl_days=365),stages,
  os.environ['GITHUB_RUN_ID']+':'+os.environ.get('GITHUB_RUN_ATTEMPT','1'),single_writer=True)
 seal('advertising-daily',result)

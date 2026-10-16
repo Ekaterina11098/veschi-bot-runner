@@ -14,7 +14,7 @@ from analytics.mpstats_probe import discover,ProbeError
 from analytics.mpstats_gaps import execute_reads,period
 from analytics.mpstats_recovery import normalize,import_products,BIDDER
 from analytics.storage_collection_gate import CollectionGate
-from advertising_order_outcome_monitor import KEY as ORDER_MONITOR_KEY,seed as seed_order_monitor,plan as plan_order_checks,ingest as ingest_order_observation,financial_revision
+from advertising_order_outcome_monitor import KEY as ORDER_MONITOR_KEY,seed as seed_order_monitor,plan as plan_order_checks,ingest as ingest_order_observation,financial_revision,historical_685_scope
 now=datetime.now(timezone.utc);end=now.astimezone(ZoneInfo('Europe/Moscow')).date()-timedelta(days=1);start=end-timedelta(days=6)
 report=dict(cabinet='token_2',period_from=str(start),period_to=str(end),saved=[],normalization_errors=[],wb_calls=0,wb_writes=0,telegram_calls=0)
 gate=CollectionGate(Path(os.environ['RUNNER_TEMP'])/'ads-storage-health.json',max_age_seconds=900,scope='ip-ads-source')
@@ -108,6 +108,14 @@ def financial_response_state(observation):
   advertising_basis='financial_recognition',campaign_spend_additive=False,
   zero_advertisement_is_final_absence=False)
 
+# A dated push profile uses the same source runner/lock, never the daily schedule.
+focus_profile={}
+if os.getenv('GITHUB_EVENT_NAME')=='push' and os.getenv('GITHUB_WORKFLOW')=='Advertising IP source recovery only, owner preparation':
+ try:
+  candidate=json.loads((Path(__file__).parent/'advertising_source_continue.trigger').read_text())
+  if candidate.get('mode')=='historical_685_twelve' and candidate.get('authorized_day')==str(now.astimezone(ZoneInfo('Europe/Moscow')).date()):focus_profile=candidate
+ except (ValueError,FileNotFoundError):pass
+focus_target_ids=None
 hidden=io.StringIO()
 try:
  with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):
@@ -170,8 +178,8 @@ try:
       if req:requests_plan.append(req)
    for cat in report['catalogs']:
     bidder['token_2']['campaign_ids']=sorted(set(bidder['token_2']['campaign_ids'])|{r['id'] for r in cat.get('rows',[])})
-   focused=os.getenv('FOCUSED_DAILY_GAPS') in ('20261012-15','20261009-11-focus')
-   if focused:
+   focused=bool(focus_profile) or os.getenv('FOCUSED_DAILY_GAPS') in ('20261012-15','20261009-11-focus')
+   if focused and not focus_profile:
     requests_plan=[]
     mapping={r['wb_id']:r['id'] for cat in report.get('catalogs',[]) for r in cat.get('rows',[])}
     configuration=read('analytics_snapshots',dict(id='eq.17613',select='payload'))[0]['payload']
@@ -192,13 +200,20 @@ try:
      if req:requests_plan.append(req)
     report['daily_gap_cause']='Existing collector requested active products aggregates; days only for active experiments. Weekly finance, products and days coverage are independent.'
     report['scope']='exact retained missing12-15October; no balances or full recollection'
+   if focus_profile:
+    scope=historical_685_scope(get('advertising:ip:focus_preparation:20261016') or {})
+    focus_target_ids=set(scope['target_gnumbers'])
+    requests_plan=[dict(key='owner-historical-685-twelve:'+focus_profile['nonce']+':'+a+':'+b,cabinet='token_2',tool='lk_wb_card_orders',
+     arguments=dict(type='products',value=scope['product_id'],date_from=a,date_to=b,start_row=0,end_row=300),priority=100) for a,b in scope['spans']]
+    report['historical_twelve_scope']=scope
+    report['scope']='Exact retained twelve GN; minimal product/date scopes because API has no GN filter'
    report['planned']=requests_plan
    def saved(cabinet,obs):
     if cabinet!='token_2':raise RuntimeError('Unexpected cabinet')
     a,b=period(obs['arguments']);ident=save_snapshot('mpstats_'+obs['tool'],obs,a,b,'complete' if obs.get('status')=='received' else 'partial')
     report['saved'].append(dict(id=ident,key=obs['request_key'],status=obs.get('status'),readback=True))
     if obs.get('status')=='received' and obs['tool']=='lk_wb_card_orders':
-     try:updated_monitor=ingest_order_observation(order_monitor,obs,ident)
+     try:updated_monitor=ingest_order_observation(order_monitor,obs,ident,target_new_ids=focus_target_ids)
      except ValueError as exc:
       report.setdefault('order_outcome_limits',[]).append(dict(snapshot_id=ident,reason=str(exc),unknown_is_not_zero=True))
      else:

@@ -14,6 +14,7 @@ from analytics.mpstats_probe import discover,ProbeError
 from analytics.mpstats_gaps import execute_reads,period
 from analytics.mpstats_recovery import normalize,import_products,BIDDER
 from analytics.storage_collection_gate import CollectionGate
+from advertising_order_outcome_monitor import KEY as ORDER_MONITOR_KEY,seed as seed_order_monitor,plan as plan_order_checks,ingest as ingest_order_observation,financial_revision
 now=datetime.now(timezone.utc);end=now.astimezone(ZoneInfo('Europe/Moscow')).date()-timedelta(days=1);start=end-timedelta(days=6)
 report=dict(cabinet='token_2',period_from=str(start),period_to=str(end),saved=[],normalization_errors=[],wb_calls=0,wb_writes=0,telegram_calls=0)
 gate=CollectionGate(Path(os.environ['RUNNER_TEMP'])/'ads-storage-health.json',max_age_seconds=900,scope='ip-ads-source')
@@ -112,6 +113,9 @@ try:
  with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):
   probe={'run':RUN_ID,'scope':'advertising-ip','at':now.isoformat()}
   gate.verify_storage(lambda v:put('advertising:recovery:health:'+RUN_ID,v),lambda:get('advertising:recovery:health:'+RUN_ID),probe)
+  order_monitor=seed_order_monitor(get(ORDER_MONITOR_KEY),get('advertising:ip:focus_preparation:20261016') or {})
+  put(ORDER_MONITOR_KEY,order_monitor)
+  report['order_outcome_monitor']={'tracked_orders':len(order_monitor.get('orders',{})),'wb_mutations':False,'maturity_not_inferred':True}
   import requests
   original=requests.sessions.Session.request;traffic={'bytes':0,'calls':0}
   allowed_host=__import__('urllib.parse',fromlist=['urlsplit']).urlsplit(os.environ['SUPABASE_URL']).hostname
@@ -130,7 +134,8 @@ try:
    catalog=caps[0].get('tools') if caps else None
    bidder=copy.deepcopy(BIDDER);state=get('mpstats:gap_requests:v1') or {}
    bidder['token_2']['campaign_ids']=state.get('bidder_map',{}).get('token_2',{}).get('campaign_ids',[])
-   requests_plan=[]
+   requests_plan=plan_order_checks(order_monitor,now,max_requests=4)
+   report['planned_order_outcome_checks']=copy.deepcopy(requests_plan)
    refreshed_finance_days=set()
    gap_state=get('analytics:source_gaps') or {}
    explicit_finance_days={g.get('day') for g in gap_state.get('gaps',[]) if g.get('cabinet')=='token_2' and g.get('metric')=='advertising_spend' and g.get('status') in ('open','resolved_mpstats_daily')}
@@ -192,6 +197,19 @@ try:
     if cabinet!='token_2':raise RuntimeError('Unexpected cabinet')
     a,b=period(obs['arguments']);ident=save_snapshot('mpstats_'+obs['tool'],obs,a,b,'complete' if obs.get('status')=='received' else 'partial')
     report['saved'].append(dict(id=ident,key=obs['request_key'],status=obs.get('status'),readback=True))
+    if obs.get('status')=='received' and obs['tool']=='lk_wb_card_orders':
+     try:updated_monitor=ingest_order_observation(order_monitor,obs,ident)
+     except ValueError as exc:
+      report.setdefault('order_outcome_limits',[]).append(dict(snapshot_id=ident,reason=str(exc),unknown_is_not_zero=True))
+     else:
+      put(ORDER_MONITOR_KEY,updated_monitor)
+      order_monitor.clear();order_monitor.update(updated_monitor)
+      report['order_outcome_monitor'].update(tracked_orders=len(order_monitor['orders']),last_snapshot_id=ident,full_readback=True)
+    if obs.get('status')=='received' and obs['tool']=='lk_wb_products':
+     updated_monitor=financial_revision(order_monitor,obs,datetime.now(timezone.utc))
+     if updated_monitor!=order_monitor:
+      put(ORDER_MONITOR_KEY,updated_monitor)
+      order_monitor.clear();order_monitor.update(updated_monitor)
     if obs.get('retry_after'):
      put('mpstats:cooldown',{'pending':True,'retry_after':obs['retry_after']})
      database('PATCH','telegram_api_cache',body={'expires_at':(datetime.now(timezone.utc)+timedelta(seconds=obs['retry_after'])).isoformat()},params={'cache_key':'eq.mpstats:cooldown'})

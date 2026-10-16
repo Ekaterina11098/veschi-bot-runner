@@ -75,7 +75,7 @@ def main():
                 for cabinet in CABINETS:
                     scope=state['scopes'].setdefault(cabinet,{'status':'collecting','items':[],'skip':0})
                     if scope.get('status')=='complete':continue
-                    if scope.get('retry_at',0)>time.time():continue
+                    if scope.get('retry_at',0)>time.time() and (scope['status']=='collecting' or scope.get('last_error')!='WB 429'):continue
                     try:
                         if scope['status']=='collecting':
                             rows=wb.get_unanswered_feedbacks(take=100,skip=scope['skip'],cabinet=cabinet)

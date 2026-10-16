@@ -24,6 +24,7 @@ def ingest(state,obs,snapshot_id):
  ids=[str(x.get('gnumber') or '') for x in rows]
  if '' in ids or len(ids)!=len(set(ids)):raise ValueError('Order identity duplicate')
  result=copy.deepcopy(state or {'version':1,'orders':{},'history':[]})
+ result.setdefault('history',[]);result.setdefault('version',1)
  orders=result.setdefault('orders',{});observed=dt(obs['observed_at'])
  old_scope=[gn for gn,x in orders.items() if x['product_id']==pid and args['date_from']<=x['ordered_on']<=args['date_to']]
  if set(old_scope)-set(ids):raise ValueError('Previously known order omitted; retain previous history')

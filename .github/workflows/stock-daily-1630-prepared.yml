@@ -5,7 +5,11 @@ on:
     - cron: '0 4 * * *'
     - cron: '30 13 * * 0-6'
     - cron: '40,50 13 * * *'
-# Daily07:00 and16:30MSK;16:40/16:50 recover only an unclaimed evening slot.
+    - cron: '10,20,30,40,50 4 * * *'
+    - cron: '*/10 5-8 * * *'
+    - cron: '*/10 14-18 * * *'
+# Daily07:00/16:30MSK; bounded10-minute checks resume unfinished slots only.
+# Completed slots and unexpired Retry-After are skipped without business API calls.
 # Owner approved daily stock execution and new stock notifications, 2026-10-15.
 permissions:
   contents: read
@@ -23,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 463a0c08631f1f3e38f3b9d9e627ca96b09ac4a8
+          ref: 4da9a654fb1085a812b2d98b6536326023d630d5
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -33,9 +37,9 @@ jobs:
       - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/daily-install.log" 2>&1
       - name: Fresh stock calculation and newly created stock-only notifications
         env:
-          PYTHONPATH: ${{ github.workspace }}/private-source
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
           STOCK_DAILY_ENABLED: 'true'
-          STOCK_RUN_SLOT: ${{ github.event.schedule == '0 4 * * *' && '0700' || '1630' }}
+          STOCK_RUN_SLOT: ${{ (github.event.schedule == '0 4 * * *' || github.event.schedule == '10,20,30,40,50 4 * * *' || github.event.schedule == '*/10 5-8 * * *') && '0700' || '1630' }}
           STOCK_NOTIFICATIONS_ENABLED: 'true'
           STOCK_CLOUD_EXECUTION_ENABLED: 'true'
           STOCK_JOURNAL_IMPORT_ACCEPTED: 'true'
@@ -56,40 +60,7 @@ jobs:
           TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
           AUTO_STOCK_FAIL_FAST: '1'
         run: |
-          python - <<'PY'
-          import os,sys,asyncio,contextlib,io,json,requests,psycopg
-          from stock_deploy_support import runtime_db,password,HOST,ROLE,PROJECT,seal,error
-          from stock_daily_entry import run,validate_start
-          hidden=io.StringIO();report={'success':False}
-          def send(chat,text):
-              assert str(chat)==str(os.environ['TELEGRAM_ALLOWED_CHAT_ID'])
-              response=requests.post('https://api.telegram.org/bot'+os.environ['TELEGRAM_BOT_TOKEN']+'/sendMessage',json={'chat_id':chat,'text':text},timeout=(5,20))
-              if not response.ok:raise RuntimeError('Stock Telegram HTTP '+str(response.status_code))
-              data=response.json()
-              if data.get('ok') is not True:raise RuntimeError('Stock Telegram rejected')
-              return data['result']['message_id']
-          try:
-              os.environ['STOCK_DATABASE_URL']=psycopg.conninfo.make_conninfo(host=HOST,port=5432,dbname='postgres',user=ROLE+'.'+PROJECT,password=password(),sslmode='require')
-              from datetime import datetime,timedelta,timezone
-              day=validate_start(datetime.now(timezone.utc),os.environ['STOCK_DAILY_ENABLED'],os.environ['STOCK_RUN_SLOT'])
-              with runtime_db() as gate:
-                  claimed=gate.execute('SELECT 1 FROM stock_runs WHERE id=%s',('technical:stock-daily:'+day,)).fetchone() is not None
-              if claimed:
-                  report['skipped']=True;report['skip_reason']='schedule_slot_already_claimed'
-              else:
-                  with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):
-                      report['result']=asyncio.run(run(runtime_db,send))
-              report['success']=True
-          except BaseException as exc:report['error']=error(exc)
-          finally:
-              log=hidden.getvalue()
-              for name,value in os.environ.items():
-                  if len(value)>5 and any(s in name for s in ('TOKEN','SECRET','PASSWORD','DATABASE_URL')):log=log.replace(value,'[redacted]')
-              report['private_log']=log
-              seal('daily',report)
-              print(json.dumps({'success':report['success'],'automatic_complete':report.get('result',{}).get('automatic_complete'),'error_type':report.get('error',{}).get('type')}))
-          sys.exit(0 if report['success'] else 1)
-          PY
+          python private-source/stock_regular_job.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

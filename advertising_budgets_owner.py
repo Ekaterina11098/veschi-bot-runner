@@ -4,6 +4,22 @@ from pathlib import Path
 from datetime import datetime,timezone,timedelta
 sys.path.insert(0,str(Path(__file__).parent/'private-source'))
 from stock_deploy_support import seal,error
+def cached_read_request(native,session,method,url,dbhost,*args,**kwargs):
+ """Retry transient Supabase GET only; never replay WB or database writes."""
+ import requests
+ from urllib.parse import urlsplit
+ eligible=method.upper()=='GET' and urlsplit(url).hostname==dbhost
+ delays=(5,15,30)
+ for attempt in range(4):
+  try:
+   response=native(session,method,url,*args,**kwargs)
+  except (requests.exceptions.ReadTimeout,requests.exceptions.ConnectTimeout,requests.exceptions.ConnectionError):
+   if not eligible or attempt==3:raise
+  else:
+   if not eligible or response.status_code not in (502,503,504) or attempt==3:return response
+   response.close()
+  time.sleep(delays[attempt])
+
 report={'iterations':[],'wb_writes':0,'telegram_calls':0}
 hidden=io.StringIO()
 try:
@@ -15,7 +31,7 @@ try:
   def guarded(session,method,url,*args,**kwargs):
    u=urlsplit(url)
    if u.hostname!=dbhost and not (u.hostname=='advert-api.wildberries.ru' and method.upper()=='GET' and u.path=='/adv/v1/budget'):raise RuntimeError('Budget-only request allowlist')
-   return native(session,method,url,*args,**kwargs)
+   return cached_read_request(native,session,method,url,dbhost,*args,**kwargs)
   requests.sessions.Session.request=guarded
   config=c.latest('advertising_active_configuration',status=None)
   if not config or (datetime.now(timezone.utc)-datetime.fromisoformat(config['collected_at'])).total_seconds()>21600:raise RuntimeError('Current membership expired; no blind budget scope')

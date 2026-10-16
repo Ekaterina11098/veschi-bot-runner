@@ -51,6 +51,22 @@ def seed(state,memory):
  for snapshot in (memory.get('outcome_refresh_20261016') or {}).get('saved',[]):
   result=ingest(result,snapshot['payload'][0],snapshot['id'])
  return result or {'version':1,'orders':{},'history':[]}
+def financial_revision(state,obs,now):
+ if obs.get('tool')!='lk_wb_products' or obs.get('status')!='received':return state
+ body=(obs.get('data') or {}).get('data') or {}
+ if body.get('need_update')!=0 or body.get('total')!=len(body.get('data') or []):return state
+ result=copy.deepcopy(state);versions=result.setdefault('financial_versions',{})
+ day=obs['arguments'].get('date_from')
+ for row in body.get('data') or []:
+  nm=str(row.get('nm_id') or row.get('nmId') or '')
+  if nm not in {str(v) for v in PRODUCTS.values()}:continue
+  key=day+':'+nm;value=hashlib.sha256(json.dumps({k:row.get(k) for k in ('logistic_all','advertisement','for_pay','storage_fee','deduction','penalty')},sort_keys=True).encode()).hexdigest()
+  previous=versions.get(key);versions[key]=value
+  if previous is None or previous==value:continue
+  for order in result.get('orders',{}).values():
+   if str(order['nm_id'])==nm:
+    order.update(active=True,next_check_at=now.isoformat(),monitoring_state='reopened_financial_revision',financially_final=False)
+ return result
 def plan(state,now,max_requests=4,incident_order_ids=()):
  due={}
  for gn,x in (state or {}).get('orders',{}).items():
@@ -59,8 +75,13 @@ def plan(state,now,max_requests=4,incident_order_ids=()):
   ident=(x['product_id'],x['ordered_on'])
   score=dt(x['observed_at'])
   due[ident]=min(due.get(ident,score),score)
+ spans=[]
+ for (pid,day),stamp in sorted(due.items()):
+  if spans and spans[-1][0]==pid and (dt(day)-dt(spans[-1][2])).days==1 and (dt(day)-dt(spans[-1][1])).days<7:
+   spans[-1][2]=day;spans[-1][3]=min(stamp,spans[-1][3])
+  else:spans.append([pid,day,day,stamp])
  result=[]
- for (pid,day),stamp in sorted(due.items(),key=lambda v:(v[1],v[0]))[:max_requests]:
-  args=dict(type='products',value=pid,date_from=day,date_to=day,start_row=0,end_row=300)
-  result.append(dict(key='order-outcome:'+pid+':'+day+':'+now.date().isoformat(),cabinet='token_2',tool='lk_wb_card_orders',arguments=args,priority=100))
+ for pid,first,last,stamp in sorted(spans,key=lambda v:(v[3],v[0],v[1]))[:max_requests]:
+  args=dict(type='products',value=pid,date_from=first,date_to=last,start_row=0,end_row=300)
+  result.append(dict(key='order-outcome:'+pid+':'+first+':'+last+':'+now.date().isoformat(),cabinet='token_2',tool='lk_wb_card_orders',arguments=args,priority=100))
  return result

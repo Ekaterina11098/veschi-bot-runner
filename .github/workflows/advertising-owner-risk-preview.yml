@@ -56,3 +56,5 @@ jobs:
 # Owner requested retained analytics with verified12budget snapshot17735; no WB/TG credentials.
 
 # Retry offline-only after mismatched historical readback reference corrected.
+
+# Export bounded results only; prior full receipt retained encrypted.

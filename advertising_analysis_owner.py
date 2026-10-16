@@ -116,6 +116,7 @@ finally:
  preview['actions']=[{k:x.get(k) for k in ('article','campaign_id','kind','action','reason','expected_effect','criterion','risk')} for x in daily.get('actions',[])]
  preview['new_messages']=(a.get('new_preview') or {}).get('messages',[])
  preview['budget_analysis']=daily.get('budget_analysis')
+ preview['current_promotion_control']=daily.get('current_promotion_control')
  preview['financial_risk']=daily.get('financial_risk')
  preview['expense_test_candidates']=daily.get('expense_test_candidates')
  preview['analysis_run_id']=RUN_ID

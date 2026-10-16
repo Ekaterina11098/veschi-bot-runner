@@ -20,7 +20,7 @@ def main():
         tg=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN'])
         for token,raw in repo.execute('SELECT id,payload FROM {p}cards').fetchall():
             card=json.loads(raw);item=repo.get('items',card['ref'])
-            if card['status'] not in ('awaiting','selected') or not item or item.get('token')!=token:continue
+            if card['status'] not in ('awaiting','selected','rework') or not item or item.get('token')!=token:continue
             view=app.view(token)
             try:
                 tg.call('editMessageText',{'chat_id':app.chat,'message_id':view['message_id'],'text':view['text'],'reply_markup':view['reply_markup']})

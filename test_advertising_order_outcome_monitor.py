@@ -35,6 +35,6 @@ class MonitorTests(unittest.TestCase):
  def test_request_bound(self):
   s={'orders':{}}
   for n in range(6):
-   o=observation(day='2026-10-'+str(n+1).zfill(2));o['data']['data'][0]['gnumber']=str(n);s=ingest(s,o,n)
+   o=observation(day='2026-10-'+str(n*2+1).zfill(2));o['data']['data'][0]['gnumber']=str(n);s=ingest(s,o,n)
   self.assertEqual(len(plan(s,NOW+timedelta(days=10),max_requests=4)),4)
 if __name__=='__main__':unittest.main()

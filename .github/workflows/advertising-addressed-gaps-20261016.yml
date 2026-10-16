@@ -1,0 +1,68 @@
+name: Owner-approved single PR27 analytics pass, no WB mutations
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/advertising-addressed-gaps-20261016.yml']
+permissions:
+  contents: write
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 6eb5f990aecfa1a92909169ffd76f05ac6da469d
+          fetch-depth: 0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Merged analytics tests and pure control syntax
+        run: |
+          python -m py_compile advertising_addressed_gaps_20261016.py
+          PYTHONPATH=private-source python -m unittest discover -s private-source/tests -p test_financial_finality.py -v
+          python test_campaign_day_gaps.py -v
+          python test_financial_revisions.py -v
+      - run: python test_advertising_cached_finance_reader.py -v && python test_advertising_budget_evidence.py -v
+      - name: Continue same controlled analytics pass with existing delivery policy
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+          IP_FINANCIAL_RISK_NOTIFICATIONS: 'false'
+          IP_LIMITED_ANALYSIS_PUBLISH: 'false'
+          IP_LIMITED_TELEGRAM_DELIVERY: 'false'
+          SUPABASE_EGRESS_OPTIMIZED: 'false'
+        run: python advertising_addressed_gaps_20261016.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-advertising-pr27
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Preserve owner ciphertext, never replay stages
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          for file in "$RUNNER_TEMP"/stock-deploy-proof/*.aes.json; do
+            test -f "$file" || continue
+            base=$(basename "$file" .aes.json)
+            cp "$file" "recovery-output/advertising/addressed-$base-${{ github.run_id }}.aes.json"
+          done
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/
+          git diff --cached --quiet || git commit -m "Preserve controlled PR27 owner receipts only"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+          done
+          exit 1
+# Resume after proved pre-analysis composition-only stop; no external source credentials.

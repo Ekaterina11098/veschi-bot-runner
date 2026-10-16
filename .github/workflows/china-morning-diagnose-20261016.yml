@@ -28,16 +28,12 @@ jobs:
           python - <<'PY'
           import json
           from advertising_agent.notify import db,cache_get
-          from datetime import datetime,date,timedelta
-          from zoneinfo import ZoneInfo
-          state=cache_get('china_agent:demand_watch:v1') or {}
-          result=[]
-          for nm,e in state.get('price_history',{}).items():
-              change=e.get('last_price_change') or e.get('increase') or {}
-              stamp=str(change.get('detected_at',''))
-              if '2026-10-12' <= stamp[:10] <= '2026-10-15':
-                  result.append(dict(nm_id=nm,article=e.get('article'),change={k:v for k,v in change.items() if k!='baseline_group'},increase={k:v for k,v in (e.get('increase') or {}).items() if k!='baseline_group'}))
-          print('FOUR_DAY_CHANGES',json.dumps(result,ensure_ascii=False))
-          rows=db('GET','business_agent_jobs',params={'agent_id':'eq.china','created_at':'gte.2026-10-12T00:00:00+03:00','select':'id,request_text,created_at,answer','order':'id.asc','limit':100}) or []
-          print('PRICE_JOURNAL_NOTICES',json.dumps([r for r in rows if any(s in (r.get('answer') or '') for s in ('повышение цены замечено','цена повышена','изменения цен'))],ensure_ascii=False))
+          wanted=['11-FurScarf-black','12-FurScarf-coffee','145-FlorenceBag-black','30-2belts115-chocolate','42-Zont-Iblue','475-LucetteBag-green','482-RiginaBag-red','541-RayeBag-black','570-FloraBag-dbrown','589-BonnieBag-brown','591-AllaBag-coffee','592-AllaBag-brown','593-KendraBag-coffee','617-MayaBag-chocolate','9-FurPanama-lblue']
+          snaps=db('GET','analytics_snapshots',params={'id':'eq.17719','cabinet':'eq.token_3','select':'id,payload,collected_at,period_from,period_to','limit':1})
+          snap=snaps[0]; obs=snap['payload'][0]; raw=obs['data']['data']
+          report=[]
+          for article in wanted:
+              found=[r for r in raw['data'] if r.get('sa_name','').casefold()==article.casefold()]
+              report.append(dict(article=article,rows=[{k:r.get(k) for k in ('p_id','nm_id','sa_name','orders_count','sales_count','sparkline_orders','sparkline','returns_count','sales_sum_without_spp','returns_sum_without_spp')} for r in found],reason='absent_from_products_report' if not found else 'row_present_validation_needed'))
+          print('MISSING_DIAGNOSIS',json.dumps(dict(id=snap['id'],period_from=snap['period_from'],period_to=snap['period_to'],total=raw.get('total'),row_count=len(raw['data']),need_update=raw.get('need_update'),items=report),ensure_ascii=False))
           PY

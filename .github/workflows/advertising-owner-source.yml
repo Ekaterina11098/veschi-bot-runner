@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: f5e3d8a656ca8b9ca4f2a3003bfd16254a2b0a3a
+          ref: 8bea1186491b2182dc339a6d5ca16ad9ce879760
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -30,6 +30,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           SUPABASE_EGRESS_OPTIMIZED: 'true'
+          FOCUSED_DAILY_GAPS: '20261012-15'
         run: python advertising_source_owner.py
       - uses: actions/upload-artifact@v4
         if: always()

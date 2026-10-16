@@ -28,11 +28,11 @@ jobs:
           python - <<'PY'
           import json
           from advertising_agent.notify import db,cache_get
-          rows=db('GET','business_agent_jobs',params={'id':'eq.36','agent_id':'eq.china','select':'id,request_text,answer,status,tool_trace,created_at,completed_at,update_id','limit':1})
-          print('EXACT_JOB',json.dumps(rows,ensure_ascii=False))
-          audit=cache_get('china_agent:scheduled_price:2026-10-16:morning')
-          print('MORNING_AUDIT',json.dumps(audit,ensure_ascii=False))
-          state=cache_get('china_agent:demand:v1') or {}
-          print('STATE_KEYS',json.dumps(list(state)))
-          print('PENDING',json.dumps(state.get('pending_notice'),ensure_ascii=False))
+          state=cache_get('china_agent:demand_watch:v1') or {}
+          result=[]
+          for nm,e in state.get('price_history',{}).items():
+              change=e.get('last_price_change') or e.get('increase') or {}
+              if str(change.get('detected_at','')).startswith('2026-10-15'):
+                  result.append(dict(nm_id=nm,article=e.get('article'),change=change,increase=e.get('increase')))
+          print('YESTERDAY_CHANGES',json.dumps(result,ensure_ascii=False))
           PY

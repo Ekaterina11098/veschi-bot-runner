@@ -55,14 +55,18 @@ try:
   case=find(memory)
   product=next(x for x in memory['validated_outcomes_20261016']['products'] if x['nm_id']==nm)
   if case:
-   M=unit['pre_ad_contribution'];F=next(x['reported_logistics_sum'] for x in product['failed_order_evidence'] if x['state']=='nonbuyout_reverse_observed' and x['confirmed']==1 and x['reported_logistics_sum'] is not None)
+   M=unit['pre_ad_contribution']
+   fresh=next(s for s in memory['outcome_refresh_20261016']['saved'] if s['payload'][0]['data']['data'][0]['nm_id']==nm)
+   raw_by_gn={str(x['gnumber']):x for x in fresh['payload'][0]['data']['data']}
+   fee=next(x for x in product['failed_order_evidence'] if x['confirmed']==1 and x['reported_logistics_sum'] is not None and x['reported_logistics_sum']>0 and raw_by_gn[str(x['gnumber'])].get('is_fbs')==0)
+   F=fee['reported_logistics_sum']
    spend=case['stat_campaign_total'];norms=[]
    for label,N in [('main_campaign_reported_order_count',case['shown_orders']),('observed_all_target_orders',product['target_rows'])]:
     C=spend/N
     norms.append(dict(basis=label,denominator=N,CPA_scenario=C,assumed_all_period_spend_allocation=True,actual_cohort_CPA_verified=False,
      threshold_base=(C+F)/(M+F),threshold_unknown_increment='D/'+str(round(M+F,2)),
      sensitivity=[dict(q=q,known_component=round(q*M-(1-q)*F-C,2),result='known_component minus unknown D') for q in (.2,.4,.6,.8,1)]))
-   r['sku_scenarios'].append(dict(nm_id=nm,total_product_campaign_spend=spend,main_CPM_spend=case['main_spend'],period='2026-10-09..2026-10-15',M=M,F_example=F,
+   r['sku_scenarios'].append(dict(nm_id=nm,total_product_campaign_spend=spend,main_CPM_spend=case['main_spend'],period='2026-10-09..2026-10-15',M=M,F_example=F,fee_order_gnumber=fee['gnumber'],fee_source_state=fee['state'],fee_delivery_mode='FBO',fee_is_example_not_population_mean=True,
     normalizations=norms,not_statistical_confidence_interval=True,
     D='Unallocated storage and other costs, plus deviations of actual unit contribution/failure cost from these explicit scenario examples; unknown, never set to zero',
     warning='Advertising reported orders and card order-date cohort counts are different evidence; do not force equality or call this proven attribution'))

@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/veschi-bot-runner
-          ref: 559bdb873ebf831c15163daa4b35986ebc6485dd
+          ref: 89606668098fbc19b5e814a4ddcfbd42009867a9
           fetch-depth: 0
           persist-credentials: false
           path: runner-preview
@@ -55,12 +55,6 @@ jobs:
         run: python sku57_cloud_simulation_20261016.py exclude
       - name: Process B simulated late cloud wakeup and targeted restoration
         run: python sku57_cloud_simulation_20261016.py restore
-      - name: Saved linked cohort and failed-order evidence only
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          SUPABASE_EGRESS_OPTIMIZED: 'false'
-        run: python sku57_cohort_risk_20261016.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

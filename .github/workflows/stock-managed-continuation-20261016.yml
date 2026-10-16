@@ -1,4 +1,4 @@
-name: Finish two journal-funded transfers16Oct
+name: Close owner manual119 and verify completed-slot skip
 on:
   push:
     branches: [main]
@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: d186efd892e172d88b73b8e9a9c56dd9e207094c
+          ref: a3ed3663e9bfdb1850378638b243057a170720ce
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -30,7 +30,7 @@ jobs:
           python-version: '3.12'
       - name: Offline continuation and no-repeat checks
         working-directory: private-source
-        run: python -m unittest test_stock_reduction_credit test_stock_regular_service test_stock_group_execution test_unfinished_stock_20261016 test_stock_batch_transport test_stock_batch_plan test_stock_inventory_notice test_stock_schedule test_owner_low_rule test_order_demand test_stock_notice_policy -q
+        run: python -m unittest test_stock_read_retries test_stock_automatic_recovery test_stock_reduction_credit test_stock_regular_service test_stock_group_execution test_unfinished_stock_20261016 test_stock_batch_transport test_stock_batch_plan test_stock_inventory_notice test_stock_schedule test_owner_low_rule test_order_demand test_stock_notice_policy -q
       - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/daily-install.log" 2>&1
       - name: Fresh stock calculation and newly created stock-only notifications
         env:
@@ -61,7 +61,8 @@ jobs:
           from datetime import datetime,timezone,timedelta
           assert datetime.now(timezone(timedelta(hours=3))).date().isoformat()=='2026-10-16'
           PY
-          python private-source/owner_credit_repair_20261016.py
+          python private-source/owner_close119_20261016.py
+          python private-source/stock_regular_job.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -5,7 +5,7 @@ from datetime import datetime,timedelta,timezone
 sys.path.insert(0,str(Path(__file__).parent/'private-source'))
 from stock_deploy_support import seal,error
 from advertising_agent import agent_store as store
-from advertising_order_outcome_monitor import KEY,plan
+from advertising_order_outcome_monitor import KEY,plan,seed
 r=dict(wb_calls=0,wb_writes=0,source_calls=0,telegram_calls=0,schedule_changed=False)
 try:
  tests=subprocess.run([sys.executable,'test_advertising_order_outcome_monitor.py','-v'],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT);r['tests']=tests.stdout
@@ -18,11 +18,14 @@ try:
  workflow=Path('.github/workflows/advertising-daily-prepared.yml').read_text()
  assert "cron: '30 4 * * *'" in workflow and "ADVERTISING_EXECUTION_ENABLED: 'false'" in workflow
  r['daily_0730_unchanged']=True
- state=store.cache_get(KEY);assert len(state['orders'])==27
+ memory_seed=store.cache_get('advertising:ip:focus_preparation:20261016') or {}
+ state=seed(store.cache_get(KEY),memory_seed);assert len(state['orders'])>=27
+ store.cache_set(KEY,state,ttl_days=365)
+ if store.cache_get(KEY)!=state:raise RuntimeError('Extended monitoring state readback failed')
  r['tracked_orders']=len(state['orders']);r['observed_outcomes_not_financial_finality']=all(x['financially_final'] is False and x['mature_retention_ratio'] is None for x in state['orders'].values())
  now=datetime.now(timezone.utc);r['same_day_requests']=plan(state,now);r['next_due_requests']=plan(state,now+timedelta(days=1))
  key='advertising:ip:focus_preparation:20261016';memory=store.cache_get(key) or {};updated=copy.deepcopy(memory)
- updated['daily_order_outcome_observation_20261016']=dict(cache_key=KEY,tracked_orders=27,hook='advertising_source_owner.py in existing source/source_gaps stages',
+ updated['daily_order_outcome_observation_20261016']=dict(cache_key=KEY,tracked_orders=len(state['orders']),hook='advertising_source_owner.py in existing source/source_gaps stages',
   max_requests_per_existing_source_pass=4,max_contiguous_order_days=7,max_page_rows=300,
   minimum_refresh_hours=24,long_unresolved_days=30,long_unresolved_recheck_days=7,
   stable_archive_rule='14 days unchanged; buyout >=30 days from sale, or failed order with confirmed source and nonzero reported logistics',

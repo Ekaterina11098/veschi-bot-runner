@@ -1,0 +1,40 @@
+name: China remaining order gaps WB read only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-order-gaps-wb-20261016.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-analytics
+  cancel-in-progress: false
+jobs:
+  recover:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Read only absent-card daily orders, no Telegram or WB changes
+        working-directory: source
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          cp ../scripts/china_order_coverage.py china_agent/order_coverage.py
+          cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
+          python -m china_agent.wb_order_gaps

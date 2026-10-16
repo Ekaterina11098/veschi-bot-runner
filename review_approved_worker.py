@@ -76,12 +76,16 @@ def main():
                     if not locked:continue
                     try:
                         active=intent;preserve()
+                        from review_approval_card_delivery import notify_owner_receipt
+                        receipt_transport=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN'])
+                        notify_owner_receipt(app,receipt_transport,intent,preserve)
                         outcome=executor.run(intent['id'])
                         report['checked'][intent['id']]={'cabinet':intent['cabinet'],'item_id':intent['item_id'],'status':outcome['status'],'retry_at':outcome.get('retry_at'),'actual_answer_sha256':outcome.get('actual_answer_sha256'),'answer_sha256':intent['answer_sha256']}
                         with repo.transaction():
                             card=repo.get('cards',intent['card_token'],lock=True)
                             card.update(status={'confirmed':'sent','manual_present':'manual_present','verify':'uncertain','blocked':'held'}.get(outcome['status'],'approved'),publication_enabled=True,retry_at=outcome.get('retry_at',0))
                             repo.put('cards',intent['card_token'],card)
+                        notify_owner_receipt(app,receipt_transport,outcome,preserve)
                         preserve()
                     except Exception as exc:report['errors'][intent['id']]=error(exc);preserve()
                     finally:

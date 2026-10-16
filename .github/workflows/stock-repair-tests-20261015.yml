@@ -12,10 +12,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: d186efd892e172d88b73b8e9a9c56dd9e207094c
+          ref: 35127ed08488dfd6680ccd7ddeba068a83aef286
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m unittest test_stock_reduction_credit test_stock_regular_service test_stock_group_execution test_unfinished_stock_20261016 test_stock_batch_transport test_stock_batch_plan test_stock_inventory_notice test_stock_schedule test_owner_low_rule test_order_demand test_stock_notice_policy -v
+      - run: python -m unittest test_stock_automatic_recovery test_stock_reduction_credit test_stock_regular_service test_stock_group_execution test_unfinished_stock_20261016 test_stock_batch_transport test_stock_batch_plan test_stock_inventory_notice test_stock_schedule test_owner_low_rule test_order_demand test_stock_notice_policy -v

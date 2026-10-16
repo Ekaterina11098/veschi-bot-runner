@@ -1,7 +1,7 @@
 """Dedicated event entry, disabled unless both deployment flags are explicitly set."""
 import base64,json,os
 from pathlib import Path
-from review_telegram_approval import Approval,Repository,Rejected
+from review_telegram_approval import Approval,Repository,Rejected,sha
 from review_approval_bridge import SQLSource,DurableBridge
 from review_telegram_runtime import TelegramTransport,CanonicalGuard
 from review_telegram_receiver import Receiver
@@ -79,12 +79,21 @@ def main():
             sealed=encrypt(snapshot(approval.repo),os.environ['RECOVERY_PUBLIC_KEY'].encode())
             target=output/'approval-supplement.aes.json';target.write_text(json.dumps(sealed))
         update=decrypt_update(os.environ['SEALED_UPDATE'],os.environ['REVIEW_APPROVAL_INGRESS_KEY'])
+        ingress_key='telegram-ingress:'+sha(update)
+        with approval.repo.transaction():
+            previous=approval.repo.get('events',ingress_key)
+            if not previous:approval.repo.put('events',ingress_key,{'status':'received','update':update})
+        preserve()
         try:
             from review_approval_notice import NewNoticeTransport
             transport=NewNoticeTransport if update.get('new_notice') else TelegramTransport
             result=process(approval,bridge,transport(os.environ['TELEGRAM_BOT_TOKEN']),WBAdapter(wildberries),update,publication_enabled=os.getenv('REVIEW_PUBLICATION_ENABLED')=='1',preserve=preserve,new_notices_enabled=os.getenv('REVIEW_NEW_NOTICES_ENABLED')=='1',cutover=float(os.environ['REVIEW_APPROVAL_CUTOVER']) if os.getenv('REVIEW_APPROVAL_CUTOVER') else None)
+            with approval.repo.transaction():approval.repo.put('events',ingress_key,{'status':'processed','update':update,'result':result})
             # Categories only, no answer/source/identity or credential in public log.
             print(json.dumps({'decision':result.get('result',{}).get('decision'),'publication_status':result.get('publication_status'),'ui_delivery':result.get('ui_delivery')}))
+        except Exception as exc:
+            with approval.repo.transaction():approval.repo.put('events',ingress_key,{'status':'failed','update':update,'error_type':type(exc).__name__,'error':str(exc)[:300]})
+            raise
         finally:preserve()
     finally:conn.close()
 

@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 716ca31d86295bf286bb123f8aa828e65e5ee8d2
+          ref: 8bea1186491b2182dc339a6d5ca16ad9ce879760
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -29,6 +29,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           SUPABASE_EGRESS_OPTIMIZED: 'true'
+          BUDGET_REASSESSMENT: 'true'
         run: python advertising_risk_preview_owner.py
       - uses: actions/upload-artifact@v4
         if: always()
@@ -51,3 +52,5 @@ jobs:
           exit 1
 
 # Sequential saved-data replay after offline checks; prior pending run was cancelled by GitHub queue replacement.
+
+# Owner requested retained analytics with verified12budget snapshot17735; no WB/TG credentials.

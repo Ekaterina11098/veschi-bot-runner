@@ -38,6 +38,9 @@ if __name__=='__main__':
         print(hidden.getvalue().splitlines()[-1])
     except Exception as exc:
         from stock_deploy_support import seal,error
+        import traceback
+        from run_private import save_diagnostic
+        save_diagnostic('review-revisions',traceback.format_exc())
         seal('revision-resume-error',{'error':error(exc),'private_log':hidden.getvalue()})
         print('Revision delivery failed; diagnostic protected.');raise SystemExit(1)
 

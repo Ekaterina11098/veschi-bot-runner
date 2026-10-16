@@ -1,6 +1,6 @@
 import ast,unittest
 from pathlib import Path
-tree=ast.parse(Path('runner/advertising_source_owner.py').read_text())
+tree=ast.parse(Path(__file__).with_name('advertising_source_owner.py').read_text())
 node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='campaign_day_gaps')
 ns={};exec(compile(ast.Module(body=[node],type_ignores=[]),'actual-gap-planner','exec'),ns)
 gap=ns['campaign_day_gaps']

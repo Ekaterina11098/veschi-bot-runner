@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 1083053408f8d5c1f4f2937825fce5580e1eaeb4
+          ref: 04573148a26877fb8bfdd4eaa1c706d9f59c0aa0
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -31,7 +31,9 @@ jobs:
         with: {python-version: '3.12'}
       - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 requests==2.32.5 python-dotenv==1.1.1
       - name: Verify question and review reply routing
-        run: node review-approval-preparation/test_review_callback_headers.mjs
+        run: |
+          node review-approval-preparation/test_review_callback_headers.mjs
+          python -m unittest test_review_autonomy.py
       - name: Process one authenticated new approval, never old queues
         working-directory: review-approval-preparation
         env:

@@ -10,7 +10,7 @@ from analytics.stage_one import read
 from analytics.collect import database
 from advertising_agent import agent_store as store
 from stock_deploy_support import seal,error
-from advertising_order_outcome_monitor import KEY,historical_685_scope,status,dt
+from advertising_order_outcome_monitor import KEY,historical_685_scope,status,dt,seed
 r=dict(source_calls=0,wb_calls=0,wb_writes=0,telegram_calls=0,executable_actions_created=0,projects=[],economy=[])
 try:
  tests=subprocess.run([sys.executable,'test_advertising_order_outcome_monitor.py','-v'],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT);r['tests']=tests.stdout
@@ -28,6 +28,8 @@ try:
  if set(targeted)!=gns or len(targeted)!=12:raise RuntimeError('Missing target GN')
  if any(x['nm_id']!=scope['nm_id'] or x['is_fbs']!=0 for x in targeted.values()):raise RuntimeError('Changed product or delivery scope')
  state=store.cache_get(KEY)
+ original_58=seed({},memory)
+ if len(original_58['orders'])!=58 or not set(original_58['orders']).issubset(state['orders']):raise RuntimeError('Original monitored fifty-eight identities not preserved')
  if any(state['orders'][gn]['snapshot_id']!=source['id'] or state['orders'][gn]['raw']!=targeted[gn] for gn in gns):raise RuntimeError('Monitor actual target full readback mismatch')
  observed_counts=dict(Counter(status(x) for x in targeted.values()))
  def order_status(x):
@@ -76,7 +78,7 @@ try:
    if not x.get('active') or x.get('next_check_at') is None:raise RuntimeError('Recent buyout stopped prematurely')
    recent.append(dict(gnumber=x['gnumber'],nm_id=x['nm_id'],sale_dt=sale.isoformat(),observed_at=x['observed_at'],next_check_at=x['next_check_at'],financially_final=x['financially_final']))
  r['daily_connection']=dict(actual_daily_wrapper_exercised_with_offline_child=True,wrapper_calls=captured,actual_source_callback_verified_by_refresh_run=38945224412,
-  original_orders=58,now_tracked=len(state['orders']),recent_buyouts_still_active=recent,day_claim_replayed=False,scheduled_run_not_yet_observed=True,schedule_unchanged=True)
+  original_orders=58,original_58_identities_preserved=True,now_tracked=len(state['orders']),recent_buyouts_still_active=recent,day_claim_replayed=False,scheduled_run_not_yet_observed=True,schedule_unchanged=True)
  def find(x,required):
   if isinstance(x,dict):
    if all(k in x for k in required):return x
@@ -144,6 +146,7 @@ try:
  assert "'campaign_id':'eq.39410834','nm_id':'eq.1007948808'" in driver
  r['production_recovery_still_exact_57']=True
  updated=copy.deepcopy(memory);updated['test_projects_and_twelve_refresh_20261016']=r
+ updated['daily_order_outcome_observation_20261016'].update(tracked_orders=len(state['orders']),original_tracked_orders=58,latest_connection_verification=r['daily_connection'])
  r['status']='complete';updated=json.loads(json.dumps(updated))
  database('PATCH','telegram_api_cache',params={'cache_key':'eq.'+key,'updated_at':'eq.'+before['updated_at']},body={'payload':updated,'updated_at':datetime.now(timezone.utc).isoformat()})
  if store.cache_get(key)!=updated:raise RuntimeError('Project common memory full readback failed')

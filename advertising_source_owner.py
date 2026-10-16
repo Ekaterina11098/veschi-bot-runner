@@ -43,7 +43,7 @@ def wanted(tool,args,purpose=None):
   retry=float(obs.get('retry_after') or 0)
   if not retry or (now-datetime.fromisoformat(obs['observed_at'])).total_seconds()<retry:return None
  return dict(key=key,cabinet='token_2',tool=tool,arguments=args)
-def campaign_day_gaps(snapshots,campaign_id,first,last):
+def campaign_day_gaps(snapshots,campaign_id,first,last,refresh_days=()):
  from datetime import date,timedelta
  covered=set()
  for snapshot in snapshots:
@@ -55,13 +55,54 @@ def campaign_day_gaps(snapshots,campaign_id,first,last):
     if type(row.get('ac_spending_sum')) in (int,float):covered.add(day)
  missing=[];day=date.fromisoformat(first);finish=date.fromisoformat(last)
  while day<=finish:
-  if str(day) not in covered:missing.append(day)
+  if str(day) not in covered or str(day) in refresh_days:missing.append(day)
   day+=timedelta(days=1)
  spans=[]
  for day in missing:
   if spans and day==spans[-1][1]+timedelta(days=1):spans[-1][1]=day
   else:spans.append([day,day])
  return [(str(a),str(b)) for a,b in spans]
+
+def finance_refresh_reason(day, observations, now, explicit=False):
+ """Completeness is not settlement finality; one exact-day revision per UTC day.
+ Recent seven completed MSK days are mutable. Explicit older incidents stay scoped.
+ A received revision suppresses recollection for 24h, not forever.
+ """
+ from datetime import date,datetime,timedelta
+ from zoneinfo import ZoneInfo
+ recent=0<(now.astimezone(ZoneInfo('Europe/Moscow')).date()-date.fromisoformat(day)).days<=7
+ if not recent and not explicit:return None
+ received=[o for o in observations if o.get('observation_status')=='received']
+ if not received:return 'missing'
+ try:age=(now-datetime.fromisoformat(received[0]['observed_at'].replace('Z','+00:00'))).total_seconds()
+ except (KeyError,TypeError,ValueError):return 'freshness_unknown'
+ if age<0:return 'freshness_unknown'
+ if age>=24*3600:return 'late_accrual_revision'
+ return None
+
+def daily_refresh_dates(snapshots,campaign_id,first,last,now):
+ from datetime import date,datetime,timedelta
+ from zoneinfo import ZoneInfo
+ today=now.astimezone(ZoneInfo('Europe/Moscow')).date();dates=set()
+ for n in range(1,4):
+  day=str(today-timedelta(days=n))
+  if not first<=day<=last:continue
+  candidates=[s for s in snapshots for p in s.get('payload') or []
+   if p.get('campaign_id')==campaign_id and p.get('report')=='days'
+   and p.get('scope_nm_id') is None and p.get('spending_reconciled') is True
+   and any(str(r.get('date',''))[:10]==day for r in p.get('rows',[]))]
+  try:fresh=any(0<=(now-datetime.fromisoformat(s['collected_at'].replace('Z','+00:00'))).total_seconds()<24*3600 for s in candidates)
+  except (KeyError,ValueError,TypeError):fresh=False
+  if not fresh:dates.add(day)
+ return dates
+
+def financial_response_state(observation):
+ body=(observation.get('data') or {}).get('data') or {}
+ return dict(response_complete=observation.get('status')=='received' and observation.get('scope_verified') is True
+  and body.get('need_update')==0 and isinstance(body.get('data'),list) and body.get('total')==len(body['data']),
+  accruals_final=False,accrual_finality='not_provided_by_source',
+  advertising_basis='financial_recognition',campaign_spend_additive=False,
+  zero_advertisement_is_final_absence=False)
 
 hidden=io.StringIO()
 try:
@@ -87,13 +128,17 @@ try:
    bidder=copy.deepcopy(BIDDER);state=get('mpstats:gap_requests:v1') or {}
    bidder['token_2']['campaign_ids']=state.get('bidder_map',{}).get('token_2',{}).get('campaign_ids',[])
    requests_plan=[]
-   for offset in range(7):
-    day=str(end-timedelta(days=offset))
+   refreshed_finance_days=set()
+   gap_state=get('analytics:source_gaps') or {}
+   explicit_finance_days={g.get('day') for g in gap_state.get('gaps',[]) if g.get('cabinet')=='token_2' and g.get('metric')=='advertising_spend' and g.get('status') in ('open','resolved_mpstats_daily')}
+   finance_days=sorted({str(end-timedelta(days=i)) for i in range(7)} | explicit_finance_days,reverse=True)
+   for day in finance_days:
     # Exact daily missing components only; old verified days are reused.
-    existing=database('GET','analytics_snapshots',params={'source':'eq.mpstats_lk_wb_products','cabinet':'eq.token_2','status':'eq.complete','period_from':'eq.'+day,'period_to':'eq.'+day,'select':'id,observation_status:payload->0->>status,need_update:payload->0->data->data->>need_update','order':'id.desc','limit':5}) or []
-    if any(x.get('observation_status')=='received' and str(x.get('need_update'))=='0' for x in existing):
+    existing=database('GET','analytics_snapshots',params={'source':'eq.mpstats_lk_wb_products','cabinet':'eq.token_2','status':'eq.complete','period_from':'eq.'+day,'period_to':'eq.'+day,'select':'id,observation_status:payload->0->>status,need_update:payload->0->data->data->>need_update,observed_at:payload->0->>observed_at','order':'id.desc','limit':5}) or []
+    refresh_reason=finance_refresh_reason(day,existing,now,explicit=day in explicit_finance_days)
+    if refresh_reason is None and any(x.get('observation_status')=='received' and str(x.get('need_update'))=='0' for x in existing):
      report.setdefault('reused_daily_ids',[]).extend(x['id'] for x in existing[:1]);continue
-    req=wanted('lk_wb_products',dict(date_from=day,date_to=day,start_row=0,end_row=1500))
+    req=wanted('lk_wb_products',dict(date_from=day,date_to=day,start_row=0,end_row=1500),purpose='finance-revision:'+str(now.date()) if refresh_reason else None)
     if req:requests_plan.append(req)
    prior_catalogs=read('analytics_snapshots',dict(source='eq.mpstats_campaign_catalog',cabinet='eq.token_2',period_from='eq.'+str(start),period_to='eq.'+str(end),select='payload',order='id.desc',limit=20)) or []
    retained_catalogs=[v for row in prior_catalogs for v in row.get('payload',[]) if isinstance(v,dict)]
@@ -102,11 +147,6 @@ try:
     for offset in range(0,total,100):
      req=wanted('wbbidder_campaigns',dict(tokens=[152922],report=kind,d1=str(start),d2=str(end),limit=100,start_row=offset,bidder_only=False,sort='wb_id',sort_dir='asc'))
      if req:requests_plan.append(req)
-   gap_state=get('analytics:source_gaps') or {}
-   for gap in gap_state.get('gaps',[]):
-    if gap.get('cabinet')=='token_2' and gap.get('metric')=='advertising_spend' and gap.get('status')=='open' and str(start)<=gap.get('day','')<=str(end):
-     day=gap['day'];req=wanted('lk_wb_products',dict(date_from=day,date_to=day,start_row=0,end_row=1500),purpose='confirmed-finance-gap:'+str(now.date()))
-     if req:req['priority']=100;requests_plan.insert(0,req)
    existing_catalogs=read('analytics_snapshots',dict(source='eq.mpstats_campaign_catalog',cabinet='eq.token_2',period_from='eq.'+str(start),period_to='eq.'+str(end),select='id,payload',order='id.desc',limit=30)) or []
    catalogs_by_page={}
    for row in existing_catalogs:
@@ -153,6 +193,9 @@ try:
      put('mpstats:cooldown',{'pending':True,'retry_after':obs['retry_after']})
      database('PATCH','telegram_api_cache',body={'expires_at':(datetime.now(timezone.utc)+timedelta(seconds=obs['retry_after'])).isoformat()},params={'cache_key':'eq.mpstats:cooldown'})
     if obs.get('status')=='received':
+     if obs['tool']=='lk_wb_products':
+      refreshed_finance_days.add(a)
+      report.setdefault('financial_response_states',[]).append(dict(day=a,snapshot_id=ident,**financial_response_state(obs)))
      if ':confirmed-finance-gap:' in obs['request_key']:
       import math
       body=(obs.get('data') or {}).get('data') or {};items=body.get('data') or []
@@ -205,12 +248,12 @@ try:
      active=[r['id'] for r in rows if (r.get('wb_id') in wbactive if wbactive else r.get('status_id')==9)]
      report['full_catalog_count']=len(rows)
      more=[]
-     retained_days=read('analytics_snapshots',{'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','payload->0->>report':'eq.days','select':'id,payload','order':'id.desc','limit':1000})
+     retained_days=read('analytics_snapshots',{'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','payload->0->>report':'eq.days','select':'id,payload,collected_at','order':'id.desc','limit':1000})
      report['campaign_daily_gaps']={}
      for cid in active:
-      for first,last in campaign_day_gaps(retained_days,cid,str(start),str(end)):
+      for first,last in campaign_day_gaps(retained_days,cid,str(start),str(end),daily_refresh_dates(retained_days,cid,str(start),str(end),now)):
        report['campaign_daily_gaps'].setdefault(str(cid),[]).append([first,last])
-       day_req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,report='days',d1=first,d2=last))
+       day_req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,report='days',d1=first,d2=last),purpose='daily-revision:'+str(now.date()))
        if day_req:more.append(day_req)
       req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,report='products',d1=str(start),d2=str(end)))
       if req:more.append(req)
@@ -262,9 +305,22 @@ try:
     put('mpstats:cooldown',dict(pending=True,retry_after=result['retry_after']))
     database('PATCH','telegram_api_cache',body={'expires_at':(datetime.now(timezone.utc)+timedelta(seconds=result['retry_after'])).isoformat()},params={'cache_key':'eq.mpstats:cooldown'})
    composed=read('analytics_snapshots',dict(source='eq.mpstats_products_composed',cabinet='eq.token_2',period_from='eq.'+str(start),period_to='eq.'+str(end),select='id,collected_at',order='id.desc',limit=1)) or []
-   report['finance_composition']={'status':'reused','id':composed[0]['id']} if composed else compose_cached_finance('token_2',start,end,datetime.now(timezone.utc))
+   report['refreshed_finance_days']=sorted(refreshed_finance_days)
+   # Recompose current window from latest exact-day versions, never add campaign spend.
+   report['finance_composition']={'status':'reused','id':composed[0]['id']} if composed and not refreshed_finance_days else compose_cached_finance('token_2',start,end,datetime.now(timezone.utc))
+   # Older explicit incidents may affect retained overlapping periods too.
+   if refreshed_finance_days:
+    periods=read('analytics_snapshots',dict(source='eq.mpstats_products_composed',cabinet='eq.token_2',select='period_from,period_to',order='id.desc',limit=200)) or []
+    affected={(r['period_from'],r['period_to']) for r in periods if any(r['period_from']<=d<=r['period_to'] for d in refreshed_finance_days)}
+    from datetime import date
+    report['recomposed_affected_periods']=[]
+    for a,b in sorted(affected-{(str(start),str(end))})[:10]:
+     result=compose_cached_finance('token_2',date.fromisoformat(a),date.fromisoformat(b),datetime.now(timezone.utc))
+     report['recomposed_affected_periods'].append(dict(period_from=a,period_to=b,result=result))
+    report['affected_periods_beyond_pass_limit']=max(0,len(affected-{(str(start),str(end))})-10)
   report['traffic']=traffic
 except Exception as exc:report['error']=error(exc)
 finally:
  report['private_log']=hidden.getvalue();seal('advertising-source',report)
  print(json.dumps({'saved':len(report['saved']),'provider_status':report.get('provider_status',{}).get('status'),'pending_pause':bool(report.get('pending_pause')),'error_type':report.get('error',{}).get('type'),'wb_calls':0,'telegram_calls':0}))
+

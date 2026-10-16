@@ -1,0 +1,60 @@
+name: Offline advertising preparation acceptance, no activation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/advertising-preparation-v2-checks.yml']
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 3dc7e093d03a0839bf3d97bc76a51cee3b6981ec
+          fetch-depth: 0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: recovery-source
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: ddcc5b022d5e8607f78213392930bdc0d611d4fc
+          fetch-depth: 0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: financial-source
+      - uses: actions/checkout@v4
+        with:
+          ref: 6193eeb608be80800d1516bc6db11474c043dec1
+          persist-credentials: false
+          path: analytics-runner
+      - uses: actions/checkout@v4
+        with:
+          ref: 8fc72afb6eba1e4f012b13839469b4aeb7275a8a
+          persist-credentials: false
+          path: recovery-runner
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Verify main compatibility and exact executable changes
+        run: |
+          git -C recovery-source merge-base --is-ancestor a12826ec5576196e48c94db6c07f541bf07eb2b5 HEAD
+          git -C financial-source merge-base --is-ancestor a12826ec5576196e48c94db6c07f541bf07eb2b5 HEAD
+          git -C recovery-source diff --exit-code d53db8c63d56ccb9ac48336b39468a83fda6fb4e 92ad2cfab01d16d45af2195089e8b3069edf800b -- advertising_agent tests
+          python -m compileall -q recovery-source/advertising_agent financial-source/advertising_agent analytics-runner/advertising_source_owner.py recovery-runner/advertising_sku57_recovery_owner.py
+      - name: Actual recovery state machine, no network or credentials
+        working-directory: recovery-source
+        run: python -m unittest discover -s tests -p test_sku_membership_recovery.py -v
+      - name: Exact-day gap and revision planning, offline
+        run: |
+          python analytics-runner/test_campaign_day_gaps.py -v
+          python analytics-runner/test_financial_revisions.py -v
+      - name: Actual financial calculation, no double counting or finality claim
+        working-directory: financial-source
+        run: python -m unittest discover -s tests -p test_financial_finality.py -v
+      - name: Actual dormant driver, fencing and owner incident deduplication
+        run: python recovery-runner/test_sku57_driver.py -v
+      - name: Dormant CLI cannot activate mutations
+        run: python recovery-runner/advertising_sku57_recovery_owner.py

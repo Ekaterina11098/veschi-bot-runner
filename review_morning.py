@@ -97,9 +97,13 @@ def main():
                             if not eligible(item,cabinet,source,repo,store.read):
                                 candidate['status']='skipped';save();continue
                             if candidate['status']=='preflight':
-                                if wb.get_reply_answer(item_id,'feedbacks',cabinet=cabinet).strip():
-                                    candidate['status']='manual_present';save();continue
-                                candidate.update(status='generate',preflight_at=time.time());save()
+                                # This is a notification, not a publication. The complete
+                                # current unanswered list is the WB observation. The approval
+                                # executor still performs its own exact pre-publication GET.
+                                if time.time()-scope['observed_at']>4*3600:
+                                    scope.update(status='collecting',items=[],skip=0)
+                                    save();break
+                                candidate.update(status='generate',preflight_at=scope['observed_at']);save()
                             if candidate['status']=='generate':
                                 # Canonical source and variants are durable before Telegram.
                                 version=candidate['version']

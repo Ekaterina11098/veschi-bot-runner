@@ -28,7 +28,7 @@ jobs:
           path: financial-source
       - uses: actions/checkout@v4
         with:
-          ref: 6193eeb608be80800d1516bc6db11474c043dec1
+          ref: c1311657f2b6699c4733327b1e99b9317ad283c3
           persist-credentials: false
           path: analytics-runner
       - uses: actions/checkout@v4

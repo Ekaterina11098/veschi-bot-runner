@@ -18,9 +18,30 @@ try:
   from analytics.collect import database
   from analytics.ip_financial_risk import risk_register,expense_test
   from datetime import datetime,timezone
-  rows=read('analytics_snapshots',dict(id='eq.17603',cabinet='eq.token_2',select='payload,period_from,period_to,id'))
+  rows=read('analytics_snapshots',dict(id='eq.'+('17624' if os.getenv('BUDGET_REASSESSMENT')=='true' else '17603'),cabinet='eq.token_2',select='payload,period_from,period_to,id'))
   assert rows==read('analytics_snapshots',dict(id='eq.17603',cabinet='eq.token_2',select='payload,period_from,period_to,id'))
-  full=rows[0]['payload'][0];inv=full['investigations']
+  full=rows[0]['payload'][0]
+  if os.getenv('BUDGET_REASSESSMENT')=='true':
+   from analytics.ip_daily_recommendations import budget_analysis
+   budget=read('analytics_snapshots',dict(id='eq.17735',cabinet='eq.token_2',select='id,payload,collected_at,status'))[0]
+   assert budget['payload']['complete'] and len(budget['payload']['items'])==12
+   ids=budget['payload']['campaign_ids']
+   now=datetime.now(timezone.utc)
+   assessed=budget_analysis(dict(campaigns=[dict(wb_campaign_id=cid,active_catalog_verified=True) for cid in ids],budgets=[budget],current_day_campaign_spend={}),now)
+   assert len(assessed)==12 and all(x['balance'] is not None for x in assessed)
+   daily=full['daily']
+   report.update(mode='budget_reassessment',source_snapshot_id=17624,budget_snapshot=budget,
+    evaluated_at=now.isoformat(),period_from=rows[0]['period_from'],period_to=rows[0]['period_to'],
+    budget_before=daily.get('budget_analysis'),budget_after=assessed,
+    campaign_summary=full.get('campaign_summary'),summary=full.get('summary'),
+    pair_decision_trace=daily.get('pair_decision_trace'),actions=daily.get('actions'),
+    investigations=full.get('investigations'),financial_risk=daily.get('financial_risk'),
+    test_candidates=daily.get('expense_test_candidates'),
+    new_budget_actions=[],reason='All balances known and positive; no verified current-day spend rate; no replenishment amount or exhaustion horizon inferred',
+    forecasts_enabled=False,wb_writes=0,canonical_decisions_modified=False)
+   assert report['actions']==daily.get('actions')
+   raise SystemExit(0)
+  inv=full['investigations']
   risk=risk_register(inv['investigations'],rows[0]['period_from'],rows[0]['period_to'],inv['campaigns'])
   assert risk['risk_sku_count']==137 and abs(risk['negative_sku_total']+119871.65)<.01
   config=read('analytics_snapshots',dict(source='eq.advertising_active_configuration',cabinet='eq.token_2',select='id,payload,collected_at',order='id.desc',limit=1))[0]

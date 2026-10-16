@@ -99,7 +99,9 @@ class Tests(unittest.TestCase):
         self.assertTrue(self.handle('ok.'+nonce,'confirm')['duplicate']);self.assertEqual(self.repo.count('intents'),1)
     def test_second_click_new_event(self):
         nonce=self.selected();self.handle('ok.'+nonce,'confirm')
-        with self.assertRaises(Rejected):self.handle('ok.'+nonce,'confirm2')
+        result=self.handle('ok.'+nonce,'confirm2')
+        self.assertTrue(result['duplicate']);self.assertFalse(result['result']['publication_created'])
+        self.assertEqual(self.repo.count('intents'),1)
     def test_old_nonce(self):
         nonce=self.selected();self.handle('v1','new-selection')
         with self.assertRaises(Rejected):self.handle('ok.'+nonce,'confirm')
@@ -257,12 +259,13 @@ class Tests(unittest.TestCase):
                 connection=sqlite3.connect(path,timeout=5)
                 try:
                     worker=Approval(Repository(connection),'secret',11,22,33,enabled=True)
-                    worker.handle(self.update('ok.'+nonce,event),'secret');return 'approved'
+                    result=worker.handle(self.update('ok.'+nonce,event),'secret')
+                    return 'acknowledged' if result['duplicate'] else 'approved'
                 except Rejected:return 'rejected'
                 finally:connection.close()
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
                 results=list(pool.map(confirm,['click1','click2']))
-            self.assertEqual(sorted(results),['approved','rejected'])
+            self.assertEqual(sorted(results),['acknowledged','approved'])
             conn=sqlite3.connect(path);self.assertEqual(Repository(conn).count('intents'),1);conn.close()
 
 if __name__=='__main__':unittest.main(verbosity=2)

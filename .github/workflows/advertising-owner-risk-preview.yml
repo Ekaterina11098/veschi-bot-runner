@@ -28,7 +28,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          SUPABASE_EGRESS_OPTIMIZED: 'true'
+          SUPABASE_EGRESS_OPTIMIZED: 'false'
           BUDGET_REASSESSMENT: 'false'
           FOCUS_FOLLOWUP: 'true'
         run: python advertising_risk_preview_owner.py
@@ -61,3 +61,5 @@ jobs:
 # Export bounded results only; prior full receipt retained encrypted.
 
 # Retained day-level recognition and budget variability investigation only.
+
+# DB GET only: disable cache-mirror writes in this bounded offline investigation.

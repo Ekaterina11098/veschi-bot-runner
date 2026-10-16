@@ -56,3 +56,34 @@ def notify_owner_problem(approval,telegram,intent,preserve=None):
     with approval.repo.transaction():approval.repo.put('events',key,event)
     if preserve:preserve()
     return event
+
+def notify_owner_receipt(approval,telegram,intent,preserve=None):
+    """One durable receipt per lifecycle stage; no automatic resend on timeout."""
+    if intent['owner_id']!=approval.owner or intent['chat_id']!=approval.chat:
+        raise ValueError('Wrong receipt recipient')
+    stage=('public' if intent.get('wb_ui_status')=='Опубликован для всех' else
+           'accepted' if intent.get('status')=='confirmed' else 'approved')
+    key='owner-receipt:'+intent['id']+':'+stage
+    repo=approval.repo
+    with repo.transaction():
+        repo.get('intents',intent['id'],lock=True)
+        old=repo.get('events',key)
+        if old:return old
+        event={'status':'sending','intent_id':intent['id'],'stage':stage,'created_at':approval.clock()}
+        repo.put('events',key,event)
+    if preserve:preserve()
+    card=repo.get('cards',intent['card_token'])
+    cabinet={'token_1':'ООО','token_2':'ИП','token_3':'Китай'}[intent['cabinet']]
+    kind='Вопрос' if intent['kind']=='questions' else 'Отзыв'
+    state={'public':'Ответ опубликован для всех в WB. Текст точно совпадает с подтверждённым.',
+           'accepted':'WB подтвердил приём ответа. Текст совпадает; публичная публикация может проходить модерацию.',
+           'approved':'Подтверждение принято и сохранено. Ответ ожидает отправки и проверки WB; повторно нажимать не нужно.'}[stage]
+    text=kind+' · '+cabinet+' · '+str(card['source']['article'])[:150]+'\nID: '+intent['item_id']+'\n'+state
+    try:
+        response=telegram.call('notifyOwnerReviewReceipt',{'chat_id':approval.chat,'text':text})
+        if not isinstance(response,dict) or str(response.get('chat',{}).get('id'))!=approval.chat or not isinstance(response.get('message_id'),int):raise ValueError('Receipt unconfirmed')
+        event.update(status='confirmed',message_id=response['message_id'])
+    except Exception:event['status']='uncertain'
+    with repo.transaction():repo.put('events',key,event)
+    if preserve:preserve()
+    return event

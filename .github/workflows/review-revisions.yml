@@ -50,3 +50,4 @@ jobs:
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
 # Diagnose the saved revision without repeating any confirmed delivery.
+# Resume the untouched saved revision after correcting PostgreSQL prefix binding.

@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-review-replies
+  group: review-morning-feedback-cards
   cancel-in-progress: false
 jobs:
   morning-reviews:
@@ -31,6 +31,7 @@ jobs:
       - name: Validate independent notices and duplicate protection
         run: |
           python -m unittest test_review_morning.py
+          python -m unittest test_review_autonomy.py
           python -m py_compile review_morning.py
       - name: Collect reviews and deliver only new approval cards
         env:

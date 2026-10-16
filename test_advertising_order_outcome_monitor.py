@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime,timedelta,timezone
-from advertising_order_outcome_monitor import ingest,plan,seed
+from advertising_order_outcome_monitor import ingest,plan,seed,financial_revision
 NOW=datetime(2026,10,16,17,tzinfo=timezone.utc)
 def observation(day='2026-10-08',**changes):
  row=dict(gnumber='a',nm_id=1123677454,order_dt=day+' 10:00:00',sale_dt=None,refund_dt=None,billed_times=0,refunded_times=0,is_canceled_order=0,backlogistic_times=0,confirmed=0,forward_logistic_rub=0,backward_logistic_rub=0);row.update(changes)
@@ -37,4 +37,15 @@ class MonitorTests(unittest.TestCase):
   for n in range(6):
    o=observation(day='2026-10-'+str(n*2+1).zfill(2));o['data']['data'][0]['gnumber']=str(n);s=ingest(s,o,n)
   self.assertEqual(len(plan(s,NOW+timedelta(days=10),max_requests=4)),4)
+ def test_changed_finance_reopens_only_known_sku(self):
+  s=ingest({},observation(),1);s['orders']['a']['active']=False
+  o=dict(tool='lk_wb_products',status='received',arguments=dict(date_from='2026-10-15'),data=dict(data=dict(need_update=0,total=1,data=[dict(nm_id=1123677454,logistic_all=10)])))
+  s=financial_revision(s,o,NOW);self.assertFalse(s['orders']['a']['active'])
+  o['data']['data']['data'][0]['logistic_all']=20;s=financial_revision(s,o,NOW)
+  self.assertTrue(s['orders']['a']['active']);self.assertIsNone(s['orders']['a']['mature_retention_ratio'])
+ def test_unchanged_finance_does_not_reopen(self):
+  s=ingest({},observation(),1);s['orders']['a']['active']=False
+  o=dict(tool='lk_wb_products',status='received',arguments=dict(date_from='2026-10-15'),data=dict(data=dict(need_update=0,total=1,data=[dict(nm_id=1123677454,logistic_all=10)])))
+  s=financial_revision(s,o,NOW);s=financial_revision(s,o,NOW)
+  self.assertFalse(s['orders']['a']['active'])
 if __name__=='__main__':unittest.main()

@@ -41,4 +41,48 @@ class Driver(unittest.TestCase):
   calls=[]
   with self.assertRaises(RuntimeError):m.notify_recovery_incident(self.port(True),dict(id='a',chat_id=7),lambda *a:calls.append(a),datetime.now(timezone.utc))
   self.assertEqual(calls,[])
+ def fixture(self,status='done',lease_due=None):
+  import copy
+  now=datetime(2026,10,16,13,tzinfo=timezone.utc)
+  watch=dict(id='w',status='active',campaign_id=39410834,nm_id=1007948808,chat_id=7,sender_id=8,policy=dict(mode='sku_membership_recovery',action_id='a',executor_job_id=9,approved_digest='d',backup_operator_id=8))
+  action=dict(id='a',job_id=9,chat_id=7,sender_id=8,approved_by=8,digest='d',specification=dict(execution_authorized=True,restore_authorized=True))
+  job=dict(id=9,status=status,lease_token='old',lease_until=lease_due,request_text='/_sku57_reserved_recovery a')
+  class Store:
+   calls=[]
+   def registration(self):return dict(chat_id=7,registered_by_user_id=8)
+   def db(self,method,table,**kw):
+    self.calls.append((method,table,kw))
+    if method=='GET':return copy.deepcopy({'advertising_agent_watches':[watch],'advertising_agent_actions':[action],'advertising_agent_jobs':[job]}[table])
+    if method=='PATCH':job.update(kw['body']);return [copy.deepcopy(job)]
+    raise AssertionError('INSERT forbidden')
+  class Actions:
+   stepped=0
+   def fingerprint(self,spec):return 'd'
+   def due_sku_membership_recoveries(self,rows,now):return [w for w in rows if w['status']=='active']
+   def sku_membership_watch_step(self,action,watch,port,now,**kw):
+    self.stepped+=1;return dict(watch,state=dict(notification_pending=False))
+  return now,watch,action,job,Store(),Actions()
+ def invoke(self,f):
+  now,w,a,j,s,ac=f
+  with patch.dict(os.environ,{'ADVERTISING_EXECUTION_ENABLED':'true'}):
+   return m.resume_existing(s,ac,now,enabled=True,port_factory=lambda *a,**kw:object())
+ def test_reserved_idle_job_is_reused(self):
+  f=self.fixture();self.invoke(f);self.assertEqual(f[-1].stepped,1);self.assertEqual(f[3]['status'],'done')
+ def test_unexpired_lease_not_stolen(self):
+  f=self.fixture('running','2026-10-16T14:00:00+00:00');self.invoke(f);self.assertEqual(f[-1].stepped,0)
+ def test_expired_lease_resumed(self):
+  f=self.fixture('running','2026-10-16T12:00:00+00:00');self.invoke(f);self.assertEqual(f[-1].stepped,1);self.assertNotEqual(f[3]['lease_token'],'old')
+ def test_digest_mismatch_no_claim(self):
+  f=self.fixture();f[1]['policy']['approved_digest']='other'
+  with self.assertRaises(PermissionError):self.invoke(f)
+  self.assertFalse(any(m=='PATCH' for m,t,k in f[-2].calls))
+ def test_backup_not_owner_no_claim(self):
+  f=self.fixture();f[1]['policy']['backup_operator_id']=99
+  with self.assertRaises(PermissionError):self.invoke(f)
+ def test_pending_generic_job_not_repurposed(self):
+  f=self.fixture('pending')
+  with self.assertRaises(PermissionError):self.invoke(f)
+ def test_existing_authority_required(self):
+  f=self.fixture();f[2]['specification']['restore_authorized']=False
+  with self.assertRaises(PermissionError):self.invoke(f)
 if __name__=='__main__':unittest.main()

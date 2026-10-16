@@ -33,7 +33,7 @@ jobs:
           path: analytics-runner
       - uses: actions/checkout@v4
         with:
-          ref: 8fc72afb6eba1e4f012b13839469b4aeb7275a8a
+          ref: a57ff06f42afa7bd8d507c5278d64d343cf5f121
           persist-credentials: false
           path: recovery-runner
       - uses: actions/setup-python@v5
@@ -58,3 +58,13 @@ jobs:
         run: python recovery-runner/test_sku57_driver.py -v
       - name: Dormant CLI cannot activate mutations
         run: python recovery-runner/advertising_sku57_recovery_owner.py
+      - name: Prepared cloud executor has no live cadence or WB credentials
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('recovery-runner/.github/workflows/advertising-sku57-recovery-prepared.yml').read_text()
+          assert "schedule:" not in p and "cron:" not in p and "workflow_dispatch:" not in p
+          assert "ADVERTISING_EXECUTION_ENABLED: 'false'" in p and "enabled=False" in p
+          assert "group: sku57-membership-writer" in p and "WB_TOKEN" not in p
+          print("Prepared cloud writer is closed; read-only budget group cannot queue it.")
+          PY

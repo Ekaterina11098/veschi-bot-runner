@@ -60,6 +60,9 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
         run: |
+          cp ../scripts/china_order_coverage.py china_agent/order_coverage.py
+          cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
+          cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
           cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
           python -m compileall -q china_agent/morning_pair.py
           ACTION=$(python -c "import json;print(json.load(open('../china-price-morning-request.json'))['action'])")

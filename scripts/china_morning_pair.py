@@ -93,6 +93,8 @@ class PairWorker(ScheduledWorker):
                 if '2026-10-16' not in answer or '12.10–15.10' not in answer: raise RuntimeError('Approved period mismatch')
                 trace=copy.deepcopy(rows[0].get('tool_trace') or [])
                 trace=[e for e in trace if e.get('name')!='china_report_delivery']
+                answer=answer.replace('Китай • повышение и снижение • четыре полных дня • 2026-10-16','Китай • кандидаты на повышение и понижение цены • 16.10.2026').replace('1 кандидатов.','1 кандидат.')
+                answer=answer.replace('Оценено товаров:', 'Источник: MPStats, срез 16.10 в 10:44 МСК.\nОценено товаров:')
                 return answer,trace
             answer,trace=super().prepare(preview)
             expected=(self.day-timedelta(days=1)).isoformat()
@@ -101,6 +103,8 @@ class PairWorker(ScheduledWorker):
             return answer,trace
         state=self.get(demand.STATE_KEY) or {}
         answer=render_control(state,self.day,lambda table,params:self.db('GET',table,params=params),self.now)
+        if self.day==date(2026,10,16) and len(answer)>3400:
+            raise RuntimeError('Approved control does not fit one message')
         return answer,[dict(name='china_price_daily_report',report_date=str(self.day),mode='control')]
 
 def main():

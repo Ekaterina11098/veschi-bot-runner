@@ -34,7 +34,7 @@ jobs:
       - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/daily-install.log" 2>&1
       - name: Fresh stock calculation and newly created stock-only notifications
         env:
-          PYTHONPATH: ${{ github.workspace }}/private-source
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
           STOCK_DAILY_ENABLED: 'true'
           STOCK_RUN_SLOT: '1630'
           STOCK_NOTIFICATIONS_ENABLED: 'true'

@@ -29,6 +29,9 @@ sys.exit(0 if result.wasSuccessful() else 1)
   from analytics.ip_daily_recommendations import KEY
   from analytics.mpstats_primary import profit_rows
   from analytics.stage_one import read
+  import analytics.stage_one as finance_stage
+  from advertising_cached_finance_reader import install as install_bounded_finance
+  install_bounded_finance(finance_stage)
   from datetime import datetime,timedelta,timezone
   from zoneinfo import ZoneInfo
   today=datetime.now(timezone.utc).astimezone(ZoneInfo('Europe/Moscow')).date()

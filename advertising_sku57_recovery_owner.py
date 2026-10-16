@@ -63,7 +63,9 @@ def resume_existing(store,actions,now,*,enabled=False,port_factory=None,notify=N
   if (watch.get('campaign_id'),watch.get('nm_id'))!=(cid,nm):raise PermissionError('Watch/action pair mismatch')
   conflicts=store.db('GET','advertising_agent_watches',params={'status':'eq.active',
    'policy->>mode':'eq.sku_membership_recovery','campaign_id':'eq.'+str(cid),'select':'id','limit':2}) or []
-  if len(conflicts)!=1 or conflicts[0]['id']!=watch['id']:raise PermissionError('Campaign reservation missing or conflicting')
+  if (len(conflicts)>1 or (conflicts and conflicts[0]['id']!=watch['id'])
+   or (watch.get('status')=='active' and len(conflicts)!=1)):
+   raise PermissionError('Campaign reservation missing or conflicting')
   if (action['job_id']!=jid or action['chat_id']!=watch['chat_id'] or action['sender_id']!=watch['sender_id']
    or action.get('approved_by')!=registration['registered_by_user_id']
    or action['digest']!=actions.fingerprint(spec) or policy.get('approved_digest')!=action['digest']

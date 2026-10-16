@@ -28,7 +28,6 @@ jobs:
         env:
           ADVERTISING_EXECUTION_ENABLED: 'false'
         run: |
-          cp tests/test_sku_membership_recovery.py /tmp/noop 2>/dev/null || true
           cp private-source/tests/test_sku_membership_recovery.py .
           cp -a private-source/advertising_agent .
           python verify_three_recovery.py

@@ -102,3 +102,12 @@ class ScopeDriver(Driver):
   with self.assertRaises(PermissionError):self.invoke(f)
   self.assertEqual(f[-1].stepped,0)
   self.assertFalse(any(method=='PATCH' for method,table,kw in f[-2].calls))
+
+class CompletedIncident(Driver):
+ def test_completed_incident_without_active_watch_still_selected(self):
+  f=self.fixture();f[1]['status']='completed';f[1]['state']={'notification_pending':True}
+  original=f[-2].db
+  def db(method,table,**kw):
+   if method=='GET' and table=='advertising_agent_watches' and kw.get('params',{}).get('select')=='id':return []
+   return original(method,table,**kw)
+  f[-2].db=db;self.invoke(f);self.assertEqual(f[-1].stepped,1)

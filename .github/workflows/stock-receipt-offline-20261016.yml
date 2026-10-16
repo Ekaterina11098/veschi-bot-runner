@@ -1,0 +1,34 @@
+name: Preserve existing controlled stock ciphertext receipt only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-receipt-offline-20261016.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  receipt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: owner-encrypted-stock-daily-receipt
+          run-id: 38911066292
+          github-token: ${{ github.token }}
+          path: encrypted-input
+      - name: Publish existing ciphertext only; source calls zero
+        run: |
+          test -f encrypted-input/daily.aes.json
+          mkdir -p recovery-output/2026-10-16
+          cp encrypted-input/daily.aes.json recovery-output/2026-10-16/stock-evening-38911066292.aes.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/2026-10-16/stock-evening-38911066292.aes.json
+          git commit -m "Preserve existing owner-encrypted stock receipt; no source replay"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+          done
+          exit 1

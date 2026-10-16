@@ -1,0 +1,38 @@
+name: China morning delivery diagnosis
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-morning-diagnose-20261016.yml']
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Read exact morning job and isolated audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import json
+          from advertising_agent.notify import db,cache_get
+          rows=db('GET','business_agent_jobs',params={'id':'eq.36','agent_id':'eq.china','select':'id,request_text,answer,status,tool_trace,created_at,completed_at,update_id','limit':1})
+          print('EXACT_JOB',json.dumps(rows,ensure_ascii=False))
+          audit=cache_get('china_agent:scheduled_price:2026-10-16:morning')
+          print('MORNING_AUDIT',json.dumps(audit,ensure_ascii=False))
+          state=cache_get('china_agent:demand:v1') or {}
+          print('STATE_KEYS',json.dumps(list(state)))
+          print('PENDING',json.dumps(state.get('pending_notice'),ensure_ascii=False))
+          PY

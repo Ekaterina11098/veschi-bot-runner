@@ -1,5 +1,5 @@
 # SKU57 recovery connection — prepared, not active
-Owner named herself backup operator on16October2026; incident goes only to registered advertising chat. This is not test authorization.
+The registered owner was proposed as the backup contact, with the advertising chat as the proposed incident channel. Participation/availability for a real test, its window, and manual recovery authority are NOT agreed. They require separate explicit confirmation together with that test. Code deployment approval grants none of them.
 ## Cloud executor
 Dedicated public veschi-bot-runner workflow advertising-sku57-recovery, proposed 5-minute recovery cadence ONLY after separate owner rollout and exact action/watch approval. No cron, dispatch, watch, job or mutation is created by this preparation. CLI exits disabled. Generic dispatcher remains OFF.
 Driver advertising_sku57_recovery_owner.resume_existing uses exact existing approved action and reserved job/watch only. It ignores observation expiry for overdue recovery. Default enabled=false and ADVERTISING_EXECUTION_ENABLED=false. No INSERT or general queue claim.

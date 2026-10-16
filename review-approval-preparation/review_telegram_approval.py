@@ -46,7 +46,7 @@ class Approval:
         self.repo=repo;self.secret=secret;self.owner=str(owner_id);self.chat=str(chat_id);self.bot=str(bot_id);self.enabled=enabled;self.clock=clock
     def create(self,cabinet,kind,item_id,version,source,texts,message_id,ttl=86400,binding=None):
         ref=identity(cabinet,kind,item_id)
-        if len(texts)!=2 or not all(isinstance(t,str) and t.strip() for t in texts) or texts[0]==texts[1]:raise ValueError('Two distinct texts required')
+        if len(texts) not in (1,2) or not all(isinstance(t,str) and t.strip() for t in texts) or (len(texts)==2 and texts[0]==texts[1]):raise ValueError('One revised text or two distinct variants required')
         if not version or not all(k in source for k in ('buyer','rating','text','pros','cons','article')):raise ValueError('Original context required')
         if not isinstance(message_id,int) or message_id<=0:raise ValueError('Bind a confirmed Telegram message id')
         token=secrets.token_hex(16)
@@ -72,7 +72,7 @@ class Approval:
         if card['status']=='selected':
             return {'inline_keyboard':[[button('Подтвердить публикацию','ok.'+card['nonce'])],[button('Назад','back'),button('Отложить','hold')]]}
         if card['status'] not in ('awaiting','selected'):return {'inline_keyboard':[]}
-        return {'inline_keyboard':[[button('Вариант 1','v1'),button('Вариант 2','v2')],[button('Доработать','edit'),button('Отложить','hold')]]}
+        return {'inline_keyboard':[[button('Выбрать этот текст','v1')]] if len(card['texts'])==1 else [[button('Вариант 1','v1'),button('Вариант 2','v2')],[button('Доработать','edit'),button('Отложить','hold')]]}
     def view(self,token,card=None):
         card=card or self.repo.get('cards',token)
         if not card:raise Rejected('Unknown card')
@@ -127,6 +127,7 @@ class Approval:
             if action in ('v1','v2'):
                 if card['status'] not in ('awaiting','selected'):raise Rejected('Card not selectable')
                 selected=int(action[-1])-1
+                if selected>=len(card['texts']):raise Rejected('Variant unavailable')
                 # A repeated choice must not invalidate the confirmation already displayed.
                 if card['status']!='selected' or card['selected']!=selected:
                     card.update(status='selected',selected=selected,nonce=secrets.token_hex(6))
@@ -171,6 +172,6 @@ class Approval:
             item=self.repo.get('items',card['ref'],lock=True)
             if item.get('token')!=token or item.get('status')!='rework':raise Rejected('No pending rework for this card')
             key='edit:'+sha([token,str(actor),message_id,text])
-            if self.repo.get('events',key):return {'status':'revision_requested','old_version_approvable':False,'publication_created':False,'duplicate':True}
+            if self.repo.get('events',key):return {'status':'revision_requested','old_version_approvable':False,'publication_created':False,'duplicate':True,'revision_event_id':key}
             self.repo.put('events',key,{'decision':'revision_requested','token':token,'version':card['version'],'instruction':text,'actor':self.owner,'created_at':self.clock()})
-            return {'status':'revision_requested','old_version_approvable':False,'publication_created':False}
+            return {'status':'revision_requested','old_version_approvable':False,'publication_created':False,'revision_event_id':key}

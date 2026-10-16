@@ -16,10 +16,29 @@ try:
   def guarded(session,method,url,*args,**kwargs):
    p=urlsplit(url)
    if p.hostname!=host:
-    if p.hostname!='advert-api.wildberries.ru' or method.upper()!='GET' or p.path not in allowed:raise RuntimeError('Exclusive WB read allowlist rejected request')
+    read_post={'/api/advert/v1/bids/min','/adv/v2/supplier/nms','/adv/v0/normquery/get-minus'}
+    permitted=(method.upper()=='GET' and p.path in allowed) or (os.getenv('FOCUS57_CAPABILITY')=='true' and method.upper()=='POST' and p.path in read_post)
+    if p.hostname!='advert-api.wildberries.ru' or not permitted:raise RuntimeError('Exclusive WB read allowlist rejected request')
     report['calls'].append({'method':method,'path':p.path})
    return original(session,method,url,*args,**kwargs)
   requests.sessions.Session.request=guarded
+  if os.getenv('FOCUS57_CAPABILITY')=='true':
+   report.update(scope='57_read_capability',nm_id=1007948808,campaign_id=39410834,execution_authorized=False)
+   blocked,remaining=c.cooldown_active('focus57_capability')
+   if blocked:report.update(blocked=True,retry_after=remaining);raise SystemExit(0)
+   checks=[('configuration','GET','/api/advert/v2/adverts',None,{'ids':'39410834'}),
+    ('minimum','POST','/api/advert/v1/bids/min',{'advert_id':39410834,'nm_ids':[1007948808],'payment_type':'cpm','placement_types':['recommendation']},None),
+    ('eligible','POST','/adv/v2/supplier/nms',[50],None),
+    ('minus','POST','/adv/v0/normquery/get-minus',{'items':[{'advert_id':39410834,'nm_id':1007948808}]},None)]
+   report['checks']=[]
+   for label,method,path,body,params in checks:
+    response=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':os.environ['WB_TOKEN_2']},json=body,params=params,timeout=45)
+    try:data=response.json()
+    except ValueError:data={'response_text':response.text[:1000]}
+    if label=='eligible' and isinstance(data,list):data={'returned':len(data),'target':[x for x in data if x.get('nm')==1007948808 or x.get('nm_id')==1007948808]}
+    report['checks'].append(dict(check=label,http=response.status_code,retry_after=response.headers.get('Retry-After'),data=data))
+    if response.status_code==429:break
+   raise SystemExit(0)
   key='advertising:recovery:exclusive-health:'+os.environ['GITHUB_RUN_ID']
   from datetime import datetime,timedelta,timezone
   now=datetime.now(timezone.utc);value={'scope':'ip-exclusive-read','run':os.environ['GITHUB_RUN_ID']}

@@ -45,6 +45,10 @@ try:
     forward_logistics=x.get('forward_logistic_rub'),reverse_logistics=x.get('backward_logistic_rub'),
     fee_not_assumed_final=True) for gn,x in targeted.items()],
   current_retention_estimate=None,financial_finality=False)
+ failure_examples=[x for x in targeted.values() if status(x) in ('nonbuyout_reverse','cancelled','returned') and x.get('confirmed')==1 and type(x.get('forward_logistic_rub')) in (int,float) and type(x.get('backward_logistic_rub')) in (int,float)]
+ fees=[x['forward_logistic_rub']+x['backward_logistic_rub'] for x in failure_examples]
+ if len(fees)!=9 or any(x<=0 for x in fees):raise RuntimeError('Incomplete twelve-order failure fee examples')
+ r['historical_twelve']['observed_failed_order_fee_examples']=dict(n=9,total=sum(fees),mean=sum(fees)/len(fees),minimum=min(fees),maximum=max(fees),final_population_mean=False)
  # Execute the actual daily stage wrapper with an isolated subprocess boundary. No day claim or real daily run.
  daily=Path('advertising_daily_owner.py').read_text();tree=ast.parse(daily)
  stage_node=next(x for x in tree.body if isinstance(x,ast.FunctionDef) and x.name=='stage')
@@ -100,7 +104,7 @@ try:
   product=next(x for x in memory['validated_outcomes_20261016']['products'] if x['nm_id']==nm)
   N=product['target_rows'];K=case['shown_orders'];C_A=S/K;C_B=S/N
   previous=next(x for x in memory['older_linked_cohorts_and_sku_scenarios_20261016']['sku_scenarios'] if x['nm_id']==nm)
-  M=unit['pre_ad_contribution'];F=previous['F_example']
+  M=unit['pre_ad_contribution'];F=sum(fees)/len(fees) if nm==scope['nm_id'] else previous['F_example']
   ads=next(x for x in config['payload']['adverts'] if x['id']==campaign);setting=next(x for x in ads['nm_settings'] if x['nm_id']==nm)
   stats_by_campaign={cid:sum(x['spend'] for (cid2,day),x in distinct.items() if cid2==cid) for cid in {v[0] for v in distinct}}
   r['economy'].append(dict(nm_id=nm,period='2026-10-09..2026-10-15',daily_all_known_S=S,weekly_previous_current_campaigns_S=case['stat_campaign_total'],
@@ -108,7 +112,7 @@ try:
    main_campaign_reported_orders=K,unique_card_order_date_cohort_orders=N,
    formula_A='C_A=sum(SKU campaign/day spend)/main campaign reported orders; mismatched denominator, comparison only',
    formula_B='C_B=sum(SKU campaign/day spend)/unique SKU orders placed in same date period; descriptive period load, not proved attribution',
-   preferred_descriptive_basis='B',causal_cohort_CPA_verified=False,C_A=C_A,C_B=C_B,M_example=M,F_example=F,F_delivery='FBO',
+   preferred_descriptive_basis='B',causal_cohort_CPA_verified=False,C_A=C_A,C_B=C_B,M_example=M,F_example=F,F_example_count=len(fees) if nm==scope['nm_id'] else 1,F_delivery='FBO',
    D_articles=['cohort storage','paid acceptance/rebilling/other logistics not already in retained unit or failed-order example','evidenced cohort deductions/penalties',
      'q*(sample retained-unit contribution minus actual contribution): price/commission/acquiring/own COGS/tax/delivery corrections',
      '(1-q)*(actual failed-order cost minus sample fee): forward/reverse/late logistics corrections',

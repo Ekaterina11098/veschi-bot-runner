@@ -49,3 +49,5 @@ jobs:
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
 # Independent question delivery; no legacy queues or other stopped tasks.
+
+# Both question answers now verified as public; send their public-stage receipts once.

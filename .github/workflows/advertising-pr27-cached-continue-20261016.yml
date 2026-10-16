@@ -67,3 +67,4 @@ jobs:
             git pull --rebase origin main && git push origin HEAD:main && exit 0
           done
           exit 1
+# Resume after proved pre-analysis composition-only stop; no external source credentials.

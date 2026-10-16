@@ -72,7 +72,7 @@ def seed(state,memory):
    kind='buyout' if buyout else 'unresolved';interval=7 if unresolved and (now-dt(row['date'])).days>=30 else 1
    result['orders'][gn]=dict(product_id=pid,nm_id=nm,gnumber=gn,ordered_on=row['date'][:10],observed_at=observed,last_changed_at=observed,
     fingerprint=hashlib.sha256(json.dumps(row,sort_keys=True).encode()).hexdigest(),status=kind,raw=row,raw_source='retained_WB_order_sales_identity_join',
-    snapshot_id=ledger['matching_sales'][0]['id'],active=True,monitoring_state='weekly_unresolved' if interval==7 else 'daily',
+    snapshot_id=ledger['matching_sales'][0]['id'],last_sale_at=last_sale,active=True,monitoring_state='weekly_unresolved' if interval==7 else 'daily',
     next_check_at=(dt(observed)+timedelta(days=interval)).isoformat(),financially_final=False,mature_retention_ratio=None)
    result['history'].append(dict(gnumber=gn,observed_at=observed,status=kind,seeded_from_retained_sales=True))
  return result
@@ -98,7 +98,9 @@ def plan(state,now,max_requests=4,incident_order_ids=()):
   incident=gn in incident_order_ids
   if not incident and (not x.get('active') or dt(x['next_check_at'])>now):continue
   ident=(x['product_id'],x['ordered_on'])
-  score=dt(x['observed_at'])
+  sale=dt((x.get('raw') or {}).get('sale_dt') or x.get('last_sale_at'))
+  recent=(now-dt(x['ordered_on'])).days<=14 or (sale is not None and (now-sale).days<=14)
+  score=(0 if recent else 1,dt(x['observed_at']))
   due[ident]=min(due.get(ident,score),score)
  spans=[]
  for (pid,day),stamp in sorted(due.items()):

@@ -6,6 +6,9 @@ class BudgetEvidenceTests(unittest.TestCase):
  def test_old_is_visible_not_current(self):
   r=budget_analysis(self.report(dict(items=[dict(campaign_id=1,total=123,available=True,observed_at='2026-10-16T01:00:00+00:00')])),datetime(2026,10,16,16,tzinfo=timezone.utc))
   self.assertEqual(r[0]['balance'],123);self.assertFalse(r[0]['balance_is_current']);self.assertEqual(r[0]['balance_status'],'historical');self.assertIsNone(r[1]['balance']);self.assertIsNone(r[0]['forecast_hours'])
+ def test_collector_stale_amount_remains_historical(self):
+  r=budget_analysis(self.report(dict(items=[dict(campaign_id=1,total=123,available=False,stale=True,observed_at='2026-10-16T01:00:00+00:00')])),datetime(2026,10,16,16,tzinfo=timezone.utc))
+  self.assertEqual(r[0]['balance'],123);self.assertEqual(r[0]['balance_status'],'historical')
  def test_list_payload_and_real_zero(self):
   r=budget_analysis(self.report([dict(items=[dict(campaign_id=1,total=0,available=True,observed_at='2026-10-16T15:00:00+00:00')])]),datetime(2026,10,16,16,tzinfo=timezone.utc))
   self.assertEqual(r[0]['balance'],0);self.assertTrue(r[0]['balance_is_current'])

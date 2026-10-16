@@ -77,8 +77,10 @@ class Approval:
         card=card or self.repo.get('cards',token)
         if not card:raise Rejected('Unknown card')
         s=card['source']
-        lines=['[Отзывы:согласование]',{'token_1':'ООО','token_2':'ИП','token_3':'Китай'}[card['cabinet']]+' · '+s['article']+' · '+card['version']]
-        lines+=['Покупатель: '+str(s['buyer'] or 'не указано'),'Оценка: '+str(s['rating'])+'/5','Отзыв: '+str(s['text'] or '(без текста)'),'Достоинства: '+str(s['pros'] or '(не заполнены)'),'Недостатки: '+str(s['cons'] or '(не заполнены)')]
+        lines=[('[Вопросы:согласование]' if card['kind']=='questions' else '[Отзывы:согласование]'),{'token_1':'ООО','token_2':'ИП','token_3':'Китай'}[card['cabinet']]+' · '+s['article']+' · '+card['version']]
+        lines+=['ID '+('вопроса' if card['kind']=='questions' else 'отзыва')+': '+card['item_id'],'Покупатель: '+str(s['buyer'] or 'не указано')]
+        if card['kind']=='questions':lines+=['Вопрос: '+str(s['text'] or '(без текста)')]
+        else:lines+=['Оценка: '+str(s['rating'])+'/5','Отзыв: '+str(s['text'] or '(без текста)'),'Достоинства: '+str(s['pros'] or '(не заполнены)'),'Недостатки: '+str(s['cons'] or '(не заполнены)')]
         if card['status']=='selected':
             lines+=['','Выбран вариант '+str(card['selected']+1)+':',card['texts'][card['selected']],'','Подтвердить именно этот текст? Перед отправкой проверим WB.']
         elif card['status']=='approved':
@@ -88,7 +90,8 @@ class Approval:
                 from datetime import datetime,timezone,timedelta
                 stamp=datetime.fromtimestamp(card['retry_at'],timezone(timedelta(hours=3))).strftime('%H:%M:%S')
                 lines+=['Пауза WB. Проверку можно продолжить после '+stamp+' МСК. Повторно нажимать не нужно.']
-        elif card['status']=='sent':lines+=['','Ответ опубликован. Точное совпадение текста подтверждено чтением WB.']
+        elif card['status']=='sent':
+            lines+=['',('Ответ опубликован для всех.' if card.get('wb_ui_status')=='Опубликован для всех' else 'WB подтвердил приём ответа. Публичная публикация может проходить модерацию.'),'Точное совпадение текста подтверждено чтением WB.']
         elif card['status']=='manual_present':lines+=['','В WB уже есть другой ответ. Повторная публикация остановлена.']
         elif card['status']=='uncertain':lines+=['','Исход публикации пока не подтверждён. Повторная отправка запрещена; требуется чтение WB.']
         elif card['status']=='held':lines+=['','Отложено по решению владельца. Ответ и напоминания заблокированы.']

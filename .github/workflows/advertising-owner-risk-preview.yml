@@ -65,3 +65,5 @@ jobs:
 # DB GET only: disable cache-mirror writes in this bounded offline investigation.
 
 # Retry same GET-only calculation after scoped datetime import fix.
+
+# Persist only existing focus investigation; preserve all previous authorization fields.

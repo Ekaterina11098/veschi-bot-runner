@@ -1,0 +1,66 @@
+name: Continue unexecuted tail of owner controlled 16 Oct analysis
+on:
+  push:
+    branches: [main]
+    paths: ['advertising_daily_recover_20261016.trigger']
+permissions:
+  contents: write
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 8bea1186491b2182dc339a6d5ca16ad9ce879760
+          fetch-depth: 0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - run: cp -a private-source combined && cp -a private-source pr19
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r combined/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Existing stages, dedicated approved day claim
+        run: python advertising_daily_recover_20261016.py
+        env:
+          IP_DAILY_ADVERTISING_ENABLED: 'true'
+          APPROVED_SOURCE_SHA: 8bea1186491b2182dc339a6d5ca16ad9ce879760
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          IP_FINANCIAL_RISK_NOTIFICATIONS: 'false'
+          IP_LIMITED_ANALYSIS_PUBLISH: 'true'
+          IP_LIMITED_TELEGRAM_DELIVERY: 'true'
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+          SUPABASE_EGRESS_OPTIMIZED: 'true'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-advertising-daily
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Preserve owner encrypted final receipts only
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          for file in "$RUNNER_TEMP"/stock-deploy-proof/*.aes.json; do
+            test -f "$file" || continue
+            base=$(basename "$file" .aes.json)
+            cp "$file" "recovery-output/advertising/daily-$base-${{ github.run_id }}.aes.json"
+          done
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/
+          git diff --cached --quiet || git commit -m "Preserve encrypted daily advertising receipts"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+          done
+          exit 1

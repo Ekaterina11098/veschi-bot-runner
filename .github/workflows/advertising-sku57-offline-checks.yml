@@ -1,0 +1,22 @@
+name: Offline SKU57 durable recovery checks
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/advertising-sku57-offline-checks.yml']
+permissions:
+  contents: read
+jobs:
+  isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 2cb8602d20f1d50e0e5d8a392358991a79ca2bcb
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: No WB, database or Telegram credentials; mocked ports only
+        run: python -m unittest discover -s tests -p test_sku_membership_recovery.py -v

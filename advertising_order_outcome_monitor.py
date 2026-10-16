@@ -14,7 +14,7 @@ def status(x):
  if x.get('sale_dt') and (x.get('billed_times') or 0)>0:return 'buyout'
  return 'unresolved'
 FIELDS=('sale_dt','refund_dt','billed_times','refunded_times','is_canceled_order','backlogistic_times','forward_logistic_rub','backward_logistic_rub','confirmed','full_commission','profit','order_profit')
-def ingest(state,obs,snapshot_id):
+def ingest(state,obs,snapshot_id,target_new_ids=None):
  if obs.get('tool')!='lk_wb_card_orders' or obs.get('status')!='received' or obs.get('scope_verified') is not True:return state
  args=obs['arguments'];pid=str(args.get('value'));body=obs.get('data') or {};rows=body.get('data')
  if pid not in PRODUCTS or args.get('type')!='products':raise ValueError('Unapproved order product')
@@ -31,6 +31,7 @@ def ingest(state,obs,snapshot_id):
  for row in rows:
   if row.get('nm_id')!=PRODUCTS[pid] or not args['date_from']<=row['order_dt'][:10]<=args['date_to']:raise ValueError('Order scope mismatch')
   gn=str(row['gnumber']);old=orders.get(gn)
+  if old is None and target_new_ids is not None and gn not in target_new_ids:continue
   fingerprint=hashlib.sha256(json.dumps({k:row.get(k) for k in FIELDS},sort_keys=True).encode()).hexdigest()
   if old and dt(old['observed_at'])>=observed:continue
   changed=not old or old['fingerprint']!=fingerprint
@@ -112,3 +113,16 @@ def plan(state,now,max_requests=4,incident_order_ids=()):
   args=dict(type='products',value=pid,date_from=first,date_to=last,start_row=0,end_row=300)
   result.append(dict(key='order-outcome:'+pid+':'+first+':'+last+':'+now.date().isoformat(),cabinet='token_2',tool='lk_wb_card_orders',arguments=args,priority=100))
  return result
+
+def historical_685_scope(memory):
+ """Exact retained same-price FBO cohort. The read API has no GN filter."""
+ cohort=next(c for c in memory['older_linked_cohorts_and_sku_scenarios_20261016']['cohorts'] if c['nm_id']==PRODUCTS['139147637'] and c['scope']=='same_price_WB_warehouse')
+ unit=next(u for u in memory['decision_readiness_20261016']['retained_unit_examples'] if u['nm_id']==cohort['nm_id'])
+ rows=[x for x in memory['older_sales_ledger_audit_20261016']['older_order_rows'] if x['nmId']==cohort['nm_id'] and x.get('warehouseType')=='Склад WB' and abs(x['priceWithDisc']-unit['seller_price'])<.01 and cohort['date_from']<=x['date'][:10]<=cohort['date_to']]
+ identities={str(x['gNumber']) for x in rows}
+ if len(rows)!=12 or len(identities)!=12 or cohort['orders']!=12:raise ValueError('Exact historical twelve-order cohort changed; no broader read')
+ days=sorted({x['date'][:10] for x in rows});spans=[]
+ for day in days:
+  if spans and (dt(day)-dt(spans[-1][1])).days==1:spans[-1][1]=day
+  else:spans.append([day,day])
+ return dict(nm_id=cohort['nm_id'],product_id='139147637',target_gnumbers=sorted(identities),orders=rows,spans=spans)

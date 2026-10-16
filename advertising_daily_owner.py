@@ -1,5 +1,5 @@
 """Prepared dedicated daily IP runner. OFF until separate owner activation."""
-import os,sys,json,subprocess,time
+import os,sys,json,subprocess,time,shutil
 from pathlib import Path
 from datetime import datetime,timezone,timedelta
 ROOT=Path(__file__).resolve().parent
@@ -12,6 +12,33 @@ approval=store.cache_get('advertising:ip:daily_rollout:v1') or {}
 if not (approval.get('enabled') is True and approval.get('source_sha')==os.environ['APPROVED_SOURCE_SHA']):
  raise RuntimeError('Dedicated daily owner approval and exact source pin required')
 from stock_deploy_support import seal
+registration=store.registration()
+if approval.get('owner_id')!=registration['registered_by_user_id'] or approval.get('chat_id')!=registration['chat_id']:
+ raise RuntimeError('Daily owner registration changed')
+from zoneinfo import ZoneInfo
+day=datetime.now(timezone.utc).astimezone(ZoneInfo('Europe/Moscow')).date().isoformat()
+if os.environ.get('GITHUB_EVENT_NAME')=='schedule' and day<approval['schedule_not_before']:
+ print(json.dumps(dict(skipped=True,reason='before_approved_first_daily_date')));raise SystemExit(0)
+if os.environ.get('GITHUB_EVENT_NAME')!='schedule' and day!=approval['controlled_day']:
+ raise RuntimeError('One controlled day authorization expired')
+def preserve_checkpoint(filename,summary):
+ checkpoint=dict(stage=filename,run_id=os.environ['GITHUB_RUN_ID'],source_sha=os.environ['APPROVED_SOURCE_SHA'],summary=summary,at=datetime.now(timezone.utc).isoformat())
+ seal('advertising-daily-checkpoint',checkpoint)
+ out=Path(os.environ['RUNNER_TEMP'])/'stock-deploy-proof';dest=ROOT/'recovery-output'/'advertising';dest.mkdir(parents=True,exist_ok=True)
+ names=['advertising-daily-checkpoint','advertising-preview'] if filename=='advertising_analysis_owner.py' else ['advertising-daily-checkpoint']
+ for name in names:
+  source=out/(name+'.aes.json')
+  if source.exists():shutil.copyfile(source,dest/('daily-'+name+'-'+os.environ['GITHUB_RUN_ID']+'.aes.json'))
+ for args in (['git','config','user.name','github-actions[bot]'],['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],['git','add','recovery-output/advertising/']):
+  subprocess.run(args,cwd=ROOT,check=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+ committed=subprocess.run(['git','commit','-m','Preserve owner encrypted daily checkpoint'],cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+ if committed.returncode not in (0,1):raise RuntimeError('Checkpoint commit failed')
+ for attempt in range(3):
+  pulled=subprocess.run(['git','pull','--rebase','origin','main'],cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+  if pulled.returncode:raise RuntimeError('Ciphertext checkpoint rebase failed')
+  pushed=subprocess.run(['git','push','origin','HEAD:main'],cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+  if pushed.returncode==0:return
+ raise RuntimeError('Ciphertext checkpoint push failed; no stage replay')
 started=(datetime.now(timezone.utc)-timedelta(hours=6)).isoformat()
 def stage(filename,timeout,single_step=False):
  def call():
@@ -34,6 +61,7 @@ def stage(filename,timeout,single_step=False):
   if value.get('error_type'):
    if filename=='advertising_budgets_owner.py' and value['error_type'] in ('ReadTimeout','TimeoutError','ExplicitRateLimit'):raise TimeoutError('Budget evidence remains unknown')
    raise RuntimeError('Stage failed before durable completion')
+  preserve_checkpoint(filename,value)
   return value
  return call
 stages=dict(source=stage('advertising_source_owner.py',900),

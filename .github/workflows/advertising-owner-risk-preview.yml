@@ -63,3 +63,5 @@ jobs:
 # Retained day-level recognition and budget variability investigation only.
 
 # DB GET only: disable cache-mirror writes in this bounded offline investigation.
+
+# Retry same GET-only calculation after scoped datetime import fix.

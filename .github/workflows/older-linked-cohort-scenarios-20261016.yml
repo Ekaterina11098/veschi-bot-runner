@@ -50,3 +50,5 @@ jobs:
             git pull --rebase origin main && git push origin HEAD:main && exit 0
           done
           exit 1
+
+# Align the conditional failure-fee example with the target FBO delivery mode.

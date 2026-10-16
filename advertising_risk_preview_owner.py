@@ -68,6 +68,28 @@ try:
    report.update(mode='focus_followup',result=dict(budget_snapshot_id=17735,period_from='2026-10-09',period_to='2026-10-15',budget_pacing=stats,
     sku_reconciliation=sku,bidder_history=dict(snapshot_id=17557,observed_at=raw['collected_at'],rows=bidder),
     external_calls=0,wb_writes=0,telegram_calls=0,forecasts_enabled=False,test_authorized=False))
+   one=read('analytics_snapshots',{'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','period_from':'eq.2026-10-10','period_to':'eq.2026-10-10','payload->0->>report':'eq.products','select':'id,payload,collected_at','order':'id.desc','limit':1000})
+   matched={}
+   for snap in one:
+    for pack in snap['payload']:
+     for item in pack.get('rows',[]):
+      if item.get('nm_id') in (1123677454,320248210):
+       matched.setdefault((pack['campaign_id'],item['nm_id']),dict(campaign_id=pack['campaign_id'],nm_id=item['nm_id'],spend=item.get('ac_spending_sum'),snapshot_id=snap['id']))
+   report['result']['same_day_20261010']=[dict(nm_id=nm,campaign_rows=[v for (cid,n),v in matched.items() if n==nm],campaign_sum=sum(v['spend'] for (cid,n),v in matched.items() if n==nm and type(v['spend']) in (int,float)),finance=next(x['advertisement'] for x in finance if x['nm_id']==nm and x['day']=='2026-10-10')) for nm in (1123677454,320248210)]
+   report['result']['capability57_reference']=dict(run_id=38887156360,nm_id=1007948808,campaign_id=39410834,min_bid_kopecks=10500,current_bid_kopecks=10500,eligible=True,minus_items=[],membership_count=44,can_change_nms=True,executor_verified=False,test_authorized=False)
+   key='advertising:ip:focus_preparation:20261016'
+   old=read('telegram_api_cache',dict(cache_key='eq.'+key,select='payload',limit=1))
+   if not old:raise RuntimeError('Existing focus investigation missing')
+   original_memory=old[0]['payload'];updated=copy.deepcopy(original_memory)
+   updated['followup_20261016']=report['result']
+   report['prior_memory_sha256']=hashlib.sha256(json.dumps(original_memory,sort_keys=True).encode()).hexdigest()
+   response=requests.post(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache',
+    headers={'apikey':os.environ['SUPABASE_SECRET_KEY'],'Authorization':'Bearer '+os.environ['SUPABASE_SECRET_KEY'],'Prefer':'resolution=merge-duplicates'},
+    params={'on_conflict':'cache_key'},json=dict(cache_key=key,payload=updated,updated_at=datetime.now(timezone.utc).isoformat(),expires_at=(datetime.now(timezone.utc)+timedelta(days=365)).isoformat()),timeout=45)
+   response.raise_for_status()
+   after=read('telegram_api_cache',dict(cache_key='eq.'+key,select='payload',limit=1))[0]['payload']
+   assert after==updated
+   report['existing_investigation_full_readback']=True
    raise SystemExit(0)
 
   from analytics.collect import database

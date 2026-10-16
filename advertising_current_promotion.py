@@ -50,7 +50,7 @@ def install():
         for campaign in prepared.get('campaigns',[]):
             promotion=campaign.get('current_promotion')
             if not promotion:continue
-            retained=read('analytics_snapshots',dict(source='eq.mpstats_campaign_report',cabinet='eq.token_2',select='id,payload,collected_at',order='id.desc',limit=100)) or []
+            retained=read('analytics_snapshots',dict(source='eq.mpstats_campaign_report',cabinet='eq.token_2',select='id,payload,collected_at',order='id.desc',limit=20,**{'payload->0->>campaign_id':'eq.12194941','payload->0->>report':'eq.days'})) or []
             controls.append(dict(campaign_id=40223879,**promotion,daily_observations=daily_observations(retained,promotion['first_full_day'],report['period_to']),
                 historical_week_not_current_result=True,first_partial_day_not_zero=True))
         result=original(prepared,*a,**kw)

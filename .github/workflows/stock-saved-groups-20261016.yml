@@ -9,7 +9,7 @@ permissions:
   contents: read
 concurrency:
   group: bot-stock
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   stock:
     runs-on: ubuntu-latest
@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: f1480710d5598a592d46fa381276a345d80a1887
+          ref: d3ff6ca99b5478f309f93771a8cf35f096a72884
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source

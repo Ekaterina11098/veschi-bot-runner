@@ -1,1 +1,1 @@
-# Owner explicitly renewed exact646 variant1 attempt v2; fresh absence, 780 seconds and saved RetryAfter; one POST only, HTTP journal and WB readback.
+# 2026-10-16 exact646 AUTHv2 POST204 accepted, consumed=true; GET-only WB readback, no additional POST.

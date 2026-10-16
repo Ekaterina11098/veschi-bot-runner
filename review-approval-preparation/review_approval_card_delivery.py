@@ -62,7 +62,7 @@ def notify_owner_receipt(approval,telegram,intent,preserve=None):
     if intent['owner_id']!=approval.owner or intent['chat_id']!=approval.chat:
         raise ValueError('Wrong receipt recipient')
     stage=('public' if intent.get('wb_ui_status')=='Опубликован для всех' else
-           'accepted' if intent.get('status')=='confirmed' else 'approved')
+           {'confirmed':'accepted','verify':'verifying','manual_present':'manual_present','blocked':'blocked'}.get(intent.get('status'),'approved'))
     key='owner-receipt:'+intent['id']+':'+stage
     repo=approval.repo
     with repo.transaction():
@@ -77,7 +77,10 @@ def notify_owner_receipt(approval,telegram,intent,preserve=None):
     kind='Вопрос' if intent['kind']=='questions' else 'Отзыв'
     state={'public':'Ответ опубликован для всех в WB. Текст точно совпадает с подтверждённым.',
            'accepted':'WB подтвердил приём ответа. Текст совпадает; публичная публикация может проходить модерацию.',
-           'approved':'Подтверждение принято и сохранено. Ответ ожидает отправки и проверки WB; повторно нажимать не нужно.'}[stage]
+           'approved':'Подтверждение принято и сохранено. Ответ ожидает отправки и проверки WB; повторно нажимать не нужно.',
+           'verifying':'Ответ отправлялся, но подтверждение WB ещё не получено. Автоматически проверяем результат; повторная отправка заблокирована.',
+           'manual_present':'В WB уже есть другой ответ. Повторная публикация остановлена, чтобы исключить дубли. Проверьте существующий ответ.',
+           'blocked':'Публикация остановлена: изменились исходные данные, версия ответа или блокировка. Требуется ваша проверка; повторно отправлять прежний текст нельзя.'}[stage]
     text=kind+' · '+cabinet+' · '+str(card['source']['article'])[:150]+'\nID: '+intent['item_id']+'\n'+state
     try:
         response=telegram.call('notifyOwnerReviewReceipt',{'chat_id':approval.chat,'text':text})

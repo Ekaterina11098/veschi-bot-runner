@@ -22,3 +22,8 @@ The main MPStats receipt covered 298 products. Individual MPStats card reads con
 Recovery runs:
 - https://github.com/Ekaterina11098/veschi-bot-runner/actions/runs/38906270647
 - https://github.com/Ekaterina11098/veschi-bot-runner/actions/runs/38906761921
+
+## Verified integration
+https://github.com/Ekaterina11098/veschi-bot-runner/actions/runs/38907252430
+
+Five receipt-validation tests passed. Morning preview: 313/313 assessed, missing_sales_count=0. Intraday preview: missing=[], errors=[], complete coverage of 313 products. The morning control message also passed preview. Telegram deliveries were empty and WB writes were zero. Existing report schedules and source pins were retained.

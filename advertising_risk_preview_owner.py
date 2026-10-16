@@ -98,6 +98,7 @@ try:
    if not old:raise RuntimeError('Existing focus investigation missing')
    original_memory=old[0]['payload'];updated=copy.deepcopy(original_memory)
    updated['followup_20261016']=report['result']
+   updated=json.loads(json.dumps(updated,ensure_ascii=False))
    report['prior_memory_sha256']=hashlib.sha256(json.dumps(original_memory,sort_keys=True).encode()).hexdigest()
    response=requests.post(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache',
     headers={'apikey':os.environ['SUPABASE_SECRET_KEY'],'Authorization':'Bearer '+os.environ['SUPABASE_SECRET_KEY'],'Prefer':'resolution=merge-duplicates'},

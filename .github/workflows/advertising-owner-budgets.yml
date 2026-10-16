@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 1b4201067880e379d8dacbe5f6ca3f9848d6ffb0
+          ref: 8bea1186491b2182dc339a6d5ca16ad9ce879760
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -52,3 +52,5 @@ jobs:
           exit 1
 
 # Sequential resume 2026-10-15T20:29Z: prior run terminal; DB read recovered, saved cooldown preserved.
+
+# 16Oct05:54UTC sequential continuation: previous38856282920 terminal; Supabase GET timeout before WB. Keep fresh balances, same905sec/RetryAfter, no analysis/delivery.

@@ -48,4 +48,15 @@ class MonitorTests(unittest.TestCase):
   o=dict(tool='lk_wb_products',status='received',arguments=dict(date_from='2026-10-15'),data=dict(data=dict(need_update=0,total=1,data=[dict(nm_id=1123677454,logistic_all=10)])))
   s=financial_revision(s,o,NOW);s=financial_revision(s,o,NOW)
   self.assertFalse(s['orders']['a']['active'])
+ def test_seed_old_unresolved_and_recent_buyout_without_source_calls(self):
+  now=datetime.now(timezone.utc)
+  rows=[dict(srid='u',gNumber='u',nmId=1123677454,date=(now-timedelta(days=20)).isoformat(),isCancel=False),dict(srid='s',gNumber='s',nmId=320248210,date=(now-timedelta(days=20)).isoformat(),isCancel=False)]
+  ledger=dict(status='complete',older_order_rows=rows,matching_sales=[dict(id=1,collected_at=now.isoformat(),rows=[dict(saleID='S1',srid='s',date=(now-timedelta(days=2)).isoformat())])])
+  s=seed({},dict(older_sales_ledger_audit_20261016=ledger))
+  self.assertEqual(set(s['orders']),{'u','s'});self.assertEqual(s['orders']['s']['status'],'buyout');self.assertIsNone(s['orders']['s']['mature_retention_ratio'])
+ def test_old_seed_never_overwrites_newer_observation(self):
+  now=datetime.now(timezone.utc)
+  s=ingest({},observation(),1)
+  ledger=dict(status='complete',older_order_rows=[dict(srid='old',gNumber='a',nmId=1123677454,date=(now-timedelta(days=20)).isoformat(),isCancel=False)],matching_sales=[dict(id=3,collected_at=(now-timedelta(days=5)).isoformat(),rows=[])])
+  updated=seed(s,dict(older_sales_ledger_audit_20261016=ledger));self.assertEqual(updated['orders']['a']['snapshot_id'],1)
 if __name__=='__main__':unittest.main()

@@ -54,7 +54,22 @@ try:
  from datetime import date
  a,b=result['before']['period_from'],result['before']['period_to']
  result['recomposition']=compose_cached_finance('token_2',date.fromisoformat(a),date.fromisoformat(b),datetime.now(timezone.utc))
- if result['recomposition'].get('status')!='composed':raise RuntimeError('Saved daily composition remains incomplete')
+ if result['recomposition'].get('status')!='composed':
+  # Whole-cabinet catalogs may differ; never zero-fill or block independent SKU facts.
+  result['recomposition']['does_not_block_independent_skus']=True
+  result['daily_component_diagnostics']=[]
+  components=[]
+  for offset in range(7):
+   day=str(date.fromisoformat(a)+timedelta(days=offset))
+   candidates=finance_stage.snapshots(read,('mpstats_lk_wb_products',),'token_2',day,day)
+   one=next(iter(candidates),None)
+   if one:
+    components.append(one)
+    rows=one['payload'][0]['data']['data']['data']
+    result['daily_component_diagnostics'].append(dict(day=day,snapshot_id=one['id'],products=len(rows),identity_digest=sha(sorted(r['p_id'] for r in rows))))
+  from analytics.mpstats_composition import compose
+  try:compose(components,'token_2',date.fromisoformat(a),date.fromisoformat(b))
+  except (ValueError,TypeError,KeyError) as exc:result['recomposition']['reason']=str(exc)
  history=read('analytics_snapshots',dict(source='eq.mpstats_products_composed',cabinet='eq.token_2',select='period_from,period_to',order='id.desc',limit=200))
  affected={(r['period_from'],r['period_to']) for r in history if any(r['period_from']<=d<=r['period_to'] for d in ('2026-10-09','2026-10-11','2026-10-12'))}
  result['affected_recompositions']=[]

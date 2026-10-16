@@ -70,7 +70,8 @@ stages=dict(source=stage('advertising_source_owner.py',900),
  budgets=stage('advertising_budgets_owner.py',180,True),
  analysis_and_delivery=stage('advertising_analysis_owner.py',1800),
  budget_completion=stage('advertising_budgets_owner.py',13800))
-result=execute_day(store.cache_get,lambda k,v:store.cache_set(k,v,ttl_days=365),stages,
- os.environ['GITHUB_RUN_ID']+':'+os.environ.get('GITHUB_RUN_ATTEMPT','1'),single_writer=True)
-seal('advertising-daily',result)
-print(json.dumps(dict(status=result.get('status'),skipped=result.get('skipped',False),wb_writes=0)))
+if __name__=='__main__':
+ result=execute_day(store.cache_get,lambda k,v:store.cache_set(k,v,ttl_days=365),stages,
+  os.environ['GITHUB_RUN_ID']+':'+os.environ.get('GITHUB_RUN_ATTEMPT','1'),single_writer=True)
+ seal('advertising-daily',result)
+ print(json.dumps(dict(status=result.get('status'),skipped=result.get('skipped',False),wb_writes=0)))

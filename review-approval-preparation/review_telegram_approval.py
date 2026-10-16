@@ -125,6 +125,13 @@ class Approval:
             if old:
                 if old['fingerprint']!=fingerprint:raise Rejected('Callback id reused with different content')
                 return {'duplicate':True,'result':old['result'],'answer_callback_query':{'callback_query_id':q['id'],'text':'Уже обработано'}}
+            # A delayed/repeated final click acknowledges the same immutable intent.
+            # It never creates another intent or changes the approved answer.
+            if action=='ok.'+str(card.get('nonce')) and card.get('selected') in (0,1):
+                existing_id=sha([card['ref'],card['version'],card['hashes'][card['selected']]])
+                existing=self.repo.get('intents',existing_id)
+                if existing and existing.get('card_token')==token and existing.get('answer_sha256')==card['hashes'][card['selected']] and existing.get('owner_id')==self.owner and existing.get('chat_id')==self.chat:
+                    return {'duplicate':True,'result':{'decision':'approved','intent_id':existing_id,'publication_created':False},'answer_callback_query':{'callback_query_id':q['id'],'text':'Согласование уже сохранено. Повторная отправка не создаётся.'}}
             if item['status'] in ('held','sent','uncertain','publishing'):raise Rejected('Review blocked or already answered')
             if item['status']=='approved':raise Rejected('Approval already recorded; do not enqueue again')
             if action in ('v1','v2'):

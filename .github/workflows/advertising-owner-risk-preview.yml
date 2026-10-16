@@ -54,3 +54,5 @@ jobs:
 # Sequential saved-data replay after offline checks; prior pending run was cancelled by GitHub queue replacement.
 
 # Owner requested retained analytics with verified12budget snapshot17735; no WB/TG credentials.
+
+# Retry offline-only after mismatched historical readback reference corrected.

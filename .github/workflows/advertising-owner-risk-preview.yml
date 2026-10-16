@@ -73,3 +73,5 @@ jobs:
 # Final scoped persistence includes actual matched-day evidence and full memory readback.
 
 # Re-evaluate newly retained exact day gaps after source receipts confirmed.
+
+# Final exact day-versus-finance reconciliation with repaired daily coverage.

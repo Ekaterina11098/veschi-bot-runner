@@ -1,7 +1,7 @@
 """Owner-approved two-part China morning delivery, no WB mutations."""
 import argparse, copy, json
 from datetime import date, datetime, timedelta
-from china_agent.scheduled_price_worker import ScheduledWorker
+from china_agent.coverage_worker import CoverageWorker
 from china_agent.daily_report_worker import MSK
 from china_agent import demand
 from china_agent.price_sources import profit, period_conversion, days
@@ -47,7 +47,7 @@ def render_control(state, day, read, now):
         b_end=detected-timedelta(days=1); b_start=b_end-timedelta(days=n-1)
         pb=profit(read,nm,b_start,b_end); pa=profit(read,nm,start,end)
         cb=period_conversion(read,nm,b_start,b_end,now); ca=period_conversion(read,nm,start,end,now)
-        report=sales_report(data,'token_3',start.isoformat(),end.isoformat(),now)
+        report=demand.sales_report(data,'token_3',start.isoformat(),end.isoformat(),now)
         p=report.get('products',{}).get(nm)
         counts=[p.get('order_days',[]).count(d) for d in days(start,end)] if report.get('available') and p else None
         lines.append('  '+b_start.strftime('%d.%m')+'–'+b_end.strftime('%d.%m')+' → '+start.strftime('%d.%m')+'–'+end.strftime('%d.%m')+
@@ -75,7 +75,7 @@ def render_control(state, day, read, now):
             'Все изменения цены согласовываем.']
     return '\n'.join(lines)
 
-class PairWorker(ScheduledWorker):
+class PairWorker(CoverageWorker):
     def __init__(self,section):
         super().__init__('morning')
         self.section=section
@@ -84,25 +84,14 @@ class PairWorker(ScheduledWorker):
         self.audit.update(section=section)
     def prepare(self,preview=False):
         if self.section=='candidates':
-            # The owner explicitly approved this already calculated October 16
-            # report; subsequent days are generated from fresh completed days.
-            if self.day==date(2026,10,16):
-                rows=self.db('GET','business_agent_jobs',params=dict(id='eq.36',agent_id='eq.china',status='eq.done',limit=1)) or []
-                if len(rows)!=1: raise RuntimeError('Approved October 16 report missing')
-                answer=rows[0]['answer']
-                if '2026-10-16' not in answer or '12.10–15.10' not in answer: raise RuntimeError('Approved period mismatch')
-                trace=copy.deepcopy(rows[0].get('tool_trace') or [])
-                trace=[e for e in trace if e.get('name')!='china_report_delivery']
-                answer=answer.replace('Китай • повышение и снижение • четыре полных дня • 2026-10-16','Китай • кандидаты на повышение и понижение цены • 16.10.2026').replace('1 кандидатов.','1 кандидат.')
-                answer=answer.replace('Оценено товаров:', 'Источник: MPStats, срез 16.10 в 10:44 МСК.\nОценено товаров:')
-                return answer,trace
             answer,trace=super().prepare(preview)
             expected=(self.day-timedelta(days=1)).isoformat()
             latest=self.audit.get('assessment') or {}
             if latest.get('period_to')!=expected: raise RuntimeError('Completed period mismatch')
             return answer,trace
         state=self.get(demand.STATE_KEY) or {}
-        answer=render_control(state,self.day,lambda table,params:self.db('GET',table,params=params),self.now)
+        with self.covered_sales():
+            answer=render_control(state,self.day,lambda table,params:self.db('GET',table,params=params),self.now)
         if self.day==date(2026,10,16) and len(answer)>3400:
             raise RuntimeError('Approved control does not fit one message')
         return answer,[dict(name='china_price_daily_report',report_date=str(self.day),mode='control')]

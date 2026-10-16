@@ -86,6 +86,9 @@ def main():
                             save()
                             # Respect shared WB cooldown before exact item preflights.
                             continue
+                        if time.time()-scope['observed_at']>4*3600:
+                            scope.update(status='collecting',items=[],skip=0)
+                            save();continue
                         remaining=False
                         for item in scope['items']:
                             item_id=str(item['id']);key=cabinet+':'+item_id
@@ -100,9 +103,6 @@ def main():
                                 # This is a notification, not a publication. The complete
                                 # current unanswered list is the WB observation. The approval
                                 # executor still performs its own exact pre-publication GET.
-                                if time.time()-scope['observed_at']>4*3600:
-                                    scope.update(status='collecting',items=[],skip=0)
-                                    save();break
                                 candidate.update(status='generate',preflight_at=scope['observed_at']);save()
                             if candidate['status']=='generate':
                                 # Canonical source and variants are durable before Telegram.

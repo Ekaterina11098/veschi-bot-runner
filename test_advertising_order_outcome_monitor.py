@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime,timedelta,timezone
-from advertising_order_outcome_monitor import ingest,plan,seed,financial_revision
+from advertising_order_outcome_monitor import ingest,plan,seed,financial_revision,historical_685_scope
 NOW=datetime(2026,10,16,17,tzinfo=timezone.utc)
 def observation(day='2026-10-08',**changes):
  row=dict(gnumber='a',nm_id=1123677454,order_dt=day+' 10:00:00',sale_dt=None,refund_dt=None,billed_times=0,refunded_times=0,is_canceled_order=0,backlogistic_times=0,confirmed=0,forward_logistic_rub=0,backward_logistic_rub=0);row.update(changes)
@@ -63,4 +63,13 @@ class MonitorTests(unittest.TestCase):
   old=observation(day='2026-09-01');old['observed_at']=(NOW-timedelta(days=10)).isoformat();s=ingest({},old,1)
   new=observation(day='2026-10-15');new['data']['data'][0]['gnumber']='new';s=ingest(s,new,2)
   p=plan(s,NOW+timedelta(days=2),max_requests=1);self.assertEqual(p[0]['arguments']['date_from'],'2026-10-15')
+ def test_refresh_tracks_only_known_or_target_new_identities(self):
+  o=observation();o['data']['data'].append(dict(o['data']['data'][0],gnumber='extra'));o['data']['total']=2
+  s=ingest({},o,1,target_new_ids={'a'});self.assertEqual(set(s['orders']),{'a'})
+ def test_historical_scope_exact_twelve(self):
+  rows=[dict(nmId=1123677454,warehouseType='Склад WB',priceWithDisc=1,date='2026-09-25T00:00:00',gNumber=str(n)) for n in range(12)]
+  m=dict(older_linked_cohorts_and_sku_scenarios_20261016=dict(cohorts=[dict(nm_id=1123677454,scope='same_price_WB_warehouse',date_from='2026-09-25',date_to='2026-09-30',orders=12)]),decision_readiness_20261016=dict(retained_unit_examples=[dict(nm_id=1123677454,seller_price=1)]),older_sales_ledger_audit_20261016=dict(older_order_rows=rows))
+  scope=historical_685_scope(m);self.assertEqual(len(scope['target_gnumbers']),12)
+  rows.pop()
+  with self.assertRaises(ValueError):historical_685_scope(m)
 if __name__=='__main__':unittest.main()

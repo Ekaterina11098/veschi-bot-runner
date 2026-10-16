@@ -22,7 +22,7 @@ def main():
         bridge=DurableBridge(app,SQLSource(conn));store=DurableReviews(_request);results={}
         def preserve():
             seal('revision-resume',dict(results=results,snapshot=snapshot(repo)))
-        for event_id,raw in repo.execute("SELECT id,payload FROM {p}events WHERE id LIKE 'edit:%'").fetchall():
+        for event_id,raw in repo.execute("SELECT id,payload FROM {p}events WHERE id LIKE ?", ('edit:%',)).fetchall():
             event=json.loads(raw)
             if event.get('actor')!=app.owner:continue
             card=repo.get('cards',event.get('token',''))

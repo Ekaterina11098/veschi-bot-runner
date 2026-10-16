@@ -12,7 +12,7 @@ try:
  if tests.returncode:raise RuntimeError('Monitor tests failed')
  source=Path('advertising_source_owner.py').read_text();ast.parse(source);ast.parse(Path('advertising_daily_owner.py').read_text())
  assert 'source=stage(\'advertising_source_owner.py\'' in Path('advertising_daily_owner.py').read_text()
- for mark in ('seed_order_monitor','plan_order_checks(order_monitor,now,max_requests=4)','ingest_order_observation(order_monitor,obs,ident)','put(ORDER_MONITOR_KEY,updated_monitor)','financial_revision(order_monitor,obs'):
+ for mark in ('seed_order_monitor','plan_order_checks(order_monitor,now,max_requests=4)','ingest_order_observation(order_monitor,obs,ident,target_new_ids=focus_target_ids)','put(ORDER_MONITOR_KEY,updated_monitor)','financial_revision(order_monitor,obs'):
   assert mark in source,mark
  r['source_file_sha256']=hashlib.sha256(source.encode()).hexdigest();r['daily_hook_verified']=True
  workflow=Path('.github/workflows/advertising-daily-prepared.yml').read_text()

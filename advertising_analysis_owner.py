@@ -34,6 +34,8 @@ sys.exit(0 if result.wasSuccessful() else 1)
   install_bounded_finance(finance_stage)
   from advertising_budget_evidence import install as install_dated_budgets
   install_dated_budgets()
+  from advertising_current_promotion import install as install_current_promotion
+  install_current_promotion()
   from datetime import datetime,timedelta,timezone
   from zoneinfo import ZoneInfo
   today=datetime.now(timezone.utc).astimezone(ZoneInfo('Europe/Moscow')).date()

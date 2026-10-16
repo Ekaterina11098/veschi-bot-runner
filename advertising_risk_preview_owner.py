@@ -35,10 +35,13 @@ try:
     budget_before=daily.get('budget_analysis'),budget_after=assessed,
     campaign_summary=full.get('campaign_summary'),summary=full.get('summary'),
     pair_decision_trace=daily.get('pair_decision_trace'),actions=daily.get('actions'),
-    investigations=full.get('investigations'),financial_risk=daily.get('financial_risk'),
+    investigations=None,financial_risk={k:v for k,v in (daily.get('financial_risk') or {}).items() if k!='risks'},
     test_candidates=daily.get('expense_test_candidates'),
     new_budget_actions=[],reason='All balances known and positive; no verified current-day spend rate; no replenishment amount or exhaustion horizon inferred',
     forecasts_enabled=False,wb_writes=0,canonical_decisions_modified=False)
+   risks=(daily.get('financial_risk') or {}).get('risks',[])
+   report['risk_by_campaign']={str(cid):sorted([dict(article=r.get('article'),nm_id=r.get('nm_id'),net_profit=r.get('net_profit'),reason=r.get('reason'),pairs=[p for p in r.get('pairs',[]) if p.get('campaign_id')==cid]) for r in risks if any(p.get('campaign_id')==cid for p in r.get('pairs',[]))],key=lambda x:x.get('net_profit') or 0)[:5] for cid in ids}
+   report['pair_decision_trace']=[{k:p.get(k) for k in ('article','nm_id','campaign_id','final_status','reason','actions','blockers','shop_profit','advertising_profit')} for p in (daily.get('pair_decision_trace') or [])]
    assert report['actions']==daily.get('actions')
    raise SystemExit(0)
   inv=full['investigations']

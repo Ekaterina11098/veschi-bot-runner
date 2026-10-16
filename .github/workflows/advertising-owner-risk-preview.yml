@@ -67,3 +67,5 @@ jobs:
 # Retry same GET-only calculation after scoped datetime import fix.
 
 # Persist only existing focus investigation; preserve all previous authorization fields.
+
+# Save matched10Oct recognition comparison and reference read-only57 checks.

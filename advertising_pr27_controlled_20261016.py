@@ -13,6 +13,8 @@ KEY='advertising:ip:pr27-controlled:20261016:v1'
 result=dict(source_sha=PIN,wb_writes=0,budget_collector_started=False,forecasts=False,test57_enabled=False,stages=[],started_at=datetime.now(timezone.utc).isoformat())
 def sha(v):return hashlib.sha256(json.dumps(v,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
 def save():
+ global result
+ result=json.loads(json.dumps(result,ensure_ascii=False,default=str))
  store.cache_set(KEY,result,ttl_days=365)
  if store.cache_get(KEY)!=result:raise RuntimeError('Controlled pass journal readback failed')
  seal('advertising-pr27-controlled',result)
@@ -28,7 +30,7 @@ def stage(filename,timeout=1200):
  if filename!='advertising_analysis_owner.py':
   child.pop('ADVERTISING_TELEGRAM_BOT_TOKEN',None);child['IP_LIMITED_TELEGRAM_DELIVERY']='false';child['IP_LIMITED_ANALYSIS_PUBLISH']='false'
  if filename=='advertising_source_owner.py':child.pop('WB_TOKEN_2',None);child['FOCUSED_DAILY_GAPS']='false'
- child['ADVERTISING_MIN_CONFIGURATION_AT']=result['started_at']
+ child['ADVERTISING_MIN_CONFIGURATION_AT']=(datetime.fromisoformat(result['started_at'])-timedelta(hours=6)).isoformat()
  p=subprocess.run([sys.executable,str(ROOT/filename)],cwd=ROOT,env=child,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=timeout)
  entries=[]
  for line in p.stdout.splitlines():
@@ -55,7 +57,7 @@ try:
  result['after_sources']=profits();save()
  stage('advertising_analysis_owner.py',1800)
  result['after']=profits()
- reports=read('analytics_snapshots',dict(source='eq.mpstats_campaign_report',cabinet='eq.token_2','select':'id,payload,collected_at',order='id.desc',limit=1000))
+ reports=read('analytics_snapshots',dict(source='eq.mpstats_campaign_report',cabinet='eq.token_2',select='id,payload,collected_at',order='id.desc',limit=1000))
  catalog=read('analytics_snapshots',dict(source='eq.mpstats_campaign_catalog',cabinet='eq.token_2',select='payload',order='id.desc',limit=10))
  mapping={r['wb_id']:r['id'] for s in reversed(catalog) for p in s['payload'] for r in p.get('rows',[])}
  config=read('analytics_snapshots',dict(source='eq.advertising_active_configuration',cabinet='eq.token_2',select='id,payload,collected_at',order='id.desc',limit=1))[0]

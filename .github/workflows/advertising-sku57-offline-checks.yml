@@ -13,9 +13,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: d53db8c63d56ccb9ac48336b39468a83fda6fb4e
+          ref: 92ad2cfab01d16d45af2195089e8b3069edf800b
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
+      - name: Verify exact main merge compatibility without changing a branch
+        run: |
+          git fetch origin a12826ec5576196e48c94db6c07f541bf07eb2b5 --depth=100
+          git fetch --unshallow || true
+          git config user.name offline-check
+          git config user.email offline-check@example.invalid
+          git merge --no-commit --no-ff a12826ec5576196e48c94db6c07f541bf07eb2b5
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - name: No WB, database or Telegram credentials; mocked ports only

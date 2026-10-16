@@ -1,0 +1,38 @@
+name: Prepared SKU57 recovery executor, execution disabled
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/advertising-sku57-recovery-prepared.yml']
+# NO schedule or workflow_dispatch. A future exact approved recovery rollout
+# must separately arm the cadence and the existing action/watch; date is no grant.
+permissions:
+  contents: read
+concurrency:
+  group: sku57-membership-writer
+  cancel-in-progress: false
+jobs:
+  prepared:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 8f681eb3403c66b3428e5e7d77c8a1861ed02d31
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Call actual driver closed before production imports or credentials
+        env:
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+        run: |
+          python - <<'PY'
+          from datetime import datetime,timezone
+          from advertising_sku57_recovery_owner import resume_existing
+          result=resume_existing(None,None,datetime.now(timezone.utc),enabled=False)
+          assert result=={'enabled':False,'wb_calls':0,'rows_created':0}
+          print(result)
+          PY

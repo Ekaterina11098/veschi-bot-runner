@@ -30,6 +30,12 @@ def process(approval,bridge,telegram,wb,update,publication_enabled=False,preserv
     else:result=Receiver(approval,telegram,guard,preserve=preserve).receive(update,approval.secret)
     # Persist encrypted supplement BEFORE a possible publication.
     if preserve:preserve()
+    if result.get('status')=='revision_requested' and new_notices_enabled:
+        from review_approval_revision import revise
+        from review_durable_workflow import DurableReviews
+        from review_queue import _request
+        from review_approval_notice import NewNoticeTransport
+        result['revision_delivery']=revise(approval,bridge,DurableReviews(_request),NewNoticeTransport(os.environ['TELEGRAM_BOT_TOKEN']),result['revision_event_id'],preserve,cutover)
     decision=result.get('result',{})
     if decision.get('decision')=='approved':
         from review_approval_card_delivery import dismiss_approved

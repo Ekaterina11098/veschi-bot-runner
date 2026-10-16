@@ -30,7 +30,7 @@ jobs:
           with open('china-price-morning-request.json') as f:value=json.load(f)
           day=datetime.now(ZoneInfo('Europe/Moscow')).date().isoformat()
           allowed=(value.get('report_date')==day and value.get('mode')=='morning'
-                   and value.get('action')=='run' and value.get('source_commit')=='b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c'
+                   and value.get('action') in ('run','verify') and value.get('source_commit')=='b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c'
                    and isinstance(value.get('nonce'),str) and len(value['nonce'])>=8)
           with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('allowed='+str(allowed).lower()+'\n')
           print(json.dumps(dict(mode='morning',report_date=value.get('report_date'),authorized_run=allowed)))
@@ -59,4 +59,12 @@ jobs:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: python -m china_agent.scheduled_price_worker --mode morning
+        run: |
+          cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
+          python -m compileall -q china_agent/morning_pair.py
+          ACTION=$(python -c "import json;print(json.load(open('../china-price-morning-request.json'))['action'])")
+          if [ "$ACTION" = verify ]; then
+            python -m china_agent.morning_pair --verify
+          else
+            python -m china_agent.morning_pair
+          fi

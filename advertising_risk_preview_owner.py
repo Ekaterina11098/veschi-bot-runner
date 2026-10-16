@@ -76,6 +76,22 @@ try:
       if item.get('nm_id') in (1123677454,320248210):
        matched.setdefault((pack['campaign_id'],item['nm_id']),dict(campaign_id=pack['campaign_id'],nm_id=item['nm_id'],spend=item.get('ac_spending_sum'),snapshot_id=snap['id']))
    report['result']['same_day_20261010']=[dict(nm_id=nm,campaign_rows=[v for (cid,n),v in matched.items() if n==nm],campaign_sum=sum(v['spend'] for (cid,n),v in matched.items() if n==nm and type(v['spend']) in (int,float)),finance=next(x['advertisement'] for x in finance if x['nm_id']==nm and x['day']=='2026-10-10')) for nm in (1123677454,320248210)]
+   weekly=read('analytics_snapshots',{'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','period_from':'eq.2026-10-09','period_to':'eq.2026-10-15','payload->0->>report':'eq.products','select':'id,payload','order':'id.desc','limit':100})
+   report['result']['reconciled_daily']=[]
+   for item in sku:
+    nm=item['nm_id'];byday={}
+    for x in item['daily_ad_statistics']:
+     byday[x['day']]=byday.get(x['day'],0)+x['spend']
+    products={}
+    for snapshot in weekly:
+     for pack in snapshot['payload']:
+      for x in pack.get('rows',[]):
+       if x.get('nm_id')==nm:products.setdefault(pack['campaign_id'],dict(spend=x.get('ac_spending_sum'),snapshot_id=snapshot['id']))
+    wk=sum(x['spend'] for x in products.values() if type(x['spend']) in (int,float))
+    fin=sum(x['advertisement'] for x in item['daily_finance'] if type(x['advertisement']) in (int,float))
+    report['result']['reconciled_daily'].append(dict(nm_id=nm,days=[dict(day=x['day'],finance=x['advertisement'],campaign_spend=byday.get(x['day']),difference=round(byday[x['day']]-x['advertisement'],2) if x['day'] in byday else None) for x in item['daily_finance']],
+     weekly_campaign_spend=wk,weekly_finance_spend=round(fin,2),weekly_gap=round(wk-fin,2),day15_campaign_spend=byday.get('2026-10-15'),residual_after_day15=round(wk-fin-byday.get('2026-10-15',0),2),weekly_components=products,
+     recognition_cause='Numerical gap mostly aligns with day15 service statistics versus zero retained financial charge; no service-to-ledger identifiers in tool schema, timing mechanism not proved',independent_decisions_not_blocked=True))
    report['result']['capability57_reference']=dict(run_id=38887156360,nm_id=1007948808,campaign_id=39410834,min_bid_kopecks=10500,current_bid_kopecks=10500,eligible=True,minus_items=[],membership_count=44,can_change_nms=True,executor_verified=False,test_authorized=False)
    key='advertising:ip:focus_preparation:20261016'
    old=read('telegram_api_cache',dict(cache_key='eq.'+key,select='payload',limit=1))

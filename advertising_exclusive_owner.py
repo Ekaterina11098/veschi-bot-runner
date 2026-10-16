@@ -25,6 +25,12 @@ try:
   now=datetime.now(timezone.utc);value={'scope':'ip-exclusive-read','run':os.environ['GITHUB_RUN_ID']}
   c.db('POST','telegram_api_cache',dict(cache_key=key,payload=value,expires_at=(now+timedelta(days=90)).isoformat()),params={'on_conflict':'cache_key'})
   assert c.db('GET','telegram_api_cache',params={'cache_key':'eq.'+key,'select':'payload','limit':1})[0]['payload']==value
+  from advertising_daily_runtime_guard import membership_cache_valid
+  daily_snapshot=c.daily_snapshot
+  def fresh_daily(source,*args,**kwargs):
+   value=daily_snapshot(source,*args,**kwargs)
+   return value if membership_cache_valid(value,now) else None
+  c.daily_snapshot=fresh_daily
   allids,active,raw,reused=c.campaign_index(os.environ['WB_TOKEN_2'])
   report.update(active_campaign_ids=active,total_campaigns=len(allids),index_reused=reused)
   old=c.daily_snapshot('advertising_active_configuration')

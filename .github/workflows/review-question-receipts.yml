@@ -1,0 +1,51 @@
+name: Deliver two question WB receipts
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-question-receipts.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-review-replies
+  cancel-in-progress: false
+jobs:
+  receipt-repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 1b4201067880e379d8dacbe5f6ca3f9848d6ffb0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 requests==2.32.5 python-dotenv==1.1.1 openai==1.109.1
+      - name: Validate independent notices and duplicate protection
+        run: |
+          python -m unittest test_review_questions.py test_review_morning.py test_review_approved_worker.py
+          python -m py_compile review_morning.py review_questions_morning.py
+      - name: Restore missing Telegram receipt only; no WB calls
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python review_question_receipts.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-morning-question-receipts
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90
+# Independent question delivery; no legacy queues or other stopped tasks.

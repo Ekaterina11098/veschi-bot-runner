@@ -51,7 +51,31 @@ def seed(state,memory):
  result=state
  for snapshot in (memory.get('outcome_refresh_20261016') or {}).get('saved',[]):
   result=ingest(result,snapshot['payload'][0],snapshot['id'])
- return result or {'version':1,'orders':{},'history':[]}
+ result=result or {'version':1,'orders':{},'history':[]}
+ ledger=memory.get('older_sales_ledger_audit_20261016') or {}
+ if ledger.get('status')=='complete':
+  now=datetime.now(timezone.utc);events={}
+  for source in ledger.get('matching_sales',[]):
+   for row in source['rows']:
+    sid=row.get('saleID')
+    if sid and (sid not in events or str(events[sid].get('lastChangeDate',''))<str(row.get('lastChangeDate',''))):events[sid]=row
+  observed=max((source['collected_at'] for source in ledger.get('matching_sales',[])),default=None)
+  for row in ledger.get('older_order_rows',[]):
+   gn=str(row.get('gNumber') or '');nm=row.get('nmId');pid=next((k for k,v in PRODUCTS.items() if v==nm),None)
+   if not gn or pid is None or gn in result['orders'] or not observed:continue
+   linked=[e for e in events.values() if e.get('srid')==row['srid']]
+   sold=[e for e in linked if str(e.get('saleID','')).startswith('S')];ret=[e for e in linked if str(e.get('saleID','')).startswith('R')]
+   buyout=len(sold)>len(ret) and row.get('isCancel') is not True
+   unresolved=not linked and row.get('isCancel') is not True
+   last_sale=max((e['date'] for e in sold),default=None)
+   if not unresolved and not (buyout and last_sale and (now-dt(last_sale)).days<=30):continue
+   kind='buyout' if buyout else 'unresolved';interval=7 if unresolved and (now-dt(row['date'])).days>=30 else 1
+   result['orders'][gn]=dict(product_id=pid,nm_id=nm,gnumber=gn,ordered_on=row['date'][:10],observed_at=observed,last_changed_at=observed,
+    fingerprint=hashlib.sha256(json.dumps(row,sort_keys=True).encode()).hexdigest(),status=kind,raw=row,raw_source='retained_WB_order_sales_identity_join',
+    snapshot_id=ledger['matching_sales'][0]['id'],active=True,monitoring_state='weekly_unresolved' if interval==7 else 'daily',
+    next_check_at=(dt(observed)+timedelta(days=interval)).isoformat(),financially_final=False,mature_retention_ratio=None)
+   result['history'].append(dict(gnumber=gn,observed_at=observed,status=kind,seeded_from_retained_sales=True))
+ return result
 def financial_revision(state,obs,now):
  if obs.get('tool')!='lk_wb_products' or obs.get('status')!='received':return state
  body=(obs.get('data') or {}).get('data') or {}

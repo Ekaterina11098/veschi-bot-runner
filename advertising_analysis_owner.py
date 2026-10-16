@@ -1,4 +1,4 @@
-"""Recompute existing IP pipeline on main+PR19 without deliveries or WB writes."""
+"""Existing IP analysis with owner-gated delivery; no WB mutations."""
 import os,sys,json,subprocess,contextlib,io
 from pathlib import Path
 from stock_deploy_support import seal,error
@@ -109,6 +109,11 @@ finally:
  preview['actions']=[{k:x.get(k) for k in ('article','campaign_id','kind','action','reason','expected_effect','criterion','risk')} for x in daily.get('actions',[])]
  preview['new_messages']=(a.get('new_preview') or {}).get('messages',[])
  preview['budget_analysis']=daily.get('budget_analysis')
+ preview['financial_risk']=daily.get('financial_risk')
+ preview['expense_test_candidates']=daily.get('expense_test_candidates')
+ preview['analysis_run_id']=RUN_ID
+ preview['new_day_complete']=report.get('new_day_complete')
+ preview['final_decision_state']=report.get('final_decision_state')
  preview['regression_tail']=(report.get('targeted_regressions') or {}).get('log','')[-500:]
  seal('advertising-preview',preview)
- print(json.dumps({'analysis_saved':bool(report.get('analysis')),'error_type':report.get('error',{}).get('type'),'wb_writes':0,'telegram_calls':0}))
+ print(json.dumps({'analysis_saved':bool(report.get('analysis')),'error_type':report.get('error',{}).get('type'),'wb_writes':0,'telegram_calls':report.get('telegram_calls',0)}))

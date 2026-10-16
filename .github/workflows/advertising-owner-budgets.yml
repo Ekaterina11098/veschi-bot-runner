@@ -32,6 +32,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
           SUPABASE_EGRESS_OPTIMIZED: 'true'
+          ADVERTISING_BUDGET_STEP_ONLY: 'true'
         run: python advertising_budgets_owner.py
       - uses: actions/upload-artifact@v4
         if: always()
@@ -58,3 +59,5 @@ jobs:
 # 16Oct05:54UTC sequential continuation: previous38856282920 terminal; Supabase GET timeout before WB. Keep fresh balances, same905sec/RetryAfter, no analysis/delivery.
 
 # Owner-authorized cache GET timeout repair; sequential continuation, no WB mutations.
+
+# One sequential step for newly active campaign; existing sorted queue/pause retained.

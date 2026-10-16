@@ -7,6 +7,9 @@ sys.path.insert(0,str(Path(__file__).parent/'private-source'))
 from stock_deploy_support import seal,error
 from analytics.collect import database,RUN_ID
 from analytics.stage_one import read,cache,compose_cached_finance
+import analytics.stage_one as finance_stage
+from advertising_cached_finance_reader import install as install_bounded_finance
+install_bounded_finance(finance_stage)
 from analytics.mpstats_probe import discover,ProbeError
 from analytics.mpstats_gaps import execute_reads,period
 from analytics.mpstats_recovery import normalize,import_products,BIDDER

@@ -78,7 +78,7 @@ class Approval:
         if not card:raise Rejected('Unknown card')
         s=card['source']
         lines=['Кабинет: '+{'token_1':'ООО','token_2':'ИП','token_3':'Китай'}[card['cabinet']],('[Вопросы:согласование]' if card['kind']=='questions' else '[Отзывы:согласование]'),s['article']+' · '+card['version']]
-        lines+=['ID '+('вопроса' if card['kind']=='questions' else 'отзыва')+': '+card['item_id'],'Покупатель: '+str(s['buyer'] or 'не указано')]
+        lines+=['ID '+('вопроса' if card['kind']=='questions' else 'отзыва')+': '+card['item_id'],'Покупатель: '+str(s['buyer'] or 'Имя не указано')]
         if card['kind']=='questions':lines+=['Вопрос: '+str(s['text'] or '(без текста)')]
         else:lines+=['Оценка: '+str(s['rating'])+'/5','Отзыв: '+str(s['text'] or '(без текста)'),'Достоинства: '+str(s['pros'] or '(не заполнены)'),'Недостатки: '+str(s['cons'] or '(не заполнены)')]
         if card['status']=='selected':

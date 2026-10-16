@@ -3,17 +3,20 @@ import sys,json,copy
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parent/'private-source'))
 from advertising_agent import agent_store as store
+from analytics.collect import database
+from datetime import datetime,timezone
 from stock_deploy_support import seal,error
 r=dict(source_calls=0,wb_calls=0,wb_writes=0,telegram_calls=0,results=[],executable_actions_created=0)
 try:
- key='advertising:ip:focus_preparation:20261016';memory=store.cache_get(key)
+ key='advertising:ip:focus_preparation:20261016'
+ before=database('GET','telegram_api_cache',params={'cache_key':'eq.'+key,'select':'payload,updated_at','limit':1})[0];memory=before['payload']
  linked=memory['older_linked_cohorts_and_sku_scenarios_20261016']
  for sku in linked['sku_scenarios']:
   nm=sku['nm_id'];facts=[x for x in linked['cohorts'] if x['nm_id']==nm]
   scenarios=[]
   for cohort in facts:
    if cohort['scope'] not in ('same_seller_price','same_price_WB_warehouse') or not cohort['orders']:continue
-   qs=(cohort['full_denominator_observed_retained_fraction'],cohort['completion_only_upper_fraction'])
+   qs=[cohort['full_denominator_observed_retained_fraction'],cohort['completion_only_upper_fraction']]
    scenarios.append(dict(scope=cohort['scope'],orders=cohort['orders'],historical_q_scenarios=qs,
     assumptions='Observed net sales remain retained; unresolved become either no retained buyout or all retained; later returns can make actual retention lower. These are not confidence bounds or current forecasts.',
     conditional_results=[dict(allocation=n['basis'],values=[round(q*sku['M']-(1-q)*sku['F_example']-n['CPA_scenario'],2) for q in qs],result='each value minus unknown D') for n in sku['normalizations']]))
@@ -26,7 +29,9 @@ try:
    employee_delivery_ready=False,why_not_delivered='A risk-supported test candidate is not an executable staff action; no finished parameters/permission',
    real_test_authorized=False,amounts_are_not_risk_limits=True))
  updated=copy.deepcopy(memory);updated['economic_risk_decisions_20261016']=r
- r['status']='complete';store.cache_set(key,updated,ttl_days=365)
+ r['status']='complete'
+ updated=json.loads(json.dumps(updated))
+ database('PATCH','telegram_api_cache',params={'cache_key':'eq.'+key,'updated_at':'eq.'+before['updated_at']},body={'payload':updated,'updated_at':datetime.now(timezone.utc).isoformat()})
  if store.cache_get(key)!=updated:raise RuntimeError('Economic risk decision readback failed')
  r['common_memory_full_readback']=True
 except Exception as e:r.update(status='incomplete',error=error(e))

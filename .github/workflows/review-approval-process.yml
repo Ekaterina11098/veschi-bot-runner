@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 8d124bea582e9185b6d6d47a48b79b855a507d8e
+          ref: bc80de63e30e1e8e4370fcb94f86aebd91acecf8
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -37,7 +37,7 @@ jobs:
           SEALED_UPDATE: ${{ inputs.sealed_update }}
           REVIEW_APPROVAL_ENABLED: '1'
           REVIEW_PUBLICATION_ENABLED: '1' # Explicit owner authorization; private config remains the live kill switch.
-          REVIEW_NEW_NOTICES_ENABLED: ${{ vars.REVIEW_NEW_NOTICES_ENABLED == 'true' && '1' || '0' }}
+          REVIEW_NEW_NOTICES_ENABLED: '1' # Private review config still gates delivery.
           REVIEW_APPROVAL_CUTOVER: ${{ vars.REVIEW_APPROVAL_CUTOVER }}
           REVIEW_APPROVAL_DSN: ${{ secrets.REVIEW_APPROVAL_DSN }}
           REVIEW_APPROVAL_INGRESS_KEY: ${{ secrets.REVIEW_APPROVAL_INGRESS_KEY }}

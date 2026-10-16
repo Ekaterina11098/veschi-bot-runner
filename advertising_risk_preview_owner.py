@@ -17,7 +17,7 @@ try:
   from analytics.stage_one import read
   if os.getenv('FOCUS_FOLLOWUP')=='true':
    import statistics
-   from datetime import timedelta
+   from datetime import datetime,timezone,timedelta
    cat=read('analytics_snapshots',dict(source='eq.mpstats_campaign_catalog',cabinet='eq.token_2',select='id,payload,collected_at',order='id.desc',limit=5))
    mapping={}
    for snap in cat:

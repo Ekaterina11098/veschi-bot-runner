@@ -40,7 +40,7 @@ def render_control(state, day, read, now):
         check=detected+timedelta(days=5)
         lines.append('• '+e.get('article',nm)+': '+fmt(before)+' → '+fmt(after)+' ¥; замечено '+detected.strftime('%d.%m')+'.')
         if not n:
-            lines.append('  Полных дней: 0. Результат пока не определён; оценка '+check.strftime('%d.%m')+'.')
+            # Shared zero-day cohort status is rendered once below.
             continue
         n=min(n,4)
         end=day-timedelta(days=1); start=end-timedelta(days=n-1)
@@ -64,6 +64,10 @@ def render_control(state, day, read, now):
         else:
             verdict='Рост прибыли не подтверждён; продолжаем наблюдение.'
         lines.append('  '+verdict)
+    zero_dates=sorted({d for _,_,_,d in rows if day==d+timedelta(days=1)})
+    for d in zero_dates:
+        count=sum(x[3]==d for x in rows)
+        lines.append(str(count)+' товаров с изменениями '+d.strftime('%d.%m')+': полных дней после изменения — 0. Прибыль и необходимость возврата пока не подтверждены. База '+(d-timedelta(days=4)).strftime('%d.%m')+'–'+(d-timedelta(days=1)).strftime('%d.%m')+'; наблюдение '+(d+timedelta(days=1)).strftime('%d.%m')+'–'+(d+timedelta(days=4)).strftime('%d.%m')+'; оценка '+(d+timedelta(days=5)).strftime('%d.%m')+'.')
     if not rows: lines.append('Новых зарегистрированных изменений и ожидающих первой оценки нет.')
     lines+=['День обнаружения и сегодняшний день исключены. Промежуточные периоды сравниваются при равной длительности.',
             'Дата обнаружения может отличаться от фактической даты изменения WB. Новая корректировка начинает отсчёт заново.',

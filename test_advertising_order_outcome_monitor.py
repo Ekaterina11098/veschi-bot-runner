@@ -59,4 +59,8 @@ class MonitorTests(unittest.TestCase):
   s=ingest({},observation(),1)
   ledger=dict(status='complete',older_order_rows=[dict(srid='old',gNumber='a',nmId=1123677454,date=(now-timedelta(days=20)).isoformat(),isCancel=False)],matching_sales=[dict(id=3,collected_at=(now-timedelta(days=5)).isoformat(),rows=[])])
   updated=seed(s,dict(older_sales_ledger_audit_20261016=ledger));self.assertEqual(updated['orders']['a']['snapshot_id'],1)
+ def test_recent_orders_not_starved_by_old_history(self):
+  old=observation(day='2026-09-01');old['observed_at']=(NOW-timedelta(days=10)).isoformat();s=ingest({},old,1)
+  new=observation(day='2026-10-15');new['data']['data'][0]['gnumber']='new';s=ingest(s,new,2)
+  p=plan(s,NOW+timedelta(days=2),max_requests=1);self.assertEqual(p[0]['arguments']['date_from'],'2026-10-15')
 if __name__=='__main__':unittest.main()

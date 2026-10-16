@@ -28,6 +28,16 @@ def guard(report,configuration):
             p['current_promotion']=copy.deepcopy(c['current_promotion'])
     out['current_promotion_epoch_checked']=True
     return out
+def daily_observations(reports,first_full,last):
+    chosen={}
+    for s in sorted(reports,key=lambda x:x.get('collected_at') or '',reverse=True):
+        for p in s.get('payload') or []:
+            if p.get('campaign_id')!=12194941 or p.get('report')!='days' or p.get('scope_nm_id') is not None or p.get('spending_reconciled') is not True:continue
+            for row in p.get('rows') or []:
+                day=str(row.get('date',''))[:10]
+                if first_full<=day<=last and day not in chosen:
+                    chosen[day]=dict(day=day,source_snapshot_id=s.get('id'),observed_at=s.get('collected_at'),metrics=copy.deepcopy(row),postlaunch_full_day=True)
+    return [chosen[k] for k in sorted(chosen)]
 def install():
     import analytics.ip_daily_recommendations as daily
     from analytics.stage_one import read
@@ -35,6 +45,16 @@ def install():
     if getattr(original,'_epoch_guard',False):return
     def build(report,*a,**kw):
         rows=read('analytics_snapshots',dict(source='eq.advertising_active_configuration',cabinet='eq.token_2',select='id,payload,collected_at',order='id.desc',limit=1)) or []
-        return original(guard(report,rows[0]) if rows else report,*a,**kw)
+        prepared=guard(report,rows[0]) if rows else report
+        controls=[]
+        for campaign in prepared.get('campaigns',[]):
+            promotion=campaign.get('current_promotion')
+            if not promotion:continue
+            retained=read('analytics_snapshots',dict(source='eq.mpstats_campaign_report',cabinet='eq.token_2',select='id,payload,collected_at',order='id.desc',limit=100)) or []
+            controls.append(dict(campaign_id=40223879,**promotion,daily_observations=daily_observations(retained,promotion['first_full_day'],report['period_to']),
+                historical_week_not_current_result=True,first_partial_day_not_zero=True))
+        result=original(prepared,*a,**kw)
+        result['current_promotion_control']=controls
+        return result
     build._epoch_guard=True
     daily.build=build

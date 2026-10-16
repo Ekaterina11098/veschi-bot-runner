@@ -16,7 +16,7 @@ try:
  report['disabled_runtime']=dict(exit=p.returncode,log=p.stdout)
  assert p.returncode==0
  assert json.loads(p.stdout.strip())==dict(enabled=False,source_calls=0,telegram_calls=0,wb_writes=0)
- report['verified']=True;report['public_head']='e38349c60582f094772ebeb9abf6792f8f16b813'
+ report['verified']=True;report['public_head']='c6bcabe3e56b5e32c03008ebb7ec422a316b7472'
 except Exception as exc:report['error']=error(exc)
 finally:
  seal('advertising-daily-prepared-checks',report)

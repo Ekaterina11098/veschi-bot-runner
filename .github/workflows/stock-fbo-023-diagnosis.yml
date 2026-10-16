@@ -1,0 +1,91 @@
+name: Diagnose retained FBO023 and read WB022 only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-fbo-023-diagnosis.yml']
+permissions:
+  contents: write
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 3f7aead8ae8bfee922b02750f8b37068660e8797
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.9' cryptography==46.0.2 requests==2.32.5 simplejson==3.20.2 python-dotenv==1.1.1 > "$RUNNER_TEMP/read-install.log" 2>&1
+      - name: Existing snapshot plus one exact stock read, no execution
+        env:
+          PYTHONPATH: private-source
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_EGRESS_OPTIMIZED: 'false'
+        run: |
+          python - <<'PY'
+          import os,json,time,requests,contextlib,io
+          from datetime import datetime,timezone
+          from urllib.parse import urlsplit
+          from stock_deploy_support import runtime_db,seal,error
+          report={'wb_writes':0,'execution_started':False,'telegram_calls':0}
+          hidden=io.StringIO()
+          try:
+              with runtime_db() as db:
+                  db.execute('SET TRANSACTION READ ONLY')
+                  row=db.execute('SELECT snapshot FROM stock_runs WHERE id=%s',('technical:stock-daily:2026-10-16',)).fetchone()
+                  snap=json.loads(row[0]);source=snap['source_snapshot']
+                  failed=datetime.fromisoformat('2026-10-16T14:23:08.701570+00:00').timestamp()
+                  report['source_received_at']=source['received_at']
+                  report['fbo_evidence']=[]
+                  for i,cards in enumerate(source['cards']):
+                      for card in cards:
+                          if str(card.get('vendorCode','')).strip().casefold() in ('023-alessiabag-black','022-alessiabag-grey'):
+                              report['fbo_evidence'].append(dict(cabinet=i,card=card,age_at_failure_seconds=failed-card.get('_fbo_observed_at',0)))
+                  report['fbo_cache_versions']=[{'observed_at':v['value'].get('observed_at'),'has_totals':isinstance(v['value'].get('totals'),dict),'next_poll_at':v['value'].get('next_poll_at')} for k,v in snap.get('cache',{}).items() if k.startswith('stock:fbo-grouped-v1:')]
+                  report['prepared_operation']=dict(article='022-alessiabag-grey',cabinet=2,warehouse=2126188,chrtId=2205271346,before=10,target=20)
+              native=requests.sessions.Session.request
+              dbhost=urlsplit(os.environ['SUPABASE_URL']).hostname
+              url='https://marketplace-api.wildberries.cn/api/v3/stocks/2126188'
+              def boundary(session,method,address,*a,**kw):
+                  if urlsplit(address).hostname!=dbhost and not (method.upper()=='POST' and address==url and kw.get('json')=={'chrtIds':[2205271346]}):
+                      raise PermissionError('Only exact WB stock READ allowed')
+                  return native(session,method,address,*a,**kw)
+              requests.sessions.Session.request=boundary
+              from analytics.collect import fetch
+              with contextlib.redirect_stdout(hidden),contextlib.redirect_stderr(hidden):
+                  result=fetch('POST',url,os.environ['WB_TOKEN_3'],body={'chrtIds':[2205271346]},max_retry_wait=0)
+              report['wb022']=dict(body=result,observed_at=datetime.now(timezone.utc).isoformat(),method='POST_READ',warehouse=2126188,chrtId=2205271346)
+              report['success']=True
+          except Exception as exc:report.update(success=False,error=error(exc))
+          finally:
+              report['private_log']=hidden.getvalue()
+              seal('stock-fbo-023-diagnosis',report)
+          print(json.dumps({'success':report['success'],'wb_writes':0,'execution_started':False}))
+          raise SystemExit(0 if report['success'] else 1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-stock-fbo-diagnosis
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Ciphertext only
+        if: always()
+        run: |
+          mkdir -p recovery-output/2026-10-16
+          cp "$RUNNER_TEMP/stock-deploy-proof/stock-fbo-023-diagnosis.aes.json" "recovery-output/2026-10-16/stock-fbo-023-diagnosis-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/2026-10-16/
+          git commit -m "Preserve encrypted FBO023 evidence and WB022 read; no stock execution"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+          done
+          exit 1

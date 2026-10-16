@@ -1,0 +1,52 @@
+name: Owner review119 stock notice only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-owner-review119-20261016.yml']
+permissions:
+  contents: read
+concurrency:
+  group: stock-notifications
+  cancel-in-progress: false
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 51b4183d033abc718a58686046979be3e110f477
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline journal and orders regression; no business credentials
+        working-directory: private-source
+        run: python -m unittest test_owner_low_rule test_order_demand -v
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/repair-install.log" 2>&1
+      - name: Send saved manual recommendations only; no WB credentials
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+          AUTO_STOCK_FAIL_FAST: '1'
+        run: |
+          python - <<'PY'
+          from datetime import datetime,timezone,timedelta
+          assert datetime.now(timezone(timedelta(hours=3))).date().isoformat()=='2026-10-16'
+          PY
+          python private-source/owner_review119_notice_20261016.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: manual-notice-receipt
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90

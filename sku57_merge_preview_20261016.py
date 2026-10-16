@@ -4,7 +4,7 @@ from pathlib import Path
 from stock_deploy_support import seal,error
 ROOT=Path(__file__).resolve().parent
 r=dict(private_main='6eb5f990aecfa1a92909169ffd76f05ac6da469d',private_pr26='ac3b1c439b2ef1bd6ad9e7e8093c91ecb86ae0db',
- runner_main='559bdb873ebf831c15163daa4b35986ebc6485dd',runner_pr5='6fbad90af06ccbc7a06f6f3d33378dbe3043988f',wb_calls=0,wb_writes=0,telegram_calls=0,rows_created=0,merged_production=False)
+ runner_main='89606668098fbc19b5e814a4ddcfbd42009867a9',runner_pr5='6fbad90af06ccbc7a06f6f3d33378dbe3043988f',wb_calls=0,wb_writes=0,telegram_calls=0,rows_created=0,merged_production=False)
 def call(args,cwd,env=None):
  p=subprocess.run(args,cwd=cwd,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
  if p.returncode:raise RuntimeError('Offline command failed: '+p.stdout[-4000:])

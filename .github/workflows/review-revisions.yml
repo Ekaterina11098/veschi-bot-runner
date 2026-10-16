@@ -49,3 +49,4 @@ jobs:
           name: owner-encrypted-review-revision-receipts
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
+# Diagnose the saved revision without repeating any confirmed delivery.

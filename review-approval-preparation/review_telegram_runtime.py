@@ -5,7 +5,7 @@ from review_telegram_approval import identity, sha
 
 
 class TelegramTransport:
-    ALLOWED = frozenset(('editMessageText', 'answerCallbackQuery', 'deleteMessage', 'notifyOwnerReviewProblem'))
+    ALLOWED = frozenset(('editMessageText', 'answerCallbackQuery', 'deleteMessage', 'notifyOwnerReviewProblem', 'notifyOwnerReviewReceipt'))
 
     def __init__(self, token, opener=urllib.request.urlopen):
         if not token: raise ValueError('Bot token required')
@@ -14,7 +14,7 @@ class TelegramTransport:
 
     def call(self, method, payload):
         if method not in self.ALLOWED: raise ValueError('Method outside review approval scope')
-        if method=='notifyOwnerReviewProblem':method='sendMessage'
+        if method in ('notifyOwnerReviewProblem','notifyOwnerReviewReceipt'):method='sendMessage'
         # Plain text, no parse_mode: source text cannot introduce Telegram markup.
         if method == 'editMessageText' and len(payload['text'].encode('utf-16-le')) // 2 > 4096:
             raise ValueError('Review card too long; split before delivery, never truncate approval text')

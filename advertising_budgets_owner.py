@@ -34,6 +34,7 @@ try:
    c.collect_campaign_budgets(os.environ['WB_TOKEN_2'],active)
    got=c.latest('advertising_campaign_budgets',status=None)
    if not got:raise RuntimeError('Budget save/readback missing')
+   report['complete']=bool(got['payload'].get('complete'))
    report['budgets']=got['payload'];report['iterations'].append({'at':c.NOW.isoformat(),'available':sum(bool(x.get('available')) for x in got['payload']['items']),'missing':got['payload'].get('missing_campaign_ids'),'next_retry_at':got['payload'].get('next_retry_at')})
    seal('advertising-budgets',report)
 except Exception as exc:report['error']=error(exc)

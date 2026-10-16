@@ -50,3 +50,4 @@ jobs:
           name: owner-encrypted-morning-review-receipts
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
+# Resume today's saved complete inboxes; confirmed cards remain protected from duplicates.

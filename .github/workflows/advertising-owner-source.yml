@@ -24,6 +24,10 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install simplejson==3.20.2 requests==2.32.5 python-dotenv cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Verify read-only observation boundaries before collection
+        run: |
+          python -m py_compile advertising_source_owner.py advertising_order_outcome_monitor.py
+          python test_advertising_order_outcome_monitor.py -v
       - name: Bounded MPStats reads, no WB or Telegram credentials
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

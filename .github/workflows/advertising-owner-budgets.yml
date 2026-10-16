@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 python-dotenv cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Offline cache retry safety checks
+        run: python -m unittest test_budget_cache_retry.py
       - name: Only missing budgets, preserving exact next RetryAfter
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -54,3 +56,5 @@ jobs:
 # Sequential resume 2026-10-15T20:29Z: prior run terminal; DB read recovered, saved cooldown preserved.
 
 # 16Oct05:54UTC sequential continuation: previous38856282920 terminal; Supabase GET timeout before WB. Keep fresh balances, same905sec/RetryAfter, no analysis/delivery.
+
+# Owner-authorized cache GET timeout repair; sequential continuation, no WB mutations.

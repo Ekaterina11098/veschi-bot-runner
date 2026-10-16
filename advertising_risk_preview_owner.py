@@ -11,7 +11,8 @@ try:
   from urllib.parse import urlsplit
   native=requests.sessions.Session.request;host=urlsplit(os.environ['SUPABASE_URL']).hostname
   def guard(session,method,url,*a,**kw):
-   if urlsplit(url).hostname!=host or method.upper()!='GET':raise RuntimeError('Saved-data replay permits Supabase GET only')
+   write=(os.getenv('FOCUS_FOLLOWUP')=='true' and method.upper()=='POST' and urlsplit(url).path=='/rest/v1/telegram_api_cache' and isinstance(kw.get('json'),dict) and kw['json'].get('cache_key')=='advertising:ip:focus_preparation:20261016')
+   if urlsplit(url).hostname!=host or (method.upper()!='GET' and not write):raise RuntimeError('Saved-data investigation transport boundary')
    return native(session,method,url,*a,**kw)
   requests.sessions.Session.request=guard
   from analytics.stage_one import read

@@ -43,7 +43,7 @@ def process(approval,bridge,telegram,wb,update,publication_enabled=False,preserv
         removal=dismiss_approved(approval,telegram,token,preserve)
         result['card_removal']=removal['status']
     if decision.get('decision')=='approved' and publication_enabled:
-        outcome=Executor(approval,guard,wb,enabled=True).run(decision['intent_id'])
+        outcome=Executor(approval,guard,wb,enabled=True,preserve=preserve).run(decision['intent_id'])
         result['publication_status']=outcome['status']
         card_token=approval.repo.get('intents',decision['intent_id'])['card_token']
         with approval.repo.transaction():
@@ -60,6 +60,10 @@ def process(approval,bridge,telegram,wb,update,publication_enabled=False,preserv
         with approval.repo.transaction():
             card=approval.repo.get('cards',token,lock=True);card['publication_enabled']=False
             approval.repo.put('cards',token,card)
+    if decision.get('decision')=='approved':
+        from review_approval_card_delivery import notify_owner_receipt
+        saved=approval.repo.get('intents',decision['intent_id'])
+        result['owner_receipt_delivery']=notify_owner_receipt(approval,telegram,saved,preserve)['status']
     if preserve:preserve()
     return result
 

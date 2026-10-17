@@ -1,0 +1,37 @@
+name: Retained advertising cache diagnostic GET only
+on:
+  push:
+    branches: [prepare-daily-source-repair-20261017]
+    paths: ['.github/workflows/advertising-daily-cache-diagnostic.yml']
+permissions: {contents: read}
+concurrency:
+  group: advertising-retained-cache-diagnostic
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 6eb5f990aecfa1a92909169ffd76f05ac6da469d
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install simplejson==3.20.2 requests==2.32.5 python-dotenv cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: python advertising_daily_cache_diagnostic.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-cache-diagnostic
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90

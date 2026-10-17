@@ -1,0 +1,39 @@
+name: Verify isolated saved-data group dialogue
+on:
+  push:
+    branches: [advertising-chat-readonly-20261017]
+    paths: ['.github/workflows/advertising-dialog-verify.yml']
+permissions: {contents: write}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 8743b6078227b4cf1e05f3dbe5acb5ffce76b2d0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: pip install -r private-source/requirements.txt > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Existing conversational and new safety tests; network blocked
+        working-directory: private-source
+        run: |
+          python - <<'PY'
+          import socket,unittest,sys
+          def deny(*a,**k):raise AssertionError('Offline test network forbidden')
+          socket.socket.connect=deny
+          loader=unittest.TestLoader()
+          suite=unittest.TestSuite([loader.discover('tests',pattern=p) for p in ('test_advertising_conversation.py','test_advertising_saved_dialogue.py')])
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(not result.wasSuccessful())
+          PY
+      - name: Existing role boundary plus free group questions
+        working-directory: private-source
+        run: node --test tests/test_advertising_webhook.mjs tests/test_advertising_free_dialogue.mjs

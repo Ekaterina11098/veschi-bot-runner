@@ -302,6 +302,9 @@ class Worker:
         from business_agents.data import Data
         cfg=self.config()
         if not question_allowed(job,cfg):raise PermissionError('Question scope mismatch')
+        from china_conversion_explanation import explain
+        explanation=explain(job['request_text'],question_marker(job),history)
+        if explanation is not None:return explanation
         if re.search(r'конверс|сохран[её]н',job['request_text'],re.I) and re.search(r'\d+-[A-Za-z]',job['request_text']):
             try:
                 nm,article=self.resolve(job['request_text'])

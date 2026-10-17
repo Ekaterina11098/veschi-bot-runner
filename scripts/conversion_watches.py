@@ -1,4 +1,4 @@
-"""Owner-scoped China conversion watches; read-only MPStats and durable TG receipts."""
+"""Owner-scoped China dialogs and explicit watches, with durable TG receipts."""
 import argparse
 import hashlib
 import json
@@ -21,10 +21,14 @@ HELP = ('Пример: «Следи за конверсией 52-NoelBag-fuchsia
 
 def intent(text):
     value = text.casefold().replace('ё', 'е')
-    if 'наблюден' in value:
+    if re.search(r'наблюден|задани|отчет',value):
         if re.search(r'\b(отмени|отменить|останови|удали)\b', value): return 'cancel'
         if re.search(r'\b(измени|изменить|перенеси|перенести)\b', value): return 'update'
-        if re.search(r'\b(мои|список|покажи|какие)\b', value): return 'list'
+        if re.search(r'(?:мои|список|какие)\s+(?:(?:активные|ежедневные|сохраненные)\s+)?(?:наблюден|задани|отчет)', value): return 'list'
+    if re.search(r'\b(перенеси|перенести)\b',value) and re.search(r'\d{1,2}[:\-]\d{2}',value):return 'update'
+    if re.search(r'ежедневно|каждый день',value) and re.search(r'\b(присылай|делай|проверяй|выполняй|следи|отслеживай|готовь|сравнивай|отправляй|показывай|повторяй|прошу|теперь|давай|хочу|нужно)\b',value):
+        if re.search(r'\b(можно ли|умеешь ли|как|например)\b',value):return 'help'
+        return 'create'
     if 'конверс' in value and re.search(r'\b(следи|отслеживай|отслеживать|отследи|наблюдай|ежедневно|каждый день)\b', value):
         if re.search(r'\b(можно ли|умеешь ли|как|например)\b', value): return 'help'
         return 'create'
@@ -157,6 +161,8 @@ class Worker:
             return ('Активных наблюдений нет. '+HELP) if not active else 'Наблюдения Китай:\n'+'\n'.join(w['id']+' · '+w['article']+' · '+str(w['days'])+' дн. · '+w['clock']+' МСК' for w in active)
         if action in ('cancel','update'):
             selected=[(key,w) for key,w in watches if re.search(r'(?<![\w-])'+re.escape(w['id'])+r'(?![\w-])',text.casefold()) or w['article'].casefold() in text.casefold()]
+            if not selected and len([x for x in watches if x[1]['status']=='active'])==1:
+                selected=[x for x in watches if x[1]['status']=='active']
             if len(selected)!=1:raise ValueError('Укажи ID или точный артикул одного наблюдения. Напиши «Мои наблюдения».')
             key,w=selected[0]
             if w.get('last_job_id')==job['id']:return w['last_confirmation']
@@ -173,7 +179,14 @@ class Worker:
         if action!='create':return None
         clock,days=parameters(text)
         if not clock:raise ValueError('Укажи время ежедневного отчёта по Москве. '+HELP)
-        nm,article=self.resolve(text)
+        kind='conversion' if 'конверс' in text.casefold() else 'task'
+        if kind=='conversion':nm,article=self.resolve(text)
+        else:
+            if re.search(r'\b(поменяй|измени|установи|удали|опубликуй|купи|оплати|повышай|снижай)\b',text.casefold()):
+                raise ValueError('Ежедневно могу выполнять анализ и отчёты. Изменения WB и другие действия сейчас не подключены.')
+            identity=re.sub(r'\d{1,2}\s*[:\-]\s*\d{2}','TIME',text.casefold()).strip()
+            nm='task_'+hashlib.sha256(identity.encode()).hexdigest()[:16]
+            article=text.strip()[:120]
         cfg=self.config();key=PREFIX+str(cfg['chat_id'])+':'+str(cfg['owner_user_id'])+':'+nm
         old=self.get(key)
         if old and old.get('last_job_id')==job['id']:return old['last_confirmation']
@@ -183,7 +196,8 @@ class Worker:
         watch=dict(agent_id='china',chat_id=cfg['chat_id'],owner_user_id=cfg['owner_user_id'],nm_id=nm,article=article,
             id=hashlib.sha256(key.encode()).hexdigest()[:8],days=days or 5,clock=clock,status='active',revision=(old or {}).get('revision',0)+1,
             next_at=next_due(clock,self.now),initial_pending=True,last_job_id=job['id'])
-        answer='Сохранено наблюдение '+watch['id']+': '+article+' · Китай · последние '+str(watch['days'])+' полных дней. Ежедневно в '+clock+' МСК в этот чат. Первый срез пришлю отдельно.\nОтмена: «Отмени наблюдение '+watch['id']+'».'
+        watch.update(kind=kind,task_text=text)
+        answer='Сохранено задание '+watch['id']+': '+article+' · Китай'+(' · последние '+str(watch['days'])+' полных дней' if kind=='conversion' else '')+'. Ежедневно в '+clock+' МСК в этот чат. Первый результат пришлю отдельно.\nОтмена: «Отмени задание '+watch['id']+'».'
         watch['last_confirmation']=answer
         self.save(key,watch);return answer
 
@@ -211,7 +225,6 @@ class Worker:
         rows=self.db('GET','business_agent_jobs',params={'agent_id':'eq.china','or':'(and(status.eq.pending,retry_at.lte.'+self.now.isoformat()+'),and(status.eq.running,lease_until.lte.'+self.now.isoformat()+'))','select':'*','order':'id.asc','limit':100}) or []
         processed=0
         for job in rows:
-            if not intent(job['request_text']):continue
             if not self.authorized(job):continue
             lease=str(uuid.uuid4())
             filters={'id':'eq.'+str(job['id']),'status':'eq.'+job['status']}
@@ -220,10 +233,20 @@ class Worker:
             if not claimed:continue
             def patch(body):return self.db('PATCH','business_agent_jobs',params={'id':'eq.'+str(job['id']),'lease_token':'eq.'+lease},body=body,prefer='return=representation')
             try:
-                try:answer=job.get('answer') or self.command(job)
+                trace=job.get('tool_trace') or []
+                try:
+                    if job.get('answer') is not None:answer=job['answer']
+                    elif intent(job['request_text']) and (intent(job['request_text'])!='create' or parameters(job['request_text'])[0]):answer=self.command(job)
+                    else:
+                        history=self.db('GET','business_agent_jobs',params={'agent_id':'eq.china','chat_id':'eq.'+str(job['chat_id']),'sender_id':'eq.'+str(job['sender_id']),'id':'lt.'+str(job['id']),'status':'eq.done','select':'agent_id,chat_id,request_text,answer','order':'id.desc','limit':10}) or []
+                        answer,trace=self.dialog(job,list(reversed(history)))
                 except ValueError as exc:answer=str(exc)
-                patch({'answer':answer})
-                outcome=self.send_once('command:'+str(job['id']),job['chat_id'],answer)
+                answer=answer or 'Проверка обработана, но содержательный ответ не получен. Уточни запрос.'
+                patch({'answer':answer,'tool_trace':trace})
+                outcome='sent'
+                for index,part in enumerate(split_message(answer)):
+                    outcome=self.send_once('command:'+str(job['id'])+':'+str(index),job['chat_id'],part)
+                    if outcome!='sent':break
                 patch({'status':'done' if outcome in ('sent','sending','uncertain') else 'pending','error':None if outcome=='sent' else 'delivery_'+outcome,'lease_until':None,'retry_at':(self.now+timedelta(minutes=5)).isoformat(),'completed_at':self.now.isoformat() if outcome=='sent' else None})
             except Exception:
                 patch({'status':'pending','error':'watch_processing_failed','lease_until':None,'retry_at':(self.now+timedelta(minutes=5)).isoformat()})
@@ -231,8 +254,63 @@ class Worker:
             if processed>=10:break
         return processed
 
-    def load_days(self,watch):
+    def conversion_history(self,article,date_from=None,date_to=None,days=5):
+        nm,canonical=self.resolve(article)
         end=self.now.astimezone(MSK).date()-timedelta(days=1)
+        if date_to:end=datetime.fromisoformat(date_to).date()
+        start=datetime.fromisoformat(date_from).date() if date_from else end-timedelta(days=(days or 5)-1)
+        length=(end-start).days+1
+        if not 1<=length<=14 or end>=self.now.astimezone(MSK).date():raise ValueError('Нужен период от 1 до 14 полных прошедших дней.')
+        watch=dict(nm_id=nm,article=canonical,days=length,date_to=end.isoformat())
+        daily,missing=self.load_days(watch)
+        if missing and self.collect:
+            try:self.collect(missing)
+            except Exception:pass
+            daily,missing=self.load_days(watch)
+        wanted=[(start+timedelta(days=i)).isoformat() for i in range(length)]
+        rows=[daily.get(d) or dict(date=d,available=False,reason='Нет проверенных данных; это не ноль') for d in wanted]
+        views=sum(r['views'] for r in rows) if not missing else None
+        orders=sum(r['orders'] for r in rows) if not missing else None
+        return dict(article=canonical,cabinet='Китай',date_from=str(start),date_to=str(end),daily=rows,complete=not missing,
+            views=views,funnel_orders=orders,conversion=orders/views if views else None,source='MPStats',
+            note='Конверсия: заказы воронки / просмотры. Сумма заказов воронки может отличаться от заказов WB. Пропуски не равны нулю. Наблюдение и расписание не созданы.')
+
+    def dialog(self,job,history):
+        from business_agents import conversation as c
+        old_tools,old_dispatch=c.tools,c.dispatch
+        def tools(agent_id):
+            result=old_tools(agent_id)
+            if agent_id=='china':result.append(c.function('get_conversion_history','Конверсия одного артикула по каждому полному дню и итог за точный период до 14 дней; только разовый запрос, расписание не создаёт.',{
+                'article':{'type':'string'},'date_from':{'type':['string','null']},'date_to':{'type':['string','null']},'days':{'type':['integer','null'],'minimum':1,'maximum':14}}))
+            if agent_id=='china':result.append(c.function('manage_daily_task','Сохранить ежедневное аналитическое поручение, показать список, изменить время/период или отменить. Только по ЯВНОЙ просьбе владельца; разовый вопрос не создаёт расписание. При неизвестном времени уточнить.',{
+                'action':{'type':'string','enum':['create','list','update','cancel']},'task_id':{'type':['string','null']},'request_text':{'type':['string','null']},'clock':{'type':['string','null']},'days':{'type':['integer','null'],'minimum':1,'maximum':14}}))
+            return result
+        def dispatch(job,data,name,arguments,**kwargs):
+            if name=='manage_daily_task':
+                if not self.authorized(job) or job.get('origin')=='scheduled':raise PermissionError('Schedule change scope')
+                action=arguments['action'];actual=intent(job['request_text'])
+                if action!='list' and actual!=action:raise ValueError('Нет явного поручения создать, изменить или отменить расписание.')
+                text=job['request_text']
+                if action=='list':text='Мои задания'
+                elif action=='create':
+                    text='Выполняй '+(arguments.get('request_text') or text)
+                    if arguments.get('clock') and parameters(text)[0] is None:text+=' ежедневно в '+arguments['clock']+' МСК'
+                    if arguments.get('days') and parameters(text)[1] is None:text+=' за последние '+str(arguments['days'])+' дней'
+                elif action in ('update','cancel'):
+                    text=('Измени' if action=='update' else 'Отмени')+' задание '+(arguments.get('task_id') or '')
+                    if arguments.get('clock'):text+=' на '+arguments['clock']
+                    if arguments.get('days'):text+=' за последние '+str(arguments['days'])+' дней'
+                return dict(success=True,answer=self.command(dict(job,request_text=text)))
+            if name=='get_conversion_history':
+                if not self.authorized(job):raise PermissionError('Owner scope mismatch')
+                return self.conversion_history(**arguments)
+            return old_dispatch(job,data,name,arguments,**kwargs)
+        c.tools,c.dispatch=tools,dispatch
+        try:return c.run_dialog(job,request=getattr(self,'model_request',None),read=lambda t,p:self.db('GET',t,params=p),previous=history,db=self.db)
+        finally:c.tools,c.dispatch=old_tools,old_dispatch
+
+    def load_days(self,watch):
+        end=datetime.fromisoformat(watch['date_to']).date() if watch.get('date_to') else self.now.astimezone(MSK).date()-timedelta(days=1)
         daily={};missing=[]
         for i in range(watch['days']):
             day=(end-timedelta(days=i)).isoformat();key=DAILY+watch['nm_id']+':'+day
@@ -255,6 +333,7 @@ class Worker:
         if not due:return 0
         needed=set()
         for _,w in due:
+            if w.get('kind')=='task':continue
             _,missing=self.load_days(w);needed.update(missing)
         if needed and self.collect:
             try:self.collect(sorted(needed,reverse=True)[:14])
@@ -264,12 +343,23 @@ class Worker:
             # Stop on cancellation or chat/owner reassignment before sending.
             live=self.get(key)
             if not live or not self.authorized(live) or live['status']!='active' or live['revision']!=w['revision']:continue
-            daily,_=self.load_days(w)
             label='initial:'+str(w['revision']) if w.get('initial_pending') else self.now.astimezone(MSK).date().isoformat()
             receipt_key='report:'+w['id']+':'+label
             old=self.get(RECEIPTS+receipt_key)
-            text=old['text'] if old else report(w,daily,self.now)
-            status=self.send_once(receipt_key,w['chat_id'],text)
+            if old:text=old['text']
+            elif w.get('kind')=='task':
+                scheduled=dict(id=0,agent_id='china',chat_id=w['chat_id'],sender_id=w['owner_user_id'],origin='scheduled',request_text='Сегодня '+self.now.astimezone(MSK).date().isoformat()+'. Выполни один текущий запуск сохранённого аналитического поручения. Ничего не планируй и не меняй в WB. Относительные даты считай от сегодня. Поручение: '+w['task_text'])
+                text,_=self.dialog(scheduled,[])
+                text='Китай · задание '+w['id']+'\n'+text+'\nЕжедневно в '+w['clock']+' МСК. Отмена: «Отмени задание '+w['id']+'».'
+                # Freeze the complete generated answer before the first send.
+                self.save(RECEIPTS+receipt_key,dict(status='prepared',text=text,chat_id=w['chat_id']))
+            else:
+                daily,_=self.load_days(w);text=report(w,daily,self.now)
+            if not old:self.save(RECEIPTS+receipt_key,dict(status='prepared',text=text,chat_id=w['chat_id']))
+            status='sent'
+            for index,part in enumerate(split_message(text)):
+                status=self.send_once(receipt_key+':part:'+str(index),w['chat_id'],part)
+                if status!='sent':break
             if status=='sent':
                 w.update(initial_pending=False,next_at=next_due(w['clock'],self.now),last_sent_at=self.now.isoformat());self.save(key,w);sent+=1
             elif status in ('sending','uncertain'):
@@ -313,12 +403,31 @@ def runtime():
     return Worker(db,send,collect=collect)
 
 
+def split_message(text):
+    parts=[];current=''
+    for line in text.splitlines(keepends=True):
+        while len(line)>3300:
+            if current:parts.append(current);current=''
+            parts.append(line[:3300]);line=line[3300:]
+        if len(current)+len(line)>3300:parts.append(current);current=''
+        current+=line
+    if current:parts.append(current)
+    return parts
+
+
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--verify',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--verify',action='store_true');parser.add_argument('--smoke',action='store_true');args=parser.parse_args()
     w=runtime()
     if args.verify:
         cfg=w.config();watches=w.watches()
         print(json.dumps(dict(status='verified',config_ready=bool(cfg),active_watches=sum(x['status']=='active' for _,x in watches),telegram_calls=0,wb_writes=0)));return
+    if args.smoke:
+        cfg=w.config();w.collect=None
+        question=dict(id=0,agent_id='china',chat_id=cfg['chat_id'],sender_id=cfg['owner_user_id'],request_text='Какие данные по кабинету Китай сейчас доступны? Проверь статус источников. Это разовый вопрос, ничего не запускай и не создавай расписаний.',origin='smoke')
+        answer,trace=w.dialog(question,[])
+        if not answer or not trace:raise RuntimeError('Dialog smoke incomplete')
+        w.save('china_agent:dialog_smoke:'+os.environ.get('GITHUB_RUN_ID','manual'),dict(status='verified',answer=answer,trace=trace,telegram_calls=0,wb_writes=0))
+        print(json.dumps(dict(status='dialog_verified',tool_calls=len(trace),telegram_calls=0,wb_writes=0)));return
     jobs=w.jobs()
     try:sent=w.reports()
     except Exception:

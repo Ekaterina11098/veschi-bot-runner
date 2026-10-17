@@ -1,0 +1,74 @@
+name: Verify retained campaign growth review without collection or delivery
+on:
+  push:
+    branches: [verify-advertising-growth-20261017]
+    paths: ['.github/workflows/advertising-growth-verify.yml']
+permissions: {contents: write}
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 9d424eca219c7f2a9f23433e4da6a2bfd969570b
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Targeted existing pipeline, delivery and growth regressions; sockets blocked
+        working-directory: private-source
+        run: |
+          python - <<'PY'
+          import socket,unittest,sys
+          def deny(*a,**k):raise AssertionError('Offline: external transport forbidden')
+          socket.create_connection=deny
+          socket.socket.connect=deny
+          loader=unittest.TestLoader();suite=unittest.TestSuite()
+          for name in ('test_ip_daily_recommendations.py','test_ip_campaign_audit.py','test_ip_completed_investigations.py','test_ip_sku_complete_review.py','test_ip_full_offline_pipeline.py','test_ip_delivery_boundary.py','test_ip_unknown_identity_controls.py','test_ip_growth_review.py'):
+              suite.addTests(loader.discover('tests',pattern=name))
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(not result.wasSuccessful())
+          PY
+      - name: Preserve exact automatic retained preview, no persistence or transport
+        working-directory: private-source
+        run: |
+          python - <<'PY'
+          import socket,sys
+          def deny(*a,**k):raise AssertionError('No source, WB or Telegram calls')
+          socket.create_connection=deny
+          socket.socket.connect=deny
+          sys.path.insert(0,'tests')
+          from test_ip_growth_review import retained_growth_preview
+          result=retained_growth_preview()
+          sys.path.insert(0,'..')
+          from stock_deploy_support import seal
+          seal('growth-automatic-preview',result)
+          print({'messages':len(result['first_overview']),'growth_projects':len(result['growth']),'telegram_calls':0,'source_calls':0,'wb_writes':0})
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-growth-preview
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Preserve ciphertext only
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          for file in "$RUNNER_TEMP"/stock-deploy-proof/*.aes.json; do
+            test -f "$file" || continue
+            cp "$file" "recovery-output/advertising/growth-auto-${{ github.run_id }}.aes.json"
+          done
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/growth-auto-*.aes.json
+          git diff --cached --quiet || git commit -m "Preserve encrypted automatic growth preview"
+          git push origin HEAD:verify-advertising-growth-20261017

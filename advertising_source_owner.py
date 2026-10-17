@@ -21,10 +21,67 @@ gate=CollectionGate(Path(os.environ['RUNNER_TEMP'])/'ads-storage-health.json',ma
 def digest(v):
  import hashlib
  return hashlib.sha256(json.dumps(v,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+class SourceTraffic:
+ """Decoded HTTP-body accounting; not compressed wire bytes or JSON expansion."""
+ def __init__(self,limit=100_000_000):
+  self.limit=limit;self.bytes=0;self.calls=0;self.buckets={};self.repeated={};self.cleanup_calls=0
+ def label(self,host,method,path,kwargs,db_host):
+  if host=='mcp.mpstats.io':
+   rpc=kwargs.get('json') or {};p=rpc.get('params') or {}
+   return 'mpstats:'+str(p.get('name') or rpc.get('method'))
+  table=path.rsplit('/',1)[-1];params=kwargs.get('params') or {};body=kwargs.get('json') or {}
+  detail=body.get('source') or params.get('source') or ''
+  key=str(params.get('cache_key') or body.get('cache_key') or '')
+  if table=='telegram_api_cache':
+   detail=key if any(x in key for x in ('mpstats:agent_reports:','mpstats:funnel_periods:','advertising:ip:order_outcome_monitor:')) else 'other_cache'
+  return 'supabase:'+method.upper()+':'+table+':'+str(detail)
+ def before(self,host,kwargs):
+  if self.bytes<self.limit or host!='mcp.mpstats.io':return
+  rpc=kwargs.get('json') or {};p=rpc.get('params') or {};args=p.get('arguments') or {}
+  if p.get('name')=='lk_wb_cabinets' and args.get('action') in ('select','reset') and self.cleanup_calls<2:
+   self.cleanup_calls+=1;return
+  raise RuntimeError('100MB decoded-body collection threshold reached; durable saved results retained')
+ def observed(self,label,response):
+  n=len(response.content);self.bytes+=n;self.calls+=1
+  b=self.buckets.setdefault(label,dict(calls=0,decoded_response_bytes=0,content_length_header_bytes=0))
+  b['calls']+=1;b['decoded_response_bytes']+=n
+  try:b['content_length_header_bytes']+=int(response.headers.get('Content-Length') or 0)
+  except (TypeError,ValueError):pass
+ def summary(self):
+  return dict(limit_bytes=self.limit,bytes=self.bytes,calls=self.calls,buckets=self.buckets,
+   measurement='len(response.content), HTTP decoded body; not compressed wire bytes or payload gzip expansion',
+   cleanup_calls=self.cleanup_calls,threshold_blocks_new_mpstats_reads=True)
+
+# Only derived append-like report caches are deferred. Immutable raw/normalized
+# snapshots and order observer writes/readbacks remain immediate.
+DEFERRED_CACHES={'mpstats:agent_reports:token_2:v1','mpstats:funnel_periods:token_2:v1'}
+cache_memo={};cache_revisions={};cache_dirty=set()
+def flush_derived_caches():
+ for key in list(cache_dirty):
+  value=cache_memo[key];stamp=cache_revisions[key]
+  body=dict(payload=value,updated_at=datetime.now(timezone.utc).isoformat(),expires_at=(now+timedelta(days=365)).isoformat())
+  if stamp is None:
+   database('POST','telegram_api_cache',body=dict(body,cache_key=key),params={'on_conflict':'cache_key'},ignore_existing=True)
+  else:
+   database('PATCH','telegram_api_cache',body=body,params={'cache_key':'eq.'+key,'updated_at':'eq.'+stamp})
+  rows=database('GET','telegram_api_cache',params={'cache_key':'eq.'+key,'select':'payload,updated_at','limit':1}) or []
+  if len(rows)!=1 or digest(rows[0]['payload'])!=digest(value):
+   gate.fail();raise RuntimeError('Derived cache CAS/full readback failed; reuse immutable snapshots, no blind write retry')
+  cache_revisions[key]=rows[0]['updated_at'];cache_dirty.remove(key)
+
 def get(k):
+ if k in DEFERRED_CACHES:
+  if k not in cache_memo:
+   rows=database('GET','telegram_api_cache',params={'cache_key':'eq.'+k,'select':'payload,updated_at','limit':1}) or []
+   cache_memo[k]=rows[0]['payload'] if rows else None
+   cache_revisions[k]=rows[0].get('updated_at') if rows else None
+  return copy.deepcopy(cache_memo[k])
  rows=database('GET','telegram_api_cache',params={'cache_key':'eq.'+k,'select':'payload','limit':1}) or []
  return rows[0]['payload'] if rows else None
 def put(k,v):
+ if k in DEFERRED_CACHES:
+  if k not in cache_memo:get(k)
+  cache_memo[k]=copy.deepcopy(v);cache_dirty.add(k);return
  body=dict(cache_key=k,payload=v,updated_at=datetime.now(timezone.utc).isoformat(),expires_at=(now+timedelta(days=365)).isoformat())
  database('POST','telegram_api_cache',body=body,params={'on_conflict':'cache_key'})
  if digest(get(k))!=digest(v):gate.fail();raise RuntimeError('Private cache readback mismatch')
@@ -125,14 +182,16 @@ try:
   put(ORDER_MONITOR_KEY,order_monitor)
   report['order_outcome_monitor']={'tracked_orders':len(order_monitor.get('orders',{})),'wb_mutations':False,'maturity_not_inferred':True}
   import requests
-  original=requests.sessions.Session.request;traffic={'bytes':0,'calls':0}
+  original=requests.sessions.Session.request;traffic=SourceTraffic()
   allowed_host=__import__('urllib.parse',fromlist=['urlsplit']).urlsplit(os.environ['SUPABASE_URL']).hostname
   def guarded(session,method,url,*args,**kwargs):
    host=__import__('urllib.parse',fromlist=['urlsplit']).urlsplit(url).hostname
    if host not in (allowed_host,'mcp.mpstats.io'):raise RuntimeError('Source outside MPStats-only recovery allowlist')
    if host=='mcp.mpstats.io':gate.before_collection()
-   if traffic['bytes']>=100_000_000:raise RuntimeError('100MB pass threshold reached; continue from saved receipts only')
-   response=original(session,method,url,*args,**kwargs);traffic['bytes']+=len(response.content);traffic['calls']+=1
+   traffic.before(host,kwargs)
+   parsed=__import__('urllib.parse',fromlist=['urlsplit']).urlsplit(url)
+   label=traffic.label(host,method,parsed.path,kwargs,allowed_host)
+   response=original(session,method,url,*args,**kwargs);traffic.observed(label,response)
    return response
   requests.sessions.Session.request=guarded
   pause=database('GET','telegram_api_cache',params={'cache_key':'eq.mpstats:cooldown','expires_at':'gt.'+now.isoformat(),'select':'expires_at','limit':1}) or []
@@ -340,6 +399,7 @@ try:
    if result.get('retry_after'):
     put('mpstats:cooldown',dict(pending=True,retry_after=result['retry_after']))
     database('PATCH','telegram_api_cache',body={'expires_at':(datetime.now(timezone.utc)+timedelta(seconds=result['retry_after'])).isoformat()},params={'cache_key':'eq.mpstats:cooldown'})
+   flush_derived_caches()
    composed=read('analytics_snapshots',dict(source='eq.mpstats_products_composed',cabinet='eq.token_2',period_from='eq.'+str(start),period_to='eq.'+str(end),select='id,collected_at',order='id.desc',limit=1)) or []
    report['refreshed_finance_days']=sorted(refreshed_finance_days)
    # Recompose current window from latest exact-day versions, never add campaign spend.
@@ -354,9 +414,16 @@ try:
      result=compose_cached_finance('token_2',date.fromisoformat(a),date.fromisoformat(b),datetime.now(timezone.utc))
      report['recomposed_affected_periods'].append(dict(period_from=a,period_to=b,result=result))
     report['affected_periods_beyond_pass_limit']=max(0,len(affected-{(str(start),str(end))})-10)
-  report['traffic']=traffic
+  report['traffic']=traffic.summary()
 except Exception as exc:report['error']=error(exc)
 finally:
+ try:flush_derived_caches()
+ except Exception as flush_error:
+  report['cache_flush_error']=error(flush_error)
+  if 'error' not in report:report['error']=error(flush_error)
+ if 'traffic' in globals():report['traffic']=traffic.summary()
+ report['business_status']='failed' if report.get('cache_flush_error') else ('incomplete' if report.get('error') or report.get('pending_pause') or report.get('normalization_errors') else 'complete')
+ report['completed_units']=[dict(id=x['id'],key=x['key'],status=x['status']) for x in report['saved'] if x.get('readback')]
  report['private_log']=hidden.getvalue();seal('advertising-source',report)
- print(json.dumps({'saved':len(report['saved']),'provider_status':report.get('provider_status',{}).get('status'),'pending_pause':bool(report.get('pending_pause')),'error_type':report.get('error',{}).get('type'),'wb_calls':0,'telegram_calls':0}))
+ print(json.dumps({'saved':len(report['saved']),'provider_status':report.get('provider_status',{}).get('status'),'pending_pause':bool(report.get('pending_pause')),'error_type':report.get('error',{}).get('type'),'business_status':report['business_status'],'reason':report.get('error',{}).get('type') or ('pending_pause' if report.get('pending_pause') else None),'completed_units':report['completed_units'],'wb_calls':0,'telegram_calls':0}))
 

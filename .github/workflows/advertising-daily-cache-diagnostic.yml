@@ -1,9 +1,9 @@
-name: Retained advertising cache diagnostic GET only
+name: Verify daily source repair and preserve prior diagnostic ciphertext
 on:
   push:
     branches: [prepare-daily-source-repair-20261017]
     paths: ['.github/workflows/advertising-daily-cache-diagnostic.yml']
-permissions: {contents: read}
+permissions: {contents: write}
 concurrency:
   group: advertising-retained-cache-diagnostic
   cancel-in-progress: false
@@ -24,14 +24,18 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install simplejson==3.20.2 requests==2.32.5 python-dotenv cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
-      - run: python advertising_daily_cache_diagnostic.py
+      - name: Compile prepared repair only, no production credentials
+        run: python -m py_compile advertising_source_owner.py
+      - name: Preserve previous GET-only diagnostic cipher, no source replay
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          ADVERTISING_EXECUTION_ENABLED: 'false'
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: owner-encrypted-cache-diagnostic
-          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
-          retention-days: 90
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --location --silent --show-error --header "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/Ekaterina11098/veschi-bot-runner/actions/artifacts/12093317899/zip --output "$RUNNER_TEMP/prior-diagnostic.zip"
+          mkdir -p "$RUNNER_TEMP/prior-diagnostic" recovery-output/advertising
+          unzip -q "$RUNNER_TEMP/prior-diagnostic.zip" -d "$RUNNER_TEMP/prior-diagnostic"
+          cp "$RUNNER_TEMP/prior-diagnostic/daily-cache-diagnostic.aes.json" recovery-output/advertising/daily-cache-diagnostic-39013476298.aes.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/daily-cache-diagnostic-39013476298.aes.json
+          git diff --cached --quiet || git commit -m "Preserve existing diagnostic ciphertext without repeating reads"
+          git push origin HEAD:prepare-daily-source-repair-20261017

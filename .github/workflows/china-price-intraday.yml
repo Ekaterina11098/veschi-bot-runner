@@ -3,6 +3,15 @@ on:
   push:
     branches: [main]
     paths: ['china-price-intraday-request.json']
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Deliver current report or preview without Telegram sends
+        type: choice
+        options: [run, verify]
+        default: verify
+  schedule:
+    - cron: '0,15,30,45 12 * * *'
 permissions:
   contents: read
 concurrency:
@@ -22,6 +31,9 @@ jobs:
           persist-credentials: false
       - name: Validate exact dated request
         id: request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_ACTION: ${{ inputs.action }}
         run: |
           python - <<'PY'
           import json,os
@@ -29,11 +41,16 @@ jobs:
           from zoneinfo import ZoneInfo
           with open('china-price-intraday-request.json') as f:value=json.load(f)
           day=datetime.now(ZoneInfo('Europe/Moscow')).date().isoformat()
-          allowed=(value.get('report_date')==day and value.get('mode')=='intraday'
-                   and value.get('action')=='run' and value.get('source_commit')=='b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c'
-                   and isinstance(value.get('nonce'),str) and len(value['nonce'])>=8)
-          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('allowed='+str(allowed).lower()+'\n')
-          print(json.dumps(dict(mode='intraday',report_date=value.get('report_date'),authorized_run=allowed)))
+          automatic=os.environ.get('EVENT_NAME') in ('schedule','workflow_dispatch')
+          action=(os.environ.get('REQUESTED_ACTION') or 'run') if automatic else value.get('action')
+          allowed=(value.get('source_commit')=='b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c'
+                   and action in ('run','verify')
+                   and (automatic or (value.get('report_date')==day and value.get('mode')=='intraday'
+                        and isinstance(value.get('nonce'),str) and len(value['nonce'])>=8)))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              f.write('allowed='+str(allowed).lower()+'\n')
+              f.write('action='+str(action)+'\n')
+          print(json.dumps(dict(mode='intraday',report_date=day,action=action,authorized_run=allowed)))
           PY
       - uses: actions/checkout@v4
         if: steps.request.outputs.allowed == 'true'
@@ -59,10 +76,15 @@ jobs:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          REPORT_ACTION: ${{ steps.request.outputs.action }}
         run: |
           python ../scripts/china_chat_migration.py --root .
           python ../scripts/install_china_order_coverage.py
           cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
           cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
-          python -m china_agent.coverage_worker --mode intraday
+          if [ "$REPORT_ACTION" = verify ]; then
+            python -m china_agent.coverage_worker --mode intraday --verify
+          else
+            python -m china_agent.coverage_worker --mode intraday
+          fi
 

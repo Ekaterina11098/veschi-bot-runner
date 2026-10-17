@@ -1,6 +1,6 @@
 # Текущий пакет обзора
 
-Agent PR30: 79d18d9287148eafebf0f63cd711f8f9761e24e2. Daily07:30MSK pin only; no source calls, no execution. First overview:all11 campaigns + separate new-campaign message; existing209/600 remain records with receipt168. Normal notifications only ready due actions; growth59/67/860RUB are projects, not executable jobs. Step5% rounded down:3→3.15,2.95→3.09.
+Agent PR30: 5990d48bf08663fa279459367405672f24e8c334. Daily07:30MSK pin only; no source calls, no execution. First overview:all11 campaigns + separate new-campaign message; existing209/600 remain records with receipt168. Normal notifications only ready due actions; growth59/67/860RUB are projects, not executable jobs. Step5% rounded down:3→3.15,2.95→3.09.
 
 Completed-yesterday analytics valid entire current Moscow day. Current-window spend is separate:timestamp measured-through,complete all-campaign SKU scope,no duplicate rows. Proposed maximum lag300s,observation interval120s; exceedance=>stop/readback/recovery review.429 respectsRetryAfter,overdue restoration escalates,unknown write=>readback,employee change=>no overwrite,storage failure=>no write. Logical isolated checks do not certify an enabled WB writer or hard expense cap.
 

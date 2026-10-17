@@ -28,10 +28,15 @@ jobs:
           ref: eeafae8428df44608baf5e404d31f656808d7deb
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: runner
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 > "$RUNNER_TEMP/install.log" 2>&1
+      - run: python runner/scripts/china_chat_migration.py --root .
       - name: Verify China daily worker and retained pricing rules
         if: github.event_name == 'push' || inputs.mode == 'verify'
         run: |
@@ -58,3 +63,4 @@ jobs:
           else
             python -m china_agent.daily_report_worker
           fi
+

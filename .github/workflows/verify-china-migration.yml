@@ -1,0 +1,31 @@
+name: Verify isolated China migration and saved questions
+on:
+  push:
+    branches: [china-migration-dialog-20261017]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: |
+          python scripts/install_china_dialog.py
+          python scripts/china_chat_migration.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_migration.py
+          PYTHONPATH=source python -m unittest discover -s source/tests -p test_china_daily_worker.py
+          node scripts/test_china_webhook.mjs

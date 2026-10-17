@@ -1,7 +1,7 @@
 name: Verify isolated China migration and saved questions
 on:
   push:
-    branches: [china-migration-dialog-20261017]
+    branches: [china-migration-dialog-20261017, china-conversion-why-20261017]
 permissions:
   contents: read
 jobs:
@@ -27,5 +27,6 @@ jobs:
           python scripts/china_chat_migration.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_migration.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_explanation.py
           PYTHONPATH=source python -m unittest discover -s source/tests -p test_china_daily_worker.py
           node scripts/test_china_webhook.mjs

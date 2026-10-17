@@ -1,0 +1,41 @@
+name: Read retained growth quantities without source calls
+on:
+  push:
+    branches: [advertising-growth-retained-20261017]
+    paths: ['.github/workflows/advertising-growth-retained.yml']
+permissions: {contents: write}
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Read only retained quantity fields
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python advertising_growth_retained.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-growth-retained
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Preserve ciphertext only
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          for file in "$RUNNER_TEMP"/stock-deploy-proof/*.aes.json; do
+            test -f "$file" || continue
+            cp "$file" "recovery-output/advertising/growth-retained-${{ github.run_id }}.aes.json"
+          done
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/growth-retained-*.aes.json
+          git diff --cached --quiet || git commit -m "Preserve encrypted retained quantity evidence"
+          git push origin HEAD:advertising-growth-retained-20261017

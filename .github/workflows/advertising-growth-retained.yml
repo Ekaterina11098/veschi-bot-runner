@@ -39,3 +39,5 @@ jobs:
           git add recovery-output/advertising/growth-retained-*.aes.json
           git diff --cached --quiet || git commit -m "Preserve encrypted retained quantity evidence"
           git push origin HEAD:advertising-growth-retained-20261017
+
+# Escape literal percent in the parameterized read-only query.

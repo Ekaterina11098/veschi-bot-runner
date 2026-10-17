@@ -7,7 +7,7 @@ try:
         rows=db.execute("""
           WITH runs AS (
             SELECT id,snapshot::jsonb AS j FROM stock_runs
-            WHERE id LIKE 'technical:stock-daily:2026-10-17%'
+            WHERE id LIKE 'technical:stock-daily:2026-10-17%%'
             ORDER BY id DESC LIMIT 8
           )
           SELECT id,j->>'status',coalesce(j->'source',j->'source_snapshot')->'received_at',

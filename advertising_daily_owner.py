@@ -72,7 +72,7 @@ def execute_day(get,put,stages,run_id,now=None,single_writer=False,*,resume_from
  budget_done=next((r for r in state['stages'] if r['name']=='budget_completion' and r.get('status')=='complete'),None)
  if budget_done:
   for r in state['stages']:
-   if r['name']=='budgets' and r.get('status')=='incomplete':r['resolved_by']='budget_completion'
+   if r['name']=='budgets' and r.get('status') in ('incomplete','failed'):r['resolved_by']='budget_completion'
  if latest_source and latest_source.get('status')=='complete':
   for r in state['stages']:
    if r['name']=='source' and r.get('status')=='incomplete':r['resolved_by']='source_gaps'

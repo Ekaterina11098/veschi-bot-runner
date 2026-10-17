@@ -18,6 +18,7 @@ def independent_statuses(state):
  def last(name):return next((r for r in reversed(stages) if r.get('name')==name),{})
  a=last('analysis_and_delivery');v=a.get('result') or {}
  state['analysis_status']='complete' if v.get('analysis_saved') is True or (a.get('status')=='complete' and not v.get('reason')) else ('failed' if a.get('status')=='failed' else 'incomplete')
+ if state.get('failed_stage')=='analysis_and_delivery' and state['analysis_status']!='complete':state['analysis_status']='failed'
  state['notification_status']=('incomplete' if v.get('delivery_unconfirmed_count',0) else ('complete' if state['analysis_status']=='complete' else 'not_evaluated'))
  b=last('budget_completion') or last('budgets')
  state['budget_status']='complete' if b.get('status')=='complete' else ('failed' if b.get('status')=='failed' else 'pending')

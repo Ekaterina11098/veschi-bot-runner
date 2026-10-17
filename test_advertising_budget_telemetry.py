@@ -68,6 +68,12 @@ class ResumeTests(unittest.TestCase):
   stages={n:lambda:{'business_status':'complete'} for n in self.names};stages.update(budgets=fail,budget_completion=fail,analysis_and_delivery=analyze)
   r=execute(get,None,stages,'fresh:1',NOW,single_writer=True,cas=cas)
   self.assertEqual(called,['analysis']);self.assertEqual(r['analysis_status'],'complete');self.assertEqual(r['notification_status'],'complete');self.assertEqual(r['budget_status'],'failed');self.assertEqual(r['status'],'incomplete')
+ def test_confirmed_completion_resolves_earlier_budget_failure(self):
+  self.state['stages'][3]['status']='failed'
+  r=self.runit();self.assertEqual(r['budget_status'],'complete');self.assertEqual(r['status'],'complete');self.assertEqual(r['stages'][3]['resolved_by'],'budget_completion')
+ def test_failed_analysis_status_is_not_only_incomplete(self):
+  r=independent_statuses({'stages':[],'failed_stage':'analysis_and_delivery','status':'failed'})
+  self.assertEqual(r['analysis_status'],'failed');self.assertEqual(r['notification_status'],'not_evaluated')
  def test_repeat_without_explicit_resume_does_not_run(self):
   r=execute(lambda k:self.state,None,{},'new',NOW,single_writer=True,cas=lambda *a:False)
   self.assertTrue(r['skipped'])

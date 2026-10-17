@@ -50,7 +50,7 @@ try:
    c.save('advertising_budget_pending',queue,status='complete' if queue['complete'] else 'partial')
    got=c.latest('advertising_budget_pending',status=None)
    if not got or got.get('payload')!=queue:raise RuntimeError('Budget pending queue full readback missing')
-   report['pending_queue']=queue
+   report['pending_queue']=queue;report['complete']=queue['complete']
   for iteration in range(max_requests):
    c.NOW=datetime.now(timezone.utc);c.TODAY=c.NOW.astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date()
    old=c.latest('advertising_campaign_budgets',status=None) or {};payload=old.get('payload') or {}

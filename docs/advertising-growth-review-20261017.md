@@ -1,9 +1,11 @@
-# Текущий пакет обзора
+# Targeted revision, not approved for merge/send
 
-Agent PR30: 5990d48bf08663fa279459367405672f24e8c334. Daily07:30MSK pin only; no source calls, no execution. First overview:all11 campaigns + separate new-campaign message; existing209/600 remain records with receipt168. Normal notifications only ready due actions; growth59/67/860RUB are projects, not executable jobs. Step5% rounded down:3→3.15,2.95→3.09.
+AgentPR30:966b1e411d07cf4d351cc489870ec91503986da3. Existing07:30MSK schedule/concurrency/100MB/execution=false unchanged. No firstsend or test job scheduled.
 
-Completed-yesterday analytics valid entire current Moscow day. Current-window spend is separate:timestamp measured-through,complete all-campaign SKU scope,no duplicate rows. Proposed maximum lag300s,observation interval120s; exceedance=>stop/readback/recovery review.429 respectsRetryAfter,overdue restoration escalates,unknown write=>readback,employee change=>no overwrite,storage failure=>no write. Logical isolated checks do not certify an enabled WB writer or hard expense cap.
+590:365clicks/21carts/0directorders,1077RUB. Priority bounded-risk proposal:exclude only590from39483230for24h,preserve141. Not proof of causal ad loss.141inthis campaign12RUB/4clicks is small exposure,no task;expensiveCPM separate. Firstreview differentiates material exposure,small observations and missingrows;no risks0 label on missingdata.
 
-First send is disabled by default and not called by dailycron. approved_first_campaign_review requires exact hashes/period/registered owner/chat; per-part uncertain/confirmed/RetryAfter outbox separate from recommendation records. No consent means no send or ledger write. Unknown Telegram outcome not resent. The PR does not start first send or today's analysis.
+Exact-period all-channel SKU profit displayed after financial advertising/COGS/taxreserve,preliminary. OneSKU index,no sum acrosscampaigns,no double deduction of financial+operationalads. Beforeads adds back only SAMEfinancial-version advertising. Runtime revisions win over oldstatic evidence;otherperiod/missingcomponents unknownnot0.209/600canonicalrecords/receipt168 untouched.
 
-Deployment and first overview require one explicit owner approval of this final reviewed package/text hashes. Tests/stock/reviews/Orange/forecasts unchanged. Agent PR28 and runnerPR6 excluded.
+5minute freshness and120s polling withdrawn,not agreed. Actualcollect_ip END=TODAY-1 anddailycache cannot verify live arbitrary test-window expenditure. Sharedcooldown/RetryAfter provides no data-freshnessSLA. Sourcecapability=false,maxlag=None. No liveprobe/newfullcollection. Futuretests remainblockeduntil verified source/window/lag/control recovery approved;daily recommendations stillvalid wholeMoscowday on completed-yesterday data.
+
+Only changedpreview blocks to owner;masssendnotapproved. Orange/paused685/stock/reviews/schedules/forecasts unchanged.

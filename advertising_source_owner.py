@@ -54,6 +54,7 @@ class SourceTraffic:
    rpc=kwargs.get('json') or {};p=rpc.get('params') or {}
    return 'mpstats:'+str(p.get('name') or rpc.get('method'))
   table=path.rsplit('/',1)[-1];params=kwargs.get('params') or {};body=kwargs.get('json') or {}
+  if not isinstance(body,dict):body={}
   detail=body.get('source') or params.get('source') or ''
   key=str(params.get('cache_key') or body.get('cache_key') or '')
   if table=='telegram_api_cache':

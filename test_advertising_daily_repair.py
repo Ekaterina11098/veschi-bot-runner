@@ -62,6 +62,10 @@ class SourceTests(unittest.TestCase):
   kw={'json':{'params':{'name':'lk_wb_cabinets','arguments':{'action':'reset'}}}}
   t.before('mcp.mpstats.io',kw);t.before('mcp.mpstats.io',kw)
   with self.assertRaises(RuntimeError):t.before('mcp.mpstats.io',kw)
+ def test_batch_snapshot_mirror_body_safe(self):
+  t=self.ns['SourceTraffic']()
+  label=t.label('db.example','POST','/rest/v1/telegram_api_cache',{'json':[{'cache_key':'analytics:payload:1','payload':{}}]},'db.example')
+  self.assertEqual(label,'supabase:POST:telegram_api_cache:other_cache')
  def test_decoded_body_distinct_wire_header(self):
   t=self.ns['SourceTraffic']()
   t.observed('supabase:GET:cache',SimpleNamespace(content=b'x'*1000,headers={'Content-Length':'100','Content-Encoding':'gzip'}))

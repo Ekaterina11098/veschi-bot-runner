@@ -63,7 +63,7 @@ def build(worker):
    def extra(call,checks,known):return execute_reads(call,checks,known,pending,{},persist,max_requests=len(pending))
    result=discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=extra)
    if set(missing)-set(card_tables):raise RuntimeError('Daily missing card evidence unavailable')
- needed=set()
+ needed=set(all_days(worker.day-timedelta(days=4),worker.day-timedelta(days=1)))
  for pair in pairs.values():
   if pair:
    for a,b in pair:needed.update(all_days(a,b))
@@ -157,4 +157,38 @@ def render(value):
  'Удержания артикула: наблюдавшиеся по его продажам за период, при отсутствии продаж — комиссия из MPStats; одинаковые условия до/после. Дополнительный возврат продавцу и нераспределённые расходы не включены.',
  'Отсутствие истории конверсии выделяется явно, нулём не заменяется. День обнаружения и сегодняшний день исключены. Новая корректировка начинает отсчёт заново.',
  'Рекомендация возврата цены — после четырёх полных дней и проверки связки. Все изменения цены согласовываем.']
+ return '\n'.join(lines)
+
+def render_candidates(worker):
+ """Keep first-raise selection on the same verified WB order days as control."""
+ from china_agent import demand
+ from china_agent.wb_order_gaps import counts
+ from business_agents.data import Data
+ prices=worker.get('china_agent:prices:v1') or {};state=worker.get(demand.STATE_KEY) or {}
+ rows=prices.get('rows',[]);data=Data('china',lambda t,p:worker.db('GET',t,params=p))
+ targets={str(r['nmID']):r['vendorCode'] for r in rows if not data.excluded(r.get('vendorCode',''))}
+ wanted=all_days(worker.day-timedelta(days=4),worker.day-timedelta(days=1));daily={}
+ for day in wanted:
+  receipt=worker.get('china_agent:wb_order_gaps:day:'+str(day)) or {}
+  if receipt.get('status')!='complete' or receipt.get('seller_identity_verified') is not True:raise RuntimeError('Candidate WB day incomplete')
+  daily[str(day)]=counts(receipt['rows'],day,targets)
+ initial=[]
+ for price in rows:
+  nm=str(price['nmID'])
+  if nm not in targets:continue
+  entry=state.get('price_history',{}).get(nm,{})
+  values=[daily[str(d)][nm]['orders'] for d in wanted]
+  if not entry.get('increase') and not entry.get('last_price_change') and all(v>=1 for v in values):
+   proposal=demand.offer(price)
+   if proposal:initial.append((targets[nm],nm,values,proposal))
+ lower=[]
+ for nm,result in (state.get('latest',{}).get('results') or {}).items():
+  before=result.get('conversion_before');after=result.get('conversion_after')
+  if nm in targets and result.get('full_days',0)>=4 and before is not None and after is not None and after<before:
+   lower.append((targets[nm],nm,[daily[str(d)][nm]['orders'] for d in wanted],before,after))
+ lines=['Китай • кандидаты на повышение и снижение • '+str(worker.day),'Период: '+str(wanted[0])+'–'+str(wanted[-1])+' — четыре полных дня.','Заказы сверены с WB, отмены и дубли исключены. Каталог: '+str(len(targets))+' товаров.','', 'ПЕРВОЕ ПОВЫШЕНИЕ +10%: '+str(len(initial))]
+ for article,nm,values,p in sorted(initial):lines+=['• '+article+' / nmID '+nm+': заказы '+('/'.join(map(str,values)))+'; цена после скидки '+f"{p['current_cny']:g}"+' → '+f"{p['target_cny']:g}"+' ¥.']
+ lines+=['','ПОВТОРНОЕ ПОВЫШЕНИЕ: решение только по ожидаемой прибыли и конверсии в отдельном контроле изменений цены. Старую прибыль по дате продажи не используем.','','ПРОВЕРКА ВОЗМОЖНОГО СНИЖЕНИЯ: '+str(len(lower))]
+ for article,nm,values,b,a in sorted(lower):lines+=['• '+article+' / nmID '+nm+': заказы '+('/'.join(map(str,values)))+'; конверсия '+f'{b:.1%}'+' → '+f'{a:.1%}'+'. Требуется проверка связки; подтверждённого поручения снизить цену нет.']
+ lines+=['Это предварительный отбор снижения по конверсии; ожидаемая прибыль и прочие причины проверяются до решения. Конверсия — MPStats, счётчик заказов воронки отличается от статистики WB.','Все изменения цены согласовываем.']
  return '\n'.join(lines)

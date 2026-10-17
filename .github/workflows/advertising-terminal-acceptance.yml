@@ -1,0 +1,43 @@
+name: Terminal acceptance retained data GET only
+on:
+  push:
+    branches: [advertising-terminal-acceptance-20261017]
+    paths: ['.github/workflows/advertising-terminal-acceptance.yml']
+permissions: {contents: write}
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 6eb5f990aecfa1a92909169ffd76f05ac6da469d
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install simplejson==3.20.2 requests==2.32.5 python-dotenv cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: python advertising_terminal_acceptance.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-terminal-acceptance
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Preserve owner cipher only
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          cp "$RUNNER_TEMP/stock-deploy-proof/terminal-acceptance.aes.json" "recovery-output/advertising/terminal-acceptance-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/
+          git commit -m "Preserve read-only full retained manifest preflight cipher"
+          git push origin HEAD:advertising-terminal-acceptance-20261017

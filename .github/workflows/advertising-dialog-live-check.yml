@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    # Activate exact verified corrected dialogue source only.
+    if: false # One-off verification and corrected dialogue activation completed.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

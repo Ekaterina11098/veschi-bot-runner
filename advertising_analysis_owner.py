@@ -124,4 +124,8 @@ finally:
  preview['final_decision_state']=report.get('final_decision_state')
  preview['regression_tail']=(report.get('targeted_regressions') or {}).get('log','')[-500:]
  seal('advertising-preview',preview)
- print(json.dumps({'analysis_saved':bool(report.get('analysis')),'error_type':report.get('error',{}).get('type'),'wb_writes':0,'telegram_calls':report.get('telegram_calls',0)}))
+ delivery_failures=(report.get('delivery') or {}).get('failures') or []
+ business_status='failed' if report.get('error') else ('incomplete' if not report.get('analysis') or delivery_failures else 'complete')
+ print(json.dumps({'analysis_saved':bool(report.get('analysis')),'business_status':business_status,
+  'reason':report.get('error',{}).get('type') or ('delivery_unconfirmed' if delivery_failures else ('analysis_not_saved' if not report.get('analysis') else None)),
+  'delivery_unconfirmed_count':len(delivery_failures),'error_type':report.get('error',{}).get('type'),'wb_writes':0,'telegram_calls':report.get('telegram_calls',0)}))

@@ -129,6 +129,8 @@ def stage(filename,timeout,single_step=False):
    if isinstance(value,dict):records.append(value)
   if not records:raise RuntimeError('Stage durable summary missing')
   value=records[-1]
+  if filename=='advertising_budgets_owner.py' and value.get('complete') is False:
+   value.update(business_status='incomplete',reason='budget_evidence_pending')
   preserve_checkpoint(filename,value)
   if p.returncode or value.get('error_type'):
    if filename=='advertising_budgets_owner.py' and value['error_type'] in ('ReadTimeout','TimeoutError','ExplicitRateLimit'):raise TimeoutError('Budget evidence remains unknown')

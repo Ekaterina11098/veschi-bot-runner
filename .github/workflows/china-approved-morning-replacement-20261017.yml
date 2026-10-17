@@ -27,3 +27,5 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
         run: python scripts/china_approved_corrected_reports_20261017.py
+
+# Retry after fixing required private receipt expiry; previous run made no Telegram calls.

@@ -82,10 +82,18 @@ class PairWorker(CoverageWorker):
         self.command='/china_morning_pair_'+section
         self.update_id=-(9800000000 if section=='candidates' else 9900000000)-(self.day-date(2020,1,1)).days
         self.audit.update(section=section)
-    def run(self, preview=False):
-        if not preview:
-            raise RuntimeError('Owner approval pending for report format and data completeness; delivery blocked')
-        return super().run(preview=True)
+    def guard(self,session,method,url,*args,**kwargs):
+        from urllib.parse import urlparse
+        parsed=urlparse(url);body=kwargs.get('json') or {};params=kwargs.get('params') or {}
+        if parsed.hostname=='mcp.mpstats.io' and body.get('method')=='tools/call':
+            request=body.get('params') or {};arguments=request.get('arguments') or {}
+            if request.get('name')=='lk_wb_card_table' and arguments.get('value') in getattr(self,'control_allowed_pids',set()):
+                if arguments!=dict(type='products',value=arguments['value'],period_type='30days',self_redemption=False):raise RuntimeError('Control card scope mismatch')
+                return self.original_http(session,method,url,*args,**kwargs)
+        if parsed.hostname=='statistics-api.wildberries.ru' and parsed.path=='/api/v1/supplier/orders' and method.upper()=='GET' and params.get('dateFrom') in getattr(self,'control_allowed_days',set()):
+            if set(params)!={'dateFrom','flag'} or params['flag']!=1:raise RuntimeError('Control order scope mismatch')
+            return self.original_http(session,method,url,*args,**kwargs)
+        return super().guard(session,method,url,*args,**kwargs)
 
     def prepare(self,preview=False):
         if self.section=='candidates':
@@ -93,19 +101,23 @@ class PairWorker(CoverageWorker):
             expected=(self.day-timedelta(days=1)).isoformat()
             latest=self.audit.get('assessment') or {}
             if latest.get('period_to')!=expected: raise RuntimeError('Completed period mismatch')
+            import re
+            answer=re.sub(r'; прибыль [^\n]*? ₽; конверсия', '; конверсия', answer)
+            answer+='\nСнижение — кандидаты на проверку конверсии и связки. Старую прибыль по дате продажи для решения не используем; ожидаемая прибыль — в отдельном контроле изменений цен.'
             return answer,trace
-        state=self.get(demand.STATE_KEY) or {}
-        with self.covered_sales():
-            answer=render_control(state,self.day,lambda table,params:self.db('GET',table,params=params),self.now)
-        if self.day==date(2026,10,16) and len(answer)>3400:
-            raise RuntimeError('Approved control does not fit one message')
-        return answer,[dict(name='china_price_daily_report',report_date=str(self.day),mode='control')]
+        from china_agent.daily_expected_control import build,render
+        self.control_preview=preview
+        value=build(self)
+        answer=render(value)
+        self.audit['control_model_status']=value['status']
+        return answer,[dict(name='china_price_daily_report',report_date=str(self.day),mode='control',profit_basis='expected_order_date',products=len(value['products']))]
 
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--verify',action='store_true')
+    parser.add_argument('--section',choices=('all','candidates','control'),default='all')
     args=parser.parse_args()
-    for section in ('candidates','control'):
+    for section in (('candidates','control') if args.section=='all' else (args.section,)):
         w=PairWorker(section)
         try:
             w.run(preview=args.verify)

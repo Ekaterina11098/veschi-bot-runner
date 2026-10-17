@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 9d424eca219c7f2a9f23433e4da6a2bfd969570b
+          ref: a1d6c1017825e6648c2e42f1b35ba7f8c9edbf08
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -60,7 +60,7 @@ jobs:
           path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
           retention-days: 90
       - name: Preserve ciphertext only
-        if: always()
+        if: success()
         run: |
           mkdir -p recovery-output/advertising
           for file in "$RUNNER_TEMP"/stock-deploy-proof/*.aes.json; do

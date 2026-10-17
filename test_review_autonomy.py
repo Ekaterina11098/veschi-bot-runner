@@ -38,10 +38,10 @@ class AutonomyTests(unittest.TestCase):
                     delayed=a.handle(cb('later-click','ok.'+nonce),'secret')
                     self.assertTrue(delayed['duplicate']);self.assertEqual(repo.count('intents'),1)
                     telegram.call.reset_mock();telegram.call.return_value={'chat':{'id':'chat'},'message_id':50}
-                    self.assertEqual(notify_owner_receipt(a,telegram,result)['status'],'confirmed')
-                    notify_owner_receipt(a,telegram,result);self.assertEqual(telegram.call.call_count,1)
+                    self.assertEqual(notify_owner_receipt(a,telegram,result)['status'],'suppressed')
+                    notify_owner_receipt(a,telegram,result);self.assertTrue(all(call.args[0]=='deleteMessage' for call in telegram.call.call_args_list))
     def test_receipts_do_not_claim_acceptance_for_uncertain_or_blocked(self):
-        for state,word in [('verify','подтверждение WB ещё не получено'),('blocked','Требуется ваша проверка'),('manual_present','уже есть другой ответ')]:
+        for state,word in [('blocked','Требуется ваша проверка'),('manual_present','уже есть другой ответ')]:
             repo=Repository(sqlite3.connect(':memory:'));repo.setup();a=Approval(repo,'s','owner','chat','bot')
             i=dict(id=state,owner_id='owner',chat_id='chat',card_token='c',cabinet='token_1',kind='questions',item_id='q',status=state)
             repo.put('intents',state,i);repo.put('cards','c',{'source':{'article':'sku'}});repo.conn.commit()

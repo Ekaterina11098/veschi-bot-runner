@@ -21,6 +21,12 @@ gate=CollectionGate(Path(os.environ['RUNNER_TEMP'])/'ads-storage-health.json',ma
 def digest(v):
  import hashlib
  return hashlib.sha256(json.dumps(v,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+def cached_bidder_map(database):
+ # Only the mapping is needed here. Never download/replay the historical request queue.
+ rows=database('GET','telegram_api_cache',params={'cache_key':'eq.mpstats:gap_requests:v1',
+  'select':'bidder_map:payload->bidder_map','limit':1}) or []
+ return (rows[0].get('bidder_map') or {}) if rows else {}
+
 def restore_retained_source(manifest,read,saved,report,now):
  """Repair derived caches from exact receipts, never replay observer ingestion."""
  if manifest.get('day')!=str(now.astimezone(ZoneInfo('Europe/Moscow')).date()) or manifest.get('original_run_id')!='39004453781':
@@ -224,8 +230,8 @@ try:
   else:
    caps=read('analytics_snapshots',dict(source='eq.mpstats_connection',cabinet='eq.shared',select='payload->0->tools',order='id.desc',limit=1))
    catalog=caps[0].get('tools') if caps else None
-   bidder=copy.deepcopy(BIDDER);state=get('mpstats:gap_requests:v1') or {}
-   bidder['token_2']['campaign_ids']=state.get('bidder_map',{}).get('token_2',{}).get('campaign_ids',[])
+   bidder=copy.deepcopy(BIDDER);mapping_only=cached_bidder_map(database)
+   bidder['token_2']['campaign_ids']=mapping_only.get('token_2',{}).get('campaign_ids',[])
    requests_plan=plan_order_checks(order_monitor,now,max_requests=4)
    report['planned_order_outcome_checks']=copy.deepcopy(requests_plan)
    refreshed_finance_days=set()
@@ -373,7 +379,7 @@ try:
      active=[r['id'] for r in rows if (r.get('wb_id') in wbactive if wbactive else r.get('status_id')==9)]
      report['full_catalog_count']=len(rows)
      more=[]
-     retained_days=read('analytics_snapshots',{'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','payload->0->>report':'eq.days','select':'id,payload,collected_at','order':'id.desc','limit':1000})
+     retained_days=read('analytics_snapshots',{'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','payload->0->>report':'eq.days','period_from':'lte.'+str(end),'period_to':'gte.'+str(start),'select':'id,payload,collected_at','order':'id.desc','limit':1000})
      report['campaign_daily_gaps']={}
      for cid in active:
       for first,last in campaign_day_gaps(retained_days,cid,str(start),str(end),daily_refresh_dates(retained_days,cid,str(start),str(end),now)):

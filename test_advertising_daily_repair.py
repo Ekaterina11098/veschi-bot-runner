@@ -29,7 +29,7 @@ class SourceTests(unittest.TestCase):
     if not kw.get('ignore_existing') or key not in outer.rows:outer.rows[key]=copy.deepcopy(body)
     return None
    raise AssertionError(method)
-  self.ns=functions(source,{'get','put','flush_derived_caches','digest','SourceTraffic','restore_retained_source'},
+  self.ns=functions(source,{'get','put','flush_derived_caches','digest','SourceTraffic','restore_retained_source','cached_bidder_map'},
    {'copy':copy,'json':json,'datetime':datetime,'timedelta':timedelta,'ZoneInfo':ZoneInfo,'timezone':timezone,'now':NOW,'database':db,
     'gate':SimpleNamespace(fail=lambda:None),'DEFERRED_CACHES':{'mpstats:agent_reports:token_2:v1','mpstats:funnel_periods:token_2:v1'},
     'cache_memo':{},'cache_revisions':{},'cache_dirty':set()})
@@ -62,6 +62,13 @@ class SourceTests(unittest.TestCase):
   kw={'json':{'params':{'name':'lk_wb_cabinets','arguments':{'action':'reset'}}}}
   t.before('mcp.mpstats.io',kw);t.before('mcp.mpstats.io',kw)
   with self.assertRaises(RuntimeError):t.before('mcp.mpstats.io',kw)
+ def test_only_mapping_projected_not_old_request_queue(self):
+  seen=[]
+  def db(method,table,**kw):
+   seen.append(kw);return [{'bidder_map':{'token_2':{'campaign_ids':[1]}}}]
+  value=self.ns['cached_bidder_map'](db)
+  self.assertEqual(value,{'token_2':{'campaign_ids':[1]}})
+  self.assertEqual(seen[0]['params']['select'],'bidder_map:payload->bidder_map')
  def test_batch_snapshot_mirror_body_safe(self):
   t=self.ns['SourceTraffic']()
   label=t.label('db.example','POST','/rest/v1/telegram_api_cache',{'json':[{'cache_key':'analytics:payload:1','payload':{}}]},'db.example')

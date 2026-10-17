@@ -32,4 +32,4 @@ jobs:
           python -m unittest discover -s tests -p 'test_ip_daily_recommendations.py'
           python -m unittest discover -s tests -p 'test_ip_delivery_boundary.py'
 
-# Final safe metric labelling covers batched shared snapshot-cache writes.
+# Verify bounded projections: mapping only, and overlapping campaign-day history only.

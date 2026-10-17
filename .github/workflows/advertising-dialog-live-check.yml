@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    # Preserve approved daily address bindings after verified group migration.
+    # One read-only receipt verification; never processes or sends jobs.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

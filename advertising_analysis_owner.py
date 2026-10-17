@@ -2,6 +2,13 @@
 import os,sys,json,subprocess,contextlib,io
 from pathlib import Path
 from stock_deploy_support import seal,error
+def analysis_business_summary(report):
+ failures=(report.get('delivery') or {}).get('failures') or []
+ status='failed' if report.get('error') else ('incomplete' if not report.get('analysis') or failures else 'complete')
+ return dict(analysis_saved=bool(report.get('analysis')),business_status=status,
+  reason=(report.get('error') or {}).get('type') or ('delivery_unconfirmed' if failures else ('analysis_not_saved' if not report.get('analysis') else None)),
+  delivery_unconfirmed_count=len(failures),error_type=(report.get('error') or {}).get('type'),wb_writes=0,telegram_calls=report.get('telegram_calls',0))
+
 root=Path(__file__).parent;source=root/'combined'
 report={'wb_writes':0,'telegram_calls':0,'source_calls':0,'production_decision_state_modified':False}
 hidden=io.StringIO()
@@ -124,4 +131,4 @@ finally:
  preview['final_decision_state']=report.get('final_decision_state')
  preview['regression_tail']=(report.get('targeted_regressions') or {}).get('log','')[-500:]
  seal('advertising-preview',preview)
- print(json.dumps({'analysis_saved':bool(report.get('analysis')),'error_type':report.get('error',{}).get('type'),'wb_writes':0,'telegram_calls':report.get('telegram_calls',0)}))
+ print(json.dumps(analysis_business_summary(report)))

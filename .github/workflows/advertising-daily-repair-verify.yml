@@ -1,0 +1,35 @@
+name: Verify prepared daily source repair offline
+on:
+  push:
+    branches: [prepare-daily-source-repair-20261017]
+    paths: ['.github/workflows/advertising-daily-repair-verify.yml']
+permissions: {contents: read}
+concurrency:
+  group: advertising-retained-cache-diagnostic
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 6eb5f990aecfa1a92909169ffd76f05ac6da469d
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install simplejson==3.20.2 requests==2.32.5 python-dotenv cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Compile prepared repair only, no production credentials
+        run: |
+          python -m py_compile advertising_source_owner.py advertising_daily_owner.py advertising_analysis_owner.py
+          python -m unittest test_advertising_daily_repair -v
+          cd private-source
+          python -m unittest discover -s tests -p 'test_ip_daily_recommendations.py'
+          python -m unittest discover -s tests -p 'test_ip_delivery_boundary.py'
+
+# Verify bounded projections: mapping only, and overlapping campaign-day history only.

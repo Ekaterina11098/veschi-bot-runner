@@ -32,7 +32,7 @@ class Watches(unittest.TestCase):
     def test_bounds(self):
         for text in ('в 25:00','последние 15 дней','в ИП в 12:00'):
             with self.subTest(text=text),self.assertRaises(ValueError):parameters(text)
-    def test_questions_do_not_create(self):self.assertEqual(intent('Как отслеживать конверсию ежедневно?'),'help')
+    def test_questions_do_not_create(self):self.assertIsNone(intent('Как отслеживать конверсию ежедневно?'))
     def test_unrelated_ignored(self):self.assertIsNone(intent('Покажи продажи за 5 дней'))
     def test_next_moscow_day(self):self.assertEqual(next_due('12:00',NOW),'2026-10-18T09:00:00+00:00')
     def test_next_same_day(self):self.assertEqual(next_due('23:00',NOW),'2026-10-17T20:00:00+00:00')

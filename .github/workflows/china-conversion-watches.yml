@@ -1,0 +1,63 @@
+name: China owner conversion watches
+on:
+  push:
+    branches: [main]
+    paths: ['china-conversion-watches-request.json']
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Process owner commands and due watches, or verify without sending
+        type: choice
+        options: [run, verify]
+        default: run
+  schedule:
+    - cron: '*/5 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  watches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline watch regressions without credentials
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p test_conversion_watches.py
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - name: Install pinned read transport
+        run: pip install requests==2.32.5 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
+      - name: Process owner watch commands and due conversion reports
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTION: ${{ inputs.action }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          PYTHONPATH: source
+        run: |
+          MODE="$ACTION"
+          if [ "$EVENT_NAME" = push ]; then
+            MODE=$(python -c "import json;print(json.load(open('china-conversion-watches-request.json'))['action'])")
+          fi
+          if [ "$MODE" = verify ]; then
+            python scripts/conversion_watches.py --verify
+          else
+            python scripts/conversion_watches.py
+          fi

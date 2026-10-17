@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    if: false # Deeper follow-up and actual Telegram Reply verification completed.
+    # One read-only report destination audit; no reports are executed.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -20,13 +20,12 @@ jobs:
           path: private-source
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: pip install -r private-source/requirements.txt 'psycopg[binary]==3.2.10' cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
       - run: python advertising_dialog_activate_20261017.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
           ADVERTISING_DIALOG_SOURCE_SHA: a0d222353b1fb120fb66a114f64f463e2f936a28
       - name: Preserve encrypted activation result only
         if: always()

@@ -1,0 +1,57 @@
+import sqlite3,sys,unittest,copy
+from pathlib import Path
+from unittest.mock import Mock
+sys.path.insert(0,str(Path(__file__).parent/'review-approval-preparation'))
+from review_telegram_approval import Approval,Repository,identity,sha
+from review_approval_cleanup import cleanup_completed
+from review_approval_card_delivery import notify_owner_receipt
+class CleanupTests(unittest.TestCase):
+    def setup_case(self,state='confirmed',owner='owner',cabinet='token_1',kind='feedbacks'):
+        repo=Repository(sqlite3.connect(':memory:'));repo.setup()
+        a=Approval(repo,'s','owner','chat','bot',clock=lambda:1000)
+        ref=identity(cabinet,kind,'id')
+        card=dict(ref=ref,cabinet=cabinet,kind=kind,item_id='id',version='v',hashes=[sha('answer')],message_id=10,source={'article':'sku'})
+        i=dict(card, id='i',card_token='c',answer='answer',answer_sha256=sha('answer'),actual_answer_sha256=sha('answer'),owner_id=owner,chat_id='chat',status=state)
+        repo.put('cards','c',card);repo.put('items',ref,{'token':'c','status':'sent' if state=='confirmed' else 'approved'})
+        repo.put('intents','i',i)
+        repo.put('cards','unprocessed',dict(card,ref=identity(cabinet,kind,'other'),message_id=99))
+        for n,stage in enumerate(('approved','verifying','accepted','public'),20):
+            repo.put('events','owner-receipt:i:'+stage,dict(intent_id='i',stage=stage,status='confirmed',message_id=n))
+        repo.conn.commit()
+        tg=Mock();tg.call.return_value=True
+        return a,tg,i
+    def test_completed_all_cabinets_and_types_delete_only_tracked_bot_messages(self):
+        for c in ('token_1','token_2','token_3'):
+            for k in ('feedbacks','questions'):
+                a,tg,i=self.setup_case(cabinet=c,kind=k)
+                before=copy.deepcopy(a.repo.get('intents','i'))
+                result=cleanup_completed(a,tg)
+                self.assertEqual(result['deleted'],5)
+                self.assertEqual({call.args[1]['message_id'] for call in tg.call.call_args_list},{10,20,21,22,23})
+                self.assertTrue(all(call.args[0]=='deleteMessage' for call in tg.call.call_args_list))
+                self.assertEqual(a.repo.get('intents','i'),before)
+                self.assertEqual(a.repo.get('cards','unprocessed')['message_id'],99)
+                cleanup_completed(a,tg);self.assertEqual(tg.call.call_count,5)
+    def test_pending_card_and_error_remain_but_old_routine_statuses_removed(self):
+        a,tg,i=self.setup_case(state='verify')
+        a.repo.put('events','owner-problem:i',dict(intent_id='i',message_id=50,status='confirmed'));a.repo.conn.commit()
+        cleanup_completed(a,tg)
+        self.assertEqual({call.args[1]['message_id'] for call in tg.call.call_args_list},{20,21,22,23})
+    def test_foreign_owner_and_bad_checksum_never_delete(self):
+        a,tg,i=self.setup_case(owner='other');cleanup_completed(a,tg);tg.call.assert_not_called()
+        a,tg,i=self.setup_case();i['answer_sha256']='wrong';a.repo.put('intents','i',i);a.repo.conn.commit()
+        cleanup_completed(a,tg);tg.call.assert_not_called()
+    def test_normal_receipts_suppressed_errors_still_delivered(self):
+        for state in ('awaiting_preflight','verify','confirmed'):
+            a,tg,i=self.setup_case(state=state)
+            self.assertEqual(notify_owner_receipt(a,tg,i)['status'],'suppressed')
+            self.assertTrue(all(call.args[0]=='deleteMessage' for call in tg.call.call_args_list))
+        a,tg,i=self.setup_case(state='blocked');tg.call.return_value={'chat':{'id':'chat'},'message_id':60}
+        self.assertEqual(notify_owner_receipt(a,tg,i)['status'],'confirmed')
+        self.assertEqual(tg.call.call_args.args[0],'notifyOwnerReviewReceipt')
+    def test_deletion_failure_does_not_change_wb_state_or_loop(self):
+        a,tg,i=self.setup_case();tg.call.side_effect=TimeoutError()
+        self.assertEqual(cleanup_completed(a,tg)['unconfirmed'],5)
+        cleanup_completed(a,tg);self.assertEqual(tg.call.call_count,5)
+        self.assertEqual(a.repo.get('intents','i')['status'],'confirmed')
+if __name__=='__main__':unittest.main()

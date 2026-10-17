@@ -1,7 +1,7 @@
 {
   "enabled": false,
   "day": "2026-10-17",
-  "from_run_id": "39014867561:1",
+  "from_run_id": "39015462359:1",
   "private_source_sha": "6eb5f990aecfa1a92909169ffd76f05ac6da469d",
   "retained_source_manifest": {
     "day": "2026-10-17",
@@ -19,5 +19,6 @@
     ]
   },
   "wb_mutations": false,
-  "forecasts": false
+  "forecasts": false,
+  "mode": "budgets_only"
 }

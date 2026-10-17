@@ -1,0 +1,33 @@
+name: Verify independent completion and budget evidence without network and cumulative telemetry offline
+on:
+  push:
+    branches: [fix-advertising-budget-telemetry-20261017]
+    paths: ['.github/workflows/advertising-budget-telemetry-verify.yml']
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 6eb5f990aecfa1a92909169ffd76f05ac6da469d
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - run: |
+          python -m py_compile advertising_daily_owner.py advertising_budgets_owner.py advertising_daily_runtime_guard.py
+          python - <<'PY'
+          import socket,unittest
+          from unittest.mock import patch
+          suite=unittest.defaultTestLoader.loadTestsFromNames(['test_advertising_daily_repair','test_advertising_budget_telemetry'])
+          with patch.object(socket.socket,'connect',side_effect=AssertionError('Offline tests cannot access network')):
+              result=unittest.TextTestRunner(verbosity=2).run(suite)
+          raise SystemExit(0 if result.wasSuccessful() else 1)
+          PY

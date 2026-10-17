@@ -82,6 +82,11 @@ class PairWorker(CoverageWorker):
         self.command='/china_morning_pair_'+section
         self.update_id=-(9800000000 if section=='candidates' else 9900000000)-(self.day-date(2020,1,1)).days
         self.audit.update(section=section)
+    def run(self, preview=False):
+        if not preview:
+            raise RuntimeError('Owner approval pending for report format and data completeness; delivery blocked')
+        return super().run(preview=True)
+
     def prepare(self,preview=False):
         if self.section=='candidates':
             answer,trace=super().prepare(preview)
@@ -113,3 +118,4 @@ def main():
             import requests
             requests.sessions.Session.request=w.original_http
 if __name__=='__main__':main()
+

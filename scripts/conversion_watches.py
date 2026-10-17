@@ -302,6 +302,28 @@ class Worker:
         from business_agents.data import Data
         cfg=self.config()
         if not question_allowed(job,cfg):raise PermissionError('Question scope mismatch')
+        if re.search(r'конверс|сохран[её]н',job['request_text'],re.I) and re.search(r'\d+-[A-Za-z]',job['request_text']):
+            try:
+                nm,article=self.resolve(job['request_text'])
+                dates=re.findall(r'\b\d{4}-\d{2}-\d{2}\b',job['request_text'])
+                _,days=parameters(job['request_text'])
+                value=self.conversion_history(article,date_from=dates[0] if len(dates)==2 else None,date_to=dates[1] if len(dates)==2 else None,days=days or 5)
+                lines=['Китай · '+article+' · '+value['date_from']+'–'+value['date_to']+' · полные дни МСК',
+                       'Сохранённая дневная воронка MPStats (заказы воронки / просмотры карточки):']
+                by_day={r['date']:r for r in value['daily'] if 'orders' in r and 'views' in r}
+                first=datetime.fromisoformat(value['date_from']).date();last=datetime.fromisoformat(value['date_to']).date()
+                for offset in range((last-first).days+1):
+                    day=(first+timedelta(days=offset)).isoformat();row=by_day.get(day)
+                    if not row:lines.append(day+': сохранённых дневных данных нет.');continue
+                    cr=f"{100*row['orders']/row['views']:.2f}%".replace('.',',') if row['views'] else 'не определяется'
+                    lines.append(day+f": {row['orders']} заказов / {row['views']} просмотров; конверсия "+cr+'.')
+                if value['complete']:
+                    ratio=f"{100*value['conversion']:.2f}%".replace('.',',') if value['conversion'] is not None else 'не определяется'
+                    lines.append(f"Итог: {value['funnel_orders']} заказов / {value['views']} просмотров; конверсия "+ratio+'.')
+                else:lines.append('Данные неполные: '+str(len(value['daily'])-len(by_day))+' дн. без сохранённого среза. Итог за весь период не подтверждён; пропуски не равны нулю.')
+                lines.append('Это воронка MPStats, не подтверждённые продажи WB. Рекламные расходы и фактическая прибыль этим срезом не установлены. Новые сборы и изменения не запускались.')
+                return '\n'.join(lines),[{'name':'saved_conversion_history','arguments':{'nm_id':nm,'article':article},'result':value}]
+            except ValueError as exc:return str(exc),[]
         allowed_names={'get_status','find_products','get_product','get_mpstats_data','get_wb_sources','get_stock_context','get_sales_report'}
         allowed=[t for t in c.tools('china') if t['name'] in allowed_names]
         reads=0
@@ -342,7 +364,13 @@ class Worker:
                 if len(trace)>=4:raise RuntimeError('Question tool budget exceeded')
                 args=json.loads(call.get('arguments') or '{}');name=call['name']
                 if name not in allowed_names:raise PermissionError('Question tool forbidden')
-                try:result=c.dispatch(job,data,name,args)
+                try:
+                    if args.get('nm_id') is not None:
+                        catalog=self.catalog()
+                        if str(args['nm_id']) not in {nm for nm,_ in catalog}:raise ValueError('nmID is not a verified China product; resolve article first')
+                        mentioned=[nm for nm,a in catalog if a.casefold() in job['request_text'].casefold()]
+                        if mentioned and str(args['nm_id']) not in mentioned:raise ValueError('Product differs from requested article')
+                    result=c.dispatch(job,data,name,args)
                 except (ValueError,KeyError,TypeError,RuntimeError) as exc:
                     result={'available':False,'error':type(exc).__name__,'note':'Сохранённые данные по запросу недоступны или неполны. Не заменять пропуск нулём и не придумывать результат.'}
                 trace.append({'name':name,'arguments':args,'result':result})

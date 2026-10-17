@@ -59,5 +59,12 @@ class Migration(unittest.TestCase):
   w.model_request=model
   answer,trace=w.saved_question(j,[])
   self.assertEqual(len(calls),2);self.assertEqual(trace[0]['name'],'get_status');self.assertIn('не равно нулю',answer)
+ def test_exact_article_last_five_days_and_missing(self):
+  w=Memory();w.model_request=lambda *a:(_ for _ in ()).throw(AssertionError('model must not invent'))
+  w.load_days=lambda watch:({'2026-10-16':{'date':'2026-10-16','views':100,'orders':2}},['2026-10-12','2026-10-13','2026-10-14','2026-10-15'])
+  j=job('Какие сохранённые данные есть по 52-NoelBag-fuchsia за последние 5 полных дней?');j['tool_trace']=[{'name':'china_saved_question','message_id':7}]
+  answer,trace=w.saved_question(j,[])
+  self.assertIn('2026-10-12–2026-10-16',answer);self.assertIn('4 дн.',answer);self.assertIn('2 заказов / 100 просмотров',answer)
+  self.assertEqual(trace[0]['arguments']['nm_id'],'987');self.assertNotIn('298',answer);self.assertFalse(w.sent)
 
 if __name__=='__main__':unittest.main()

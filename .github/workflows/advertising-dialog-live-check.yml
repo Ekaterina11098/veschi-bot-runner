@@ -6,6 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
+    if: false # Live check completed; waiting for owner Telegram privacy change.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

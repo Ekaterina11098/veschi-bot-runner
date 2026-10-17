@@ -1,0 +1,51 @@
+name: Advertising saved-data questions only
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Exact newly routed saved-dialogue job
+        required: true
+        type: string
+permissions: {contents: read}
+concurrency:
+  group: advertising-dialog-job-${{ inputs.job_id }}
+  cancel-in-progress: false
+  queue: max
+jobs:
+  answer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 8881a1e58b5d82bef75722e75177d9819f1ca676
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: One saved-data question; no legacy queue, watches, execution or source collection
+        working-directory: private-source
+        env:
+          DIALOG_JOB_ID: ${{ inputs.job_id }}
+          ADVERTISING_DIALOG_SOURCE_SHA: 8881a1e58b5d82bef75722e75177d9819f1ca676
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ADVERTISING_AI_MODEL: ${{ vars.ADVERTISING_AI_MODEL || 'gpt-4o-mini' }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+        run: |
+          python - <<'PY'
+          import os,json
+          from advertising_agent.conversation import process_saved_job
+          value=os.environ['DIALOG_JOB_ID']
+          if not value.isdecimal() or int(value)<=0:raise SystemExit('Invalid job id')
+          result=process_saved_job(int(value))
+          print(json.dumps(result))
+          if result['status'] not in ('done','already_leased','ignored_not_new_dialogue'):raise SystemExit(1)
+          PY

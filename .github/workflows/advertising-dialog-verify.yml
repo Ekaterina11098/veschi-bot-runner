@@ -1,0 +1,78 @@
+name: Verify isolated saved-data group dialogue
+on:
+  push:
+    branches: [advertising-chat-readonly-20261017]
+    paths: ['.github/workflows/advertising-dialog-verify.yml']
+permissions: {contents: write}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 8881a1e58b5d82bef75722e75177d9819f1ca676
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: python -m py_compile advertising_dialog_activate_20261017.py
+      - name: Existing conversational and new safety tests; network blocked
+        working-directory: private-source
+        run: |
+          python - <<'PY'
+          import socket,unittest,sys
+          def deny(*a,**k):raise AssertionError('Offline test network forbidden')
+          socket.socket.connect=deny
+          loader=unittest.TestLoader()
+          sys.path.insert(0,'tests')
+          import test_advertising_conversation as old
+          suite=unittest.TestSuite([loader.discover('tests',pattern='test_advertising_saved_dialogue.py'),loader.loadTestsFromTestCase(old.ConversationTests)])
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(not result.wasSuccessful())
+          PY
+      - name: Existing role boundary plus free group questions
+        working-directory: private-source
+        run: node --test tests/test_advertising_webhook.mjs tests/test_advertising_free_dialogue.mjs
+
+      - name: Read actual retained projection only, no model or Telegram call
+        working-directory: private-source
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import sys,json,requests,os
+          from urllib.parse import urlparse
+          from advertising_agent.conversation import saved_dialog_rows,project_dialog_data
+          host=urlparse(os.environ['SUPABASE_URL']).hostname
+          native=requests.sessions.Session.request
+          def guard(self,method,url,*args,**kwargs):
+              if method.upper()!='GET' or urlparse(url).hostname!=host:raise RuntimeError('Only saved DB reads allowed')
+              return native(self,method,url,*args,**kwargs)
+          requests.sessions.Session.request=guard
+          rows=saved_dialog_rows()
+          projected=project_dialog_data(rows,dict(articles=['57-NoelBag-burgundy'],campaign_ids=[39410834]))
+          if not projected or not projected[0]['items']:raise RuntimeError('Retained projection not available')
+          sys.path.insert(0,'..')
+          from stock_deploy_support import seal
+          proof=dict(saved_projection=projected,source_calls=0,model_calls=0,telegram_sends=0,wb_writes=0)
+          seal('dialog-saved-read-proof',proof)
+          print(json.dumps(dict(snapshot_count=len(rows),matched_pairs=len(projected[0]['items']),model_calls=0,source_calls=0,telegram_sends=0,wb_writes=0)))
+          PY
+      - name: Preserve encrypted saved-read proof
+        if: success()
+        run: |
+          mkdir -p recovery-output/advertising
+          cp "$RUNNER_TEMP"/stock-deploy-proof/dialog-saved-read-proof.aes.json "recovery-output/advertising/dialog-saved-read-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/dialog-saved-read-*.aes.json
+          git diff --cached --quiet || git commit -m "Preserve encrypted saved dialogue projection proof"
+          git push origin HEAD:advertising-chat-readonly-20261017

@@ -128,7 +128,7 @@ class ActualBudgetWorker(unittest.TestCase):
    calls.append(1);items=state['advertising_campaign_budgets']['payload'].get('items',[])
    if len(calls)>5:
     fresh={x['campaign_id'] for x in items};cid=next(i for i in ids if i not in fresh)
-    items=items+[dict(campaign_id=cid,available=True,observed_at=datetime.now(timezone.utc).isoformat(),total=7)]
+    items=items+[dict(campaign_id=cid,available=True,observed_at=c.NOW.isoformat(),total=7)]
    state['advertising_campaign_budgets']={'payload':{'items':items,'complete':len(items)==len(ids)}}
   c.latest=latest;c.save=save;c.collect_campaign_budgets=collect
   if mode=='pause':state['advertising_campaign_budgets']['payload']['next_retry_at']=(datetime.now(timezone.utc)+timedelta(seconds=905)).isoformat()
@@ -140,7 +140,7 @@ class ActualBudgetWorker(unittest.TestCase):
   finally:requests.sessions.Session.request=native
   return calls,seals[-1]
  def test_five_rate_deferrals_do_not_exhaust_before_eleven_successes(self):
-  calls,r=self.worker();self.assertTrue(r['complete']);self.assertEqual(len(calls),16);self.assertTrue(r['pending_queue']['complete'])
+  calls,r=self.worker();self.assertTrue(r.get('complete'),str(r));self.assertEqual(len(calls),16);self.assertTrue(r['pending_queue']['complete'])
  def test_pending_queue_storage_failure_prevents_wb_read(self):
   calls,r=self.worker('storage_failure');self.assertEqual(calls,[]);self.assertEqual(r['error']['type'],'RuntimeError')
  def test_single_step_does_not_sleep_through905seconds(self):

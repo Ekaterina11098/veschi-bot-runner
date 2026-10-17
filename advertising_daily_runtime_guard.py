@@ -21,6 +21,9 @@ def independent_statuses(state):
  state['notification_status']=('incomplete' if v.get('delivery_unconfirmed_count',0) else ('complete' if state['analysis_status']=='complete' else 'not_evaluated'))
  b=last('budget_completion') or last('budgets')
  state['budget_status']='complete' if b.get('status')=='complete' else ('failed' if b.get('status')=='failed' else 'pending')
+ state['analysis_status_scope']='saved_calculation'
+ state['notification_status_scope']='confirmed_delivery_receipts'
+ state['zero_messages_is_quality_acceptance']=False
  state['analysis_complete']=state['analysis_status']=='complete'
  return state
 
@@ -31,6 +34,8 @@ def merge_telemetry(state,attempt,stage,metric):
  if old is not None and old!=metric:raise RuntimeError('Immutable stage telemetry changed')
  stages[stage]=copy.deepcopy(metric)
  all_metrics=[m for a in ledger['attempts'].values() for m in a.values()]
+ ledger['attempt_totals']={a:{field:sum(m.get(field,0) for m in items.values()) for field in ('calls','decoded_response_bytes','request_body_bytes')} for a,items in ledger['attempts'].items()}
+ ledger['stage_totals']={name:{field:sum(items.get(name,{}).get(field,0) for items in ledger['attempts'].values()) for field in ('calls','decoded_response_bytes','request_body_bytes')} for name in {name for items in ledger['attempts'].values() for name in items}}
  ledger['decoded_response_bytes']=sum(m.get('decoded_response_bytes',0) for m in all_metrics)
  ledger['request_body_bytes']=sum(m.get('request_body_bytes',0) for m in all_metrics)
  ledger['calls']=sum(m.get('calls',0) for m in all_metrics)

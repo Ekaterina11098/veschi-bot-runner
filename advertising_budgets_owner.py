@@ -53,6 +53,10 @@ try:
    old=c.latest('advertising_campaign_budgets',status=None) or {};payload=old.get('payload') or {}
    fresh={x['campaign_id'] for x in payload.get('items',[]) if x.get('available') and x.get('observed_at') and 0<=(c.NOW-datetime.fromisoformat(x['observed_at'])).total_seconds()<21600}
    if set(active)<=fresh:report['complete']=True;report['budgets']=payload;checkpoint(payload);break
+   retained_queue=(c.latest('advertising_budget_pending',status=None) or {}).get('payload') or {}
+   if set(retained_queue.get('campaign_ids',[]))==set(active):
+    due_times=[x for x in (payload.get('next_retry_at'),retained_queue.get('next_allowed_at')) if x]
+    if due_times:payload=dict(payload,next_retry_at=max(due_times,key=lambda x:datetime.fromisoformat(x.replace('Z','+00:00'))))
    report['budgets']=payload;checkpoint(payload)
    due=payload.get('next_retry_at')
    wait=max(0,(datetime.fromisoformat(due)-c.NOW).total_seconds()) if due else 0

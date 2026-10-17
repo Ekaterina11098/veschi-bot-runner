@@ -132,6 +132,7 @@ class ActualBudgetWorker(unittest.TestCase):
    state['advertising_campaign_budgets']={'payload':{'items':items,'complete':len(items)==len(ids)}}
   c.latest=latest;c.save=save;c.collect_campaign_budgets=collect
   if mode=='pause':state['advertising_campaign_budgets']['payload']['next_retry_at']=(datetime.now(timezone.utc)+timedelta(seconds=905)).isoformat()
+  if mode=='retained_pause':state['advertising_budget_pending']={'payload':{'campaign_ids':active,'pending_campaign_ids':active,'next_allowed_at':(datetime.now(timezone.utc)+timedelta(seconds=905)).isoformat()}}
   pkg=types.ModuleType('advertising_agent');pkg.collect_ip=c
   native=requests.sessions.Session.request
   try:
@@ -143,6 +144,9 @@ class ActualBudgetWorker(unittest.TestCase):
   calls,r=self.worker();self.assertTrue(r.get('complete'),str(r));self.assertEqual(len(calls),16);self.assertTrue(r['pending_queue']['complete'])
  def test_pending_queue_storage_failure_prevents_wb_read(self):
   calls,r=self.worker('storage_failure');self.assertEqual(calls,[]);self.assertEqual(r['error']['type'],'RuntimeError')
+ def test_retained_queue_next_allowed_at_survives_missing_budget_delay(self):
+  with patch('time.sleep',side_effect=AssertionError('Must not sleep')):calls,r=self.worker('retained_pause',single=True)
+  self.assertEqual(calls,[]);self.assertTrue(r['pending_until'])
  def test_single_step_does_not_sleep_through905seconds(self):
   with patch('time.sleep',side_effect=AssertionError('Must not sleep')):
    calls,r=self.worker('pause',single=True)

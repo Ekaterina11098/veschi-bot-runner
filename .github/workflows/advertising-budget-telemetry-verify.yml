@@ -1,4 +1,4 @@
-name: Verify final independent statuses and bounded budget continuation and cumulative telemetry offline
+name: Verify pending queue delays and independent statuses and bounded budget continuation and cumulative telemetry offline
 on:
   push:
     branches: [fix-advertising-budget-telemetry-20261017]

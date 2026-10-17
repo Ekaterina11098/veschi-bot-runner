@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    if: false # One-off verification and corrected dialogue activation completed.
+    # One read-only verification of two completed human questions.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

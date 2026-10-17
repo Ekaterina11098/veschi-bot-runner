@@ -3,7 +3,8 @@ import os,json
 from urllib.parse import urlparse
 from datetime import datetime,timezone
 from china_agent.control_owner_preview import Preview
-from analytics.collect import fetch
+from analytics.collect import _fetch_transport as fetch
+# Narrow missing-metric fallback only; shared provider cooldown remains enforced.
 class Funnel(Preview):
  def guard(self,session,method,url,*a,**kw):
   p=urlparse(url)

@@ -1,4 +1,4 @@
-name: China full catalogue price report preview
+name: China control exact periods owner preview only
 on:
   push:
     branches: [main]
@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
-      - name: Verify complete catalogue selection without Telegram delivery
+      - name: Collect exact comparison data without any Telegram access
         working-directory: source
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -40,8 +40,5 @@ jobs:
           cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
           cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
           cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
-          cp ../scripts/china_order_coverage.py china_order_coverage.py
-          cp ../scripts/test_china_order_coverage.py test_china_order_coverage.py
-          python -m unittest -v test_china_order_coverage
-          python -m china_agent.morning_pair --verify
-          python -m china_agent.coverage_worker --mode intraday --verify
+          cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py
+          python -m china_agent.control_owner_preview

@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    # Final exact saved answer and proposal verification.
+    # Activate exact verified corrected dialogue source only.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

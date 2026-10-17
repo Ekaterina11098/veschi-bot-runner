@@ -11,11 +11,11 @@ try:
             ORDER BY id DESC LIMIT 8
           )
           SELECT id,j->>'status',coalesce(j->'source',j->'source_snapshot')->'received_at',
-             (SELECT jsonb_object_agg(a,coalesce(j->'source',j->'source_snapshot')->'moscow_raw'->a)
+             (SELECT jsonb_object_agg(a,coalesce(j->'source',j->'source_snapshot')->'moscow_raw'->lower(a))
                 FROM unnest(%s::text[]) a),
              (SELECT jsonb_agg(c) FROM jsonb_array_elements(coalesce(j->'source',j->'source_snapshot')->'cards'->1) c
                 WHERE c->>'vendorCode'=ANY(%s::text[])),
-             (SELECT jsonb_object_agg(a,coalesce(j->'source',j->'source_snapshot')->'fbs'->1->a)
+             (SELECT jsonb_object_agg(a,coalesce(j->'source',j->'source_snapshot')->'fbs'->1->lower(a))
                 FROM unnest(%s::text[]) a)
           FROM runs
         """,(ARTICLES,ARTICLES,ARTICLES)).fetchall()

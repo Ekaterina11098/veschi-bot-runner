@@ -32,3 +32,12 @@ def expected_profit(orders,probability,advertising,shared_costs):
   value+=p*dec(row['buyout_profit'])+(1-p)*dec(row['nonbuyout_profit'])
  value-=dec(advertising)+dec(shared_costs)
  return dict(expected_profit=float(value.quantize(Decimal('.01'))),buyout_percent=float(p*100),basis='order_date',label='Ожидаемая прибыль, скорректированная на текущий % выкупа артикула',is_actual=False)
+
+def resolved_buyout_rate(paid_kept,finished,reported_percent=None):
+ """Owner-approved fallback only when own settled sample is unavailable."""
+ if paid_kept is None or finished is None or dec(finished)==0:
+  return dict(probability=Decimal('.5'),percent=50,source='fallback',sample_size=0,
+   note='50% — принято для расчёта, собственной статистики недостаточно')
+ probability=buyout_probability(paid_kept,finished,reported_percent)
+ return dict(probability=probability,percent=float(probability*100),source='own_article',sample_size=int(finished),
+  note='Собственный % выкупа артикула по завершённым заказам с учётом возвратов')

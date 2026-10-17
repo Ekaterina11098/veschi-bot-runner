@@ -61,6 +61,7 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
         run: |
           python ../scripts/test_china_period_buyout.py
+          python ../scripts/china_chat_migration.py --root .
           python ../scripts/install_china_order_coverage.py
           cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
           cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
@@ -76,3 +77,4 @@ jobs:
           else
             python -m china_agent.morning_pair
           fi
+

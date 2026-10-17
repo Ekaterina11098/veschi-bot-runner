@@ -1,0 +1,76 @@
+name: Verify pair DRR preparation without delivery or WB changes
+on:
+  push:
+    branches: [verify-pair-drr-format-20261017]
+    paths: ['.github/workflows/advertising-pair-drr-verify.yml']
+permissions: {contents: write}
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b60eed69dbce6f0a1b2a9bc59f6be71f1e3b7db7
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Existing offline regression suites, external sockets blocked
+        working-directory: private-source
+        run: |
+          python - <<'PY'
+          import socket,unittest,sys
+          def deny(*a,**k):raise AssertionError('Offline verification: external socket forbidden')
+          socket.create_connection=deny
+          socket.socket.connect=deny
+          loader=unittest.TestLoader();suite=unittest.TestSuite()
+          for name in ('test_ip_daily_recommendations.py','test_ip_campaign_audit.py','test_ip_completed_investigations.py','test_ip_sku_complete_review.py','test_ip_full_offline_pipeline.py','test_ip_delivery_boundary.py','test_ip_unknown_identity_controls.py'):
+              suite.addTests(loader.discover('tests',pattern=name))
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(not result.wasSuccessful())
+          PY
+      - name: Exact minimum-bid read for one CPC SKU; no mutation
+        if: always()
+        env:
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+        run: |
+          python - <<'PY'
+          import os,json,requests
+          from datetime import datetime,timezone
+          from stock_deploy_support import seal
+          result={'wb_writes':0,'telegram_calls':0,'source_calls':0,'request':{'advert_id':37155100,'nm_ids':[190450230],'payment_type':'cpc','placement_types':['search']},'observed_at':datetime.now(timezone.utc).isoformat()}
+          try:
+              response=requests.post('https://advert-api.wildberries.ru/api/advert/v1/bids/min',headers={'Authorization':os.environ['WB_TOKEN_2']},json=result['request'],timeout=(10,30))
+              result.update(status_code=response.status_code,retry_after=response.headers.get('Retry-After'),decoded_bytes=len(response.content),response=response.json())
+          except Exception as exc:result['error_type']=type(exc).__name__
+          seal('noel-minimum-bid-read',result)
+          print(json.dumps({'minimum_read_status':result.get('status_code'),'wb_writes':0,'telegram_calls':0,'automatic_retry':False}))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-noel-minimum-read
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Preserve only ciphertext on verification branch
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          for file in "$RUNNER_TEMP"/stock-deploy-proof/*.aes.json; do
+            test -f "$file" || continue
+            cp "$file" "recovery-output/advertising/noel-minimum-${{ github.run_id }}.aes.json"
+          done
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/noel-minimum-*.aes.json
+          git diff --cached --quiet || git commit -m "Preserve encrypted exact minimum-bid read"
+          git push origin HEAD:verify-pair-drr-format-20261017

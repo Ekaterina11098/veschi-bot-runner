@@ -151,7 +151,7 @@ class DailyTests(unittest.TestCase):
   self.previous();self.state['stages']=[dict(name='analysis_and_delivery',status='complete')]
   with self.assertRaises(PermissionError):self.run_day(resume_from='old:1')
  def test_source_child_no_wb_or_telegram_credentials(self):
-  seen=[];ns={'os':os,'sys':sys,'json':json,'ROOT':Path('.'),'started':NOW.isoformat(),'resume_profile':{},
+  seen=[];ns={'os':os,'sys':sys,'json':json,'ROOT':Path('.'),'Path':Path,'started':NOW.isoformat(),'resume_profile':{},
    'preserve_checkpoint':lambda *a:seen.append(a),'subprocess':subprocess}
   fn=functions(daily,{'stage'},ns)['stage']
   def run(*a,**kw):
@@ -183,7 +183,7 @@ class AnalysisStatus(unittest.TestCase):
 
 class BudgetStageStatus(unittest.TestCase):
  def test_incomplete_budget_summary_survives(self):
-  ns={'os':os,'sys':sys,'json':json,'ROOT':Path('.'),'started':NOW.isoformat(),'resume_profile':{},'subprocess':subprocess,'preserve_checkpoint':lambda *a:None}
+  ns={'os':os,'sys':sys,'json':json,'ROOT':Path('.'),'Path':Path,'started':NOW.isoformat(),'resume_profile':{},'subprocess':subprocess,'preserve_checkpoint':lambda *a:None}
   fn=functions(daily,{'stage'},ns)['stage']
   with patch.object(subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout='{"complete":false}')):
    r=fn('advertising_budgets_owner.py',1)()
@@ -218,7 +218,8 @@ class ActualRunIdentity(SourceTests):
  def test_next_profile_stays_disabled(self):
   p=json.loads(Path('advertising_daily_continue.json').read_text())
   self.assertFalse(p['enabled'])
-  self.assertEqual(p['from_run_id'],'39014867561:1')
+  self.assertEqual(p['from_run_id'],'39015462359:1')
+  self.assertEqual(p['mode'],'budgets_only')
   self.assertEqual(p['retained_source_manifest']['original_run_id'],'39004453781:1')
 if __name__=='__main__':unittest.main()
 

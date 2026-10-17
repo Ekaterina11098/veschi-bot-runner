@@ -107,6 +107,9 @@ def build(worker,candidate_review=False):
  windows={(str(rate_start),str(end))}
  for pair in pairs.values():
   if pair:windows.update((str(a),str(b)) for a,b in pair)
+ for pair in pairs.values():
+  if pair:
+   for a,b in pair:windows.update((str(d),str(d)) for d in all_days(a,b))
  Preview.acquire(worker,windows)
  worker.now=datetime.now(MSK)
  read=lambda t,p:worker.db('GET',t,params=p)
@@ -200,6 +203,14 @@ def build(worker,candidate_review=False):
     details=[card_tables[nm].get(str(d)) for d in all_days(a,b)]
     if any(not isinstance(r,dict) or r.get('advertisement') is None for r in details):raise RuntimeError('Explicit daily advertising missing')
     ads=sum(r['advertisement'] for r in details);views=funnel=None
+   daily=[]
+   for day in all_days(a,b):
+    dayrow=datasets[(str(day),str(day))].get(nm)
+    dv=dayrow.get('open_card_count') if dayrow else None;df=dayrow.get('funnel_orders_count') if dayrow else None
+    daily.append(dict(date=str(day),orders=wb[str(day)][nm]['orders'],cancelled=wb[str(day)][nm]['cancelled'],views=dv,funnel_orders=df,conversion=df/dv if dv else None))
+   if all(r['views'] is not None and r['funnel_orders'] is not None for r in daily):
+    views=sum(r['views'] for r in daily);funnel=sum(r['funnel_orders'] for r in daily)
+   else:views=funnel=None
    scenarios=[]
    if total:
     cost=costs.get(article.casefold());delivery=(model.get('rows',{}).get(article) or {}).get('delivery_cny')
@@ -209,7 +220,7 @@ def build(worker,candidate_review=False):
     scenarios=[dict(order_id=str(i),buyout_profit=unit,nonbuyout_profit=-dispatch) for i in range(total)]
    calculated=expected_profit(scenarios,resolved['probability'],ads,0)
    period_days=(b-a).days+1
-   item[label]=dict(days=period_days,orders_per_day=total/period_days,expected_profit_per_day=calculated['expected_profit']/period_days,advertising_per_day=ads/period_days,outcomes=outcomes[label],period_from=str(a),period_to=str(b),orders=total,views=views,funnel_orders=funnel,conversion=funnel/views if views else None,advertising=ads,expected_profit=calculated['expected_profit'])
+   item[label]=dict(daily=daily,days=period_days,orders_per_day=total/period_days,expected_profit_per_day=calculated['expected_profit']/period_days,advertising_per_day=ads/period_days,outcomes=outcomes[label],period_from=str(a),period_to=str(b),orders=total,views=views,funnel_orders=funnel,conversion=funnel/views if views else None,advertising=ads,expected_profit=calculated['expected_profit'])
   a,b=item['before'],item['after'];full_days=(pair[1][1]-pair[1][0]).days+1
   result=experiment_result(a['expected_profit_per_day'],b['expected_profit_per_day'],a['views'],a['funnel_orders'],b['views'],b['funnel_orders'],full_days,resolved['sample_size'])
   result.update(comparison_basis='per_day',profit_delta_rub_per_day=result['profit_delta_rub'])
@@ -237,10 +248,11 @@ def render_item(item):
   v=item[label];o=v['outcomes']
   lines+=['',title+', '+v['period_from']+'–'+v['period_to']+' ('+str(v['days'])+' полных дней):',
    '• Цена: '+_num(item[label+'_price'])+' ¥.',
+   '• По дням (WB-заказы; конверсия; заказы воронки / просмотры): '+('; '.join(r['date'][8:10]+'.'+r['date'][5:7]+': '+str(r['orders'])+'; '+(_pct(r['conversion']) if r['views'] else '0 просмотров' if r['views']==0 else 'история не возвращена')+'; '+(str(r['funnel_orders'])+' / '+str(r['views']) if r['views'] is not None else 'история не возвращена') for r in v['daily']))+'.',
    '• Заказы: '+str(v['orders'])+', в том числе отмены — '+str(o['cancelled'])+'; в среднем '+_num(v['orders_per_day'])+' в день.',
    '• Прогноз прибыли: '+_money(v['expected_profit'])+' ₽'+(', если выкуп сохранится на уровне '+_pct(p) if label=='after' else ' при выкупе '+_pct(p))+'.',
    '• Средний прогноз прибыли: '+_money(v['expected_profit_per_day'])+' ₽/день.',
-   '• Конверсия: '+_cr(v)+'.',
+   '• Конверсия периода: '+_cr(v)+(' ('+str(v['funnel_orders'])+' / '+str(v['views'])+')' if v['views'] is not None else '')+'.',
    '• Реклама, включённая в расчёт: '+_money(v['advertising'])+' ₽ за период; '+_money(v['advertising_per_day'])+' ₽/день.',
    '• Известные исходы: '+str(o['paid'])+' выкупов, '+str(o['cancelled'])+' отмен, '+str(o['returned'])+' возвратов, '+str(o['pending'])+' незавершённых заказов, '+str(o['unknown'])+' с неизвестным исходом.']
  r=item['result'];action=r['result_action'].replace('Ожидаемая прибыль','Условный прогноз прибыли').replace('Ожидаемую прибыль','Условный прогноз прибыли')

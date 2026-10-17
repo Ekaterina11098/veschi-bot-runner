@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deliver:
+    if: false # Approved single message confirmed; one-off sender disabled.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

@@ -33,12 +33,6 @@ try:
  job=store.db('GET','advertising_agent_jobs',params={'id':'eq.31','select':'*','limit':1})[0]
  probe=copy.deepcopy(job);probe['request_text']='Почему у 57-NoelBag-burgundy высокий ДРР?'
  def no_model(_):raise RuntimeError('Exact saved arithmetic must not invoke model')
- from analytics.payload_storage import decode_rows
- legacy=decode_rows(store.db('GET','analytics_snapshots',params={'id':'eq.18029','select':'payload','limit':1}) or [])[0]['payload']
- if isinstance(legacy,list):legacy=legacy[0]
- proof['legacy_root_keys']=list(legacy)
- proof['legacy_sections']={k:(list(v)[:50] if isinstance(v,dict) else 'list:'+str(len(v)) if isinstance(v,list) else str(type(v))) for k,v in legacy.items() if k!='daily'}
- proof['legacy_campaign_context']={k:([v2 for v2 in v.get('campaigns',[]) if v2.get('wb_campaign_id')==39410834 or v2.get('campaign_id')==39410834]) for k,v in legacy.items() if isinstance(v,dict) and isinstance(v.get('campaigns'),list)}
  answer,trace=c.run_saved_dialog(probe,no_model)
  proof.update(automatic_answer=answer,trace=trace,complete=True,source_sha=os.environ['ADVERTISING_DIALOG_SOURCE_SHA'])
 except Exception as exc:proof.update(error_type=type(exc).__name__,error=str(exc)[:200])

@@ -371,6 +371,14 @@ class Worker:
                         mentioned=[nm for nm,a in catalog if a.casefold() in job['request_text'].casefold()]
                         if mentioned and str(args['nm_id']) not in mentioned:raise ValueError('Product differs from requested article')
                     result=c.dispatch(job,data,name,args)
+                    if name=='get_mpstats_data':
+                        recovered=result.get('recovered_reports') or {}
+                        for period in recovered.get('product_periods') or []:
+                            period.pop('product_record_count',None)
+                            period['source_complete']=period.pop('complete',False)
+                            period['sku_data_available']=bool(period.get('sku_rows'))
+                        result.pop('product_record_count',None)
+                        result['scope_note']='Количество записей каталога не является количеством заказов. Полнота источника не подтверждает наличие данных товара или запрошенного периода. Использовать только sku_rows нужного nmID и точные даты.'
                 except (ValueError,KeyError,TypeError,RuntimeError) as exc:
                     result={'available':False,'error':type(exc).__name__,'note':'Сохранённые данные по запросу недоступны или неполны. Не заменять пропуск нулём и не придумывать результат.'}
                 trace.append({'name':name,'arguments':args,'result':result})

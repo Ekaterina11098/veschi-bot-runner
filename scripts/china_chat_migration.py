@@ -29,12 +29,12 @@ def install(root='source'):
     if path.exists():
         text = path.read_text(encoding='utf-8')
         old = "        if not previous or previous[0]['chat_id'] != self.chat:\n"
-        new = "        from .chat_migration import accepted_chat\n        if not previous or not accepted_chat(self.db, previous[0]['chat_id'], self.chat, cfg['bot_id'], cfg['owner_user_id']):\n"
+        new = "        from .chat_migration import accepted_chat\n        if not previous or not accepted_chat(self.db, previous[0]['chat_id'], self.chat, cfg.get('bot_id'), cfg['owner_user_id']):\n"
         if old not in text and new not in text:
             raise RuntimeError('China report recipient guard changed; review required')
         text=text.replace(old,new)
         old2="self.job['chat_id'] != self.chat"
-        new2="(self.job['chat_id'] != self.chat and not (self.job['status'] == 'done' and accepted_chat(self.db, self.job['chat_id'], self.chat, cfg['bot_id'], cfg['owner_user_id'])))"
+        new2="(self.job['chat_id'] != self.chat and not (self.job['status'] == 'done' and accepted_chat(self.db, self.job['chat_id'], self.chat, cfg.get('bot_id'), cfg['owner_user_id'])))"
         if new2 not in text:text=text.replace(old2,new2)
         path.write_text(text,encoding='utf-8')
 

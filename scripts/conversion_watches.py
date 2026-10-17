@@ -342,7 +342,9 @@ class Worker:
                 if len(trace)>=4:raise RuntimeError('Question tool budget exceeded')
                 args=json.loads(call.get('arguments') or '{}');name=call['name']
                 if name not in allowed_names:raise PermissionError('Question tool forbidden')
-                result=c.dispatch(job,data,name,args)
+                try:result=c.dispatch(job,data,name,args)
+                except (ValueError,KeyError,TypeError,RuntimeError) as exc:
+                    result={'available':False,'error':type(exc).__name__,'note':'Сохранённые данные по запросу недоступны или неполны. Не заменять пропуск нулём и не придумывать результат.'}
                 trace.append({'name':name,'arguments':args,'result':result})
                 rendered=json.dumps(result,ensure_ascii=False,default=str)
                 if len(rendered)>18000:rendered=json.dumps({'partial_data':rendered[:17000],'truncated':True},ensure_ascii=False)
@@ -365,8 +367,10 @@ class Worker:
         def patch(body):
             if not self.db('PATCH','business_agent_jobs',params={'id':'eq.'+str(job_id),'lease_token':'eq.'+lease},body=body,prefer='return=representation'):raise RuntimeError('Question lease lost')
         try:
-            history=self.db('GET','business_agent_jobs',params={'agent_id':'eq.china','chat_id':'eq.'+str(job['chat_id']),'sender_id':'eq.'+str(job['sender_id']),'status':'eq.done','id':'lt.'+str(job_id),'select':'id,agent_id,chat_id,sender_id,request_text,answer,tool_trace','order':'id.desc','limit':4}) or []
-            history=[x for x in reversed(history) if x.get('answer') and question_marker(x)]
+            from china_chat_migration import previous_chats
+            chats=[cfg['chat_id']]+previous_chats(self.db,cfg)
+            history=self.db('GET','business_agent_jobs',params={'agent_id':'eq.china','chat_id':'in.('+','.join(map(str,chats))+')','sender_id':'eq.'+str(job['sender_id']),'status':'eq.done','id':'lt.'+str(job_id),'select':'id,agent_id,chat_id,sender_id,request_text,answer,tool_trace','order':'id.desc','limit':10}) or []
+            history=[x for x in reversed(history) if x.get('answer') and not x['request_text'].startswith('/china_')][-4:]
             parent=marker.get('parent_job_id')
             if parent:
                 history=self.db('GET','business_agent_jobs',params={'id':'eq.'+str(parent),'agent_id':'eq.china','chat_id':'eq.'+str(job['chat_id']),'sender_id':'eq.'+str(job['sender_id']),'status':'eq.done','select':'id,request_text,answer,tool_trace','limit':1}) or []

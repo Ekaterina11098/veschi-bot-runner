@@ -87,6 +87,9 @@ class PairWorker(CoverageWorker):
         parsed=urlparse(url);body=kwargs.get('json') or {};params=kwargs.get('params') or {}
         if parsed.hostname=='mcp.mpstats.io' and body.get('method')=='tools/call':
             request=body.get('params') or {};arguments=request.get('arguments') or {}
+            if request.get('name')=='lk_wb_card_orders' and (arguments.get('value'),arguments.get('date_from'),arguments.get('date_to')) in getattr(self,'control_allowed_cohorts',set()):
+                if arguments!=dict(type='products',value=arguments['value'],date_from=arguments['date_from'],date_to=arguments['date_to'],start_row=0,end_row=300):raise RuntimeError('Cohort scope mismatch')
+                return self.original_http(session,method,url,*args,**kwargs)
             if request.get('name')=='lk_wb_card_table' and arguments.get('value') in getattr(self,'control_allowed_pids',set()):
                 if arguments!=dict(type='products',value=arguments['value'],period_type='30days',self_redemption=False):raise RuntimeError('Control card scope mismatch')
                 return self.original_http(session,method,url,*args,**kwargs)

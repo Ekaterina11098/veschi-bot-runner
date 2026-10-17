@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 74cdc4f3e2bdabea2d781f82b7f5221ed5c66073
+          ref: f4dd7925e3ada6b8fdd704760596fe467a554adf
           fetch-depth: 0
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
@@ -32,7 +32,7 @@ jobs:
         run: python advertising_daily_owner.py
         env:
           IP_DAILY_ADVERTISING_ENABLED: 'true'
-          APPROVED_SOURCE_SHA: 74cdc4f3e2bdabea2d781f82b7f5221ed5c66073
+          APPROVED_SOURCE_SHA: f4dd7925e3ada6b8fdd704760596fe467a554adf
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}

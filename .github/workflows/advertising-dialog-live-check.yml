@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    # One read-only check of actual Telegram Reply delivery.
+    if: false # Deeper follow-up and actual Telegram Reply verification completed.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

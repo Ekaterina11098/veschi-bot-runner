@@ -20,7 +20,7 @@ jobs:
           path: private-source
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install -r private-source/requirements.txt 'psycopg[binary]==3.2.10' cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
       - run: python advertising_dialog_activate_20261017.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

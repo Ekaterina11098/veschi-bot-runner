@@ -1,4 +1,4 @@
-name: Verify budget-only continuation and cumulative telemetry offline
+name: Verify bounded budget-only continuation and cumulative telemetry offline
 on:
   push:
     branches: [fix-advertising-budget-telemetry-20261017]

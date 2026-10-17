@@ -42,6 +42,10 @@ class ResumeTests(unittest.TestCase):
  def test_pending_budget_preserves_successful_analysis(self):
   r=self.runit({'business_status':'incomplete','next_allowed_at':'2026-10-17T10:24:08+00:00','pending_campaign_ids':[37155100,39410834]})
   self.assertEqual(r['analysis_status'],'complete');self.assertEqual(r['notification_status'],'complete');self.assertEqual(r['budget_status'],'pending');self.assertEqual(r['status'],'incomplete')
+ def test_false_analysis_flag_cannot_bypass_saved_stage(self):
+  self.state['stages']=self.state['stages'][:3]
+  with self.assertRaises(PermissionError):self.runit()
+  self.assertEqual(self.calls,[])
  def test_no_complete_analysis_no_budget_call(self):
   self.state['analysis_complete']=False
   with self.assertRaises(PermissionError):self.runit()
@@ -92,6 +96,57 @@ class TelemetryTests(unittest.TestCase):
    m=StageTraffic(Path(t)/'stage.json');r=SimpleNamespace(content=b'',request=SimpleNamespace(body=b'secret'))
    m.request(lambda *a,**k:r,None,'GET','https://x.test?a=secret',headers={'Authorization':'secret'})
    self.assertNotIn('secret',json.dumps(m.value))
+class InstrumentationIntegration(unittest.TestCase):
+ def test_actual_wrapper_measures_stage_and_flushes_finally(self):
+  from advertising_daily_runtime_guard import run_instrumented
+  import requests
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t);script=root/'sample.py';out=root/'traffic.json'
+   script.write_text("import requests\nrequests.get('https://example.test/no-secrets')\n")
+   response=requests.Response();response.status_code=200;response._content=b'hello'
+   with patch.object(requests.sessions.Session,'send',return_value=response):run_instrumented(str(script),str(out),0)
+   m=json.loads(out.read_text());self.assertEqual(m['decoded_response_bytes'],5);self.assertEqual(m['calls'],1);self.assertTrue(m['complete'])
+ def test_cannot_call_network_if_local_telemetry_is_unwritable(self):
+  with tempfile.TemporaryDirectory() as t:
+   m=StageTraffic(Path(t)/'traffic.json');called=[]
+   with patch.object(m,'persist',side_effect=OSError('disk')):
+    with self.assertRaises(OSError):m.request(lambda *a:called.append(1),None,'GET','https://example.test')
+   self.assertEqual(called,[])
+class ActualBudgetWorker(unittest.TestCase):
+ def worker(self,mode='normal',single=False):
+  import runpy,requests,types,sys
+  from contextlib import redirect_stdout
+  import io
+  active=list(range(11));state={'advertising_active_configuration':{'collected_at':datetime.now(timezone.utc).isoformat(),'payload':{'campaign_ids':active}},'advertising_campaign_budgets':{'payload':{'items':[]}}}
+  calls=[];seals=[];stub=types.ModuleType('stock_deploy_support');stub.seal=lambda n,v:seals.append(copy.deepcopy(v));stub.error=lambda e:{'type':type(e).__name__}
+  c=types.SimpleNamespace()
+  def latest(source,status=None):
+   if mode=='storage_failure' and source=='advertising_budget_pending':return None
+   return state.get(source)
+  def save(source,payload,status=None):state[source]={'payload':copy.deepcopy(payload)}
+  def collect(token,ids):
+   calls.append(1);items=state['advertising_campaign_budgets']['payload'].get('items',[])
+   if len(calls)>5:
+    fresh={x['campaign_id'] for x in items};cid=next(i for i in ids if i not in fresh)
+    items=items+[dict(campaign_id=cid,available=True,observed_at=datetime.now(timezone.utc).isoformat(),total=7)]
+   state['advertising_campaign_budgets']={'payload':{'items':items,'complete':len(items)==len(ids)}}
+  c.latest=latest;c.save=save;c.collect_campaign_budgets=collect
+  if mode=='pause':state['advertising_campaign_budgets']['payload']['next_retry_at']=(datetime.now(timezone.utc)+timedelta(seconds=905)).isoformat()
+  pkg=types.ModuleType('advertising_agent');pkg.collect_ip=c
+  native=requests.sessions.Session.request
+  try:
+   with patch.dict(sys.modules,{'stock_deploy_support':stub,'advertising_agent':pkg}),patch.dict(os.environ,{'SUPABASE_URL':'https://example.supabase.co','WB_TOKEN_2':'fake','ADVERTISING_BUDGET_STEP_ONLY':'true' if single else 'false'}),redirect_stdout(io.StringIO()):
+    runpy.run_path('advertising_budgets_owner.py',run_name='__main__')
+  finally:requests.sessions.Session.request=native
+  return calls,seals[-1]
+ def test_five_rate_deferrals_do_not_exhaust_before_eleven_successes(self):
+  calls,r=self.worker();self.assertTrue(r['complete']);self.assertEqual(len(calls),16);self.assertTrue(r['pending_queue']['complete'])
+ def test_pending_queue_storage_failure_prevents_wb_read(self):
+  calls,r=self.worker('storage_failure');self.assertEqual(calls,[]);self.assertEqual(r['error']['type'],'RuntimeError')
+ def test_single_step_does_not_sleep_through905seconds(self):
+  with patch('time.sleep',side_effect=AssertionError('Must not sleep')):
+   calls,r=self.worker('pause',single=True)
+  self.assertEqual(calls,[]);self.assertEqual(len(r['pending_queue']['requests']),11);self.assertTrue(r['pending_until'])
 class StructuralGuards(unittest.TestCase):
  def test_budget_deadline_queue_and_retryafter_retained(self):
   s=Path('advertising_budgets_owner.py').read_text()

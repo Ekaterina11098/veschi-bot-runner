@@ -20,7 +20,7 @@ def cached_read_request(native,session,method,url,dbhost,*args,**kwargs):
    response.close()
   time.sleep(delays[attempt])
 
-from advertising_daily_runtime_guard import budget_pending
+from advertising_daily_runtime_guard import budget_pending,membership_cache_valid
 report={'iterations':[],'wb_writes':0,'telegram_calls':0}
 hidden=io.StringIO()
 try:
@@ -35,7 +35,7 @@ try:
    return cached_read_request(native,session,method,url,dbhost,*args,**kwargs)
   requests.sessions.Session.request=guarded
   config=c.latest('advertising_active_configuration',status=None)
-  if not config or (datetime.now(timezone.utc)-datetime.fromisoformat(config['collected_at'])).total_seconds()>21600:raise RuntimeError('Current membership expired; no blind budget scope')
+  if not membership_cache_valid(config,datetime.now(timezone.utc)):raise RuntimeError('Current membership expired; no blind budget scope')
   active=config['payload']['campaign_ids'];report['membership_observed_at']=config['collected_at'];report['active_campaign_ids']=active
   single_step=os.environ.get('ADVERTISING_BUDGET_STEP_ONLY')=='true'
   # Time and request caps are independent: a429 does not consume successful progress.
@@ -59,6 +59,7 @@ try:
    if wait>1800 or wait+60>deadline-time.monotonic() or (single_step and wait>0):report['pending_until']=due;report['budgets']=payload;break
    if wait:time.sleep(wait+2)
    c.NOW=datetime.now(timezone.utc);c.TODAY=c.NOW.astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date()
+   if not membership_cache_valid(config,c.NOW):report['reason']='membership_refresh_required';break
    if time.monotonic()>=deadline:report['reason']='bounded_budget_deadline';break
    # Existing collector owns the WB cooldown and reuses fresh values; scope remains exact current active IDs.
    c.collect_campaign_budgets(os.environ['WB_TOKEN_2'],active)

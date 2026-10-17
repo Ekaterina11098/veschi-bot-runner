@@ -22,7 +22,9 @@ def execute_day(get,put,stages,run_id,now=None,single_writer=False,*,resume_from
   if [r.get('name') for r in done]!=list(names[:len(done)]):raise PermissionError('Checkpoint prefix invalid')
   state=copy.deepcopy(previous);state.setdefault('continuations',[]).append(dict(from_run=resume_from,to_run=run_id,at=now.isoformat()))
   state.update(run_id=run_id,status='running',resumed_from=resume_from)
-  if budget_only and previous.get('analysis_complete') is not True:raise PermissionError('Saved complete analysis required for budget-only continuation')
+  if budget_only:
+   a=next((r for r in done if r.get('name')=='analysis_and_delivery'),{})
+   if previous.get('analysis_complete') is not True or not (a.get('status')=='complete' or (a.get('result') or {}).get('analysis_saved') is True):raise PermissionError('Saved complete analysis required for budget-only continuation')
  else:
   state=dict(day=day,run_id=run_id,status='running',started_at=now.isoformat(),stages=[],wb_mutations=False,forecasts=False,old_queues_executed=False)
  if budget_only and not resume_from:raise PermissionError('Budget-only requires exact prior terminal claim')
@@ -40,7 +42,7 @@ def execute_day(get,put,stages,run_id,now=None,single_writer=False,*,resume_from
    record=dict(name=name,status=result.get('business_status','complete'),result=result)
    if budget_only:
     state.setdefault('budget_attempts',[]).append(dict(run_id=run_id,previous=copy.deepcopy(state['stages'][-1]),result=record))
-    state['stages']=[record if r['name']=='budget_completion' else r for r in state['stages']]
+    state['stages']=([record if r['name']=='budget_completion' else r for r in state['stages']] if any(r['name']=='budget_completion' for r in state['stages']) else state['stages']+[record])
    else:state['stages'].append(record)
    if result.get('telemetry') is not None:merge_telemetry(state,run_id,name,result['telemetry'])
    save()

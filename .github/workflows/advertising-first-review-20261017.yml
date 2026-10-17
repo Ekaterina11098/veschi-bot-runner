@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deliver:
+    if: false # First approved overview confirmed; one-off delivery disabled.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

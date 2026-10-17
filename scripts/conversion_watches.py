@@ -403,7 +403,18 @@ def runtime():
         result=discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=extra)
         if result.get('retry_after'):
             db('POST','telegram_api_cache',params={'on_conflict':'cache_key'},prefer='resolution=merge-duplicates,return=representation',body={'cache_key':'mpstats:cooldown','payload':{'pending':True},'expires_at':(now+timedelta(seconds=int(result['retry_after']))).isoformat()})
-    return Worker(db,send,collect=collect)
+    worker=Worker(db,send,collect=collect)
+    def bot_check():
+        try:
+            cfg=worker.config()
+            me=session.post('https://api.telegram.org/bot'+bot+'/getMe',json={},timeout=30).json()
+            if not me.get('ok') or me['result']['id']!=cfg['bot_id']:raise RuntimeError('Bot identity mismatch')
+            member=session.post('https://api.telegram.org/bot'+bot+'/getChatMember',json={'chat_id':cfg['chat_id'],'user_id':cfg['bot_id']},timeout=30).json()
+            if not member.get('ok'):raise RuntimeError('Bot membership unavailable')
+            return dict(identity_verified=True,plain_group_messages=bool(me['result'].get('can_read_all_group_messages') or member['result']['status']=='administrator'),member_status=member['result']['status'])
+        except Exception:raise RuntimeError('Bot read-only verification failed') from None
+    worker.bot_check=bot_check
+    return worker
 
 
 def split_message(text):
@@ -423,7 +434,9 @@ def main():
     w=runtime()
     if args.verify:
         cfg=w.config();watches=w.watches()
-        print(json.dumps(dict(status='verified',config_ready=bool(cfg),active_watches=sum(x['status']=='active' for _,x in watches),telegram_calls=0,wb_writes=0)));return
+        info=w.bot_check()
+        w.save('china_agent:dialog_verification:'+os.environ.get('GITHUB_RUN_ID','manual'),dict(status='verified',bot=info,telegram_sends=0,wb_writes=0))
+        print(json.dumps(dict(status='verified',config_ready=bool(cfg),active_watches=sum(x['status']=='active' for _,x in watches),bot=info,telegram_sends=0,wb_writes=0)));return
     if args.smoke:
         cfg=w.config();w.collect=None
         question=dict(id=0,agent_id='china',chat_id=cfg['chat_id'],sender_id=cfg['owner_user_id'],request_text='Какие данные по кабинету Китай сейчас доступны? Проверь статус источников. Это разовый вопрос, ничего не запускай и не создавай расписаний.',origin='smoke')

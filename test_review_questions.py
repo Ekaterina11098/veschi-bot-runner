@@ -46,19 +46,15 @@ class QuestionApprovalTests(unittest.TestCase):
             self.assertTrue(app.handle(later,'secret')['duplicate']);self.assertEqual(repo.count('intents'),1)
             card=repo.get('cards',token);card['status']='sent'
             self.assertNotIn('Ответ опубликован.',app.view(token,card)['text'])
-    def test_owner_receipt_once_per_stage_and_unknown_delivery_no_repost(self):
+    def test_normal_statuses_do_not_send_new_notifications(self):
         from review_approval_card_delivery import notify_owner_receipt
         repo=Repository(sqlite3.connect(':memory:'));repo.setup()
         app=Approval(repo,'s','owner','chat','bot',enabled=True)
         intent=dict(id='i',owner_id='owner',chat_id='chat',card_token='c',cabinet='token_2',kind='questions',item_id='q',status='awaiting_preflight')
         repo.put('intents','i',intent);repo.put('cards','c',{'source':{'article':'sku'}});repo.conn.commit()
-        tg=Mock();tg.call.return_value={'chat':{'id':'chat'},'message_id':42}
-        self.assertEqual(notify_owner_receipt(app,tg,intent)['status'],'confirmed')
-        notify_owner_receipt(app,tg,intent);self.assertEqual(tg.call.call_count,1)
-        self.assertIn('Подтверждение принято',tg.call.call_args[0][1]['text'])
-        intent['status']='confirmed'
-        notify_owner_receipt(app,tg,intent);self.assertEqual(tg.call.call_count,2)
-        intent['wb_ui_status']='Опубликован для всех';tg.call.side_effect=TimeoutError()
-        self.assertEqual(notify_owner_receipt(app,tg,intent)['status'],'uncertain')
-        notify_owner_receipt(app,tg,intent);self.assertEqual(tg.call.call_count,3)
+        tg=Mock()
+        for state in ('awaiting_preflight','verify','confirmed'):
+            intent['status']=state
+            self.assertEqual(notify_owner_receipt(app,tg,intent)['status'],'suppressed')
+        tg.call.assert_not_called()
 if __name__=='__main__':unittest.main()

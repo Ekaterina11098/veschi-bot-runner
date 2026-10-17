@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -40,4 +41,4 @@ jobs:
           git diff --cached --quiet || git commit -m "Preserve encrypted retained quantity evidence"
           git push origin HEAD:advertising-growth-retained-20261017
 
-# Read normalized saved article keys; no calls to inventory sources.
+# Completed saved-only audit. Disabled; no recurring collection.

@@ -1,0 +1,37 @@
+name: Verify China morning schedule and independent delivery identities
+on:
+  push:
+    branches: [china-morning-schedule-20261017]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Verify existing delivery guards without credentials or sends
+        run: |
+          python scripts/china_chat_migration.py
+          cd source
+          python ../scripts/install_china_order_coverage.py
+          cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
+          cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
+          cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
+          cp ../scripts/china_daily_expected_control.py china_agent/daily_expected_control.py
+          cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py
+          cp ../scripts/china_expected_order_profit.py china_agent/expected_order_profit.py
+          cp ../scripts/china_price_experiment_result.py china_agent/price_experiment_result.py
+          cd ..
+          PYTHONPATH=scripts:source:source/tests python -m unittest discover -s scripts -p test_china_morning_schedule.py
+          test "$(git hash-object .github/workflows/china-price-intraday.yml)" = 4fc8949ef3995918cab12ae9300821be626e24cc

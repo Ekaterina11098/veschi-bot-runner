@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    # One read-only report destination audit; no reports are executed.
+    if: true # Read-only exact China bot migration and report destination audit.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -25,6 +25,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
           ADVERTISING_DIALOG_SOURCE_SHA: a0d222353b1fb120fb66a114f64f463e2f936a28
       - name: Preserve encrypted activation result only

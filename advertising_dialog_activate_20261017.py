@@ -9,7 +9,9 @@ OLD=-5533733230;NEW=-1004378639510
 proof=dict(complete=False,source_calls=0,model_calls=0,telegram_sends=0,wb_writes=0,configuration_writes=0,checks={})
 native=requests.sessions.Session.request;host=urlparse(os.environ['SUPABASE_URL']).hostname
 def guard(self,method,url,*args,**kwargs):
- if method.upper()!='GET' or urlparse(url).hostname!=host or not urlparse(url).path.startswith('/rest/v1/'):raise RuntimeError('Only retained DB GET allowed')
+ if urlparse(url).hostname==host and method.upper()=='GET' and urlparse(url).path.startswith('/rest/v1/'):pass
+ elif urlparse(url).hostname=='api.telegram.org' and urlparse(url).path.rsplit('/',1)[-1] in ('getMe','getChat','getChatMember','getChatAdministrators','getWebhookInfo'):pass
+ else:raise RuntimeError('Only retained DB and Telegram identity reads allowed')
  return native(self,method,url,*args,**kwargs)
 requests.sessions.Session.request=guard
 try:
@@ -30,15 +32,6 @@ try:
  check['limited_delivery_still_approved']=(profiles.get('advertising:ip:limited_rollout:v1') or {}).get('telegram_delivery_approved') is True
  proof['business_configs']=store.db('GET','business_agent_config',params={'active':'eq.true','select':'agent_id,chat_id,owner_user_id,bot_id,active','limit':20}) or []
  check['other_active_agent_configs_not_old']=all(str(x.get('chat_id'))!=str(OLD) for x in proof['business_configs'])
- paths=('chat_id','expected_chat_id','registered_chat_id','recipient_chat_id','telegram_chat_id')
- clauses=['payload->>'+p+'.eq.'+str(OLD) for p in paths]+['cache_key.like.*'+str(OLD)+'*']
- selected='cache_key,updated_at,expires_at,'+','.join(p+':payload->'+p for p in paths)+',enabled:payload->enabled,status:payload->status,next_at:payload->next_at,active:payload->active'
- refs=store.db('GET','telegram_api_cache',params={'or':'('+','.join(clauses)+')','select':selected,'order':'cache_key','limit':500}) or []
- proof['remaining_old_cache_references']=refs
- check['cache_reference_scan_not_truncated']=len(refs)<500
- proof['old_target_advertising_jobs']=store.db('GET','advertising_agent_jobs',params={'chat_id':'eq.'+str(OLD),'select':'id,chat_id,status,origin','limit':100}) or []
- proof['old_target_advertising_watches']=store.db('GET','advertising_agent_watches',params={'chat_id':'eq.'+str(OLD),'select':'id,chat_id,status,next_check_at,expires_at','limit':100}) or []
- proof['old_target_business_jobs']=store.db('GET','business_agent_jobs',params={'chat_id':'eq.'+str(OLD),'select':'id,agent_id,chat_id,status,origin','limit':100}) or []
  general=os.environ.get('TELEGRAM_ALLOWED_CHAT_ID','').strip()
  proof['stock_reviews_environment']=dict(configured=bool(general),is_old_advertising_chat=general==str(OLD),is_new_advertising_chat=general==str(NEW))
  check['stock_reviews_separate_recipient']=bool(general) and general not in (str(OLD),str(NEW))
@@ -51,6 +44,22 @@ try:
   proof['review_config']=dict(matches_existing_environment=row[0]==general,is_old_advertising_chat=row[0]==str(OLD),enabled=row[1],new_notices_enabled=row[2],destination_verified=row[3])
   check['review_recipient_matches_existing_environment']=row[0]==general
   check['review_notices_still_enabled']=all(x=='true' for x in row[1:])
+ token=os.environ['CHINA_TELEGRAM_BOT_TOKEN'];cfg=next(x for x in proof['business_configs'] if x['agent_id']=='china')
+ def tg(method,**kw):return requests.post('https://api.telegram.org/bot'+token+'/'+method,json=kw,timeout=25).json()
+ me=tg('getMe');proof['china_identity']=me;check['china_exact_bot']=me.get('result',{}).get('id')==8780468043
+ old=cfg['chat_id'];diag={}
+ for m in ('getChat','getChatMember','getChatAdministrators'):
+  diag[m]=tg(m,chat_id=old,**({'user_id':8780468043} if m=='getChatMember' else {}))
+ proof['china_old_telegram']=diag
+ candidates=set()
+ for val in diag.values():
+  nxt=val.get('parameters',{}).get('migrate_to_chat_id')
+  if nxt:candidates.add(nxt)
+ proof['china_migration_candidates']=list(candidates)
+ if len(candidates)==1:
+  new=next(iter(candidates));proof['china_new_telegram']={m:tg(m,chat_id=new,**({'user_id':8780468043} if m=='getChatMember' else {})) for m in ('getChat','getChatMember','getChatAdministrators')}
+ proof['china_watches']=store.db('GET','telegram_api_cache',params={'cache_key':'like.china_agent:conversion_watch:v1:*','select':'cache_key,payload','limit':100}) or []
+ proof['china_recent_jobs']=store.db('GET','business_agent_jobs',params={'agent_id':'eq.china','select':'id,update_id,chat_id,sender_id,request_text,status,created_at','order':'id.desc','limit':12}) or []
  proof['complete']=all(check.values())
 except Exception as exc:proof.update(error_type=type(exc).__name__,error=str(exc)[:180])
 seal('advertising-dialog-activation',proof)

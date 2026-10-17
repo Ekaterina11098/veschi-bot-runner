@@ -1,0 +1,52 @@
+name: Owner approved one short content-preparation message
+on:
+  push:
+    branches: [approved-first-review-20261017]
+    paths: ['.github/workflows/advertising-first-review-20261017.yml']
+permissions: {contents: write}
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: f55695af1f9bfb7574afc96ca81db6be54ae0986
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Send exact owner-approved retained 12-message overview once
+        working-directory: private-source
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+        run: python ../advertising_first_review_delivery_20261017.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-first-campaign-review
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Preserve delivery receipt ciphertext only
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          for file in "$RUNNER_TEMP"/stock-deploy-proof/*.aes.json; do
+            test -f "$file" || continue
+            cp "$file" "recovery-output/advertising/first-campaign-review-${{ github.run_id }}.aes.json"
+          done
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/first-campaign-review-*.aes.json
+          git diff --cached --quiet || git commit -m "Preserve encrypted one-message delivery receipt"
+          git push origin HEAD:approved-first-review-20261017

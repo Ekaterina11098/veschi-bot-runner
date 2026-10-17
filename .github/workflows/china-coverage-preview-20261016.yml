@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
-      - name: Read bounded missing WB funnel with shared cooldown
+      - name: Acquire order-date cohorts without Telegram
         working-directory: source
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -43,4 +43,5 @@ jobs:
           cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py
           cp ../scripts/china_control_gap_preview.py china_agent/control_gap_preview.py
           cp ../scripts/china_control_funnel_preview.py china_agent/control_funnel_preview.py
-          python -m china_agent.control_funnel_preview
+          cp ../scripts/china_cohort_preview.py china_agent/cohort_preview.py
+          python -m china_agent.cohort_preview

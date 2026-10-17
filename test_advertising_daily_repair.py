@@ -132,7 +132,7 @@ class DailyTests(unittest.TestCase):
   self.stages['source']=fail;r=self.run_day();self.assertEqual(r['status'],'failed');self.assertEqual(r['failed_stage'],'source');self.assertEqual(r['stages'],[])
  def test_budget_timeout_not_global_analysis_block(self):
   def fail():raise TimeoutError()
-  self.stages['budgets']=fail;r=self.run_day();self.assertTrue(r['analysis_complete']);self.assertIn('budgets',r['pending_stages'])
+  self.stages['budgets']=fail;r=self.run_day();self.assertTrue(r['analysis_complete']);self.assertEqual(r['status'],'complete');self.assertNotIn('budgets',r['pending_stages'])
  def test_completed_delivery_not_replayed(self):
   self.previous();self.state['stages']=[dict(name=n,status='complete',result={}) for n in self.names[:-1]]
   self.run_day(resume_from='old:1');self.assertEqual(self.called,['budget_completion'])
@@ -178,4 +178,14 @@ class BudgetStageStatus(unittest.TestCase):
    r=fn('advertising_budgets_owner.py',1)()
   self.assertEqual(r['business_status'],'incomplete');self.assertEqual(r['reason'],'budget_evidence_pending')
 
+
+class FinalBudgetResolution(DailyTests):
+ def test_completion_resolves_single_step_incomplete(self):
+  self.stages['budgets']=lambda:{'business_status':'incomplete','reason':'budget_evidence_pending'}
+  r=self.run_day();self.assertEqual(r['status'],'complete');self.assertEqual(r['stages'][3]['resolved_by'],'budget_completion')
+ def test_unresolved_completion_remains_incomplete(self):
+  self.stages['budgets']=lambda:{'business_status':'incomplete'}
+  self.stages['budget_completion']=lambda:{'business_status':'incomplete','reason':'budget_evidence_pending'}
+  r=self.run_day();self.assertEqual(r['status'],'incomplete');self.assertIn('budget_completion',r['pending_stages'])
 if __name__=='__main__':unittest.main()
+

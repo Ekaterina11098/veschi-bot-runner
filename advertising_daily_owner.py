@@ -43,7 +43,14 @@ def execute_day(get,put,stages,run_id,now=None,single_writer=False,*,resume_from
    if hasattr(exc,'summary'):state['partial_stage_result']=exc.summary
    save();return state
  latest_source=next((r for r in reversed(state['stages']) if r['name'] in ('source','source_gaps')),None)
- pending=[r['name'] for r in state['stages'] if r.get('status')=='incomplete' and r['name'] not in ('source','source_gaps')]
+ budget_done=next((r for r in state['stages'] if r['name']=='budget_completion' and r.get('status')=='complete'),None)
+ if budget_done:
+  for r in state['stages']:
+   if r['name']=='budgets' and r.get('status')=='incomplete':r['resolved_by']='budget_completion'
+ if latest_source and latest_source.get('status')=='complete':
+  for r in state['stages']:
+   if r['name']=='source' and r.get('status')=='incomplete':r['resolved_by']='source_gaps'
+ pending=[r['name'] for r in state['stages'] if r.get('status')=='incomplete' and not r.get('resolved_by') and r['name'] not in ('source','source_gaps')]
  if latest_source and latest_source.get('status')!='complete':pending.insert(0,'source_gaps')
  state['completed_stages']=[r['name'] for r in state['stages'] if r.get('status')=='complete']
  state['analysis_complete']=any(r['name']=='analysis_and_delivery' and r.get('status')=='complete' for r in state['stages'])

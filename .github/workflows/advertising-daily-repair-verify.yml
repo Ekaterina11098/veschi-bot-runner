@@ -32,4 +32,4 @@ jobs:
           python -m unittest discover -s tests -p 'test_ip_daily_recommendations.py'
           python -m unittest discover -s tests -p 'test_ip_delivery_boundary.py'
 
-# Verify explicit analysis/delivery and budget states in the final prepared package.
+# Final aggregate completion must resolve preliminary budget/source evidence without hiding history.

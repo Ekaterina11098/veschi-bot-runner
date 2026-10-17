@@ -21,7 +21,7 @@ const ctx={Response,Request,AbortSignal,TextEncoder,crypto:webcrypto,console,Den
   else if(opt.method==='PATCH'){cfg={...cfg,...b};result=[cfg];}
   else result=[cfg];
  }else if(table==='telegram_api_cache'){
-  if(p.get('cache_key')?.includes('chat_migration')){
+  if(b?.cache_key?.includes('chat_migration')||p.get('cache_key')?.includes('chat_migration')){
    if(opt.method==='POST'){line=b;result=[line];}else result=line?[line]:[];
   }
  }else if(table==='business_agent_jobs'){
@@ -45,3 +45,4 @@ assert.equal((await call(migrate)).status,200);assert.equal(cfg.chat_id,-456);as
 assert.equal((await call(migrate)).status,200);assert.equal(cfg.chat_id,-456);
 const bad={update_id:7,message:{message_id:7,chat:{id:-999,type:'group'},migrate_to_chat_id:-888}};assert.equal((await call(bad)).status,503);assert.equal(cfg.chat_id,-456);
 console.log('Webhook auth, all-member input, exact dispatch, duplicate, reply and migration checks passed');
+

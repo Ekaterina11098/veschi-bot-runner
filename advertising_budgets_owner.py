@@ -40,7 +40,10 @@ try:
   single_step=os.environ.get('ADVERTISING_BUDGET_STEP_ONLY')=='true'
   # Time and request caps are independent: a429 does not consume successful progress.
   deadline=time.monotonic()+(120 if single_step else 13700)
-  max_requests=1 if single_step else min(40,max(6,len(active)*3))
+  initial_payload=(c.latest('advertising_campaign_budgets',status=None) or {}).get('payload') or {}
+  initial_pending=budget_pending(initial_payload,active,datetime.now(timezone.utc))['pending_campaign_ids']
+  max_requests=1 if single_step else min(40,max(6,len(initial_pending)*3))
+  report.update(request_cap=max_requests,deadline_seconds=120 if single_step else 13700,initial_pending_campaign_ids=initial_pending)
   def checkpoint(payload):
    queue=budget_pending(payload,active,c.NOW)
    queue.update(day=str(c.TODAY),membership_observed_at=config['collected_at'],origin_day_run=os.environ.get('GITHUB_RUN_ID'))

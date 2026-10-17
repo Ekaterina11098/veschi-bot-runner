@@ -56,6 +56,18 @@ class ResumeTests(unittest.TestCase):
  def test_wrong_attempt_not_accepted(self):
   self.state['run_id']='39015462359:2'
   with self.assertRaises(PermissionError):self.runit()
+ def test_budget_technical_failure_does_not_erase_saved_analysis(self):
+  state=None;called=[]
+  def get(k):return copy.deepcopy(state)
+  def cas(k,old,new):
+   nonlocal state
+   if old!=state:return False
+   state=copy.deepcopy(new);return True
+  def fail():raise RuntimeError('Budget cache unavailable')
+  def analyze():called.append('analysis');return {'business_status':'complete','analysis_saved':True,'delivery_unconfirmed_count':0}
+  stages={n:lambda:{'business_status':'complete'} for n in self.names};stages.update(budgets=fail,budget_completion=fail,analysis_and_delivery=analyze)
+  r=execute(get,None,stages,'fresh:1',NOW,single_writer=True,cas=cas)
+  self.assertEqual(called,['analysis']);self.assertEqual(r['analysis_status'],'complete');self.assertEqual(r['notification_status'],'complete');self.assertEqual(r['budget_status'],'failed');self.assertEqual(r['status'],'incomplete')
  def test_repeat_without_explicit_resume_does_not_run(self):
   r=execute(lambda k:self.state,None,{},'new',NOW,single_writer=True,cas=lambda *a:False)
   self.assertTrue(r['skipped'])

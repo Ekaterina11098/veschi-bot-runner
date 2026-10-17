@@ -1,4 +1,4 @@
-name: Verify daily repair without external test network and cumulative telemetry offline
+name: Verify final bounded daily repair without external network and cumulative telemetry offline
 on:
   push:
     branches: [fix-advertising-budget-telemetry-20261017]

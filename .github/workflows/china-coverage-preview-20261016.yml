@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
-      - name: Verify missing article identity and daily facts without Telegram
+      - name: Read missing exclusive WB funnel without Telegram
         working-directory: source
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -42,4 +42,5 @@ jobs:
           cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
           cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py
           cp ../scripts/china_control_gap_preview.py china_agent/control_gap_preview.py
-          python -m china_agent.control_gap_preview
+          cp ../scripts/china_control_funnel_preview.py china_agent/control_funnel_preview.py
+          python -m china_agent.control_funnel_preview

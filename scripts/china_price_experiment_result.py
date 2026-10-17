@@ -44,3 +44,16 @@ def experiment_result(before_profit,after_profit,before_views,before_orders,afte
  if buyout_sample and buyout_sample<10:text+=' Процент выкупа основан на '+str(buyout_sample)+' завершённых заказах; оценка неустойчива.'
  result.update(status=status,result_action=text)
  return result
+
+def zero_buyout_signal(orders,paid_kept,finished,pending,unpaid,returned):
+ """Separate confirmed nonbuyouts/returns from orders still awaiting outcome."""
+ values=(orders,paid_kept,finished,pending,unpaid,returned)
+ if any(type(v) is not int or v<0 for v in values):
+  return dict(status='unverified',attention=False,message='Статусы заказов не подтверждены — требуется сверка выкупов и отказов.')
+ if paid_kept>0 or orders==0:return dict(status='no_zero_buyout_alert',attention=False,message='')
+ if finished==0 and pending>0:
+  return dict(status='awaiting_outcomes',attention=False,message=f'Выкупов пока нет: заказы {orders}, в ожидании {pending}, завершённых исходов 0. Это ещё не признак проблемы товара.')
+ if finished>0 and unpaid+returned>0:
+  return dict(status='zero_buyout_with_completed_outcomes',attention=True,
+   message=f'⚠️ Заказы есть, выкупов нет: заказы {orders}; завершено {finished}; невыкупы/отказы {unpaid}; возвраты после выкупа {returned}; ожидают исхода {pending}. Проверить доставку, отзывы, соответствие фото и описания, качество товара. Причина не установлена; отдельно от оценки изменения цены.')
+ return dict(status='unverified',attention=False,message='Заказы есть, выкупы не подтверждены — сверить статусы, прежде чем делать вывод о товаре.')

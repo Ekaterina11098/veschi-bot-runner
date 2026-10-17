@@ -1,31 +1,27 @@
-"""Verify deeper saved-data dialogue without any incoming job creation or sending."""
-import os,sys,json,copy,subprocess,requests
-from urllib.parse import urlparse
+"""Activate only the verified dialogue source pin; no question execution or sending."""
+import os,sys,json,copy,hashlib
 sys.path.insert(0,'private-source')
-from advertising_agent import agent_store as store,conversation as c
+from advertising_agent import agent_store as store
 from stock_deploy_support import seal
-proof=dict(complete=False,simulation=True,source_calls=0,model_calls=0,telegram_sends=0,wb_writes=0)
+KEY='advertising:dialog_rollout:v1'
+proof=dict(complete=False,source_calls=0,model_calls=0,telegram_sends=0,wb_writes=0)
+def digest(v):return hashlib.sha256(json.dumps(v,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
 try:
- result=subprocess.run([sys.executable,'-c',"import socket,unittest,sys\ndef deny(*a,**k):raise AssertionError(\"Offline test network forbidden\")\nsocket.socket.connect=deny\nloader=unittest.TestLoader();sys.path.insert(0,\"tests\")\nimport test_advertising_conversation as old\nsuite=unittest.TestSuite([loader.discover(\"tests\",pattern=\"test_advertising_saved_dialogue.py\"),loader.loadTestsFromTestCase(old.ConversationTests)])\nresult=unittest.TextTestRunner(verbosity=2).run(suite)\nsys.exit(not result.wasSuccessful())\n"],cwd='private-source')
- proof['regression_passed']=result.returncode==0
- if result.returncode:raise RuntimeError('Free dialogue regression failed')
- native=requests.sessions.Session.request
- host=urlparse(os.environ['SUPABASE_URL']).hostname
- def guard(self,method,url,*args,**kwargs):
-  if method.upper()!='GET' or urlparse(url).hostname!=host:raise RuntimeError('Only retained database GET permitted')
-  return native(self,method,url,*args,**kwargs)
- requests.sessions.Session.request=guard
- parent=store.db('GET','advertising_agent_jobs',params={'id':'eq.33','select':'*','limit':1})[0]
- probe=copy.deepcopy(parent);probe['id']=34;probe['request_text']='А почему?'
- probe['delivery']=dict(route='saved-dialog-v1',incoming_message_id=0,reply_context=dict(message_id=parent['delivery']['answer_message_id'],text=parent['answer'],is_bot=True))
- def no_model(_):raise RuntimeError('No model for exact saved arithmetic')
- answer,trace=c.run_saved_dialog(probe,no_model)
- checks=dict(differs_from_initial=answer!=parent['answer'],has_deeper_reasoning='Углублю объяснение' in answer,
-  exact_parent=probe['delivery'].get('context_parent_job_id')==33,
-  explicit_reply_resolution=probe['delivery'].get('context_resolution')=='telegram_reply',
-  no_new_cause='Называть одну из них причиной пока нельзя' in answer)
- proof.update(complete=all(checks.values()),checks=checks,automatic_followup=answer,context=probe['delivery'],trace=trace,source_sha=os.environ['ADVERTISING_DIALOG_SOURCE_SHA'])
-except Exception as exc:proof.update(error_type=type(exc).__name__,error=str(exc)[:180])
+ r=store.registration()
+ rows=store.db('GET','telegram_api_cache',params={'cache_key':'eq.'+KEY,'select':'payload,updated_at','limit':1}) or []
+ if len(rows)!=1:raise RuntimeError('Existing rollout missing')
+ old=rows[0]['payload'];target=os.environ['ADVERTISING_DIALOG_SOURCE_SHA']
+ if old.get('enabled') is not True or old.get('chat_id')!=r['chat_id'] or old.get('owner_id')!=r['registered_by_user_id']:raise RuntimeError('Existing rollout identity mismatch')
+ if old.get('source_sha') not in ('c06863252b707f82fea155919940075596c8aa33',target):raise RuntimeError('Unexpected existing source pin')
+ before=store.cache_get('advertising:ip_pair_decisions:token_2:v1')
+ new=dict(old,source_sha=target)
+ if new!=old:
+  patched=store.db('PATCH','telegram_api_cache',params={'cache_key':'eq.'+KEY,'updated_at':'eq.'+rows[0]['updated_at'],'select':'payload'},body={'payload':new,'updated_at':store.now().isoformat()},prefer='return=representation') or []
+  if len(patched)!=1:raise RuntimeError('Rollout CAS failed')
+ if store.cache_get(KEY)!=new:raise RuntimeError('Rollout readback mismatch')
+ if digest(before)!=digest(store.cache_get('advertising:ip_pair_decisions:token_2:v1')):raise RuntimeError('Recommendation registry changed')
+ proof.update(complete=True,source_sha=target,rollout_readback_verified=True,registry_unchanged=True)
+except Exception as exc:proof.update(error_type=type(exc).__name__,error=str(exc)[:160])
 seal('advertising-dialog-activation',proof)
-print(json.dumps({k:proof.get(k) for k in ('complete','regression_passed','simulation','checks','source_calls','model_calls','telegram_sends','wb_writes','error')}))
+print(json.dumps(proof))
 if not proof['complete']:raise SystemExit(1)

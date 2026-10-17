@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    # One offline regression and retained-data follow-up simulation.
+    # Activate verified deeper saved-data dialogue source.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

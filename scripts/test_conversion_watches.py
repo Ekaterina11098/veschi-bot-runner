@@ -43,7 +43,7 @@ class Watches(unittest.TestCase):
         with self.assertRaises(ValueError):Memory().command(job(CREATE.replace('52-NoelBag-fuchsia','52')))
     def test_missing_time_not_saved(self):
         w=Memory()
-        with self.assertRaises(ValueError):w.command(job('Следи за конверсией 52-NoelBag-fuchsia'))
+        with self.assertRaises(ValueError):w.command(job('Следи за конверсией 52-NoelBag-fuchsia ежедневно'))
         self.assertFalse(w.mem)
     def test_wrong_owner(self):
         j=job(CREATE);j['sender_id']=6
@@ -108,6 +108,7 @@ class Watches(unittest.TestCase):
         w.dialog=lambda *a:('Продажи за неделю выросли.',[])
         self.assertEqual(w.reports(),1);self.assertIn('Продажи за неделю выросли',w.sent[0][1]);self.assertEqual(w.reports(),0)
     def test_show_one_off_report_not_list(self):self.assertIsNone(intent('Покажи отчет по продажам за неделю'))
+    def test_one_off_track_not_schedule(self):self.assertIsNone(intent('Отследи конверсию 52-NoelBag-fuchsia за последние 5 дней'))
     def test_generic_question_not_schedule(self):self.assertEqual(intent('Как ежедневно проверяй продажи в 12:00?'),'help')
     def test_followup_change_single_task(self):
         w=Memory();w.command(job(CREATE));w.command(job('Перенеси на 13:00',2));self.assertEqual(w.watches()[0][1]['clock'],'13:00')

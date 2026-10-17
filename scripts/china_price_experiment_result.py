@@ -24,7 +24,7 @@ def experiment_result(before_profit,after_profit,before_views,before_orders,afte
   return result
  p=conversion_test(before_views,before_orders,after_views,after_orders)
  result['conversion_fisher_p']=p
- if p is None or before_orders+after_orders==0 or not buyout_sample:
+ if p is None or before_orders+after_orders==0:
   text='Недостаточно наблюдений для решения — продолжаем сбор данных.';status='insufficient_observations'
  else:
   decline=after_orders/after_views<before_orders/before_views

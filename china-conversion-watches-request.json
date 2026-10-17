@@ -1,5 +1,5 @@
 {
-  "action": "verify",
+  "action": "smoke",
   "requested_at": "2026-10-17",
-  "nonce": "owner-conversion-watches-initial-verification"
+  "nonce": "owner-free-form-dialog-smoke-no-telegram"
 }

@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow > "$RUNNER_TEMP/install.log" 2>&1
-      - name: Calculate complete disclosed forecast preview without Telegram
+      - name: Reconcile forecast with retained WB orders without Telegram
         working-directory: source
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -48,4 +48,5 @@ jobs:
           cp ../scripts/china_expected_order_profit.py china_agent/expected_order_profit.py
           cp ../scripts/china_price_experiment_result.py china_agent/price_experiment_result.py
           cp ../scripts/china_expected_full_preview.py china_agent/expected_full_preview.py
-          python -m china_agent.expected_full_preview
+          cp ../scripts/china_expected_reconciled_preview.py china_agent/expected_reconciled_preview.py
+          python -m china_agent.expected_reconciled_preview

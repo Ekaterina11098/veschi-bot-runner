@@ -19,5 +19,8 @@ class ResultTests(unittest.TestCase):
   result=zero_buyout_signal(2,0,2,0,0,2);self.assertTrue(result['attention']);self.assertIn('возвраты после выкупа 2',result['message'])
  def test_unknown_outcomes_do_not_create_false_alert(self):
   self.assertFalse(zero_buyout_signal(2,None,0,2,0,0)['attention'])
+ def test_fallback_buyout_does_not_hide_conversion_decline(self):
+  self.assertEqual(experiment_result(200,50,100,30,100,2,1,0)['status'],'watch_decline')
 if __name__=='__main__':unittest.main()
+
 

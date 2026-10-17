@@ -13,6 +13,7 @@ MSK = ZoneInfo('Europe/Moscow')
 PREFIX = 'china_agent:conversion_watch:v1:'
 DAILY = 'china_agent:conversion_watch_day:v1:'
 RECEIPTS = 'china_agent:conversion_watch_delivery:v1:'
+DEPLOYED_AFTER = '2026-10-17T17:17:13+00:00'
 HELP = ('Пример: «Следи за конверсией 52-NoelBag-fuchsia за последние 5 дней, '
         'присылай ежедневно в 12:00 МСК». Список: «Мои наблюдения». '
         'Изменить: «Измени наблюдение ID на 13:00 за последние 4 дня». '
@@ -222,9 +223,10 @@ class Worker:
         receipt.update(status='sent',message_id=message['message_id']);self.save(RECEIPTS+key,receipt);return 'sent'
 
     def jobs(self):
-        rows=self.db('GET','business_agent_jobs',params={'agent_id':'eq.china','or':'(and(status.eq.pending,retry_at.lte.'+self.now.isoformat()+'),and(status.eq.running,lease_until.lte.'+self.now.isoformat()+'))','select':'*','order':'id.asc','limit':100}) or []
+        rows=self.db('GET','business_agent_jobs',params={'agent_id':'eq.china','created_at':'gte.'+DEPLOYED_AFTER,'or':'(and(status.eq.pending,retry_at.lte.'+self.now.isoformat()+'),and(status.eq.running,lease_until.lte.'+self.now.isoformat()+'))','select':'*','order':'id.asc','limit':100}) or []
         processed=0
         for job in rows:
+            if job['request_text'].startswith('/china_'):continue
             if not self.authorized(job):continue
             lease=str(uuid.uuid4())
             filters={'id':'eq.'+str(job['id']),'status':'eq.'+job['status']}
@@ -236,6 +238,7 @@ class Worker:
                 trace=job.get('tool_trace') or []
                 try:
                     if job.get('answer') is not None:answer=job['answer']
+                    elif job['request_text']=='/ask':answer='Напиши вопрос или поручение по Китайскому кабинету обычным сообщением. Можно уточнять предыдущий ответ; ежедневное выполнение укажи явно вместе со временем.'
                     elif intent(job['request_text']) and (intent(job['request_text'])!='create' or parameters(job['request_text'])[0]):answer=self.command(job)
                     else:
                         history=self.db('GET','business_agent_jobs',params={'agent_id':'eq.china','chat_id':'eq.'+str(job['chat_id']),'sender_id':'eq.'+str(job['sender_id']),'id':'lt.'+str(job['id']),'status':'eq.done','select':'agent_id,chat_id,request_text,answer','order':'id.desc','limit':10}) or []

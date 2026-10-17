@@ -1,4 +1,4 @@
-name: China owner-approved morning replacement 20261017
+name: China owner-approved corrected reports 20261017
 on:
   push:
     branches: [main]
@@ -26,4 +26,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: python scripts/china_approved_morning_replacement.py
+        run: python scripts/china_approved_corrected_reports_20261017.py

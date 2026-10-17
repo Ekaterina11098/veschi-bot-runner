@@ -33,6 +33,16 @@ try:
  job=store.db('GET','advertising_agent_jobs',params={'id':'eq.31','select':'*','limit':1})[0]
  probe=copy.deepcopy(job);probe['request_text']='Почему у 57-NoelBag-burgundy высокий ДРР?'
  def no_model(_):raise RuntimeError('Exact saved arithmetic must not invoke model')
+ rows=c.saved_dialog_rows()
+ daily=rows[0]['data'].get('daily') or {}
+ canonical=store.cache_get('advertising:ip_pair_decisions:token_2:v1') or {}
+ proof['context_schema']=dict(
+  pairs=[p for p in daily.get('full_pair_analysis') or [] if p.get('article')=='57-NoelBag-burgundy'],
+  daily_keys=list(daily.keys()),
+  review_keys=list((daily.get('campaign_review') or {}).keys()),
+  canonical_records=[v for v in (canonical.get('records') or {}).values() if '57-NoelBag-burgundy' in json.dumps(v,ensure_ascii=False)][:3],
+  saved_records=[v for v in ((daily.get('decision_state') or {}).get('records') or {}).values() if '57-NoelBag-burgundy' in json.dumps(v,ensure_ascii=False)][:3])
+ c.saved_dialog_rows=lambda:rows
  answer,trace=c.run_saved_dialog(probe,no_model)
  proof.update(automatic_answer=answer,trace=trace,complete=True,source_sha=os.environ['ADVERTISING_DIALOG_SOURCE_SHA'])
 except Exception as exc:proof.update(error_type=type(exc).__name__,error=str(exc)[:200])

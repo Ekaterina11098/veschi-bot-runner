@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    # Verify fixed SKU versus campaign explanation; deletion receipts already confirmed.
+    # Inspect exact saved campaign and recommendation projection only.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

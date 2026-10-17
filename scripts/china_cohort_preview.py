@@ -16,23 +16,29 @@ class Cohort(Preview):
   ids={str(r['nm_id']):str(r['p_id']) for r in rows}
   # Previously independently reconciled extended catalogue mapping.
   ids['1535337777']='149503571'
+  registry=self.get('china_agent:price_control_product_registry:v1') or {}
+  lower=self.get('china_agent:daily_expected_candidates:2026-10-17:verify') or {}
+  for p in lower.get('products',[]):
+   if p['nm_id'] not in {str(t[0]) for t in tracked}:
+    tracked.append((p['nm_id'],dict(article=p['article']),{},None))
+  ids.update({str(k):str(v['pid']) for k,v in registry.get('rows',registry).items() if isinstance(v,dict) and v.get('pid')})
   reqs=[];targets={}
   for nm,e,c,d in tracked:
    if str(nm) not in ids:raise RuntimeError('Missing cohort product mapping')
    key='cohort:'+str(nm);targets[key]=(str(nm),e['article'],ids[str(nm)])
-   reqs.append(dict(cabinet='token_3',tool='lk_wb_card_orders',key=key,priority=90,arguments=dict(type='products',value=ids[str(nm)],date_from='2026-10-14',date_to='2026-10-16',start_row=0,end_row=300)))
+   reqs.append(dict(cabinet='token_3',tool='lk_wb_card_orders',key=key,priority=90,arguments=dict(type='products',value=ids[str(nm)],date_from='2026-10-05',date_to='2026-10-16',start_row=0,end_row=300)))
   observations=[]
   def save(cabinet,obs):
    if cabinet!='token_3' or not obs.get('scope_verified') or obs['request_key'] not in targets:raise RuntimeError('Cohort identity mismatch')
    nm,article,pid=targets[obs['request_key']]
-   marker=dict(source='mpstats_lk_wb_card_orders',cabinet=cabinet,run_id='china-order-cohort-'+os.environ['GITHUB_RUN_ID'],period_from='2026-10-14',period_to='2026-10-16',detail='Order-date cohort evidence; no sale-date allocation')
+   marker=dict(source='mpstats_lk_wb_card_orders',cabinet=cabinet,run_id='china-order-cohort-'+os.environ['GITHUB_RUN_ID'],period_from='2026-10-05',period_to='2026-10-16',detail='Order-date cohort evidence; no sale-date allocation')
    receipt=self.db('POST','analytics_snapshots',body=dict(marker,status='complete' if obs['status']=='received' else 'error',payload=[obs]),prefer='return=representation') or []
    observations.append(dict(nm_id=nm,article=article,pid=pid,snapshot_id=receipt[0]['id'] if receipt else None,observation=obs))
-   self.save('china_agent:order_cohort_raw:2026-10-17',dict(status='acquiring',products=observations,telegram_calls=0,wb_writes=0))
+   self.save('china_agent:period_cohort_raw:2026-10-17',dict(status='acquiring',products=observations,telegram_calls=0,wb_writes=0))
    if obs.get('retry_after'):self.save('mpstats:cooldown',dict(pending=True),max(1,obs['retry_after'])/86400)
-  def extra(call,checks,known):return execute_reads(call,checks,known,reqs,{},save,max_requests=28)
+  def extra(call,checks,known):return execute_reads(call,checks,known,reqs,{},save,max_requests=32)
   r=discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=extra)
-  self.save('china_agent:order_cohort_raw:2026-10-17',dict(status='acquired' if len(observations)==len(reqs) and all(p['observation']['status']=='received' for p in observations) else 'incomplete',products=observations,connection_status=r['status'],telegram_calls=0,wb_writes=0))
+  self.save('china_agent:period_cohort_raw:2026-10-17',dict(status='acquired' if len(observations)==len(reqs) and all(p['observation']['status']=='received' for p in observations) else 'incomplete',products=observations,connection_status=r['status'],telegram_calls=0,wb_writes=0))
   print(json.dumps(dict(requested=len(reqs),received=len(observations),connection=r['status'],wb_writes=0,telegram_calls=0)))
 if __name__=='__main__':
  w=Cohort('control')

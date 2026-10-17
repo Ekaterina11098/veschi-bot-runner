@@ -29,7 +29,7 @@ def cached_bidder_map(database):
 
 def restore_retained_source(manifest,read,saved,report,now):
  """Repair derived caches from exact receipts, never replay observer ingestion."""
- if manifest.get('day')!=str(now.astimezone(ZoneInfo('Europe/Moscow')).date()) or manifest.get('original_run_id')!='39004453781':
+ if manifest.get('day')!=str(now.astimezone(ZoneInfo('Europe/Moscow')).date()) or manifest.get('original_run_id')!='39004453781:1':
   raise PermissionError('Exact owner-reviewed retained source manifest required')
  if manifest.get('snapshot_ids')!=[17841,17842,17843,17844,17845,17847,17849,17851,17853]:
   raise PermissionError('Retained source manifest changed')

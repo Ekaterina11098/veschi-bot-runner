@@ -5,6 +5,7 @@ from datetime import date
 
 def explain(text, marker, history):
     if not re.search(r'почему|причин',text,re.I):return None
+    if not re.search(r'конверс',text,re.I) and not re.fullmatch(r'(?:а\s+)?почему[?!.\s]*',text.strip(),re.I):return None
     parent=marker.get('parent_job_id')
     selected=[h for h in history if h.get('id')==parent] if parent else history[-1:]
     events=[(h,e) for h in selected for e in h.get('tool_trace') or []
@@ -14,6 +15,8 @@ def explain(text, marker, history):
         return None
     h,event=events[-1];value=event.get('result') or {};args=event.get('arguments') or {}
     article=args.get('article');nm=str(args.get('nm_id',''))
+    requested=re.findall(r'\b\d+-[A-Za-z][\w-]*',text)
+    if requested and any(a.casefold()!=str(article).casefold() for a in requested):return ('В исходном сообщении другой товар. Уточните, какой артикул и период разобрать; вывод по одному товару нельзя переносить на другой.',[])
     # Explicit reply must resolve to the exact stored job, never quoted text alone.
     if marker.get('reply_message_id') and not parent:return ('Не удалось подтвердить исходный отчёт по этому ответу. Укажите товар и период; причины не установлены.',[])
     rows=value.get('daily') or []

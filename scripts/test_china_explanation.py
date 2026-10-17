@@ -33,6 +33,8 @@ class Explanation(unittest.TestCase):
   w.collect=lambda *a:(_ for _ in ()).throw(AssertionError('collect'))
   j=job('А почему снизилась конверсия?');j['tool_trace']=[MARKER]
   text,trace=w.saved_question(j,[PARENT]);self.assertIn('1,69% → 0,50%',text);self.assertEqual(trace[0]['name'],'saved_conversion_explanation')
- def test_unrelated_question_keeps_other_route(self):self.assertIsNone(explain('Покажи остатки',MARKER,[PARENT]))
+ def test_unrelated_question_keeps_other_route(self):
+  self.assertIsNone(explain('Покажи остатки',MARKER,[PARENT]));self.assertIsNone(explain('А почему выросла цена?',MARKER,[PARENT]))
+  text,trace=explain('Почему снизилась конверсия 59-NoelBag-grey?',MARKER,[PARENT]);self.assertIn('другой товар',text);self.assertEqual(trace,[])
 
 if __name__=='__main__':unittest.main()

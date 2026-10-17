@@ -210,6 +210,7 @@ def render_candidates(worker):
   f=lambda v:f'{v:,.0f}'.replace(',',' ')
   lines+=['• '+article+' / nmID '+nm+': заказы '+('/'.join(map(str,values)))+'; конверсия '+f'{b:.1%}'+' → '+f'{a:.1%}'+'.',
    '  Ожидаемая прибыль '+before['period_from']+'–'+before['period_to']+' → '+after['period_from']+'–'+after['period_to']+': '+f(before['expected_profit'])+' → '+f(after['expected_profit'])+' ₽; разница '+f(result['profit_delta_rub'])+' ₽'+(' ('+str(result['profit_delta_percent'])+'%)' if result['profit_delta_percent'] is not None else '')+'.',
+   '  Реклама: '+f(before['advertising'])+' → '+f(after['advertising'])+' ₽. Рост расходов учитывать отдельно от эффекта цены.',
    '  Выкуп '+str(round(item['buyout_percent'],2))+'%'+(' — принято, своей статистики недостаточно.' if item['buyout_fallback'] else '; завершённых заказов '+str(item['buyout_sample'])+'.'),
    '  Результат и действие: '+result['result_action'],'  Перед снижением проверить связку; изменение цены только по согласованию.']
  lines+=['Предварительный отбор снижения: ожидаемая прибыль скорректирована на текущий % выкупа артикула и относится к датам заказов. Расчёт по согласованной модели учтённых расходов; не фактическая чистая прибыль. Связка проверяется до решения. Конверсия — MPStats, счётчик заказов воронки отличается от статистики WB.','Все изменения цены согласовываем.']

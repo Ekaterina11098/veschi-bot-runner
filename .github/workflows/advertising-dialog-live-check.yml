@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    # Validate latest retained report, payment and saved proposal in actual dialogue.
+    # Confirm retained source container for campaign and proposal context.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

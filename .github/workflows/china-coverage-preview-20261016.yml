@@ -41,4 +41,5 @@ jobs:
           cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
           cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
           cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py
-          python -m china_agent.control_owner_preview
+          cp ../scripts/china_control_gap_preview.py china_agent/control_gap_preview.py
+          python -m china_agent.control_gap_preview

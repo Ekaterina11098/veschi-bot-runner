@@ -1,7 +1,7 @@
 import copy
 import unittest
 from datetime import datetime, timezone
-from conversion_watches import Worker, intent, parameters, next_due, unpack, report, PREFIX, DAILY, RECEIPTS
+from conversion_watches import Worker, intent, parameters, next_due, unpack, report, split_message, PREFIX, DAILY, RECEIPTS
 
 NOW=datetime(2026,10,17,17,30,tzinfo=timezone.utc)
 CFG=dict(agent_id='china',chat_id=-123,owner_user_id=5,bot_id=9)
@@ -93,5 +93,39 @@ class Watches(unittest.TestCase):
         w=Memory();w.command(job(CREATE));w.load_days=lambda watch:({},['2026-10-16'])
         def fail(*a):raise RuntimeError()
         w.collect=fail;self.assertEqual(w.reports(),1);self.assertIn('неполный',w.sent[0][1])
+    def test_long_answers_not_truncated(self):
+        text='word '*2400+'\nmore';parts=split_message(text)
+        self.assertEqual(''.join(parts),text);self.assertLessEqual(max(map(len,parts)),3300)
+    def test_one_off_never_saves_watch(self):
+        w=Memory();w.load_days=lambda watch:({'2026-10-16':dict(date='2026-10-16',views=100,orders=3)},[])
+        result=w.conversion_history('52-NoelBag-fuchsia',days=1)
+        self.assertEqual(result['conversion'],.03);self.assertFalse(w.watches())
+    def test_current_day_rejected(self):
+        with self.assertRaises(ValueError):Memory().conversion_history('52-NoelBag-fuchsia',date_to='2026-10-17')
+    def test_general_recurring_task(self):
+        w=Memory();w.command(job('Сравнивай продажи за неделю и присылай отчёт ежедневно в 12:00'))
+        _,v=w.watches()[0];self.assertEqual(v['kind'],'task');self.assertEqual(v['clock'],'12:00')
+        w.dialog=lambda *a:('Продажи за неделю выросли.',[])
+        self.assertEqual(w.reports(),1);self.assertIn('Продажи за неделю выросли',w.sent[0][1]);self.assertEqual(w.reports(),0)
+    def test_show_one_off_report_not_list(self):self.assertIsNone(intent('Покажи отчет по продажам за неделю'))
+    def test_generic_question_not_schedule(self):self.assertEqual(intent('Как ежедневно проверяй продажи в 12:00?'),'help')
+    def test_followup_change_single_task(self):
+        w=Memory();w.command(job(CREATE));w.command(job('Перенеси на 13:00',2));self.assertEqual(w.watches()[0][1]['clock'],'13:00')
+
+class Dialog(unittest.TestCase):
+    def test_free_form_tool_and_followup_context(self):
+        try:from business_agents import conversation
+        except ImportError:self.skipTest('Source checkout needed for dialog integration')
+        w=Memory();calls=[]
+        def model(body):
+            calls.append(copy.deepcopy(body))
+            if len(calls)==1:
+                names={t['name'] for t in body['tools']};self.assertIn('get_conversion_history',names)
+                return {'output':[{'type':'function_call','name':'get_conversion_history','call_id':'conv','arguments':'{"article":"52-NoelBag-fuchsia","date_from":null,"date_to":null,"days":1}'}]}
+            return {'output':[{'type':'message','content':[{'type':'output_text','text':'За вчера конверсия 3%.'}]}]}
+        w.model_request=model;w.load_days=lambda watch:({'2026-10-16':dict(date='2026-10-16',views=100,orders=3)},[])
+        answer,trace=w.dialog(job('А какая у неё конверсия вчера?'),[dict(agent_id='china',chat_id=-123,request_text='Разбери 52-NoelBag-fuchsia',answer='Это сумка Noel.')])
+        self.assertEqual(answer,'За вчера конверсия 3%.');self.assertEqual(trace[0]['name'],'get_conversion_history');self.assertFalse(w.watches())
+        self.assertTrue(any(x.get('content')=='Разбери 52-NoelBag-fuchsia' for x in calls[0]['input']))
 
 if __name__=='__main__':unittest.main()

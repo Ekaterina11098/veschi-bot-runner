@@ -16,10 +16,25 @@ try:
    proof.update(telegram_method=method,telegram_error=data.get('description'),telegram_parameters=data.get('parameters'))
    raise RuntimeError('Telegram identity/config check failed')
   return data['result']
- me=tg('getMe');proof.update(bot_id=me['id'],bot_username=me.get('username'),bot_name=me.get('first_name'),registered_chat_id=r['chat_id']);chat=tg('getChat',dict(chat_id=r['chat_id']));proof.update(resolved_chat_id=chat.get('id'),chat_title=chat.get('title'),chat_type=chat.get('type'),linked_chat_id=chat.get('linked_chat_id'));member=tg('getChatMember',dict(chat_id=r['chat_id'],user_id=me['id']));info=tg('getWebhookInfo');proof.update(webhook_pending=info.get('pending_update_count'),webhook_last_error=info.get('last_error_message'))
+ me=tg('getMe')
+ old_chat=r['chat_id']
+ try:
+  tg('getChatAdministrators',dict(chat_id=old_chat))
+ except RuntimeError:
+  migrated=(proof.get('telegram_parameters') or {}).get('migrate_to_chat_id')
+  if not isinstance(migrated,int):raise
+  target=tg('getChat',dict(chat_id=migrated))
+  membership=tg('getChatMember',dict(chat_id=migrated,user_id=me['id']))
+  owner=tg('getChatMember',dict(chat_id=migrated,user_id=r['registered_by_user_id']))
+  proof.update(migration_from=old_chat,migration_to=migrated,target_chat_title=target.get('title'),target_chat_type=target.get('type'),target_bot_status=membership.get('status'),target_owner_status=owner.get('status'))
+  if target.get('id')!=migrated or target.get('type')!='supergroup' or membership.get('status') not in ('administrator','creator') or owner.get('status') not in ('administrator','creator'):raise RuntimeError('Migration identity verification failed')
+  rows=store.db('PATCH','advertising_telegram_chat',params={'chat_id':'eq.'+str(old_chat),'is_active':'eq.true','registered_by_user_id':'eq.'+str(r['registered_by_user_id']),'select':'chat_id,registered_by_user_id'},body={'chat_id':migrated},prefer='return=representation') or []
+  if len(rows)!=1 or store.registration()!=dict(r,chat_id=migrated):raise RuntimeError('Migration CAS/readback mismatch')
+  r=store.registration();proof.update(registration_migration_verified=True)
+  proof.pop('telegram_error',None);proof.pop('telegram_parameters',None);proof.pop('telegram_method',None)
+ proof.update(bot_id=me['id'],bot_username=me.get('username'),bot_name=me.get('first_name'),registered_chat_id=r['chat_id']);chat=tg('getChat',dict(chat_id=r['chat_id']));proof.update(resolved_chat_id=chat.get('id'),chat_title=chat.get('title'),chat_type=chat.get('type'),linked_chat_id=chat.get('linked_chat_id'));member=tg('getChatMember',dict(chat_id=r['chat_id'],user_id=me['id']));info=tg('getWebhookInfo');proof.update(webhook_pending=info.get('pending_update_count'),webhook_last_error=info.get('last_error_message'))
  ready=bool(me.get('can_read_all_group_messages')) or member.get('status') in ('administrator','creator')
  proof.update(bot_username=me['username'],bot_membership=member.get('status'),can_read_all_group_messages=me.get('can_read_all_group_messages',False),group_text_delivery_ready=ready,openai_key_present=bool(os.environ.get('OPENAI_API_KEY','').strip()))
- proof.update(webhook_allowed_updates=info.get('allowed_updates'), webhook_bot_config={k:v for k,v in (store.cache_get('advertising:agent_webhook') or {}).items() if k in ('bot_id','bot_username','chat_id')}, administrators=[{'bot_id':x['user']['id'],'username':x['user'].get('username'),'status':x.get('status')} for x in tg('getChatAdministrators',dict(chat_id=r['chat_id'])) if x.get('user',{}).get('is_bot')]);proof['recent_jobs']=store.db('GET','advertising_agent_jobs',params={'chat_id':'eq.'+str(r['chat_id']),'select':'id,created_at,status,update_id,delivery,request_text','order':'created_at.desc','limit':3})
  base=os.environ['SUPABASE_URL'].rstrip('/')
  if info.get('url')!=base+'/functions/v1/advertising-agent-webhook':raise RuntimeError('Unexpected existing webhook URL')
  secret=hashlib.sha256(('veschi-advertising-agent-v1:'+token).encode()).hexdigest()

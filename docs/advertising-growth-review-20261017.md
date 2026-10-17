@@ -1,9 +1,9 @@
-# Пакет роста и первого обзора — только на согласование
+# Текущий пакет обзора
 
-Agent PR30, pin a1d6c1017825e6648c2e42f1b35ba7f8c9edbf08. Runner меняет только pin существующего ежедневного07:30MSK workflow; cron,concurrency,100MB,execution=false,forecastoff сохранены. Никакого нового сбора,повторного сегодняшнего анализа,таймеров теста или запуска WB.
+Agent PR30: 79d18d9287148eafebf0f63cd711f8f9761e24e2. Daily07:30MSK pin only; no source calls, no execution. First overview:all11 campaigns + separate new-campaign message; existing209/600 remain records with receipt168. Normal notifications only ready due actions; growth59/67/860RUB are projects, not executable jobs. Step5% rounded down:3→3.15,2.95→3.09.
 
-Генератор существующего daily finish автоматически сохраняет campaign_review и компактный growth_analysis в прежнем decision cache. Первый полный обзор отдельный dry preview; ежедневные уведомления используют только готовые due recommendations. Проекты роста не регистрируются как действия;209/600 не становятся новыми.
+Completed-yesterday analytics valid entire current Moscow day. Current-window spend is separate:timestamp measured-through,complete all-campaign SKU scope,no duplicate rows. Proposed maximum lag300s,observation interval120s; exceedance=>stop/readback/recovery review.429 respectsRetryAfter,overdue restoration escalates,unknown write=>readback,employee change=>no overwrite,storage failure=>no write. Logical isolated checks do not certify an enabled WB writer or hard expense cap.
 
-Первая отправка только после отдельного точного согласия владельца на список messageSHA,период и зарегистрированный рекламныйчат. Функция approved_first_campaign_review хранит claim/confirmed/uncertain/RetryAfter отдельно от карточек рекомендаций;до вызова с approved=true доставки нет. Первую рассылку не планирует cron и не запускает этот PR.
+First send is disabled by default and not called by dailycron. approved_first_campaign_review requires exact hashes/period/registered owner/chat; per-part uncertain/confirmed/RetryAfter outbox separate from recommendation records. No consent means no send or ledger write. Unknown Telegram outcome not resent. The PR does not start first send or today's analysis.
 
-Отдельная ветка verify-advertising-growth-20261017 проверяет сохранённые входы и сценарии без источников/Telegram/WB;это не бизнес-проход. Проверенный набор и точный текст сохраняются шифрованно.
+Deployment and first overview require one explicit owner approval of this final reviewed package/text hashes. Tests/stock/reviews/Orange/forecasts unchanged. Agent PR28 and runnerPR6 excluded.

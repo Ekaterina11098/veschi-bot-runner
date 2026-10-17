@@ -12,9 +12,11 @@ try:
  r=store.registration();token=os.environ['ADVERTISING_TELEGRAM_BOT_TOKEN'].strip()
  def tg(method,params=None):
   response=requests.get('https://api.telegram.org/bot'+token+'/'+method,params=params,timeout=(5,20));data=response.json()
-  if not response.ok or not data.get('ok'):raise RuntimeError('Telegram identity/config check failed')
+  if not response.ok or not data.get('ok'):
+   proof.update(telegram_method=method,telegram_error=data.get('description'),telegram_parameters=data.get('parameters'))
+   raise RuntimeError('Telegram identity/config check failed')
   return data['result']
- me=tg('getMe');member=tg('getChatMember',dict(chat_id=r['chat_id'],user_id=me['id']));info=tg('getWebhookInfo')
+ me=tg('getMe');proof.update(bot_id=me['id'],bot_username=me.get('username'),bot_name=me.get('first_name'),registered_chat_id=r['chat_id']);chat=tg('getChat',dict(chat_id=r['chat_id']));proof.update(resolved_chat_id=chat.get('id'),chat_title=chat.get('title'),chat_type=chat.get('type'),linked_chat_id=chat.get('linked_chat_id'));member=tg('getChatMember',dict(chat_id=r['chat_id'],user_id=me['id']));info=tg('getWebhookInfo');proof.update(webhook_pending=info.get('pending_update_count'),webhook_last_error=info.get('last_error_message'))
  ready=bool(me.get('can_read_all_group_messages')) or member.get('status') in ('administrator','creator')
  proof.update(bot_username=me['username'],bot_membership=member.get('status'),can_read_all_group_messages=me.get('can_read_all_group_messages',False),group_text_delivery_ready=ready,openai_key_present=bool(os.environ.get('OPENAI_API_KEY','').strip()))
  base=os.environ['SUPABASE_URL'].rstrip('/')

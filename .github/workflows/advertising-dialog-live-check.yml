@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    # Activate verified deeper saved-data dialogue source.
+    # One read-only check of actual Telegram Reply delivery.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

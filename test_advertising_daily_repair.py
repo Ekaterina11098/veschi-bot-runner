@@ -152,4 +152,30 @@ class DailyTests(unittest.TestCase):
   self.assertEqual(len(seen),1)
  def test_incomplete_process_exit_is_nonzero(self):
   self.assertIn("if result.get('status') not in ('complete','completed_with_explicit_source_limits'):raise SystemExit(1)",daily)
+
+
+class AnalysisStatus(unittest.TestCase):
+ def setUp(self):
+  text=Path('advertising_analysis_owner.py').read_text()
+  self.f=functions(text,{'analysis_business_summary'},{})['analysis_business_summary']
+ def test_saved_no_messages_is_complete_not_economy_claim(self):
+  r=self.f({'analysis':{'rows':[]},'delivery':{'sent':0,'failures':[]}})
+  self.assertEqual(r['business_status'],'complete');self.assertEqual(r['telegram_calls'],0);self.assertNotIn('economy_healthy',r)
+ def test_uncertain_delivery_explicit_incomplete(self):
+  r=self.f({'analysis':{'saved':True},'delivery':{'failures':[{'status':'uncertain'}]}})
+  self.assertEqual(r['business_status'],'incomplete');self.assertEqual(r['reason'],'delivery_unconfirmed')
+ def test_failed_analysis_explicit_failed(self):
+  r=self.f({'error':{'type':'RuntimeError'}})
+  self.assertEqual(r['business_status'],'failed')
+ def test_absent_analysis_not_complete(self):
+  self.assertEqual(self.f({})['business_status'],'incomplete')
+
+class BudgetStageStatus(unittest.TestCase):
+ def test_incomplete_budget_summary_survives(self):
+  ns={'os':os,'sys':sys,'json':json,'ROOT':Path('.'),'started':NOW.isoformat(),'resume_profile':{},'subprocess':subprocess,'preserve_checkpoint':lambda *a:None}
+  fn=functions(daily,{'stage'},ns)['stage']
+  with patch.object(subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout='{"complete":false}')):
+   r=fn('advertising_budgets_owner.py',1)()
+  self.assertEqual(r['business_status'],'incomplete');self.assertEqual(r['reason'],'budget_evidence_pending')
+
 if __name__=='__main__':unittest.main()

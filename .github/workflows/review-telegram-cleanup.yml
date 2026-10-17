@@ -1,0 +1,51 @@
+name: Clean completed Telegram review notifications
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-telegram-cleanup.yml']
+permissions:
+  contents: read
+concurrency:
+  group: review-telegram-cleanup
+  cancel-in-progress: false
+jobs:
+  approved-replies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 1b4201067880e379d8dacbe5f6ca3f9848d6ffb0
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 requests==2.32.5 python-dotenv==1.1.1
+      - name: Validate exact approvals, all cabinets and no duplicate POST
+        run: |
+          python -m unittest test_review_approved_worker.py
+          python -m unittest discover -s review-approval-preparation -p test_review_telegram.py
+          python -m unittest test_review_autonomy.py test_review_cleanup.py
+          python -m py_compile review_approved_worker.py
+      - name: Remove owner-authorized tracked bot notifications; no WB writes
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FEEDBACK_TOKEN: ${{ secrets.WB_FEEDBACK_TOKEN }}
+        run: python review_telegram_cleanup.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-telegram-cleanup-receipts
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90

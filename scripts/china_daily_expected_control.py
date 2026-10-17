@@ -214,6 +214,11 @@ def build(worker,candidate_review=False):
    scenarios=[]
    if total:
     cost=costs.get(article.casefold());delivery=(model.get('rows',{}).get(article) or {}).get('delivery_cny')
+    if delivery is None:
+     observed=[Decimal(str(row['forward_logistic_rub'])) for row in outcome_rows[nm] if isinstance(row.get('forward_logistic_rub'),(int,float)) and row['forward_logistic_rub']>0]
+     if observed:
+      delivery=sum(observed)/len(observed)/Decimal(str(model['rub_per_cny']))
+      item['delivery_model_note']='Нет сохранённой доставки 03.10; для прогноза использовано положительное наблюдение логистики собственных заказов: '+str(round(float(sum(observed)/len(observed)),2))+' ₽ за отправку, отдельно приёмка 10 ₽. Это расчётное допущение, не окончательный тариф.'
     if cost is None or delivery is None or retention is None or item[field] is None:raise RuntimeError('Expected-profit scenario input missing')
     dispatch=Decimal(str(delivery))*Decimal(str(model['rub_per_cny']))+Decimal(str(model['acceptance_rub_per_dispatch']))
     unit=Decimal(str(item[field]))*Decimal(str(model['rub_per_cny']))*retention-Decimal(str(cost))-dispatch
@@ -259,6 +264,7 @@ def render_item(item):
  lines+=['','Разница среднего прогноза прибыли в день: '+_money(r['profit_delta_rub_per_day'])+' ₽/день'+(' / '+_num(r['profit_delta_percent'])+'%' if r['profit_delta_percent'] is not None else '')+'.','Результат и действие: '+action]
  if b['advertising']>a['advertising']:lines.append('Рост рекламных расходов учитываем отдельно; ухудшение не доказывает влияние цены.')
  if item.get('zero_buyout_signal',{}).get('message'):lines.append(item['zero_buyout_signal']['message'])
+ if item.get('delivery_model_note'):lines.append(item['delivery_model_note'])
  if item['full_days']<4:lines.append('Промежуточно. Первая четырёхдневная оценка — '+item['assessment_date']+'.')
  return '\n'.join(lines)
 

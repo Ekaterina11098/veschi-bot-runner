@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 04573148a26877fb8bfdd4eaa1c706d9f59c0aa0
+          ref: b5fb3fe513cfdcb1181b0fa618a037b2913e8e4a
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -33,7 +33,7 @@ jobs:
       - name: Verify question and review reply routing
         run: |
           node review-approval-preparation/test_review_callback_headers.mjs
-          python -m unittest test_review_autonomy.py
+          python -m unittest test_review_autonomy.py test_review_cleanup.py
       - name: Process one authenticated new approval, never old queues
         working-directory: review-approval-preparation
         env:

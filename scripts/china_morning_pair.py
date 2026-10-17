@@ -101,10 +101,10 @@ class PairWorker(CoverageWorker):
             expected=(self.day-timedelta(days=1)).isoformat()
             latest=self.audit.get('assessment') or {}
             if latest.get('period_to')!=expected: raise RuntimeError('Completed period mismatch')
-            import re
-            answer=re.sub(r'; прибыль [^\n]*? ₽; конверсия', '; конверсия', answer)
-            answer+='\nСнижение — кандидаты на проверку конверсии и связки. Старую прибыль по дате продажи для решения не используем; ожидаемая прибыль — в отдельном контроле изменений цен.'
-            return answer,trace
+            from china_agent.daily_expected_control import build,render_candidates
+            self.control_preview=preview
+            build(self)
+            return render_candidates(self),trace
         from china_agent.daily_expected_control import build,render
         self.control_preview=preview
         value=build(self)

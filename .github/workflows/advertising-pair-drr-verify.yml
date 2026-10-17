@@ -64,7 +64,7 @@ jobs:
           assert captured[KEY]==before==result['decision_state']
           sent_fields=('last_delivered_day','last_notified_day','last_notified_proposal','delivery_attempt_day','delivery_uncertain')
           newkeys=[a['key'] for a in result['generated_actions']]
-          assert all(not before[k].get(f) for k in newkeys for f in sent_fields)
+          assert all(not before['records'][k].get(f) for k in newkeys for f in sent_fields)
           result['persistence_verification']={'native_persist_called':True,'native_cache_payload_matches_registered_state':True,'new_recommendations_not_marked_sent':True,'existing_state_not_mutated':True,'database_transport':'isolated capture; no production write','next_live_persistence':'next scheduled daily pass, not rerun today'}
           sys.path.insert(0,'..')
           from stock_deploy_support import seal

@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   activate:
-    if: true # Read-only exact China bot migration and report destination audit.
+    if: false # Read-only audit complete; China migration implementation handed off.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

@@ -151,8 +151,14 @@ stages=dict(source=stage('advertising_source_owner.py',900),
  analysis_and_delivery=stage('advertising_analysis_owner.py',1800),
  budget_completion=stage('advertising_budgets_owner.py',13800))
 if __name__=='__main__':
- result=execute_day(store.cache_get,lambda k,v:store.cache_set(k,v,ttl_days=365),stages,
-  os.environ['GITHUB_RUN_ID']+':'+os.environ.get('GITHUB_RUN_ATTEMPT','1'),single_writer=True,resume_from=resume_profile.get('from_run_id'),cas=daily_claim_cas)
+ try:
+  result=execute_day(store.cache_get,lambda k,v:store.cache_set(k,v,ttl_days=365),stages,
+   os.environ['GITHUB_RUN_ID']+':'+os.environ.get('GITHUB_RUN_ATTEMPT','1'),single_writer=True,resume_from=resume_profile.get('from_run_id'),cas=daily_claim_cas)
+ except Exception as exc:
+  # Claim/storage failure must not turn into a green job or overwrite a rival claim.
+  result=dict(status='failed',reason='claim_or_checkpoint_not_confirmed',error_type=type(exc).__name__,
+   run_id=os.environ['GITHUB_RUN_ID'],completed_stages=[],completed_stages_unknown=True,
+   wb_mutations=False,forecasts=False,old_queues_executed=False)
  seal('advertising-daily',result)
  summary=dict(status=result.get('status'),skipped=result.get('skipped',False),reason=result.get('reason'),
   failed_stage=result.get('failed_stage'),completed_stages=result.get('completed_stages',[]),pending_stages=result.get('pending_stages',[]),

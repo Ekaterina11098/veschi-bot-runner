@@ -1,5 +1,5 @@
 {
-  "action": "smoke",
+  "action": "verify",
   "requested_at": "2026-10-17",
-  "nonce": "owner-free-form-dialog-smoke-no-telegram"
+  "nonce": "owner-free-form-agent-bot-group-visibility-verification"
 }

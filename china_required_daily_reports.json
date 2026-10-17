@@ -1,0 +1,27 @@
+{
+  "version": "2026-10-17",
+  "scope": "owner-confirmed required daily reports; additive registry",
+  "cabinet": "token_3",
+  "timezone": "Europe/Moscow",
+  "reports": [
+    {
+      "id": "china_initial_price_raise_candidates",
+      "required": true,
+      "time": "15:00",
+      "workflow": ".github/workflows/china-price-intraday.yml",
+      "command": "/china_price_intraday_raise",
+      "recipient": "current verified china business_agent_config.chat_id",
+      "send_when_no_candidates": true,
+      "missing_data_is_not_zero": true,
+      "success_requires": "confirmed Telegram delivery receipt and message IDs",
+      "retry_times": [
+        "15:15",
+        "15:30",
+        "15:45"
+      ],
+      "deduplicate_by": "daily scheduled_update_id and saved delivery cursor",
+      "wb_writes": false,
+      "owner_confirmed_at": "2026-10-17T22:37:10+03:00"
+    }
+  ]
+}

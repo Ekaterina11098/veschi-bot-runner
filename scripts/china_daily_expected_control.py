@@ -6,7 +6,7 @@ import json,os,base64,re,time
 def comparison_windows(detected,today):
  n=min(4,max(0,(today-detected).days-1))
  if not n:return None
- return ((detected-timedelta(days=n),detected-timedelta(days=1)),(detected+timedelta(days=1),detected+timedelta(days=n)))
+ return ((detected-timedelta(days=4),detected-timedelta(days=1)),(detected+timedelta(days=1),detected+timedelta(days=n)))
 
 def all_days(a,b):return [a+timedelta(days=i) for i in range((b-a).days+1)]
 
@@ -103,7 +103,7 @@ def build(worker,candidate_review=False):
  pairs={str(nm):comparison_windows(d,worker.day) for nm,e,c,d in tracked}
  if candidate_review:
   pairs={str(nm):((date.fromisoformat(c['baseline_from']),date.fromisoformat(c['baseline_to'])),(worker.day-timedelta(days=4),end)) for nm,e,c,d in tracked}
-  if any((a[1]-a[0]).days!=(b[1]-b[0]).days for a,b in pairs.values()):raise RuntimeError('Candidate comparison periods differ in length')
+  if any((a[1]-a[0]).days!=3 for a,b in pairs.values()):raise RuntimeError('Candidate baseline must contain four full days')
  windows={(str(rate_start),str(end))}
  for pair in pairs.values():
   if pair:windows.update((str(a),str(b)) for a,b in pair)
@@ -208,14 +208,16 @@ def build(worker,candidate_review=False):
     unit=Decimal(str(item[field]))*Decimal(str(model['rub_per_cny']))*retention-Decimal(str(cost))-dispatch
     scenarios=[dict(order_id=str(i),buyout_profit=unit,nonbuyout_profit=-dispatch) for i in range(total)]
    calculated=expected_profit(scenarios,resolved['probability'],ads,0)
-   item[label]=dict(outcomes=outcomes[label],period_from=str(a),period_to=str(b),orders=total,views=views,funnel_orders=funnel,conversion=funnel/views if views else None,advertising=ads,expected_profit=calculated['expected_profit'])
+   period_days=(b-a).days+1
+   item[label]=dict(days=period_days,orders_per_day=total/period_days,expected_profit_per_day=calculated['expected_profit']/period_days,advertising_per_day=ads/period_days,outcomes=outcomes[label],period_from=str(a),period_to=str(b),orders=total,views=views,funnel_orders=funnel,conversion=funnel/views if views else None,advertising=ads,expected_profit=calculated['expected_profit'])
   a,b=item['before'],item['after'];full_days=(pair[1][1]-pair[1][0]).days+1
-  result=experiment_result(a['expected_profit'],b['expected_profit'],a['views'],a['funnel_orders'],b['views'],b['funnel_orders'],full_days,resolved['sample_size'])
+  result=experiment_result(a['expected_profit_per_day'],b['expected_profit_per_day'],a['views'],a['funnel_orders'],b['views'],b['funnel_orders'],full_days,resolved['sample_size'])
+  result.update(comparison_basis='per_day',profit_delta_rub_per_day=result['profit_delta_rub'])
   if a['orders']==b['orders']==0:result.update(status='no_orders',result_action='Заказов в обоих периодах нет. Разница результата связана с рекламными расходами; влияние цены не оценено.')
   after=outcomes['after']
   if after['completed'] and after['paid']==0:item['zero_buyout_signal']=dict(attention=True,message='Заказы есть, подтверждённых выкупов нет; проверить причины отмен/возвратов. Не связывать с качеством без проверки.')
   item.update(full_days=full_days,result=result);output.append(item)
- value=dict(model_version='wb_orders_baseline_buyout_v2',report_date=str(worker.day),status='complete_disclosed_forecast_model',products=output,rate_period=[str(rate_start),str(end)],calculated_at=datetime.now(MSK).isoformat(),telegram_calls=0,wb_writes=0)
+ value=dict(model_version='wb_four_day_baseline_daily_means_v3',report_date=str(worker.day),status='complete_disclosed_forecast_model',products=output,rate_period=[str(rate_start),str(end)],calculated_at=datetime.now(MSK).isoformat(),telegram_calls=0,wb_writes=0)
  worker.save(('china_agent:daily_expected_candidates:' if candidate_review else 'china_agent:daily_expected_control:')+str(worker.day)+(':verify' if getattr(worker,'control_preview',False) else ''),value)
  return value
 
@@ -233,15 +235,16 @@ def render_item(item):
  lines+=['Базовый выкуп: '+rate+'.']
  for label,title in (('before','До повышения'),('after','После повышения')):
   v=item[label];o=v['outcomes']
-  lines+=['',title+', '+v['period_from']+'–'+v['period_to']+':',
+  lines+=['',title+', '+v['period_from']+'–'+v['period_to']+' ('+str(v['days'])+' полных дней):',
    '• Цена: '+_num(item[label+'_price'])+' ¥.',
-   '• Заказы: '+str(v['orders'])+', в том числе отмены — '+str(o['cancelled'])+'.',
+   '• Заказы: '+str(v['orders'])+', в том числе отмены — '+str(o['cancelled'])+'; в среднем '+_num(v['orders_per_day'])+' в день.',
    '• Прогноз прибыли: '+_money(v['expected_profit'])+' ₽'+(', если выкуп сохранится на уровне '+_pct(p) if label=='after' else ' при выкупе '+_pct(p))+'.',
+   '• Средний прогноз прибыли: '+_money(v['expected_profit_per_day'])+' ₽/день.',
    '• Конверсия: '+_cr(v)+'.',
-   '• Реклама, включённая в расчёт: '+_money(v['advertising'])+' ₽.',
+   '• Реклама, включённая в расчёт: '+_money(v['advertising'])+' ₽ за период; '+_money(v['advertising_per_day'])+' ₽/день.',
    '• Известные исходы: '+str(o['paid'])+' выкупов, '+str(o['cancelled'])+' отмен, '+str(o['returned'])+' возвратов, '+str(o['pending'])+' незавершённых заказов, '+str(o['unknown'])+' с неизвестным исходом.']
  r=item['result'];action=r['result_action'].replace('Ожидаемая прибыль','Условный прогноз прибыли').replace('Ожидаемую прибыль','Условный прогноз прибыли')
- lines+=['','Разница за равные периоды: '+_money(r['profit_delta_rub'])+' ₽'+(' / '+_num(r['profit_delta_percent'])+'%' if r['profit_delta_percent'] is not None else '')+'.','Результат и действие: '+action]
+ lines+=['','Разница среднего прогноза прибыли в день: '+_money(r['profit_delta_rub_per_day'])+' ₽/день'+(' / '+_num(r['profit_delta_percent'])+'%' if r['profit_delta_percent'] is not None else '')+'.','Результат и действие: '+action]
  if b['advertising']>a['advertising']:lines.append('Рост рекламных расходов учитываем отдельно; ухудшение не доказывает влияние цены.')
  if item.get('zero_buyout_signal',{}).get('message'):lines.append(item['zero_buyout_signal']['message'])
  if item['full_days']<4:lines.append('Промежуточно. Первая четырёхдневная оценка — '+item['assessment_date']+'.')
@@ -253,10 +256,10 @@ def model_notes():
  'Модель: 12 ₽/¥, наша себестоимость, наблюдавшиеся удержания артикула, доставка по сохранённой модели 03.10 и приёмка 10 ₽. '
  'Реклама вычтена полностью. Пока сохранён резерв доставки на каждый заказ, включая отменённые; расходы отмен до отправки требуют уточнения. '
  'Дополнительные возвраты продавцу и нераспределённые расходы не включены. Это предварительный прогноз по учтённым расходам, не фактически полученная прибыль. '
- 'День обнаружения и сегодняшний день исключены, периоды равны по длительности. Новая корректировка сбрасывает отсчёт. Все изменения цены согласовываем.')
+ 'База до изменения фиксирована: четыре полных дня. После — завершённые дни с первого по четвёртый; сравниваются средние заказы и прогноз прибыли в день. Конверсия — отношение сумм заказов воронки к суммам просмотров за свой период, не среднее дневных процентов. День обнаружения и сегодняшний день исключены. Новая корректировка сбрасывает отсчёт. Все изменения цены согласовываем.')
 
 def render(value):
- if value.get('model_version')!='wb_orders_baseline_buyout_v2':raise RuntimeError('Legacy forecast forbidden')
+ if value.get('model_version')!='wb_four_day_baseline_daily_means_v3':raise RuntimeError('Legacy forecast forbidden')
  return '\n\n'.join(['Китай • контроль изменений цен • '+value['report_date']+'\nПод наблюдением: '+str(len(value['products']))+' товаров.']+[render_item(p) for p in value['products']]+[model_notes()])
 
 def render_candidates(worker):

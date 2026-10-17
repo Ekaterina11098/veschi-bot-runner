@@ -45,6 +45,22 @@ try:
  if not ready:raise RuntimeError('Telegram privacy is enabled and bot is not administrator; Disable privacy then recheck')
  if not proof['openai_key_present']:raise RuntimeError('Existing OPENAI_API_KEY missing from public runner')
  before=store.cache_get('advertising:ip_pair_decisions:token_2:v1') or {}
+ aligned=[]
+ for key in ('advertising:ip:daily_rollout:v1','advertising:ip:limited_rollout:v1','advertising:ip:employee_access:v1','advertising:agent_webhook'):
+  rows0=store.db('GET','telegram_api_cache',params={'cache_key':'eq.'+key,'select':'payload,updated_at','limit':1}) or []
+  if not rows0:continue
+  p=rows0[0]['payload']
+  if p.get('chat_id')==-5533733230:
+   if r['chat_id']!=-1004378639510 or member.get('status')!='administrator':raise RuntimeError('Address alignment requires verified migrated administrator')
+   if key=='advertising:agent_webhook':
+    if p.get('bot_id')!=me['id']:raise RuntimeError('Webhook bot identity mismatch')
+   elif p.get('owner_id')!=r['registered_by_user_id']:raise RuntimeError('Address approval owner mismatch')
+   desired_p=dict(p,chat_id=r['chat_id'])
+   patched=store.db('PATCH','telegram_api_cache',params={'cache_key':'eq.'+key,'updated_at':'eq.'+rows0[0]['updated_at'],'select':'payload'},body={'payload':desired_p,'updated_at':datetime.now(timezone.utc).isoformat()},prefer='return=representation') or []
+   if len(patched)!=1 or store.cache_get(key)!=desired_p:raise RuntimeError('Address approval CAS/readback failed')
+   aligned.append(key)
+ proof.update(address_only_aligned_keys=aligned)
+
  rows=store.db('GET','telegram_api_cache',params={'cache_key':'eq.'+KEY,'select':'payload,updated_at','limit':1}) or []
  previous=copy.deepcopy(rows[0]['payload'] if rows else {})
  stamp=datetime.now(timezone.utc).isoformat()

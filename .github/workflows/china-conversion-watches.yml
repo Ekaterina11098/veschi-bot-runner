@@ -1,4 +1,4 @@
-name: China owner conversion watches
+name: China free-form agent and daily tasks
 on:
   push:
     branches: [main]
@@ -8,7 +8,7 @@ on:
       action:
         description: Process owner commands and due watches, or verify without sending
         type: choice
-        options: [run, verify]
+        options: [run, verify, smoke]
         default: run
   schedule:
     - cron: '*/5 * * * *'
@@ -31,8 +31,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Offline watch regressions without credentials
-        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p test_conversion_watches.py
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -40,6 +38,10 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: source
           persist-credentials: false
+      - name: Adapt isolated dialog and test without credentials
+        run: |
+          python scripts/install_china_dialog.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
       - name: Install pinned read transport
         run: pip install requests==2.32.5 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
       - name: Process owner watch commands and due conversion reports
@@ -50,6 +52,8 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          BUSINESS_AI_MODEL: ${{ vars.BUSINESS_AI_MODEL || 'gpt-4o-mini' }}
           PYTHONPATH: source
         run: |
           MODE="$ACTION"
@@ -58,6 +62,8 @@ jobs:
           fi
           if [ "$MODE" = verify ]; then
             python scripts/conversion_watches.py --verify
+          elif [ "$MODE" = smoke ]; then
+            python scripts/conversion_watches.py --smoke
           else
             python scripts/conversion_watches.py
           fi

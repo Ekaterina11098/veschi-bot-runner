@@ -31,17 +31,24 @@ jobs:
           cd private-source
           python -m unittest discover -s tests -p 'test_ip_daily_recommendations.py'
           python -m unittest discover -s tests -p 'test_ip_delivery_boundary.py'
-      - name: Preserve previous GET-only diagnostic cipher, no source replay
-        if: always()
+      - name: Measure only the remaining retained funnel cache, GET only
         env:
-          GH_TOKEN: ${{ github.token }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python advertising_daily_cache_diagnostic.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-funnel-diagnostic
+          path: ${{ runner.temp }}/stock-deploy-proof/*.aes.json
+          retention-days: 90
+      - name: Preserve owner cipher only
+        if: always()
         run: |
-          curl --fail --location --silent --show-error --header "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/Ekaterina11098/veschi-bot-runner/actions/artifacts/12093317899/zip --output "$RUNNER_TEMP/prior-diagnostic.zip"
-          mkdir -p "$RUNNER_TEMP/prior-diagnostic" recovery-output/advertising
-          unzip -q "$RUNNER_TEMP/prior-diagnostic.zip" -d "$RUNNER_TEMP/prior-diagnostic"
-          cp "$RUNNER_TEMP/prior-diagnostic/daily-cache-diagnostic.aes.json" recovery-output/advertising/daily-cache-diagnostic-39013476298.aes.json
+          mkdir -p recovery-output/advertising
+          cp "$RUNNER_TEMP/stock-deploy-proof/daily-funnel-diagnostic.aes.json" "recovery-output/advertising/daily-funnel-diagnostic-${{ github.run_id }}.aes.json"
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add recovery-output/advertising/daily-cache-diagnostic-39013476298.aes.json
-          git diff --cached --quiet || git commit -m "Preserve existing diagnostic ciphertext without repeating reads"
+          git add recovery-output/advertising/
+          git diff --cached --quiet || git commit -m "Preserve owner cipher for one retained funnel-cache measurement"
           git push origin HEAD:prepare-daily-source-repair-20261017

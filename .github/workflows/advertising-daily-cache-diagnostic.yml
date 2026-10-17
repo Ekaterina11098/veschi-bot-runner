@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+        with: {persist-credentials: true}
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -25,7 +25,12 @@ jobs:
         with: {python-version: '3.12'}
       - run: pip install simplejson==3.20.2 requests==2.32.5 python-dotenv cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Compile prepared repair only, no production credentials
-        run: python -m py_compile advertising_source_owner.py
+        run: |
+          python -m py_compile advertising_source_owner.py advertising_daily_owner.py
+          python -m unittest test_advertising_daily_repair -v
+          cd private-source
+          python -m unittest discover -s tests -p 'test_ip_daily_recommendations.py'
+          python -m unittest discover -s tests -p 'test_ip_delivery_boundary.py'
       - name: Preserve previous GET-only diagnostic cipher, no source replay
         env:
           GH_TOKEN: ${{ github.token }}

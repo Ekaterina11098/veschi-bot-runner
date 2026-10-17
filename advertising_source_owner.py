@@ -21,6 +21,30 @@ gate=CollectionGate(Path(os.environ['RUNNER_TEMP'])/'ads-storage-health.json',ma
 def digest(v):
  import hashlib
  return hashlib.sha256(json.dumps(v,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+def restore_retained_source(manifest,read,saved,report,now):
+ """Repair derived caches from exact receipts, never replay observer ingestion."""
+ if manifest.get('day')!=str(now.astimezone(ZoneInfo('Europe/Moscow')).date()) or manifest.get('original_run_id')!='39004453781':
+  raise PermissionError('Exact owner-reviewed retained source manifest required')
+ if manifest.get('snapshot_ids')!=[17841,17842,17843,17844,17845,17847,17849,17851,17853]:
+  raise PermissionError('Retained source manifest changed')
+ report['retained_recovery']=[]
+ # Validate every immutable identity before applying any cache reconciliation.
+ validated=[]
+ for ident in manifest['snapshot_ids']:
+  raw=read('analytics_snapshots',dict(id='eq.'+str(ident),select='id,cabinet,source,run_id,status,payload',limit=1))
+  if (len(raw)!=1 or str(raw[0].get('run_id'))!=manifest['original_run_id'] or raw[0].get('cabinet')!='token_2'
+    or raw[0].get('status')!='complete' or len(raw[0].get('payload') or [])!=1):
+   raise RuntimeError('Retained source identity/full receipt missing')
+  obs=raw[0]['payload'][0]
+  if obs.get('status')!='received' or obs.get('scope_verified') is not True:raise RuntimeError('Retained source not verified')
+  validated.append((ident,obs))
+ for ident,obs in validated:
+  if obs.get('tool')=='lk_wb_card_orders':
+   report['retained_recovery'].append(dict(id=ident,observer_replayed=False,external_read=False))
+  else:
+   saved('token_2',obs,retained_id=ident)
+   report['retained_recovery'].append(dict(id=ident,external_read=False,derived_cache_reconciled=True))
+
 class SourceTraffic:
  """Decoded HTTP-body accounting; not compressed wire bytes or JSON expansion."""
  def __init__(self,limit=100_000_000):
@@ -266,12 +290,14 @@ try:
      arguments=dict(type='products',value=scope['product_id'],date_from=a,date_to=b,start_row=0,end_row=300),priority=100) for a,b in scope['spans']]
     report['historical_twelve_scope']=scope
     report['scope']='Exact retained twelve GN; minimal product/date scopes because API has no GN filter'
-   report['planned']=requests_plan
-   def saved(cabinet,obs):
+   report['planned']=list({r['key']:r for r in requests_plan}.values())
+   requests_plan=report['planned']
+   def saved(cabinet,obs,retained_id=None):
     if cabinet!='token_2':raise RuntimeError('Unexpected cabinet')
-    a,b=period(obs['arguments']);ident=save_snapshot('mpstats_'+obs['tool'],obs,a,b,'complete' if obs.get('status')=='received' else 'partial')
+    a,b=period(obs['arguments'])
+    ident=retained_id or save_snapshot('mpstats_'+obs['tool'],obs,a,b,'complete' if obs.get('status')=='received' else 'partial')
     report['saved'].append(dict(id=ident,key=obs['request_key'],status=obs.get('status'),readback=True))
-    if obs.get('status')=='received' and obs['tool']=='lk_wb_card_orders':
+    if retained_id is None and obs.get('status')=='received' and obs['tool']=='lk_wb_card_orders':
      try:updated_monitor=ingest_order_observation(order_monitor,obs,ident,target_new_ids=focus_target_ids)
      except ValueError as exc:
       report.setdefault('order_outcome_limits',[]).append(dict(snapshot_id=ident,reason=str(exc),unknown_is_not_zero=True))
@@ -279,7 +305,7 @@ try:
       put(ORDER_MONITOR_KEY,updated_monitor)
       order_monitor.clear();order_monitor.update(updated_monitor)
       report['order_outcome_monitor'].update(tracked_orders=len(order_monitor['orders']),last_snapshot_id=ident,full_readback=True)
-    if obs.get('status')=='received' and obs['tool']=='lk_wb_products':
+    if retained_id is None and obs.get('status')=='received' and obs['tool']=='lk_wb_products':
      updated_monitor=financial_revision(order_monitor,obs,datetime.now(timezone.utc))
      if updated_monitor!=order_monitor:
       put(ORDER_MONITOR_KEY,updated_monitor)
@@ -316,7 +342,9 @@ try:
       source,normalized=normalize(obs,cabinet)
       if source:
        normalized['raw_snapshot_id']=ident
-       nid=save_snapshot(source,normalized,normalized.get('period_from') or a,normalized.get('period_to') or b)
+       existing_normalized=read('analytics_snapshots',dict(source='eq.'+source,cabinet='eq.token_2',
+        **{'payload->0->>raw_snapshot_id':'eq.'+str(ident)},select='id',order='id.desc',limit=1)) if retained_id else []
+       nid=existing_normalized[0]['id'] if existing_normalized else save_snapshot(source,normalized,normalized.get('period_from') or a,normalized.get('period_to') or b)
        index=get('mpstats:agent_reports:token_2:v1') or dict(cabinet='token_2',reports={})
        key=':'.join(str(normalized.get(k) or '') for k in ('tool','report','campaign_id','period_from','period_to','start_row','nm_id','scope_nm_id','query'))
        index['reports'][key]=dict(source=source,report=normalized)
@@ -329,6 +357,7 @@ try:
     seal('advertising-source',report)
    def reader(call,checks,known):
     results=execute_reads(call,checks,known,requests_plan,bidder,saved,max_requests=20 if focused else 12)
+    report['read_results']=list(results)
     if focused:return results
     # No product statistics until the complete cabinet-wide catalog is evidenced.
     pages={}
@@ -392,8 +421,15 @@ try:
        req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,nm_id=nm,report='days',d1=first,d2=last))
        if req:more.append(req)
      report['pending_experiment_scopes']=[r for r in more if r['arguments'].get('report')=='days']
+     more=list({r['key']:r for r in more}.values())
+     report['planned']=list({r['key']:r for r in report['planned']+more}.values())
      results+=execute_reads(call,checks,known,more,bidder,saved,max_requests=max(0,20-len(results)))
+     report['read_results']=list(results)
     return results
+   manifest=json.loads(os.environ.get('ADVERTISING_RETAINED_SOURCE_MANIFEST','null') or 'null')
+   if manifest:
+    restore_retained_source(manifest,read,saved,report,now)
+    flush_derived_caches()
    result=discover(os.environ.get('MPSTATS_API_TOKEN',''),read_checks=True,catalog=catalog,extra_reader=reader)
    report['provider_status']={k:v for k,v in result.items() if k not in ('tools','checks')}
    if result.get('retry_after'):
@@ -422,8 +458,11 @@ finally:
   report['cache_flush_error']=error(flush_error)
   if 'error' not in report:report['error']=error(flush_error)
  if 'traffic' in globals():report['traffic']=traffic.summary()
- report['business_status']='failed' if report.get('cache_flush_error') else ('incomplete' if report.get('error') or report.get('pending_pause') or report.get('normalization_errors') else 'complete')
+ finished={x['key'] for x in report.get('read_results',[]) if x.get('status')=='received'}
+ report['pending_requests']=[dict(key=x['key'],tool=x['tool'],arguments=x['arguments']) for x in report.get('planned',[]) if x['key'] not in finished]
+ threshold=report.get('error',{}).get('trace','').find('100MB decoded-body collection threshold reached')>=0
+ report['business_status']='failed' if report.get('cache_flush_error') else ('incomplete' if report.get('error') or report.get('pending_pause') or report.get('normalization_errors') or report.get('pending_requests') else 'complete')
  report['completed_units']=[dict(id=x['id'],key=x['key'],status=x['status']) for x in report['saved'] if x.get('readback')]
  report['private_log']=hidden.getvalue();seal('advertising-source',report)
- print(json.dumps({'saved':len(report['saved']),'provider_status':report.get('provider_status',{}).get('status'),'pending_pause':bool(report.get('pending_pause')),'error_type':report.get('error',{}).get('type'),'business_status':report['business_status'],'reason':report.get('error',{}).get('type') or ('pending_pause' if report.get('pending_pause') else None),'completed_units':report['completed_units'],'wb_calls':0,'telegram_calls':0}))
+ print(json.dumps({'saved':len(report['saved']),'provider_status':report.get('provider_status',{}).get('status'),'pending_pause':bool(report.get('pending_pause')),'error_type':None if threshold else report.get('error',{}).get('type'),'business_status':report['business_status'],'reason':'collection_threshold' if threshold else (report.get('error',{}).get('type') or ('pending_pause' if report.get('pending_pause') else ('pending_source_requests' if report.get('pending_requests') else ('normalization_errors' if report.get('normalization_errors') else None)))),'completed_units':report['completed_units'],'wb_calls':0,'telegram_calls':0}))
 

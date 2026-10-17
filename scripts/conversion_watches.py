@@ -30,9 +30,6 @@ def intent(text):
     if re.search(r'ежедневно|каждый день',value) and re.search(r'\b(присылай|делай|проверяй|выполняй|следи|отслеживай|готовь|сравнивай|отправляй|показывай|повторяй|прошу|теперь|давай|хочу|нужно)\b',value):
         if re.search(r'\b(можно ли|умеешь ли|как|например)\b',value):return 'help'
         return 'create'
-    if 'конверс' in value and re.search(r'\b(следи|отслеживай|отслеживать|отследи|наблюдай|ежедневно|каждый день)\b', value):
-        if re.search(r'\b(можно ли|умеешь ли|как|например)\b', value): return 'help'
-        return 'create'
     return None
 
 

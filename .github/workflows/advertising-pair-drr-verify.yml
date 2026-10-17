@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 1a51905d03ce978528be956c70b2725cedf1018e
+          ref: 74cdc4f3e2bdabea2d781f82b7f5221ed5c66073
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -48,6 +48,24 @@ jobs:
           sys.path.insert(0,'tests')
           namespace=runpy.run_path('tests/test_ip_full_offline_pipeline.py')
           result=namespace['retained_pair_preview_acceptance']()
+          import copy
+          from unittest.mock import patch
+          from datetime import datetime,timezone
+          from analytics.ip_daily_recommendations import persist,KEY,RULES_KEY
+          captured={}
+          before=copy.deepcopy(result['decision_state'])
+          def isolated_database(method,table,params=None,body=None,**kwargs):
+              assert method=='POST' and table=='telegram_api_cache'
+              assert body['cache_key'] in (KEY,RULES_KEY)
+              captured[body['cache_key']]=copy.deepcopy(body['payload'])
+              return []
+          with patch('analytics.collect.database',side_effect=isolated_database):
+              persist({'decision_state':result['decision_state']},datetime.now(timezone.utc))
+          assert captured[KEY]==before==result['decision_state']
+          sent_fields=('last_delivered_day','last_notified_day','last_notified_proposal','delivery_attempt_day','delivery_uncertain')
+          newkeys=[a['key'] for a in result['generated_actions']]
+          assert all(not before[k].get(f) for k in newkeys for f in sent_fields)
+          result['persistence_verification']={'native_persist_called':True,'native_cache_payload_matches_registered_state':True,'new_recommendations_not_marked_sent':True,'existing_state_not_mutated':True,'database_transport':'isolated capture; no production write','next_live_persistence':'next scheduled daily pass, not rerun today'}
           sys.path.insert(0,'..')
           from stock_deploy_support import seal
           seal('pair-drr-e2e-preview',result)

@@ -89,7 +89,7 @@ if os.environ.get('GITHUB_EVENT_NAME')=='push':
  if candidate_path.exists():
   candidate=json.loads(candidate_path.read_text())
   if candidate.get('enabled') is True:
-   if candidate.get('day')!=day or candidate.get('from_run_id')!='39004453781:1' or candidate.get('private_source_sha')!=os.environ['APPROVED_SOURCE_SHA']:
+   if candidate.get('day')!=day or candidate.get('from_run_id')!='39014867561:1' or candidate.get('private_source_sha')!=os.environ['APPROVED_SOURCE_SHA']:
     raise PermissionError('Exact reviewed continuation profile required')
    resume_profile=candidate
 if os.environ.get('GITHUB_EVENT_NAME')!='schedule' and day!=approval['controlled_day'] and not resume_profile:

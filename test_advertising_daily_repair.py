@@ -79,10 +79,10 @@ class SourceTests(unittest.TestCase):
   self.assertEqual(t.summary()['bytes'],1000)
   self.assertEqual(t.summary()['buckets']['supabase:GET:cache']['content_length_header_bytes'],100)
  def manifest(self):
-  return dict(day='2026-10-17',original_run_id='39004453781',snapshot_ids=[17841,17842,17843,17844,17845,17847,17849,17851,17853])
+  return dict(day='2026-10-17',original_run_id='39004453781:1',snapshot_ids=[17841,17842,17843,17844,17845,17847,17849,17851,17853])
  def retained(self,ident,wrong=False):
   tool='lk_wb_card_orders' if ident<=17844 else 'lk_wb_products'
-  return [dict(id=ident,cabinet='token_2',run_id='other' if wrong else '39004453781',status='complete',
+  return [dict(id=ident,cabinet='token_2',run_id='other' if wrong else '39004453781:1',status='complete',
    payload=[dict(tool=tool,status='received',scope_verified=True)])]
  def test_resume_does_not_reingest_four_orders(self):
   called=[];r={}
@@ -198,5 +198,28 @@ class FinalBudgetResolution(DailyTests):
   self.stages['budgets']=lambda:{'business_status':'incomplete'}
   self.stages['budget_completion']=lambda:{'business_status':'incomplete','reason':'budget_evidence_pending'}
   r=self.run_day();self.assertEqual(r['status'],'incomplete');self.assertIn('budget_completion',r['pending_stages'])
+
+class ActualRunIdentity(SourceTests):
+ def test_manifest_matches_actual_collect_run_assignment(self):
+  tree=ast.parse(Path('private-source/analytics/collect.py').read_text())
+  assignment=next(n for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='RUN_ID' for t in n.targets))
+  ns={'os':os}
+  with patch.dict(os.environ,{'GITHUB_RUN_ID':'39004453781','GITHUB_RUN_ATTEMPT':'1'}):
+   exec(compile(ast.Module(body=[assignment],type_ignores=[]),'actual-collect-run-id','exec'),ns)
+  self.assertEqual(ns['RUN_ID'],'39004453781:1')
+  self.assertEqual(self.manifest()['original_run_id'],ns['RUN_ID'])
+ def test_missing_attempt_not_silently_accepted(self):
+  calls=[]
+  def read(table,p):
+   rows=self.retained(int(p['id'][3:]));rows[0]['run_id']='39004453781';return rows
+  with self.assertRaises(RuntimeError):
+   self.ns['restore_retained_source'](self.manifest(),read,lambda *a,**kw:calls.append(1),{},NOW)
+  self.assertEqual(calls,[])
+ def test_next_profile_stays_disabled(self):
+  p=json.loads(Path('advertising_daily_continue.json').read_text())
+  self.assertFalse(p['enabled'])
+  self.assertEqual(p['from_run_id'],'39014867561:1')
+  self.assertEqual(p['retained_source_manifest']['original_run_id'],'39004453781:1')
 if __name__=='__main__':unittest.main()
+
 

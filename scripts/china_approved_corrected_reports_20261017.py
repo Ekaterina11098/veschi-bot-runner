@@ -79,7 +79,7 @@ def main():
         corrected=get('china_agent:daily_expected_control:2026-10-17:verify')
         p=dict(report_date=DAY,wb_writes=0,chat_id=source['chat_id'],owner_user_id=source['owner_user_id'],messages=[m for m in source['messages'] if m['section']!='control']+render_control(corrected),old_message_ids=[s['message_id'] for s in source['sent']],source_key=SOURCE,status='ready',sent=[],deleted=[],telegram_calls=0,telegram_pending=None,authorization='Owner requested replace stale reports with corrected four-day baseline reports on 2026-10-17 at 15:00 Moscow and renewed at 15:02.')
         validate(p)
-        db('POST','telegram_api_cache',body={'cache_key':KEY,'payload':p})
+        db('POST','telegram_api_cache',body={'cache_key':KEY,'payload':p,'expires_at':'2027-10-17T00:00:00Z'})
 
     validate(p)
     if p['status']=='delivered':

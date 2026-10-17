@@ -10,7 +10,7 @@ def comparison_windows(detected,today):
 
 def all_days(a,b):return [a+timedelta(days=i) for i in range((b-a).days+1)]
 
-def build(worker):
+def build(worker,candidate_review=False):
  from china_agent.morning_pair import tracked_rows
  from china_agent import demand
  from china_agent.control_owner_preview import Preview
@@ -23,8 +23,20 @@ def build(worker):
  from analytics.mpstats_gaps import execute_reads
  from analytics.collect import _fetch_transport
  state=worker.get(demand.STATE_KEY) or {};tracked=tracked_rows(state,worker.day)
+ if candidate_review:
+  tracked=[]
+  for nm,result in (state.get('latest',{}).get('results') or {}).items():
+   before=result.get('conversion_before');after=result.get('conversion_after')
+   entry=state.get('price_history',{}).get(nm,{})
+   change=entry.get('last_price_change') or entry.get('increase') or {}
+   if result.get('full_days',0)>=4 and before is not None and after is not None and after<before and change.get('baseline_from') and change.get('baseline_to'):
+    detected=datetime.fromisoformat(change['detected_at']).astimezone(MSK).date()
+    tracked.append((nm,entry,change,detected))
  end=worker.day-timedelta(days=1);rate_start=end-timedelta(days=29)
  pairs={str(nm):comparison_windows(d,worker.day) for nm,e,c,d in tracked}
+ if candidate_review:
+  pairs={str(nm):((date.fromisoformat(c['baseline_from']),date.fromisoformat(c['baseline_to'])),(worker.day-timedelta(days=4),end)) for nm,e,c,d in tracked}
+  if any((a[1]-a[0]).days!=(b[1]-b[0]).days for a,b in pairs.values()):raise RuntimeError('Candidate comparison periods differ in length')
  windows={(str(rate_start),str(end))}
  for pair in pairs.values():
   if pair:windows.update((str(a),str(b)) for a,b in pair)
@@ -130,7 +142,7 @@ def build(worker):
   if item.get('zero_buyout_signal',{}).get('attention'):result.update(status='zero_buyout_attention',result_action='⚠️ Заказы есть, выкупов нет — проверить причины невыкупа товара отдельно от изменения цены.')
   item.update(full_days=full_days,result=result);output.append(item)
  value=dict(report_date=str(worker.day),status='complete_disclosed_forecast_model',products=output,rate_period=[str(rate_start),str(end)],calculated_at=datetime.now(MSK).isoformat(),telegram_calls=0,wb_writes=0)
- worker.save('china_agent:daily_expected_control:'+str(worker.day)+(':verify' if getattr(worker,'control_preview',False) else ''),value)
+ worker.save(('china_agent:daily_expected_candidates:' if candidate_review else 'china_agent:daily_expected_control:')+str(worker.day)+(':verify' if getattr(worker,'control_preview',False) else ''),value)
  return value
 
 def render(value):
@@ -182,6 +194,8 @@ def render_candidates(worker):
    proposal=demand.offer(price)
    if proposal:initial.append((targets[nm],nm,values,proposal))
  lower=[]
+ review=build(worker,candidate_review=True)
+ expected={r['nm_id']:r for r in review['products']}
  for nm,result in (state.get('latest',{}).get('results') or {}).items():
   before=result.get('conversion_before');after=result.get('conversion_after')
   if nm in targets and result.get('full_days',0)>=4 and before is not None and after is not None and after<before:
@@ -189,6 +203,14 @@ def render_candidates(worker):
  lines=['Китай • кандидаты на повышение и снижение • '+str(worker.day),'Период: '+str(wanted[0])+'–'+str(wanted[-1])+' — четыре полных дня.','Заказы сверены с WB, отмены и дубли исключены. Каталог: '+str(len(targets))+' товаров.','', 'ПЕРВОЕ ПОВЫШЕНИЕ +10%: '+str(len(initial))]
  for article,nm,values,p in sorted(initial):lines+=['• '+article+' / nmID '+nm+': заказы '+('/'.join(map(str,values)))+'; цена после скидки '+f"{p['current_cny']:g}"+' → '+f"{p['target_cny']:g}"+' ¥.']
  lines+=['','ПОВТОРНОЕ ПОВЫШЕНИЕ: решение только по ожидаемой прибыли и конверсии в отдельном контроле изменений цены. Старую прибыль по дате продажи не используем.','','ПРОВЕРКА ВОЗМОЖНОГО СНИЖЕНИЯ: '+str(len(lower))]
- for article,nm,values,b,a in sorted(lower):lines+=['• '+article+' / nmID '+nm+': заказы '+('/'.join(map(str,values)))+'; конверсия '+f'{b:.1%}'+' → '+f'{a:.1%}'+'. Требуется проверка связки; подтверждённого поручения снизить цену нет.']
- lines+=['Это предварительный отбор снижения по конверсии; ожидаемая прибыль и прочие причины проверяются до решения. Конверсия — MPStats, счётчик заказов воронки отличается от статистики WB.','Все изменения цены согласовываем.']
+ for article,nm,values,b,a in sorted(lower):
+  item=expected.get(nm)
+  if not item:raise RuntimeError('Expected-profit comparison missing for lower candidate')
+  before=item['before'];after=item['after'];result=item['result']
+  f=lambda v:f'{v:,.0f}'.replace(',',' ')
+  lines+=['• '+article+' / nmID '+nm+': заказы '+('/'.join(map(str,values)))+'; конверсия '+f'{b:.1%}'+' → '+f'{a:.1%}'+'.',
+   '  Ожидаемая прибыль '+before['period_from']+'–'+before['period_to']+' → '+after['period_from']+'–'+after['period_to']+': '+f(before['expected_profit'])+' → '+f(after['expected_profit'])+' ₽; разница '+f(result['profit_delta_rub'])+' ₽'+(' ('+str(result['profit_delta_percent'])+'%)' if result['profit_delta_percent'] is not None else '')+'.',
+   '  Выкуп '+str(round(item['buyout_percent'],2))+'%'+(' — принято, своей статистики недостаточно.' if item['buyout_fallback'] else '; завершённых заказов '+str(item['buyout_sample'])+'.'),
+   '  Результат и действие: '+result['result_action'],'  Перед снижением проверить связку; изменение цены только по согласованию.']
+ lines+=['Предварительный отбор снижения: ожидаемая прибыль скорректирована на текущий % выкупа артикула и относится к датам заказов. Расчёт по согласованной модели учтённых расходов; не фактическая чистая прибыль. Связка проверяется до решения. Конверсия — MPStats, счётчик заказов воронки отличается от статистики WB.','Все изменения цены согласовываем.']
  return '\n'.join(lines)

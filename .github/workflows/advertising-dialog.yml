@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: c06863252b707f82fea155919940075596c8aa33
+          ref: a0d222353b1fb120fb66a114f64f463e2f936a28
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -32,7 +32,7 @@ jobs:
         working-directory: private-source
         env:
           DIALOG_JOB_ID: ${{ inputs.job_id }}
-          ADVERTISING_DIALOG_SOURCE_SHA: c06863252b707f82fea155919940075596c8aa33
+          ADVERTISING_DIALOG_SOURCE_SHA: a0d222353b1fb120fb66a114f64f463e2f936a28
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

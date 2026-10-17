@@ -275,7 +275,7 @@ class Worker:
             if processed>=10:break
         return processed
 
-    def conversion_history(self,article,date_from=None,date_to=None,days=5):
+    def conversion_history(self,article,date_from=None,date_to=None,days=5,saved_only=False):
         nm,canonical=self.resolve(article)
         end=self.now.astimezone(MSK).date()-timedelta(days=1)
         if date_to:end=datetime.fromisoformat(date_to).date()
@@ -284,7 +284,7 @@ class Worker:
         if not 1<=length<=14 or end>=self.now.astimezone(MSK).date():raise ValueError('Нужен период от 1 до 14 полных прошедших дней.')
         watch=dict(nm_id=nm,article=canonical,days=length,date_to=end.isoformat())
         daily,missing=self.load_days(watch)
-        if missing and self.collect:
+        if missing and self.collect and not saved_only:
             try:self.collect(missing)
             except Exception:pass
             daily,missing=self.load_days(watch)
@@ -307,7 +307,7 @@ class Worker:
                 nm,article=self.resolve(job['request_text'])
                 dates=re.findall(r'\b\d{4}-\d{2}-\d{2}\b',job['request_text'])
                 _,days=parameters(job['request_text'])
-                value=self.conversion_history(article,date_from=dates[0] if len(dates)==2 else None,date_to=dates[1] if len(dates)==2 else None,days=days or 5)
+                value=self.conversion_history(article,date_from=dates[0] if len(dates)==2 else None,date_to=dates[1] if len(dates)==2 else None,days=days or 5,saved_only=True)
                 lines=['Китай · '+article+' · '+value['date_from']+'–'+value['date_to']+' · полные дни МСК',
                        'Сохранённая дневная воронка MPStats (заказы воронки / просмотры карточки):']
                 by_day={r['date']:r for r in value['daily'] if 'orders' in r and 'views' in r}

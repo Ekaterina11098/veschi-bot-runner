@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 8881a1e58b5d82bef75722e75177d9819f1ca676
+          ref: 9271f7e365d6f09f84fffe2a3a14fff61fc6bda9
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -24,7 +24,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ADVERTISING_DIALOG_SOURCE_SHA: 8881a1e58b5d82bef75722e75177d9819f1ca676
+          ADVERTISING_DIALOG_SOURCE_SHA: 9271f7e365d6f09f84fffe2a3a14fff61fc6bda9
       - name: Preserve encrypted activation result only
         if: always()
         run: |

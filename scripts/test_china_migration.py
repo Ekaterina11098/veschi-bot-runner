@@ -47,5 +47,17 @@ class Migration(unittest.TestCase):
   w=Memory();w.transport=lambda *a:(_ for _ in ()).throw(TimeoutError())
   self.assertEqual(w.send_once('question:1:0',-123,'answer'),'uncertain')
   w.transport=w.send;self.assertEqual(w.send_once('question:1:0',-123,'answer'),'uncertain');self.assertEqual(w.sent,[])
+ def test_saved_model_only_uses_allowed_read_tools(self):
+  w=Memory();j=job('Какие данные доступны?');j['tool_trace']=[{'name':'china_saved_question','message_id':7}]
+  calls=[]
+  def model(body):
+   calls.append(body)
+   self.assertNotIn('recover_missing_data',{t['name'] for t in body['tools']})
+   self.assertNotIn('forecast_price',{t['name'] for t in body['tools']})
+   if len(calls)==1:return {'output':[{'type':'function_call','name':'get_status','arguments':'{}','call_id':'status'}]}
+   return {'output':[{'type':'message','content':[{'type':'output_text','text':'Срез недоступен; неизвестное не равно нулю.'}]}]}
+  w.model_request=model
+  answer,trace=w.saved_question(j,[])
+  self.assertEqual(len(calls),2);self.assertEqual(trace[0]['name'],'get_status');self.assertIn('не равно нулю',answer)
 
 if __name__=='__main__':unittest.main()

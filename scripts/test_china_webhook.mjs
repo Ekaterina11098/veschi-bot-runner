@@ -30,7 +30,7 @@ const ctx={Response,Request,AbortSignal,TextEncoder,crypto:webcrypto,console,Den
  }else if(table!=='advertising_telegram_chat')throw Error('Unexpected table '+table);
  return Response.json(result);
 }};
-vm.createContext(ctx);vm.runInContext(stripTypeScriptTypes(fs.readFileSync('scripts/china_webhook.ts','utf8')),ctx);
+vm.createContext(ctx);vm.runInContext(stripTypeScriptTypes(fs.readFileSync('scripts/china_webhook.ts','utf8').replace("}catch{return new Response('Queue unavailable',{status:503});}","}catch(e){ console.log('TEST ERROR',e.message);return new Response('Queue unavailable',{status:503});}")),ctx);
 const call=(update,s=secret)=>handler(new Request('https://edge.test',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':s},body:JSON.stringify(update)}));
 const msg=(id,sender=6,chat=-123)=>({update_id:id,message:{message_id:id,chat:{id:chat,type:'supergroup'},from:{id:sender},text:'Покажи сохранённые данные Китая'}});
 assert.equal((await call(msg(1),'wrong')).status,401);assert.equal(jobs.length,0);

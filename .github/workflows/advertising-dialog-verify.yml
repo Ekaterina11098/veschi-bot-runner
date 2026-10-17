@@ -21,7 +21,8 @@ jobs:
         with: {python-version: '3.12'}
       - uses: actions/setup-node@v4
         with: {node-version: '24'}
-      - run: pip install -r private-source/requirements.txt > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: python -m py_compile advertising_dialog_activate_20261017.py
       - name: Existing conversational and new safety tests; network blocked
         working-directory: private-source
         run: |

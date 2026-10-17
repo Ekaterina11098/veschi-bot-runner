@@ -1,0 +1,37 @@
+name: Verify and activate reviewed advertising saved dialogue
+on:
+  workflow_dispatch:
+permissions: {contents: write}
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 8881a1e58b5d82bef75722e75177d9819f1ca676
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: python advertising_dialog_activate_20261017.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ADVERTISING_DIALOG_SOURCE_SHA: 8881a1e58b5d82bef75722e75177d9819f1ca676
+      - name: Preserve encrypted activation result only
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          cp "$RUNNER_TEMP"/stock-deploy-proof/advertising-dialog-activation.aes.json "recovery-output/advertising/dialog-activation-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/dialog-activation-*.aes.json
+          git diff --cached --quiet || git commit -m "Preserve encrypted dialogue activation result"
+          git push origin HEAD:main

@@ -30,7 +30,7 @@ class SourceTests(unittest.TestCase):
     return None
    raise AssertionError(method)
   self.ns=functions(source,{'get','put','flush_derived_caches','digest','SourceTraffic','restore_retained_source'},
-   {'copy':copy,'json':json,'datetime':datetime,'timedelta':timedelta,'ZoneInfo':ZoneInfo,'now':NOW,'database':db,
+   {'copy':copy,'json':json,'datetime':datetime,'timedelta':timedelta,'ZoneInfo':ZoneInfo,'timezone':timezone,'now':NOW,'database':db,
     'gate':SimpleNamespace(fail=lambda:None),'DEFERRED_CACHES':{'mpstats:agent_reports:token_2:v1','mpstats:funnel_periods:token_2:v1'},
     'cache_memo':{},'cache_revisions':{},'cache_dirty':set()})
  def test_nine_updates_one_initial_read_one_write_one_readback(self):

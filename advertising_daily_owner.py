@@ -106,6 +106,7 @@ def preserve_checkpoint(filename,summary):
   if pushed.returncode==0:return
  raise RuntimeError('Ciphertext checkpoint push failed; no stage replay')
 started=(datetime.now(timezone.utc)-timedelta(hours=6)).isoformat()
+resume_manifest_sent=set()
 def stage(filename,timeout,single_step=False):
  def call():
   child=dict(os.environ)
@@ -115,7 +116,9 @@ def stage(filename,timeout,single_step=False):
    child['IP_LIMITED_TELEGRAM_DELIVERY']='false';child['IP_LIMITED_ANALYSIS_PUBLISH']='false'
   if filename=='advertising_source_owner.py':
    child.pop('WB_TOKEN_2',None)
-   if resume_profile:child['ADVERTISING_RETAINED_SOURCE_MANIFEST']=json.dumps(resume_profile['retained_source_manifest'])
+   if resume_profile and not resume_manifest_sent:
+    child['ADVERTISING_RETAINED_SOURCE_MANIFEST']=json.dumps(resume_profile['retained_source_manifest'])
+    resume_manifest_sent.add('source')
   try:p=subprocess.run([sys.executable,str(ROOT/filename)],cwd=ROOT,env=child,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=timeout)
   except subprocess.TimeoutExpired:raise TimeoutError('Bounded stage timed out') from None
   # Parse durable business summary even if the process returned nonzero.

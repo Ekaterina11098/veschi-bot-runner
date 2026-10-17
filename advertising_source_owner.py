@@ -458,10 +458,10 @@ finally:
   report['cache_flush_error']=error(flush_error)
   if 'error' not in report:report['error']=error(flush_error)
  if 'traffic' in globals():report['traffic']=traffic.summary()
- finished={x['key'] for x in report.get('read_results',[]) if x.get('status')=='received'}
+ finished={x['key'] for x in report.get('read_results',[]) if x.get('status')=='received'} | {x['key'] for x in report.get('saved',[]) if x.get('status')=='received' and x.get('readback')}
  report['pending_requests']=[dict(key=x['key'],tool=x['tool'],arguments=x['arguments']) for x in report.get('planned',[]) if x['key'] not in finished]
  threshold=report.get('error',{}).get('trace','').find('100MB decoded-body collection threshold reached')>=0
- report['business_status']='failed' if report.get('cache_flush_error') else ('incomplete' if report.get('error') or report.get('pending_pause') or report.get('normalization_errors') or report.get('pending_requests') else 'complete')
+ report['business_status']='failed' if report.get('cache_flush_error') else ('incomplete' if report.get('error') or report.get('pending_pause') or report.get('normalization_errors') or report.get('pending_requests') or report.get('provider_status',{}).get('connected') is False or report.get('finance_composition',{}).get('status') not in (None,'composed','reused') else 'complete')
  report['completed_units']=[dict(id=x['id'],key=x['key'],status=x['status']) for x in report['saved'] if x.get('readback')]
  report['private_log']=hidden.getvalue();seal('advertising-source',report)
  print(json.dumps({'saved':len(report['saved']),'provider_status':report.get('provider_status',{}).get('status'),'pending_pause':bool(report.get('pending_pause')),'error_type':None if threshold else report.get('error',{}).get('type'),'business_status':report['business_status'],'reason':'collection_threshold' if threshold else (report.get('error',{}).get('type') or ('pending_pause' if report.get('pending_pause') else ('pending_source_requests' if report.get('pending_requests') else ('normalization_errors' if report.get('normalization_errors') else None)))),'completed_units':report['completed_units'],'wb_calls':0,'telegram_calls':0}))

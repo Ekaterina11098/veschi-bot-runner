@@ -1,0 +1,30 @@
+name: Send one narrow China report row
+on:
+  push:
+    branches: [china-narrow-row-preview-20261019]
+    paths: ['scripts/send_china_narrow_row_20261019.py']
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Send one explicitly requested preview row
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: python scripts/send_china_narrow_row_20261019.py

@@ -240,13 +240,32 @@ def main():
         print(json.dumps(result));return
     if os.environ.get('GITHUB_EVENT_NAME')!='workflow_dispatch' or os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':
         raise ValueError('Only explicit public main dispatch may apply WB prices')
-    key=args.approval_key
-    try:e=process(io,key)
-    except ValueError as ex:
-        a=io.get(key);validate_approval(key,a)
-        e=dict(status='blocked',reason=str(ex),items=[])
-        ek='china_agent:price_execution:v1:'+key[len(PREFIX):]
-        if not io.get(ek):io.create(ek,e)
-    notify(io,key,e)
-    print(json.dumps(dict(status=e['status'],upload_id=e.get('upload_id'),items=len(e.get('items',[]))),ensure_ascii=False))
+    # GitHub replaces a third pending run in a concurrency group. Drain durable
+    # same-day confirmations too, so overlapping participants cannot lose intent.
+    keys=[args.approval_key]
+    validate_approval(keys[0],io.get(keys[0]))
+    queued=io.db('telegram_api_cache?cache_key=like.china_agent:price_recommendation_approval:v2:*&payload->>report_date=eq.'+day()+'&select=cache_key&order=updated_at.asc&limit=100')
+    keys+= [r['cache_key'] for r in queued if r['cache_key'] not in keys]
+    started=time.monotonic()
+    for key in keys:
+        if time.monotonic()-started>900:break
+        try:e=process(io,key,polls=8)
+        except ValueError as ex:
+            a=io.get(key);validate_approval(key,a)
+            e=dict(status='blocked',reason=str(ex),items=[])
+            ek='china_agent:price_execution:v1:'+key[len(PREFIX):]
+            old=io.get(ek)
+            if old and old.get('status') in ['submitting','submitted','uncertain']:
+                e=old
+            elif old:io.put(ek,e)
+            else:io.create(ek,e)
+        except Exception:
+            # Preserve any boundary-crossing status and notify without retrying POST.
+            ek='china_agent:price_execution:v1:'+key[len(PREFIX):]
+            e=io.get(ek) or dict(status='blocked',items=[])
+            e['reason']='Технический сбой проверки. Результат не подтверждён; повторная запись автоматически не отправлялась.'
+            if io.get(ek):io.put(ek,e)
+            else:io.create(ek,e)
+        notify(io,key,e)
+        print(json.dumps(dict(status=e['status'],upload_id=e.get('upload_id'),items=len(e.get('items',[]))),ensure_ascii=False))
 if __name__=='__main__':main()

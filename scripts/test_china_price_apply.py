@@ -68,6 +68,14 @@ class Tests(unittest.TestCase):
         f=Fake()
         for p in [dict(f.p,currencyIsoCode4217='RUB'),dict(f.p,editableSizePrice=True),dict(f.p,vendorCode='other')]:
             with self.assertRaises(ValueError):plan(f.s,p)
+    def test_no_selected_extra_write(self):
+        f=Fake();e=self.runio(f)
+        self.assertEqual(e['request'],dict(data=[dict(nmID=1,price=220,discount=50)]))
+    def test_notice_once_and_uncertain_no_repeat(self):
+        f=Fake();f.sends=0
+        def tg(method,body):
+            f.sends+=1;raise TimeoutError()
+        f.tg=tg;e=self.runio(f);notify(f,f.key,e);notify(f,f.key,e);self.assertEqual(f.sends,1)
     def test_changed_while_preparing(self):
         f=Fake();ek='china_agent:price_execution:v1:'+f.key[len(PREFIX):]
         f.cache[ek]=dict(status='preflight',items=[dict(selection=f.s,request=dict(nmID=1,price=220,discount=50),status='ready',lock='lock')])

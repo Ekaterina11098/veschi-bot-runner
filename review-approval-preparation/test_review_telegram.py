@@ -128,7 +128,14 @@ class Tests(unittest.TestCase):
         with self.assertRaises(Rejected):self.handle('v1')
     def test_same_version_mutation(self):
         with self.assertRaises(Rejected):self.a.create('token_1','feedbacks','review','v1',self.source,['Иное','Другое'],102)
+    def test_unprocessed_default_card_still_selectable_next_week(self):
+        self.now+=8*86400
+        result=self.handle('v2')
+        self.assertEqual(result['result']['decision'],'selected')
+        self.assertEqual(self.repo.count('intents'),0)
     def test_expired(self):
+        card=self.repo.get('cards',self.token);card['expires_at']=self.now+86400
+        self.repo.put('cards',self.token,card);self.repo.conn.commit()
         self.now+=86401
         with self.assertRaises(Rejected):self.handle('v1')
     def test_checksum(self):

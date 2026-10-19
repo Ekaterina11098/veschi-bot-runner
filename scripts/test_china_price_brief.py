@@ -1,6 +1,6 @@
 import unittest
 from datetime import date
-from china_price_brief import render,copy_entities,catalogue_ids
+from china_price_brief import render,article_entities,catalogue_ids
 DAY=date(2026,10,19)
 CAT=dict(cabinet='token_3',rows=[dict(vendorCode=a,nmID=n) for a,n in [('590-PamelaBag-brown',1473245510),('123-Zont-pink',1556488210),('15-FurPanama-cream',1535337778)]])
 def review(status='rollback_review',days=4):
@@ -27,10 +27,11 @@ class BriefTests(unittest.TestCase):
   with self.assertRaises(RuntimeError):render('Проверка не завершена','intraday',review(),DAY,CAT)
  def test_code_offsets_utf16(self):
   text='👜 Рекомендации\nАртикул WB: 1535337778'
-  entity=copy_entities(text)[0]
+  entity=article_entities(text)[0]
   encoded=text.encode('utf-16-le')
   self.assertEqual(encoded[entity['offset']*2:(entity['offset']+entity['length'])*2].decode('utf-16-le'),'1535337778')
-  self.assertEqual(entity['type'],'code')
+  self.assertEqual(entity['type'],'text_link')
+  self.assertEqual(entity['url'],'https://www.wildberries.ru/catalog/1535337778/detail.aspx')
  def test_unknown_id_not_guessed(self):
   with self.assertRaises(RuntimeError):render('ПЕРВОЕ ПОВЫШЕНИЕ +10%: 0','morning',review(),DAY,dict(cabinet='token_3',rows=[]))
  def test_ambiguous_id_rejected(self):

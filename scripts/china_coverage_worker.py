@@ -33,6 +33,16 @@ def overlay(report,coverage):
 class CoverageWorker(ScheduledWorker):
     def guard(self,session,method,url,*a,**kw):
         host=urlparse(url).hostname;path=urlparse(url).path;params=kw.get('params') or {}
+        if host=='api.telegram.org' and path.endswith('/sendMessage'):
+            body=kw.get('json') or {}
+            text=body.get('text','')
+            if text.startswith('Рекомендации к повышению:') or text.startswith('Рекомендации к снижению:'):
+                from china_agent.price_brief import copy_entities
+                body=dict(body)
+                body.pop('parse_mode',None)
+                body['entities']=copy_entities(text)
+                kw=dict(kw,json=body)
+
         # Dedicated, read-only absent-card exceptions; the shared source policy is unchanged.
         if host=='mcp.mpstats.io':
             body=kw.get('json') or {};p=body.get('params') or {};args=p.get('arguments') or {}
@@ -102,7 +112,7 @@ class CoverageWorker(ScheduledWorker):
         if self.audit.get('mode')=='intraday':
             from china_agent.price_brief import render as brief
             review=self.get('china_agent:daily_expected_candidates:'+str(self.day))
-            answer=brief(answer,'intraday',review,self.day)
+            answer=brief(answer,'intraday',review,self.day,self.get('china_agent:prices:v1'))
         return answer,trace
 
 def main():

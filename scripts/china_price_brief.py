@@ -43,9 +43,38 @@ def lowering(review, day):
         rows.append((item['article'],old,new))
     return sorted(set(rows))
 
-def render(answer, mode, review, day):
+def catalogue_ids(catalogue):
+    if not isinstance(catalogue,dict) or catalogue.get('cabinet')!='token_3':
+        raise RuntimeError('China catalogue unverified')
+    result={}
+    for row in catalogue.get('rows',[]):
+        article=row.get('vendorCode')
+        nm=str(row.get('nmID',''))
+        if not article or not nm.isdigit() or int(nm)<=0:
+            continue
+        key=article.casefold()
+        if key in result and result[key]!=nm:
+            raise RuntimeError('Ambiguous WB article')
+        result[key]=nm
+    return result
+
+def copy_entities(text):
+    """Telegram entity offsets use UTF-16 units, not Python characters."""
+    entities=[]
+    for match in re.finditer(r'(?m)^Артикул WB: ([0-9]+)$',text):
+        start=match.start(1)
+        entities.append(dict(type='code',offset=len(text[:start].encode('utf-16-le'))//2,
+                             length=len(match[1])))
+    return entities
+
+def render(answer, mode, review, day, catalogue):
     up=raising(answer,mode);down=lowering(review,day)
+    ids=catalogue_ids(catalogue)
+    def row(article,old,new):
+        nm=ids.get(article.casefold())
+        if not nm:raise RuntimeError('Exact WB article missing')
+        return article+': '+old+' → '+new+' ¥\nАртикул WB: '+nm
     def section(title,rows):
         if rows is None:return title+'\nНет данных'
-        return title+'\n'+('\n'.join(a+': '+old+' → '+new+' ¥' for a,old,new in rows) if rows else 'Нет')
-    return section('Повышение:',up)+'\n\n'+section('Снижение:',down)
+        return title+'\n'+('\n'.join(row(a,old,new) for a,old,new in rows) if rows else 'Нет')
+    return section('Рекомендации к повышению:',up)+'\n\n'+section('Рекомендации к снижению:',down)

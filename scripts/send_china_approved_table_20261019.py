@@ -5,6 +5,9 @@ from zoneinfo import ZoneInfo
 import requests
 from china_price_brief import render_table,table_payload
 from china_buyer_price_forecast import build
+import sys,types,china_buyer_price_forecast
+sys.modules['china_agent']=types.ModuleType('china_agent')
+sys.modules['china_agent.buyer_price_forecast']=china_buyer_price_forecast
 CHAT=-1004342917488
 KEY='china_agent:approved_price_table:2026-10-19:v1'
 BASE=os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/'

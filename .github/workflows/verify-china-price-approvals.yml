@@ -1,0 +1,17 @@
+name: Verify all-member China recommendation approvals
+on:
+  push:
+    branches: [china-all-member-price-approvals-20261019]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Verify approval scope with no credentials or external calls
+        run: |
+          node scripts/test_china_price_approvals.mjs
+          node scripts/test_china_webhook.mjs

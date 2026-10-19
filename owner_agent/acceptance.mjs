@@ -1,5 +1,6 @@
 // Live model/read acceptance only. No Telegram token or sending transport available.
 import {Database} from './data.mjs';
+import {readFile} from 'node:fs/promises';
 import {runDialog,modelRequest,leadingJson} from './dialog.mjs';
 const db=new Database({url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SECRET_KEY});
 const setup=(await db.request('owner_agent_setup?id=eq.1&select=payload,observed_at'))?.[0];
@@ -17,6 +18,9 @@ const cases=[
 ];
 const results=[],history=[];
 for(const item of fixtures.additional_cases??[])cases.push({id:item.id,question:item.question+common});
+const selection=JSON.parse(await readFile(new URL('./acceptance-request.json',import.meta.url),'utf8')).cases;
+if(Array.isArray(selection))cases.splice(0,cases.length,...cases.filter(x=>selection.includes(x.id)));
+if(!cases.length)throw new Error('No acceptance cases selected');
 const request=body=>modelRequest(body,{key:process.env.OPENAI_API_KEY});
 async function save() {
  const fresh=(await db.request('owner_agent_setup?id=eq.1&select=payload,observed_at'))?.[0];

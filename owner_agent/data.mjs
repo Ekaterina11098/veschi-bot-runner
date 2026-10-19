@@ -1,7 +1,7 @@
 // No arbitrary SQL, eval, source collection or imports from operational agents.
 export const CABINETS = ['token_1', 'token_2', 'token_3'];
 export function normalizeSource(source) {
-  const aliases={'wb orders':'orders','wb sales':'sales','wb stocks':'stocks','wb cards':'cards','wb finance':'finance'};
+  const aliases={'wb orders':'orders','wb sales':'sales','wb stocks':'stocks','wb cards':'cards','wb finance':'finance','заказы':'orders','заказы wb':'orders','вб заказы':'orders','продажи':'sales','остатки':'stocks','карточки':'cards','финансы':'finance'};
   return aliases[String(source).trim().toLowerCase()]??source;
 }
 export function validateArgs(value) {
@@ -59,5 +59,6 @@ export async function dispatch(db,name,args) {
   if(!TOOLS.some(t=>t.name===name)) throw new Error('Tool forbidden');
   if(args.cabinet && ![...CABINETS,'shared'].includes(args.cabinet)) throw new Error('Unknown cabinet');
   if(args.source)args={...args,source:normalizeSource(args.source)};
+  if(name==='sources'&&args.search)args={...args,search:normalizeSource(args.search)};
   return name==='calculate'?calculate(args):db.read(name,args);
 }

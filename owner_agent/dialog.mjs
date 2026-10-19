@@ -79,13 +79,14 @@ export async function runDialog({question,history=[],db,model,request,maxRounds=
   const scope=questionScope(question,history);
   const market=marketplace(question,history);
   const allowed=TOOLS.filter(x=>x.name!=='ozon'||market==='ozon');
+  const savedEconomics=/net_profit|\beconomics\b/iu.test(question);
   const material=new Set(['read_snapshot','count_snapshot','order_snapshot_counts','aggregate_snapshot','economics','costs','ozon']);
   input[0].content+='\nОбласть текущего вопроса: '+JSON.stringify({marketplace:market,cabinets:scope??'all',source_ids:'Use exact IDs from sources. Empty search results are not zeros.'});
   let calls=0;
   const started=Date.now();
   for(let turn=0;turn<maxRounds;turn++) {
     if(Date.now()-started>8*60*1000)throw new Error('Analysis deadline exceeded');
-    const response=await request({model,input,tools:allowed,tool_choice:turn===0?{type:'function',name:'sources'}:'auto',parallel_tool_calls:false,max_output_tokens:2400,store:false});
+    const response=await request({model,input,tools:allowed,tool_choice:turn===0?{type:'function',name:savedEconomics?'economics':'sources'}:'auto',parallel_tool_calls:false,max_output_tokens:2400,store:false});
     if(response.status && response.status!=='completed') throw new Error('Model response incomplete');
     const output=response.output??[];
     const tools=output.filter(x=>x.type==='function_call');

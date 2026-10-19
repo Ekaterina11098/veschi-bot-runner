@@ -49,6 +49,13 @@ test('successful empty PostgREST insert response is accepted',async()=>{
 test('no execution tools exposed to model',()=>{
   assert.deepEqual(TOOLS.map(x=>x.name),['sources','snapshots','order_snapshot_counts','read_snapshot','count_snapshot','aggregate_snapshot','economics','costs','ozon','calculate']);
 });
+test('human WB source aliases resolve for inventory search as well as snapshots',async()=>{
+  const seen=[];
+  const db={read:async(name,args)=>{seen.push({name,args});return {rows:[{source:'orders'}]};}};
+  await dispatch(db,'sources',{search:'WB orders'});
+  await dispatch(db,'snapshots',{source:'WB orders'});
+  assert.equal(seen[0].args.search,'orders');assert.equal(seen[1].args.source,'orders');
+});
 test('footer comes from actual tool evidence, never model placeholder',()=>{
   const reference=referenceFor('aggregate_snapshot',{}, {source:'orders',cabinet:'token_1',period_from:'2026-10-01',period_to:'2026-10-07',id:123});
   const text=groundedFooter('**Ответ**\n\nДанные: ...',[{success:true,name:'aggregate_snapshot',reference}]);
@@ -137,6 +144,15 @@ test('worker restores chronological followup context from stored group jobs',asy
   await processJob(1,{db,token:'test',model:'test',send,dialog:async args=>{restored=args.history;return dialog();}});
   assert.deepEqual(restored,[{role:'user',content:'Отмены ИП за период'},{role:'assistant',content:'ИП: 2216'},
     {role:'user',content:'А Китай?'},{role:'assistant',content:'Китай: 32'}]);
+});
+test('explicit stored net_profit starts with the economics table, not snapshot diagnostics',async()=>{
+  const responses=[{output:[{type:'function_call',name:'economics',arguments:'{"cabinet":"token_2","from":"2026-09-30","to":"2026-10-06","article":"016-MelanieBag-brown"}',call_id:'c'}]},
+    {output:[{type:'message',content:[{type:'output_text',text:'{"profit":-227.1}'}]}]}];
+  const result=await runDialog({question:'Сохранённый net_profit ИП за 2026-09-30 — 2026-10-06',model:'test',db:{read:async()=>({rows:[{net_profit:-227.1}]})},request:async body=>{
+    if(responses.length===2)assert.deepEqual(body.tool_choice,{type:'function',name:'economics'});
+    return responses.shift();
+  }});
+  assert.ok(result.answer.includes('-227.1'));
 });
 test('duplicate dispatch cannot produce duplicate sends',async()=>{
   const db=fakeDatabase();let sends=0;

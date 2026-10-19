@@ -1,1 +1,1 @@
-{"purpose":"Verify model with date-aware grounding and parsed factual JSON plus stored economics controls; no Telegram sends.","attempt":5}
+{"purpose":"Recheck initial source alias lookup and exact stored-economics routing; no Telegram sends.","attempt":6,"cases":["all_rows","stored_profit_ip"]}

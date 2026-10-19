@@ -108,5 +108,7 @@ export async function runDialog({question,history=[],db,model,request,maxRounds=
       input.push({type:'function_call_output',call_id:call.call_id,output:JSON.stringify(result)});
     }
   }
-  throw new Error('Analysis budget exceeded');
+  const error=new Error('Analysis budget exceeded');
+  error.evidence=evidence;
+  throw error;
 }

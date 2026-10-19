@@ -12,7 +12,8 @@ const cases=[
  {id:'cancel_china',question:'А для Китая?'+common+'Формат {"cabinet":"Китай","count":число}. Сохрани показатель и период предыдущего вопроса.'},
  {id:'cancel_ooo',question:'Теперь аналогично для ООО.'+common+'Формат {"cabinet":"ООО","count":число}.'},
  {id:'remaining_ooo',question:'Сколько тогда осталось неотменённых в последнем кабинете за тот же период?'+common+'Формат {"cabinet":"название","count":число}.'},
- {id:'unknown_profit',question:'Какова точная подтверждённая чистая прибыль за сегодняшний завершённый день 19 октября 2026 по всем трём кабинетам? Не строй прогноз. Если день не завершён или нет полного факта, ставь null, не ноль.'+common+'Формат {"ooo":число_или_null,"ip":число_или_null,"china":число_или_null}.'}
+ {id:'unknown_profit',question:'Какова точная подтверждённая чистая прибыль за сегодняшний завершённый день 19 октября 2026 по всем трём кабинетам? Не строй прогноз. Если день не завершён или нет полного факта, ставь null, не ноль.'+common+'Формат {"ooo":число_или_null,"ip":число_или_null,"china":число_или_null}.'},
+ {id:'mpstats_coverage',question:'До какой последней даты есть завершённые рекламные отчёты MPStats (источник mpstats_campaign_report) по каждому из трёх кабинетов? Нужна дата периода period_to, а не collected_at. Не используй дату одного кабинета для другого.'+common+'Формат {"ooo":"YYYY-MM-DD","ip":"YYYY-MM-DD","china":"YYYY-MM-DD"}.'}
 ];
 const results=[],history=[];
 const request=body=>modelRequest(body,{key:process.env.OPENAI_API_KEY});
@@ -21,12 +22,12 @@ async function save() {
  const past=fresh.payload.acceptance;
  const history=[...(fresh.payload.acceptance_history??[])];
  if(past?.run_id && past.run_id!==process.env.GITHUB_RUN_ID && !history.some(x=>x.run_id===past.run_id))history.push(past);
- await db.request('owner_agent_setup?id=eq.1',{method:'PATCH',body:{payload:{...fresh.payload,acceptance_history:history.slice(-5),acceptance:{run_id:process.env.GITHUB_RUN_ID,model:process.env.OWNER_AI_MODEL||'gpt-4o-mini',results,finished:results.length===cases.length,telegram_sends:0,at:new Date().toISOString()}}}});
+ await db.request('owner_agent_setup?id=eq.1',{method:'PATCH',body:{payload:{...fresh.payload,acceptance_history:history.slice(-5),acceptance:{run_id:process.env.GITHUB_RUN_ID,model:process.env.OWNER_AI_MODEL||'gpt-4.1-mini',results,finished:results.length===cases.length,telegram_sends:0,at:new Date().toISOString()}}}});
 }
 for(const item of cases) {
  let result={id:item.id,question:item.question,pass:false};
  try {
-  const value=await runDialog({question:item.question,history,db,model:process.env.OWNER_AI_MODEL||'gpt-4o-mini',request});
+  const value=await runDialog({question:item.question,history,db,model:process.env.OWNER_AI_MODEL||'gpt-4.1-mini',request});
   const raw=value.answer.split(/\n\nДанные:/)[0].replace(/^```(?:json)?\s*|\s*```$/g,'').trim();
   let parsed;
   try{parsed=JSON.parse(raw);}catch{}
@@ -37,7 +38,7 @@ for(const item of cases) {
   const scopeOk=!expectedScope || scopedReads.every(x=>!x.reference?.cabinet || x.reference.cabinet===expectedScope);
   result={...result,pass:Boolean(exact&&scopeOk),numeric_match:Boolean(exact),scope_ok:scopeOk,parsed,answer:value.answer,evidence:value.evidence};
   history.push({role:'user',content:item.question},{role:'assistant',content:value.answer});
- }catch(error){result.error=error?.message?.replace(/https?:\/\/\S+/g,'[url]').slice(0,160)??'unknown';}
+ }catch(error){result.error=error?.message?.replace(/https?:\/\/\S+/g,'[url]').slice(0,160)??'unknown';if(error.evidence)result.evidence=error.evidence;}
  results.push(result);await save();
  console.log(JSON.stringify({case:item.id,pass:result.pass,tool_calls:result.evidence?.length??0}));
 }

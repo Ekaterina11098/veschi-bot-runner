@@ -23,5 +23,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OWNER_AI_MODEL: ${{ vars.OWNER_AI_MODEL || 'gpt-4o-mini' }}
+          OWNER_AI_MODEL: ${{ vars.OWNER_AI_MODEL || 'gpt-4.1-mini' }}
         run: node owner_agent/acceptance.mjs

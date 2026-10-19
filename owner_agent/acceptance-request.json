@@ -1,1 +1,1 @@
-{"purpose":"Repeat controls after rejecting absent JSON paths and adding exact-period order/cancellation counts; no Telegram sends.","attempt":3}
+{"purpose":"Verify stronger owner model on all existing controls plus independent MPStats period freshness; no Telegram sends.","attempt":4}

@@ -1,1 +1,1 @@
-{"purpose":"Repeat independent checks after source normalization, numeric grounding and cabinet/marketplace guards; no Telegram sends.","attempt":2}
+{"purpose":"Repeat controls after rejecting absent JSON paths and adding exact-period order/cancellation counts; no Telegram sends.","attempt":3}

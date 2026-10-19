@@ -64,7 +64,7 @@ export async function runDialog({question,history=[],db,model,request,maxRounds=
   const scope=questionScope(question,history);
   const market=marketplace(question,history);
   const allowed=TOOLS.filter(x=>x.name!=='ozon'||market==='ozon');
-  const material=new Set(['read_snapshot','count_snapshot','aggregate_snapshot','economics','costs','ozon']);
+  const material=new Set(['read_snapshot','count_snapshot','order_snapshot_counts','aggregate_snapshot','economics','costs','ozon']);
   input[0].content+='\nОбласть текущего вопроса: '+JSON.stringify({marketplace:market,cabinets:scope??'all',source_ids:'Use exact IDs from sources. Empty search results are not zeros.'});
   let calls=0;
   const started=Date.now();
@@ -92,7 +92,7 @@ export async function runDialog({question,history=[],db,model,request,maxRounds=
       try {
         args=JSON.parse(call.arguments||'{}');
         if(!allowed.some(x=>x.name===call.name))throw new Error('Marketplace tool forbidden');
-        if(scope && ['snapshots','economics'].includes(call.name) && (!args.cabinet || !scope.includes(args.cabinet))) {
+        if(scope && ['snapshots','economics','order_snapshot_counts'].includes(call.name) && (!args.cabinet || !scope.includes(args.cabinet))) {
           result={error:'Cabinet scope mismatch',required_cabinets:scope};
         } else {
         result=await dispatch(db,call.name,args);

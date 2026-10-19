@@ -47,7 +47,7 @@ test('successful empty PostgREST insert response is accepted',async()=>{
   assert.equal(await db.request('owner_agent_setup',{method:'POST',body:{id:1}}),null);
 });
 test('no execution tools exposed to model',()=>{
-  assert.deepEqual(TOOLS.map(x=>x.name),['sources','snapshots','read_snapshot','count_snapshot','aggregate_snapshot','economics','costs','ozon','calculate']);
+  assert.deepEqual(TOOLS.map(x=>x.name),['sources','snapshots','order_snapshot_counts','read_snapshot','count_snapshot','aggregate_snapshot','economics','costs','ozon','calculate']);
 });
 test('footer comes from actual tool evidence, never model placeholder',()=>{
   const reference=referenceFor('aggregate_snapshot',{}, {source:'orders',cabinet:'token_1',period_from:'2026-10-01',period_to:'2026-10-07',id:123});

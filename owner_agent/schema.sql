@@ -40,7 +40,7 @@ declare
  result jsonb; snap public.analytics_snapshots%rowtype; value jsonb; rows_value jsonb;
  path text[]; off integer:=greatest(0,least(coalesce((args->>'offset')::integer,0),100000));
  lim integer:=greatest(1,least(coalesce((args->>'limit')::integer,30),100));
- fields text[]; group_field text:=coalesce(args->>'group_by',''); n integer; missing integer; meta jsonb;
+ fields text[]; group_field text:=coalesce(args->>'group_by',''); n integer; missing integer; meta jsonb; cab text; cancelled integer; not_cancelled integer;
 begin
  if jsonb_typeof(args)<>'object' or octet_length(args::text)>12000 then raise exception 'Invalid arguments'; end if;
  if args ? 'cabinet' and args->>'cabinet' not in ('','token_1','token_2','token_3','shared') then raise exception 'Unknown cabinet'; end if;
@@ -55,6 +55,25 @@ begin
    group by source,cabinet order by source,cabinet limit 1000
   ) x;
   return jsonb_build_object('rows',result,'note','Periods and collection differ; statuses do not prove payload completeness. Default excludes replay_*; search replay explicitly for archived test results. Limited to 1000 source/cabinet pairs.');
+ elsif operation='order_snapshot_counts' then
+  if coalesce(args->>'from','')='' or coalesce(args->>'to','')='' then raise exception 'Exact period required'; end if;
+  result:='[]'::jsonb;
+  foreach cab in array array['token_1','token_2','token_3'] loop
+   if coalesce(args->>'cabinet','')<>'' and cab<>args->>'cabinet' then continue; end if;
+   select * into snap from public.analytics_snapshots where source='orders' and cabinet=cab and status='complete'
+    and period_from=(args->>'from')::date and period_to=(args->>'to')::date and jsonb_typeof(payload)='array'
+    order by collected_at desc,id desc limit 1;
+   if not found then
+    result:=result||jsonb_build_array(jsonb_build_object('cabinet',cab,'available',false,'rows_all',null,'cancelled',null,'not_cancelled',null,'note','No completed exact-period orders snapshot. Unknown, not zero.'));
+    continue;
+   end if;
+   select count(*) filter(where v->'isCancel'='true'::jsonb),count(*) filter(where v->'isCancel'='false'::jsonb),
+    count(*) filter(where v->'isCancel' is null or jsonb_typeof(v->'isCancel')<>'boolean')
+    into cancelled,not_cancelled,missing from jsonb_array_elements(snap.payload) a(v);
+   result:=result||jsonb_build_array(jsonb_build_object('id',snap.id,'source','orders','cabinet',cab,'available',true,'period_from',snap.period_from,'period_to',snap.period_to,'collected_at',snap.collected_at,
+    'rows_all',jsonb_array_length(snap.payload),'cancelled',case when missing=0 then cancelled else null end,'not_cancelled',case when missing=0 then not_cancelled else null end,'missing_cancel_status',missing));
+  end loop;
+  return jsonb_build_object('source','orders','period_from',args->>'from','period_to',args->>'to','rows',result,'note','One latest completed exact-period snapshot per cabinet, never summed revisions. Record counts, not revenue, buyouts or deduplicated business events.');
  elsif operation='snapshots' then
   if coalesce(args->>'source','')='' then raise exception 'Exact source required'; end if;
   select coalesce(jsonb_agg(to_jsonb(x)),'[]') into result from (
@@ -77,8 +96,11 @@ begin
   value:=case when cardinality(path)=0 then snap.payload else snap.payload#>path end;
   meta:=jsonb_build_object('id',snap.id,'source',snap.source,'cabinet',snap.cabinet,'period_from',snap.period_from,'period_to',snap.period_to,
    'collected_at',snap.collected_at,'status',snap.status,'run_id',snap.run_id,'path',path,'value_type',jsonb_typeof(value));
+  if value is null or jsonb_typeof(value)='null' then
+   return meta||jsonb_build_object('error','JSON path has no value. Not zero.','root_type',jsonb_typeof(snap.payload),'hint','If root_type=array, use path=[]; never invent a source-named key.');
+  end if;
   if operation='count_snapshot' then
-   if jsonb_typeof(value)<>'array' then raise exception 'Array path required'; end if;
+   if jsonb_typeof(value) is distinct from 'array' then raise exception 'Array path required'; end if;
    if jsonb_typeof(coalesce(args->'filters','{}'))<>'object' then raise exception 'Filters must be object'; end if;
    select count(*) into n from jsonb_array_elements(value) a(v)
     where not exists(select 1 from jsonb_each_text(coalesce(args->'filters','{}')) f where v#>>string_to_array(f.key,'.') is distinct from f.value);
@@ -99,7 +121,7 @@ begin
    end if;
    return result;
   end if;
-  if jsonb_typeof(value)<>'array' then raise exception 'Array path required'; end if;
+  if jsonb_typeof(value) is distinct from 'array' then raise exception 'Array path required'; end if;
   if jsonb_array_length(value)>200000 then raise exception 'Array too large; narrow scope'; end if;
   select array_agg(t) into fields from jsonb_array_elements_text(args->'fields') t;
   if fields is null or cardinality(fields) not between 1 and 12 then raise exception '1 to 12 fields required'; end if;

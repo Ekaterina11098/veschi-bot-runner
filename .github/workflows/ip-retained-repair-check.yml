@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   verify:
-    if: false # Completed: 53 agent and 103 runner tests; no recurring check.
+    if: true # One GET of previously uninspected retained WB fallback, no collectors.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -21,7 +21,10 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
-      - run: python advertising_retained_verify.py
+      - run: python advertising_retained_inventory.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       - name: Preserve only owner encrypted proof
         if: always()
         run: |

@@ -1,0 +1,33 @@
+name: Owner agent — saved-data dialogue
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Exact owner_agent_jobs ID
+        required: true
+        type: string
+permissions: {contents: read}
+concurrency:
+  group: owner-agent-dialogue
+  cancel-in-progress: false
+  queue: max
+jobs:
+  answer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Offline isolation and transport tests
+        run: node --test owner_agent/test.mjs
+      - name: Answer one authorized saved question
+        env:
+          OWNER_AGENT_JOB_ID: ${{ inputs.job_id }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OWNER_TELEGRAM_BOT_TOKEN: ${{ secrets.OWNER_TELEGRAM_BOT_TOKEN }}
+          OWNER_AI_MODEL: ${{ vars.OWNER_AI_MODEL || 'gpt-4o-mini' }}
+        run: node owner_agent/worker.mjs

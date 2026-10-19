@@ -1,0 +1,26 @@
+name: Owner agent — activate separate private group
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['owner_agent/activation-request.json']
+permissions: {contents: read}
+concurrency:
+  group: owner-agent-setup
+  cancel-in-progress: false
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: node --test owner_agent/test.mjs
+      - name: Activate only preconfigured new owner agent
+        env:
+          OWNER_TELEGRAM_BOT_TOKEN: ${{ secrets.OWNER_TELEGRAM_BOT_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: node owner_agent/activate.mjs

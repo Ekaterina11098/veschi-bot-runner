@@ -1,0 +1,25 @@
+name: Owner agent — identify new bot and group
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/owner-agent']
+    paths: ['owner_agent/discovery-request.json']
+permissions: {contents: read}
+concurrency:
+  group: owner-agent-setup
+  cancel-in-progress: false
+jobs:
+  identify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Read new bot and pending group messages; no sends
+        env:
+          OWNER_TELEGRAM_BOT_TOKEN: ${{ secrets.OWNER_TELEGRAM_BOT_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: node owner_agent/discover.mjs

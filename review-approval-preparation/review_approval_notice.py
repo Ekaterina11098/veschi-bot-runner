@@ -20,7 +20,7 @@ class NewNotice:
         ref=identity(cabinet,kind,item['id'])
         existing=self.a.repo.get('items',ref)
         if existing and existing.get('status') in ('held','sent','uncertain','publishing','approved'):raise Rejected('Existing local hold or publication blocks new notifications')
-        card=dict(ref=ref,cabinet=cabinet,kind=kind,item_id=str(item['id']),version=version,source=context,texts=draft['variants'],hashes=[sha(t) for t in draft['variants']],binding={'draft_key':key,'raw_source_sha256':sha(item)},message_id=1,status='awaiting')
+        card=dict(ref=ref,cabinet=cabinet,kind=kind,item_id=str(item['id']),version=version,source=context,order_status=item.get('orderStatus'),texts=draft['variants'],hashes=[sha(t) for t in draft['variants']],binding={'draft_key':key,'raw_source_sha256':sha(item)},message_id=1,status='awaiting')
         state=self.bridge.project(card)
         if not state.get('complete') or state['hold'] or state['answered'] or state['publication_state']!='idle':raise Rejected('Review blocked')
         bot=self.tg.call('getMe',{});chat=self.tg.call('getChat',{'chat_id':self.a.chat})

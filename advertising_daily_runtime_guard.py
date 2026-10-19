@@ -19,7 +19,7 @@ def independent_statuses(state):
  a=last('analysis_and_delivery');v=a.get('result') or {}
  state['analysis_status']='complete' if v.get('analysis_saved') is True or (a.get('status')=='complete' and not v.get('reason')) else ('failed' if a.get('status')=='failed' else 'incomplete')
  if state.get('failed_stage')=='analysis_and_delivery' and state['analysis_status']!='complete':state['analysis_status']='failed'
- state['notification_status']=('incomplete' if v.get('delivery_unconfirmed_count',0) else ('complete' if state['analysis_status']=='complete' else 'not_evaluated'))
+ state['notification_status']='not_requested' if v.get('notification_status')=='not_requested' else ('incomplete' if v.get('delivery_unconfirmed_count',0) else ('complete' if state['analysis_status']=='complete' else 'not_evaluated'))
  b=last('budget_completion') or last('budgets')
  state['budget_status']='complete' if b.get('status')=='complete' else ('failed' if b.get('status')=='failed' else 'pending')
  state['analysis_status_scope']='saved_calculation'
@@ -102,3 +102,39 @@ if __name__=='__main__':
  import sys
  if len(sys.argv)!=5 or sys.argv[1]!='--stage':raise SystemExit('Instrumented stage arguments required')
  run_instrumented(sys.argv[2],sys.argv[3],sys.argv[4] if len(sys.argv)>4 else '0')
+
+def retained_analysis_profile(previous,profile,day,source_sha):
+ """Fail closed before CAS: only unstarted analysis of this exact failed claim."""
+ expected=('source','source_gaps','membership','budgets')
+ if not (profile.get('enabled') is True and profile.get('mode')=='retained_analysis_only'
+  and profile.get('day')==day and profile.get('private_source_sha')==source_sha
+  and previous and previous.get('day')==day and previous.get('run_id')==profile.get('from_run_id')
+  and previous.get('status')=='failed' and previous.get('failed_stage')=='analysis_and_delivery'
+  and previous.get('analysis_complete') is not True
+  and tuple(x.get('name') for x in previous.get('stages',[]))==expected
+  and profile.get('wb_mutations') is False and profile.get('forecasts') is False
+  and profile.get('telegram_delivery') is False and profile.get('source_collection') is False
+  and type(profile.get('input_high_watermark')) is int and profile['input_high_watermark']>0
+  and profile.get('retained_manifest')):
+  raise PermissionError('Exact reviewed retained-analysis continuation required')
+ return True
+
+def verify_retained_metadata(read,manifest):
+ """Exact saved snapshot metadata; cache hashes detect changed mutable inputs."""
+ import json,hashlib
+ required=('id','source','cabinet','collected_at','period_from','period_to','status')
+ snapshots=manifest.get('snapshots') or []
+ if not snapshots or len({x.get('id') for x in snapshots})!=len(snapshots):
+  raise PermissionError('Unique saved snapshot manifest required')
+ for expected in snapshots:
+  if expected.get('cabinet')!='token_2':raise PermissionError('Manifest cabinet mismatch')
+  rows=read('analytics_snapshots',{'id':'eq.'+str(expected['id']),'cabinet':'eq.token_2','select':','.join(required),'limit':1}) or []
+  if len(rows)!=1 or any(rows[0].get(k)!=expected.get(k) for k in required):raise PermissionError('Saved snapshot metadata changed')
+ for expected in manifest.get('caches') or []:
+  key=expected.get('cache_key')
+  if key not in ('mpstats:agent_reports:token_2:v1','advertising:ip_pair_decisions:token_2:v1'):raise PermissionError('Cache manifest scope')
+  rows=read('telegram_api_cache',{'cache_key':'eq.'+key,'select':'payload','limit':1}) or []
+  value=rows[0]['payload'] if rows else None
+  digest=hashlib.sha256(json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(',',':'),default=str).encode()).hexdigest()
+  if digest!=expected.get('sha256'):raise PermissionError('Saved cache changed; review new manifest')
+ return True

@@ -178,7 +178,9 @@ class StructuralGuards(unittest.TestCase):
  def test_unchanged_daily_cron_and_no_wb_execution(self):
   s=Path('.github/workflows/advertising-daily-prepared.yml').read_text()
   self.assertIn("cron: '30 4 * * *'",s);self.assertIn("ADVERTISING_EXECUTION_ENABLED: 'false'",s);self.assertIn('group: wb-ip-advertising-agent',s)
- def test_disabled_budget_only_profile(self):
+ def test_disabled_retained_analysis_profile(self):
   s=json.loads(Path('advertising_daily_continue.json').read_text())
-  self.assertIs(s['enabled'],False);self.assertEqual(s['mode'],'budgets_only');self.assertIs(s['wb_mutations'],False)
+  self.assertIs(s['enabled'],False);self.assertEqual(s['mode'],'retained_analysis_only');self.assertIs(s['wb_mutations'],False)
+  self.assertIs(s['source_collection'],False);self.assertIs(s['telegram_delivery'],False)
+  self.assertEqual(s['from_run_id'],'39202750461:1')
 if __name__=='__main__':unittest.main()

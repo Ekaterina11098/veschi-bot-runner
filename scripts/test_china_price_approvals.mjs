@@ -65,3 +65,13 @@ for(const mutate of [
  const c=context();const response=await run(c,message(),'Покажи продажи');assert.equal(response,null);assert.equal(c.calls.length,0);
 }
 console.log('All-member recommendation decisions: owner/non-owner, exact reply/selection, idempotency, membership and zero execution passed');
+
+{
+ const c=context();c.deps.deferMembership=true;
+ c.deps.telegram=async()=>{throw Error('No token at Edge');};
+ await run(c);
+ const decision=[...c.cache.values()][0].payload;
+ assert.equal(decision.membership_verified,false);
+ assert.equal(decision.execution_authorized,true);
+}
+console.log('Authenticated intent can queue without Edge bot token; worker must verify live membership before writes');

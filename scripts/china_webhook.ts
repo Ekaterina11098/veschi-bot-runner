@@ -125,9 +125,11 @@ async function handlePriceApproval(config:any,message:any,text:string,updateId:n
  const quoted=message.reply_to_message;
  if(quoted?.from?.id!==config.bot_id||!Number.isSafeInteger(quoted.message_id)||typeof quoted.text!=='string')
   return answer('Подтверждение нужно отправить через «Ответить» на сегодняшний ценовой отчёт бота.');
+ if(!deps.deferMembership){
  const member=await deps.telegram('getChatMember',{chat_id:config.chat_id,user_id:message.from.id});
  if(member.user?.id!==message.from.id||member.user?.is_bot||!(['creator','administrator','member'].includes(member.status)||(member.status==='restricted'&&member.is_member===true)))
   return answer('Подтверждать рекомендации могут текущие участники этой группы.');
+ }
  const now=deps.now?deps.now():new Date();
  const day=new Date(now.getTime()+3*3600000).toISOString().slice(0,10);
  const start=new Date(day+'T00:00:00+03:00').toISOString();
@@ -159,7 +161,7 @@ async function handlePriceApproval(config:any,message:any,text:string,updateId:n
   actor_user_id:message.from.id,actor_username:message.from.username??null,actor_first_name:message.from.first_name??null,
   update_id:updateId,input_message_id:message.message_id,input_text:text,scope:'price_recommendations',
   approval_policy:'all_current_human_group_members',decision:'approved_recommendation',status:'recorded',
-  selections:selected,created_at:now.toISOString(),execution_authorized:true,execution_policy:'confirmed_exact_seller_price_v1',wb_writes:0};
+  selections:selected,created_at:now.toISOString(),membership_verified:!deps.deferMembership,execution_authorized:true,execution_policy:'confirmed_exact_seller_price_v1',wb_writes:0};
  const inserted=await deps.database('telegram_api_cache?on_conflict=cache_key','POST',{cache_key:key,payload,expires_at:'2036-10-19T00:00:00Z'},'resolution=ignore-duplicates,return=representation');
  const retained=(await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(key)+'&select=payload'))?.[0]?.payload;
  if(!retained||retained.actor_user_id!==message.from.id||retained.report_sha256!==reportHash||!deps.same(retained.selections,selected)||retained.execution_authorized!==true)throw Error('Approval readback mismatch');
@@ -214,7 +216,7 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     if(!text)return new Response('OK');
     const first=text.split(/\s+/,1)[0];const parsed=/^\/(\S+?)(?:@([a-z0-9_]+))?$/i.exec(first);const cmd=parsed?.[1].toLowerCase();
     if(parsed?.[2]&&parsed[2].toLowerCase()!==config.bot_username?.toLowerCase())return new Response('OK');
-    const priceApproval=await handlePriceApproval(config,message,text,update.update_id,{database,telegram,digest,same,launchPrice});
+    const priceApproval=await handlePriceApproval(config,message,text,update.update_id,{database,telegram,digest,same,launchPrice,deferMembership:true});
     if(priceApproval)return priceApproval;
     if(cmd==='confirm')return reply(config.chat_id,'Изменения WB здесь не выполняются.');
     if(['help','start','ask'].includes(cmd??'')||(cmd==='agent'&&text===first))return reply(config.chat_id,'Задавайте вопрос обычным сообщением. Вопросы и подтверждения ценовых рекомендаций доступны всем участникам, управление заданиями — владельцу. Для подтверждения ответьте на отчёт: «Подтверждаю все изменения».');
@@ -237,6 +239,6 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     const existing=await database('business_agent_jobs?agent_id=eq.china&update_id=eq.'+update.update_id+'&chat_id=eq.'+config.chat_id+'&sender_id=eq.'+message.from.id+'&select=id,status&limit=1');
     if(existing?.[0]?.status==='pending')await launch(existing[0].id);
     return new Response('OK');
-  }catch{return new Response('Queue unavailable',{status:503});}
+  }catch(error){console.error('china_webhook_error', ['Bot unavailable','State unavailable','Telegram verification failed','Dispatch pending','Price dispatch pending','Price dispatch unavailable','China catalogue unavailable','Approval readback mismatch'].includes(String(error?.message))?error.message:String(error?.name??'Unknown'));return new Response('Queue unavailable',{status:503});}
 });
 

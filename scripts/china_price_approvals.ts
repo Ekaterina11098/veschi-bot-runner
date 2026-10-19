@@ -41,9 +41,11 @@ export async function handlePriceApproval(config:any,message:any,text:string,upd
  const quoted=message.reply_to_message;
  if(quoted?.from?.id!==config.bot_id||!Number.isSafeInteger(quoted.message_id)||typeof quoted.text!=='string')
   return answer('Подтверждение нужно отправить через «Ответить» на сегодняшний ценовой отчёт бота.');
+ if(!deps.deferMembership){
  const member=await deps.telegram('getChatMember',{chat_id:config.chat_id,user_id:message.from.id});
  if(member.user?.id!==message.from.id||member.user?.is_bot||!(['creator','administrator','member'].includes(member.status)||(member.status==='restricted'&&member.is_member===true)))
   return answer('Подтверждать рекомендации могут текущие участники этой группы.');
+ }
  const now=deps.now?deps.now():new Date();
  const day=new Date(now.getTime()+3*3600000).toISOString().slice(0,10);
  const start=new Date(day+'T00:00:00+03:00').toISOString();
@@ -75,7 +77,7 @@ export async function handlePriceApproval(config:any,message:any,text:string,upd
   actor_user_id:message.from.id,actor_username:message.from.username??null,actor_first_name:message.from.first_name??null,
   update_id:updateId,input_message_id:message.message_id,input_text:text,scope:'price_recommendations',
   approval_policy:'all_current_human_group_members',decision:'approved_recommendation',status:'recorded',
-  selections:selected,created_at:now.toISOString(),execution_authorized:true,execution_policy:'confirmed_exact_seller_price_v1',wb_writes:0};
+  selections:selected,created_at:now.toISOString(),membership_verified:!deps.deferMembership,execution_authorized:true,execution_policy:'confirmed_exact_seller_price_v1',wb_writes:0};
  const inserted=await deps.database('telegram_api_cache?on_conflict=cache_key','POST',{cache_key:key,payload,expires_at:'2036-10-19T00:00:00Z'},'resolution=ignore-duplicates,return=representation');
  const retained=(await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(key)+'&select=payload'))?.[0]?.payload;
  if(!retained||retained.actor_user_id!==message.from.id||retained.report_sha256!==reportHash||!deps.same(retained.selections,selected)||retained.execution_authorized!==true)throw Error('Approval readback mismatch');

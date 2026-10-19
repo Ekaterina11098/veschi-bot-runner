@@ -1,7 +1,7 @@
 name: Verify confirmed China WB price application
 on:
   push:
-    branches: [china-confirmed-wb-prices-20261019]
+    branches: [china-confirmed-price-edge-token-fix]
 permissions:
   contents: read
 jobs:

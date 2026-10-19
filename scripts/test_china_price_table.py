@@ -14,8 +14,8 @@ class TableTests(unittest.TestCase):
  def test_one_table_all_five_price_fields(self):
   text=self.text()
   rows=[[v.strip() for v in line.split('|')] for line in text.splitlines() if line.startswith(('Повышение','Снижение'))]
-  self.assertEqual(rows,[['Повышение','51-NoelBag-green','180','198','1 960','2 156'],['Снижение','123-Zont-pink','106,6','82','1 160','892']])
-  self.assertEqual(text.count('Новая ₽ (прогноз)'),1)
+  self.assertEqual(rows,[['Повышение','51-NoelBag-green','180 → 198','1 960 → 2 156'],['Снижение','123-Zont-pink','106,6 → 82','1 160 → 892']])
+  self.assertEqual(text.count('Цена покупателя, ₽ (новая — прогноз)'),1)
  def test_product_navigation(self):
   payload=table_payload(self.text(),CAT)
   urls=[entity['url'] for entity in payload['entities']]

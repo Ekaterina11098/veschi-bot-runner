@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime,timezone,timedelta
 ROOT=Path(__file__).resolve().parent
 sys.path.insert(0,str(ROOT/'private-source'))
-def execute_day(get,put,stages,run_id,now=None,single_writer=False,*,resume_from=None,cas=None,budget_only=False):
+def execute_day(get,put,stages,run_id,now=None,single_writer=False,*,resume_from=None,cas=None,budget_only=False,analysis_only=False):
  """CAS-protected same-day continuation; no claim reset or completed-stage replay."""
  import copy
  from advertising_daily_runtime_guard import independent_statuses,merge_telemetry
@@ -27,6 +27,8 @@ def execute_day(get,put,stages,run_id,now=None,single_writer=False,*,resume_from
    if previous.get('analysis_complete') is not True or not (a.get('status')=='complete' or (a.get('result') or {}).get('analysis_saved') is True):raise PermissionError('Saved complete analysis required for budget-only continuation')
  else:
   state=dict(day=day,run_id=run_id,status='running',started_at=now.isoformat(),stages=[],wb_mutations=False,forecasts=False,old_queues_executed=False)
+ if analysis_only:
+  if budget_only or not resume_from or [r.get('name') for r in state['stages']]!=list(names[:4]) or previous.get('analysis_complete') is True:raise PermissionError('Analysis-only checkpoint invalid')
  if budget_only and not resume_from:raise PermissionError('Budget-only requires exact prior terminal claim')
  state.setdefault('telemetry',dict(attempts={},legacy_unmeasured=bool(previous)))
  def save():
@@ -34,7 +36,7 @@ def execute_day(get,put,stages,run_id,now=None,single_writer=False,*,resume_from
   if not cas(key,expected,state) or get(key)!=state:raise RuntimeError('Daily claim CAS/full readback mismatch')
   expected=copy.deepcopy(state)
  save()
- work=('budget_completion',) if budget_only else names[len(state['stages']):]
+ work=('analysis_and_delivery',) if analysis_only else ('budget_completion',) if budget_only else names[len(state['stages']):]
  for name in work:
   try:
    result=stages[name]()
@@ -115,7 +117,17 @@ if os.environ.get('GITHUB_EVENT_NAME')=='push':
  if candidate_path.exists():
   candidate=json.loads(candidate_path.read_text())
   if candidate.get('enabled') is True:
-   if candidate.get('day')!=day or candidate.get('from_run_id')!=('39015462359:1' if candidate.get('mode')=='budgets_only' else '39014867561:1') or candidate.get('private_source_sha')!=os.environ['APPROVED_SOURCE_SHA']:
+   if candidate.get('mode')=='retained_analysis_only':
+    from advertising_daily_runtime_guard import retained_analysis_profile,verify_retained_metadata
+    manifest_path='docs/evidence/ip-daily-retained-manifest-20261019.json'
+    if candidate.get('private_manifest_path')!=manifest_path:raise PermissionError('Exact private manifest path required')
+    manifest=json.loads((ROOT/'private-source'/manifest_path).read_text())
+    for field in ('day','from_run_id','input_high_watermark'):
+     if manifest.get(field)!=candidate.get(field):raise PermissionError('Private manifest binding mismatch')
+    candidate['retained_manifest']=manifest['retained_manifest']
+    retained_analysis_profile(store.cache_get('advertising:ip:daily_run:v1:'+day),candidate,day,os.environ['APPROVED_SOURCE_SHA'])
+    verify_retained_metadata(lambda t,p:store.db('GET',t,params=p),candidate['retained_manifest'])
+   elif candidate.get('day')!=day or candidate.get('from_run_id')!=('39015462359:1' if candidate.get('mode')=='budgets_only' else '39014867561:1') or candidate.get('private_source_sha')!=os.environ['APPROVED_SOURCE_SHA']:
     raise PermissionError('Exact reviewed continuation profile required')
    resume_profile=candidate
 if os.environ.get('GITHUB_EVENT_NAME')!='schedule' and day!=approval['controlled_day'] and not resume_profile:
@@ -155,6 +167,10 @@ def stage(filename,timeout,single_step=False,stage_name=None):
   if filename!='advertising_analysis_owner.py':
    child.pop('ADVERTISING_TELEGRAM_BOT_TOKEN',None)
    child['IP_LIMITED_TELEGRAM_DELIVERY']='false';child['IP_LIMITED_ANALYSIS_PUBLISH']='false'
+  if resume_profile.get('mode')=='retained_analysis_only':
+   if filename!='advertising_analysis_owner.py':raise PermissionError('Retained continuation cannot run collection/budgets/membership')
+   for secret in ('WB_TOKEN_2','MPSTATS_API_TOKEN','ADVERTISING_TELEGRAM_BOT_TOKEN'):child.pop(secret,None)
+   child.update(ADVERTISING_RETAINED_ANALYSIS_ONLY='true',ADVERTISING_INPUT_HIGH_WATERMARK=str(resume_profile['input_high_watermark']),IP_LIMITED_ANALYSIS_PUBLISH='false',IP_LIMITED_TELEGRAM_DELIVERY='false')
   if filename=='advertising_source_owner.py':
    child.pop('WB_TOKEN_2',None)
    if resume_profile and resume_profile.get('mode')!='budgets_only' and not resume_manifest_sent:
@@ -200,7 +216,7 @@ if __name__=='__main__':
  pass_traffic_bytes=(prior.get('telemetry') or {}).get('decoded_response_bytes',0) if resume_profile else 0
  try:
   result=execute_day(store.cache_get,lambda k,v:store.cache_set(k,v,ttl_days=365),stages,
-   os.environ['GITHUB_RUN_ID']+':'+os.environ.get('GITHUB_RUN_ATTEMPT','1'),single_writer=True,resume_from=resume_profile.get('from_run_id'),cas=daily_claim_cas,budget_only=resume_profile.get('mode')=='budgets_only')
+   os.environ['GITHUB_RUN_ID']+':'+os.environ.get('GITHUB_RUN_ATTEMPT','1'),single_writer=True,resume_from=resume_profile.get('from_run_id'),cas=daily_claim_cas,budget_only=resume_profile.get('mode')=='budgets_only',analysis_only=resume_profile.get('mode')=='retained_analysis_only')
  except Exception as exc:
   # Claim/storage failure must not turn into a green job or overwrite a rival claim.
   result=dict(status='failed',reason='claim_or_checkpoint_not_confirmed',error_type=type(exc).__name__,

@@ -1,24 +1,13 @@
 {
   "enabled": false,
-  "day": "2026-10-17",
-  "from_run_id": "39015462359:1",
-  "private_source_sha": "6eb5f990aecfa1a92909169ffd76f05ac6da469d",
-  "retained_source_manifest": {
-    "day": "2026-10-17",
-    "original_run_id": "39004453781:1",
-    "snapshot_ids": [
-      17841,
-      17842,
-      17843,
-      17844,
-      17845,
-      17847,
-      17849,
-      17851,
-      17853
-    ]
-  },
+  "mode": "retained_analysis_only",
+  "day": "2026-10-19",
+  "from_run_id": "39202750461:1",
+  "private_source_sha": "2f798a9509b72030d6fb5ec68fb915c5d216c31b",
+  "private_manifest_path": "docs/evidence/ip-daily-retained-manifest-20261019.json",
+  "input_high_watermark": 18458,
+  "source_collection": false,
+  "telegram_delivery": false,
   "wb_mutations": false,
-  "forecasts": false,
-  "mode": "budgets_only"
+  "forecasts": false
 }

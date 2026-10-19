@@ -4,12 +4,15 @@ from pathlib import Path
 from stock_deploy_support import seal,error
 def analysis_business_summary(report):
  failures=(report.get('delivery') or {}).get('failures') or []
- status='failed' if report.get('error') else ('incomplete' if not report.get('analysis') or failures else 'complete')
+ coverage=report.get('compact_report')
+ status='failed' if report.get('error') else ('incomplete' if not report.get('analysis') or failures or (coverage is not None and not coverage.get('complete')) else 'complete')
  return dict(analysis_saved=bool(report.get('analysis')),business_status=status,
-  reason=(report.get('error') or {}).get('type') or ('delivery_unconfirmed' if failures else ('analysis_not_saved' if not report.get('analysis') else None)),
+  reason=(report.get('error') or {}).get('type') or ('delivery_unconfirmed' if failures else ('analysis_not_saved' if not report.get('analysis') else ('campaign_metrics_missing' if coverage is not None and not coverage.get('complete') else None))),
+  notification_status='not_requested' if (report.get('delivery') or {}).get('reason')=='retained_preview_only' else ('not_evaluated' if not report.get('analysis') else 'incomplete' if failures else 'complete'),
   delivery_unconfirmed_count=len(failures),error_type=(report.get('error') or {}).get('type'),wb_writes=0,telegram_calls=report.get('telegram_calls',0))
 
 root=Path(__file__).parent;source=root/'combined'
+RUN_ID=os.environ.get('GITHUB_RUN_ID','unknown')+':'+os.environ.get('GITHUB_RUN_ATTEMPT','1')
 report={'wb_writes':0,'telegram_calls':0,'source_calls':0,'production_decision_state_modified':False}
 hidden=io.StringIO()
 try:
@@ -30,7 +33,28 @@ sys.exit(0 if result.wasSuccessful() else 1)
   testenv={k:v for k,v in os.environ.items() if not any(k.startswith(prefix) for prefix in ('SUPABASE_','WB_','MPSTATS_','TELEGRAM_','MOYSKLAD_','ADVERTISING_','OPENAI_'))}
   tested=subprocess.run([sys.executable,'-c',testcode],cwd=source,env=testenv,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
   report['targeted_regressions']={'exit':tested.returncode,'log':tested.stdout}
-  if tested.returncode:raise RuntimeError('Targeted regression failed')
+  if tested.returncode:
+   report['failure_stage']='targeted_regressions'
+   raise RuntimeError('Targeted regression failed')
+  if os.environ.get('ADVERTISING_RETAINED_ANALYSIS_ONLY')=='true':
+   import requests
+   from urllib.parse import urlparse
+   native=requests.sessions.Session.request;allowed=urlparse(os.environ['SUPABASE_URL']).hostname
+   high=int(os.environ['ADVERTISING_INPUT_HIGH_WATERMARK']);own_snapshot_ids=set()
+   def retained_only(session,method,url,*args,**kwargs):
+    if urlparse(url).hostname!=allowed or not urlparse(url).path.startswith('/rest/v1/'):raise PermissionError('Retained continuation forbids all external source and Telegram calls')
+    if method.upper()=='GET' and urlparse(url).path.endswith('/analytics_snapshots'):
+     query=dict(kwargs.get('params') or {});fence='or(id.lte.'+str(high)+',id.in.('+','.join(map(str,sorted(own_snapshot_ids)))+'))' if own_snapshot_ids else 'id.lte.'+str(high)
+     old_and=query.get('and');query['and']='('+((old_and[1:-1]+',') if old_and else '')+fence+')';kwargs['params']=query
+    response=native(session,method,url,*args,**kwargs)
+    if method.upper()=='POST' and urlparse(url).path.endswith('/analytics_snapshots') and response.ok:
+     try:
+      body=response.json()
+      for row in body if isinstance(body,list) else []:
+       if type(row.get('id')) is int:own_snapshot_ids.add(row['id'])
+     except ValueError:pass
+    return response
+   requests.sessions.Session.request=retained_only
   from analytics.collect import database,RUN_ID
   from analytics.payload_storage import decode_rows
   from analytics.ip_daily_recommendations import KEY
@@ -106,9 +130,11 @@ sys.exit(0 if result.wasSuccessful() else 1)
   data=decode_rows(database('GET','analytics_snapshots',params={'source':'eq.ip_working_mode_replay','cabinet':'eq.token_2','run_id':'eq.'+RUN_ID,'select':'payload','order':'id.desc','limit':1}))
   report['analysis']=data[0]['payload'][0] if data else None
   if not report['analysis']:raise RuntimeError('No saved full analysis result')
+  from advertising_budget_evidence import compact_report
+  report['compact_report']=compact_report((report['analysis'] or {}).get('daily') or {},datetime.now(ZoneInfo('Europe/Moscow')),include_budget_scenario=True)
   report['canonical_state_unchanged']=old==new
   from analytics.ip_daily_recommendations import deliver_runtime
-  report['delivery']=deliver_runtime()
+  report['delivery']=dict(sent=0,failures=[],reason='retained_preview_only') if os.environ.get('ADVERTISING_RETAINED_ANALYSIS_ONLY')=='true' else deliver_runtime()
   report['final_decision_state']=store.cache_get(KEY)
   report['telegram_calls']=report['delivery'].get('sent',0)+len(report['delivery'].get('failures',[]))
   if store.cache_get(KEY)!=report['final_decision_state']:raise RuntimeError('Delivery state readback mismatch')
@@ -118,6 +144,7 @@ finally:
  report['private_log']=hidden.getvalue();seal('advertising-analysis',report)
  a=report.get('analysis') or {};daily=a.get('daily') or {}
  preview={k:report.get(k) for k in ('finance_diagnostic','canonical_state_unchanged','recomposition','error','rollout_approval','delivery','delivery_receipts')}
+ preview['compact_report']=report.get('compact_report')
  preview['summary']=a.get('summary');preview['campaign_summary']=a.get('campaign_summary')
  preview['pair_decisions']=[{k:t.get(k) for k in ('article','nm_id','campaign_id','outcome','final_status','reason','actions','shop_profit','advertising_profit','experiment_result','query_totals')}|{'blockers':[{'metric':b['metric'],'reason':b['reason']} for b in t.get('blockers',[])]} for t in daily.get('pair_decision_trace',[])]
  preview['actions']=[{k:x.get(k) for k in ('article','campaign_id','kind','action','reason','expected_effect','criterion','risk')} for x in daily.get('actions',[])]
@@ -131,4 +158,7 @@ finally:
  preview['final_decision_state']=report.get('final_decision_state')
  preview['regression_tail']=(report.get('targeted_regressions') or {}).get('log','')[-500:]
  seal('advertising-preview',preview)
- print(json.dumps(analysis_business_summary(report)))
+ summary=analysis_business_summary(report)
+ if report.get('failure_stage'):summary['failed_step']=report['failure_stage']
+ print(json.dumps(summary))
+ if summary['business_status']=='failed':raise SystemExit(1)

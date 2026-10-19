@@ -14,17 +14,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: dcb6c1af73dc84a793f1873cae9e8da4993b4cd2
+          ref: 2f798a9509b72030d6fb5ec68fb915c5d216c31b
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
-      - run: python advertising_retained_inventory.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      - run: python advertising_retained_verify.py
       - name: Preserve only owner encrypted proof
         if: always()
         run: |

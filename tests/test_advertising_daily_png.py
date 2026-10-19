@@ -31,4 +31,13 @@ class DailyPng(unittest.TestCase):
  def test_live_entry_photo_only(self):
   text=Path(__file__).resolve().parents[1].joinpath('advertising_daily_tables_owner.py').read_text(encoding='utf-8')
   ast.parse(text);self.assertIn('/sendPhoto',text);self.assertNotIn('/sendMessage',text);self.assertIn('deliver_daily_tables(store,messages',text)
+ def test_spend_per_campaign_and_total(self):
+  from unittest.mock import patch
+  from PIL import ImageDraw
+  original=ImageDraw.ImageDraw.text;seen=[]
+  def record(draw,xy,text,*args,**kwargs):
+   seen.append(str(text));return original(draw,xy,text,*args,**kwargs)
+  with tempfile.TemporaryDirectory() as d:
+   with patch.object(ImageDraw.ImageDraw,'text',record):render_daily_png(self.view(),d)
+  self.assertIn('Расход всех РК: 16 962 ₽',seen);self.assertIn('15 101 ₽',seen);self.assertIn('1 100 ₽',seen)
 if __name__=='__main__':unittest.main()

@@ -49,3 +49,5 @@ jobs:
           name: owner-encrypted-telegram-cleanup-receipts
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
+
+# Owner-requested cleanup of obsolete approved card chains, 2026-10-19.

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {Database,calculate,dispatch,TOOLS} from './data.mjs';
-import {runDialog} from './dialog.mjs';
+import {runDialog,groundedFooter,referenceFor} from './dialog.mjs';
 import {validMessage,handle} from './ingress.mjs';
 import {processJob,splitText} from './worker.mjs';
 
@@ -48,6 +48,12 @@ test('successful empty PostgREST insert response is accepted',async()=>{
 });
 test('no execution tools exposed to model',()=>{
   assert.deepEqual(TOOLS.map(x=>x.name),['sources','snapshots','read_snapshot','aggregate_snapshot','economics','costs','ozon','calculate']);
+});
+test('footer comes from actual tool evidence, never model placeholder',()=>{
+  const reference=referenceFor('aggregate_snapshot',{}, {source:'orders',cabinet:'token_1',period_from:'2026-10-01',period_to:'2026-10-07',id:123});
+  const text=groundedFooter('**Ответ**\n\nДанные: ...',[{success:true,name:'aggregate_snapshot',reference}]);
+  assert.equal(text,'Ответ\n\nДанные: WB: заказы, ООО, 2026-10-01 — 2026-10-07.');
+  assert.ok(!text.includes('...'));
 });
 test('model chooses reads, receives evidence, keeps followup context',async()=>{
   const bodies=[];

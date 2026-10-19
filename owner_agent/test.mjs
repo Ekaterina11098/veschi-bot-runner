@@ -154,6 +154,14 @@ test('explicit stored net_profit starts with the economics table, not snapshot d
   }});
   assert.ok(result.answer.includes('-227.1'));
 });
+test('invented page offset cannot hide an existing stored economics row',async()=>{
+  const responses=[{output:[{type:'function_call',name:'economics',arguments:'{"cabinet":"token_3","from":"2026-09-08","to":"2026-09-08","article":"110-GretaBag-beige","offset":999}',call_id:'c'}]},
+    {output:[{type:'message',content:[{type:'output_text',text:'{"profit":-167.04}'}]}]}];
+  const result=await runDialog({question:'net_profit Китай за 2026-09-08',model:'test',db:{read:async(name,args)=>{
+    assert.equal(args.offset,0);return {rows:[{net_profit:-167.04}],has_more:false};
+  }},request:async()=>responses.shift()});
+  assert.ok(result.answer.includes('-167.04'));assert.equal(result.evidence[0].args.offset,0);
+});
 test('duplicate dispatch cannot produce duplicate sends',async()=>{
   const db=fakeDatabase();let sends=0;
   const send=async(token,method)=>method==='getMe'?{id:44,username:'veschi_owner_ai_bot'}:(sends++,{message_id:31,chat:{id:-1001}});

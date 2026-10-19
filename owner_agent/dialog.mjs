@@ -76,6 +76,7 @@ export async function runDialog({question,history=[],db,model,request,maxRounds=
     ...history.slice(-12).map(x=>({role:x.role==='assistant'?'assistant':'user',content:String(x.content).slice(0,6000)})),
     {role:'user',content:question}];
   const evidence=[];
+  const pageCursors=new Map();
   const scope=questionScope(question,history);
   const market=marketplace(question,history);
   const allowed=TOOLS.filter(x=>x.name!=='ozon'||market==='ozon');
@@ -107,12 +108,21 @@ export async function runDialog({question,history=[],db,model,request,maxRounds=
       let args={},result,success=false;
       try {
         args=JSON.parse(call.arguments||'{}');
+        const pageArgs=Object.fromEntries(Object.entries(args).filter(([k])=>!['offset','limit'].includes(k)).sort(([a],[b])=>a.localeCompare(b)));
+        const pageKey=call.name+JSON.stringify(pageArgs);
+        const requestedOffset=args.offset;
+        if(Number.isSafeInteger(requestedOffset)&&requestedOffset>0&&!pageCursors.get(pageKey)?.has(requestedOffset))args={...args,offset:0};
         if(!allowed.some(x=>x.name===call.name))throw new Error('Marketplace tool forbidden');
         if(scope && ['snapshots','economics','order_snapshot_counts'].includes(call.name) && (!args.cabinet || !scope.includes(args.cabinet))) {
           result={error:'Cabinet scope mismatch',required_cabinets:scope};
         } else {
         result=await dispatch(db,call.name,args);
         }
+        if(!result.error&&result.has_more===true) {
+          const next=result.next_offset??(Number.isSafeInteger(result.offset)&&Number.isSafeInteger(result.returned)?result.offset+result.returned:null);
+          if(Number.isSafeInteger(next)&&next>0){const offsets=pageCursors.get(pageKey)??new Set();offsets.add(next);pageCursors.set(pageKey,offsets);}
+        }
+        if(requestedOffset!==undefined&&requestedOffset!==args.offset)result={...result,pagination_note:'Unissued offset was reset to first page. Follow only next_offset supplied by the database.',effective_offset:args.offset};
         if(scope && result.cabinet && result.cabinet!=='shared' && !scope.includes(result.cabinet))result={error:'Snapshot belongs to another cabinet',required_cabinets:scope};
         if(Array.isArray(result.rows)&&result.rows.length===0)result={...result,no_matching_data:true,note:'No matching saved data. Not zero. Check exact source ID via sources, cabinet, dates and pagination.'};
         if(JSON.stringify(result).length>65000) result={too_large:true,hint:'Narrow source, dates, JSON path, page or group filter. Nothing was returned.'};

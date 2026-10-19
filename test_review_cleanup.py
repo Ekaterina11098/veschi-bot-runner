@@ -52,6 +52,17 @@ class CleanupTests(unittest.TestCase):
         a.repo.put('items',i['ref'],{'token':'unprocessed','status':'rework'});a.repo.conn.commit()
         cleanup_completed(a,tg)
         self.assertNotIn(99,{c.args[1]['message_id'] for c in tg.call.call_args_list})
+    def test_only_exact_completed_owner_reply_is_removed(self):
+        a,tg,i=self.setup_case(state='awaiting_preflight')
+        def incoming(mid,text='answer',owner='owner',reply=10):
+            return {'update':{'message':{'message_id':mid,'text':text,'from':{'id':owner},'chat':{'id':'chat','type':'private'},'reply_to_message':{'message_id':reply,'from':{'id':'bot'}}}}}
+        for key,value in [('exact',incoming(70)),('othertext',incoming(71,'other draft')),('foreign',incoming(72,owner='other')),('unrelated',incoming(73,reply=99))]:
+            a.repo.put('events','telegram-ingress:'+key,value)
+        a.repo.conn.commit()
+        cleanup_completed(a,tg)
+        deleted={c.args[1]['message_id'] for c in tg.call.call_args_list}
+        self.assertIn(70,deleted)
+        self.assertTrue(deleted.isdisjoint({71,72,73,99}))
     def test_foreign_owner_and_bad_checksum_never_delete(self):
         a,tg,i=self.setup_case(owner='other');cleanup_completed(a,tg);tg.call.assert_not_called()
         a,tg,i=self.setup_case();i['answer_sha256']='wrong';a.repo.put('intents','i',i);a.repo.conn.commit()

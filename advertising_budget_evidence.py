@@ -123,6 +123,7 @@ def render_daily_tables(view,limit=3800):
         else:value='Без заказов';note='Потрачено '+rub(cost)+' ₽'
         above=c.get('above5') or []
         if above:note=above[0]['article']+' — '+pct(above[0]['drr'])
+        elif c.get('direct_orders')==0 and _number(cost) and cost>0:note='Без прямых заказов; '+rub(cost)+' ₽'
         elif c.get('metrics_complete') and c.get('sku_order_basis')!='direct_only':
             note='Поартикульный прямой ДРР неизвестен'
         if c.get('status_id')==11:note+='; РК приостановлена'
@@ -213,6 +214,7 @@ def load_daily_table_view(store,now):
                 if not budget or stamp>datetime.fromisoformat(budget['observed_at'].replace('Z','+00:00')):budget=candidate
             except (TypeError,ValueError):continue
         result.append(dict(campaign_id=cid,metrics_complete=valid,spend=t.get('ac_spending_sum') if valid else None,revenue=t.get('ac_orders_sum') if valid else None,
+          direct_orders=(t['ac_orders']-t['ac_orders_associated']) if valid and _number(t.get('ac_orders_associated')) and t['ac_orders']>=t['ac_orders_associated'] else None,
           above5=sorted(above,key=lambda x:-x['drr']),within5_count=within,sku_order_basis=p.get('sku_order_basis'),status_id=states.get(cid),budget=budget,source_snapshot_id=p.get('snapshot_id')))
     return dict(period=day,observed_day=str(now.date()),campaigns=result)
 

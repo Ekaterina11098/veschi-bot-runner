@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   verify:
-    if: true # Verify metadata bounds only; prior full cipher exceeds connector content limit.
+    if: false # Verification complete; no recurring monitor or live continuation.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -21,10 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
-      - run: python advertising_retained_inventory.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      - run: python advertising_retained_verify.py
       - name: Preserve only owner encrypted proof
         if: always()
         run: |

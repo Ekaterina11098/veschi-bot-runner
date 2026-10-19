@@ -240,7 +240,7 @@ test('edited message archived once without triggering another answer',async()=>{
  assert.equal(saved.opts.body.revision,100);assert.equal(saved.opts.body.correction,true);
  assert.ok(!paths.some(x=>x.path.startsWith('owner_agent_jobs')));
 });
-import {currentPeriod,mpstatsReader,previousPeriod,unverifiedProfitClaim} from './mpstats.mjs';
+import {currentPeriod,mpstatsReader,previousPeriod,unverifiedProfitClaim,comparisonFacts,renderComparison} from './mpstats.mjs';
 test('current Moscow window ends yesterday and keeps explicit dates',()=>{
  const now=new Date('2026-10-19T14:00:00Z');
  assert.deepEqual(currentPeriod('Сравни последний период',now),{from:'2026-10-12',to:'2026-10-18'});
@@ -262,12 +262,19 @@ test('MPStats cache reuse makes no provider call; unknown/future scopes denied',
 });
 test('fresh comparison prepares same current and prior periods for all cabinets and rejects stale/profit claims',async()=>{
  const seen=[];let i=0;const p=currentPeriod('последний период'),b=previousPeriod(p);
- const result=await runDialog({question:'Сравни ООО, ИП и Китай за последний период',model:'test',db:{},refreshMpstats:async args=>{seen.push(args);return {source:'mpstats_products_validated',period_from:args.from,period_to:args.to,rows:['token_1','token_2','token_3'].map(cabinet=>({cabinet,available:true,totals:{sales_count:10}}))};},request:async body=>{
-  assert.equal(body.tool_choice,'auto');
-  return {output:[{type:'message',content:[{type:'output_text',text:i++===0?'Сравнил 1–10 октября. Прибыль (for_pay) выросла.':`${p.from} — ${p.to}, сравнение с ${b.from} — ${b.to}. Продажи: 10 шт. Собственная чистая прибыль не подтверждена.`}]}]};
+ const result=await runDialog({question:'Сравни продажи ООО, ИП и Китай за последний период',model:'test',db:{},refreshMpstats:async args=>{seen.push(args);return {source:'mpstats_products_validated',period_from:args.from,period_to:args.to,rows:['token_1','token_2','token_3'].map(cabinet=>({cabinet,available:true,totals:{sales_count:{value:10}}}))};},request:async body=>{
+  assert.equal(body.tool_choice,'none');
+  return {output:[{type:'message',content:[{type:'output_text',text:i++===0?'Сравнил 1–10 октября. Прибыль (for_pay) выросла.':'Продажи по представленным отчётам стабильны. Причины изменений требуют отдельной проверки.'}]}]};
  }});
  assert.equal(i,2);assert.equal(seen.length,2);assert.deepEqual({from:seen[0].from,to:seen[0].to},p);assert.deepEqual({from:seen[1].from,to:seen[1].to},b);
  assert.equal(result.evidence[0].coverage.length,3);assert.ok(result.answer.includes('MPStats'));
  assert.equal(unverifiedProfitClaim('Прибыль (for_pay) выросла'),true);
  assert.equal(unverifiedProfitClaim('Собственная чистая прибыль не подтверждена'),false);
+});
+test('comparison joins exact cabinets, preserves zero baseline and never invents epsilon',()=>{
+ const p={from:'2026-10-12',to:'2026-10-18'},b=previousPeriod(p);
+ const facts=comparisonFacts([{requested:p,result:{rows:[{cabinet:'token_2',available:true,totals:{sales_count:{value:290}}},{cabinet:'token_1',available:true,totals:{sales_count:{value:271}}}]}},{requested:b,result:{rows:[{cabinet:'token_1',available:true,totals:{sales_count:{value:243}}},{cabinet:'token_2',available:true,totals:{sales_count:{value:0}}}]}}],p,b);
+ const ip=facts.find(x=>x.cabinet==='token_2').metrics.sales_count,ooo=facts.find(x=>x.cabinet==='token_1').metrics.sales_count;
+ assert.equal(ip.previous,0);assert.equal(ip.current,290);assert.equal(ip.delta,290);assert.equal(ip.change_pct,null);assert.equal(ooo.delta,28);
+ assert.ok(renderComparison(facts,p,b,'Вывод').includes('процент не определён при нулевой базе'));
 });

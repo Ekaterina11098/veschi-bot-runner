@@ -58,12 +58,12 @@ def catalogue_ids(catalogue):
         result[key]=nm
     return result
 
-def copy_entities(text):
+def article_entities(text):
     """Telegram entity offsets use UTF-16 units, not Python characters."""
     entities=[]
     for match in re.finditer(r'(?m)^Артикул WB: ([0-9]+)$',text):
         start=match.start(1)
-        entities.append(dict(type='code',offset=len(text[:start].encode('utf-16-le'))//2,
+        entities.append(dict(type='text_link',url='https://www.wildberries.ru/catalog/'+match[1]+'/detail.aspx',offset=len(text[:start].encode('utf-16-le'))//2,
                              length=len(match[1])))
     return entities
 

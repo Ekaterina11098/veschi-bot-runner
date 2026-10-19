@@ -37,10 +37,10 @@ class CoverageWorker(ScheduledWorker):
             body=kw.get('json') or {}
             text=body.get('text','')
             if text.startswith('Рекомендации к повышению:') or text.startswith('Рекомендации к снижению:'):
-                from china_agent.price_brief import copy_entities
+                from china_agent.price_brief import article_entities
                 body=dict(body)
                 body.pop('parse_mode',None)
-                body['entities']=copy_entities(text)
+                body['entities']=article_entities(text)
                 kw=dict(kw,json=body)
 
         # Dedicated, read-only absent-card exceptions; the shared source policy is unchanged.

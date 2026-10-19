@@ -2,7 +2,11 @@
 import json,time,re
 
 def ready_owner_text(text):
-    return len(text.strip())>=60 and bool(re.search(r'(?:с уважением|с заботой),\s*команда\s+VESCHI',text,re.I))
+    clean=text.strip()
+    signed=bool(re.search(r'(?:с уважением|с заботой),\s*команда\s+VESCHI',clean,re.I))
+    greeting=bool(re.match(r'(?:Здравствуйте|Добрый день|Доброе утро|Добрый вечер)[!,.\s😊🙂]',clean,re.I))
+    instruction=bool(re.search(r'\b(?:перепиши|добавь|измени|убери|поправь|исправь)\b',clean,re.I))
+    return len(clean)>=60 and (signed or (greeting and not instruction))
 from review_telegram_approval import sha,Rejected
 from review_approval_notice import NewNotice
 

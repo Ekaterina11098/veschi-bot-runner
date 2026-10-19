@@ -1,4 +1,4 @@
-"""Delete only tracked bot messages for authenticated owner-approved review work."""
+"""Delete tracked completed approval messages, including exact authenticated owner replies."""
 import json
 from review_telegram_approval import sha
 NORMAL=frozenset(('approved','verifying','accepted','public'))
@@ -38,6 +38,22 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None):
         elif key.startswith('revision-delivery:'):
             edit=events.get(e.get('revision_event_id'),{})
             if edit.get('token') in tokens:add(e.get('message_id'))
+    # Owner explicitly requested removing their completed reply messages too.
+    # Match authenticated private replies to a tracked card AND the exact approved text.
+    by_message={c.get('message_id'):c for c in cards.values()}
+    for key,e in events.items():
+        if not key.startswith('telegram-ingress:'):continue
+        message=(e.get('update') or {}).get('message') or {}
+        if str((message.get('from') or {}).get('id'))!=a.owner:continue
+        chat=message.get('chat') or {}
+        if str(chat.get('id'))!=a.chat or chat.get('type')!='private':continue
+        reply=message.get('reply_to_message') or {}
+        if str((reply.get('from') or {}).get('id'))!=a.bot:continue
+        original=by_message.get(reply.get('message_id'))
+        if not original:continue
+        intent=processed.get(original.get('ref'))
+        if intent and isinstance(message.get('text'),str) and message['text'].strip()==intent['answer']:
+            add(message.get('message_id'))
     targets-=skip
     report={'deleted':0,'already_deleted':0,'unconfirmed':0}
     dirty=False

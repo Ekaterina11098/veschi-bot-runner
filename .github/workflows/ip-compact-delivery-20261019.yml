@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deliver:
+    if: false # Both Telegram receipts verified; one-off disabled.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -29,4 +30,3 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
           ADVERTISING_EXECUTION_ENABLED: 'false'
-# Corrected pre-send claim expiry; prior attempt did not call Telegram.

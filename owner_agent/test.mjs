@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {Database,calculate,dispatch,TOOLS} from './data.mjs';
-import {runDialog,groundedFooter,referenceFor,questionScope,marketplace} from './dialog.mjs';
+import {runDialog,groundedFooter,referenceFor,questionScope,marketplace,leadingJson,answerHasNumbers} from './dialog.mjs';
 import {validMessage,handle} from './ingress.mjs';
 import {processJob,splitText} from './worker.mjs';
 
@@ -72,6 +72,13 @@ test('followups keep marketplace and most recent explicit cabinet',()=>{
   assert.deepEqual(questionScope('Сколько осталось в последнем кабинете?',h),['token_2']);
   assert.equal(questionScope('По всем трём кабинетам',h),null);
   assert.equal(marketplace('А для Китая?',h),'wb');
+});
+test('dates in an unavailable-profit explanation are not fabricated money',()=>{
+  assert.deepEqual(leadingJson('{"ooo":null}\nДень 19 октября 2026 не завершён.'),{ooo:null});
+  assert.equal(answerHasNumbers('{"ooo":null}\nДень 19 октября 2026 не завершён.'),false);
+  assert.equal(answerHasNumbers('За 19 октября 2026 прибыль пока неизвестна.'),false);
+  assert.equal(answerHasNumbers('Прибыль 1000 рублей.'),true);
+  assert.equal(answerHasNumbers('{"count":0}'),true);
 });
 test('empty lookup cannot produce a numeric zero without material evidence',async()=>{
   const responses=[{output:[{type:'function_call',name:'snapshots',arguments:'{"source":"WB orders"}',call_id:'s'}]},

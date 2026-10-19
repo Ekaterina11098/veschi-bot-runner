@@ -1,6 +1,6 @@
 // Live model/read acceptance only. No Telegram token or sending transport available.
 import {Database} from './data.mjs';
-import {runDialog,modelRequest} from './dialog.mjs';
+import {runDialog,modelRequest,leadingJson} from './dialog.mjs';
 const db=new Database({url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SECRET_KEY});
 const setup=(await db.request('owner_agent_setup?id=eq.1&select=payload,observed_at'))?.[0];
 const fixtures=setup?.payload?.acceptance_fixtures;
@@ -16,6 +16,7 @@ const cases=[
  {id:'mpstats_coverage',question:'До какой последней даты есть завершённые рекламные отчёты MPStats (источник mpstats_campaign_report) по каждому из трёх кабинетов? Нужна дата периода period_to, а не collected_at. Не используй дату одного кабинета для другого.'+common+'Формат {"ooo":"YYYY-MM-DD","ip":"YYYY-MM-DD","china":"YYYY-MM-DD"}.'}
 ];
 const results=[],history=[];
+for(const item of fixtures.additional_cases??[])cases.push({id:item.id,question:item.question+common});
 const request=body=>modelRequest(body,{key:process.env.OPENAI_API_KEY});
 async function save() {
  const fresh=(await db.request('owner_agent_setup?id=eq.1&select=payload,observed_at'))?.[0];
@@ -29,8 +30,7 @@ for(const item of cases) {
  try {
   const value=await runDialog({question:item.question,history,db,model:process.env.OWNER_AI_MODEL||'gpt-4.1-mini',request});
   const raw=value.answer.split(/\n\nДанные:/)[0].replace(/^```(?:json)?\s*|\s*```$/g,'').trim();
-  let parsed;
-  try{parsed=JSON.parse(raw);}catch{}
+  const parsed=leadingJson(raw);
   const expected=fixtures[item.id];
   const exact=parsed && Object.keys(expected).every(k=>parsed[k]===expected[k]);
   const scopedReads=value.evidence.filter(x=>['read_snapshot','aggregate_snapshot','economics'].includes(x.name));

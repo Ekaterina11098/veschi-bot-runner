@@ -18,12 +18,27 @@ export function marketplace(question,history=[]) {
   }
   return 'wb';
 }
+export function leadingJson(text) {
+  const start=text.search(/[\[{]/);
+  if(start<0)return undefined;
+  let depth=0,quoted=false,escaped=false;
+  for(let i=start;i<text.length;i++) {
+    const c=text[i];
+    if(quoted){if(escaped)escaped=false;else if(c==='\\')escaped=true;else if(c==='"')quoted=false;continue;}
+    if(c==='"'){quoted=true;continue;}
+    if(c==='{'||c==='[')depth++;
+    if(c==='}'||c===']')depth--;
+    if(depth===0){try{return JSON.parse(text.slice(start,i+1));}catch{return undefined;}}
+  }
+}
 export function answerHasNumbers(answer) {
-  try {
-    const parsed=JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g,''));
+    const parsed=leadingJson(answer);
+    if(parsed!==undefined) {
     const numbers=x=>typeof x==='number'||(x&&typeof x==='object'&&Object.values(x).some(numbers));
     return Boolean(numbers(parsed));
-  } catch {return /\d/.test(answer.replace(/\d{4}-\d{2}-\d{2}|\d{1,2}[./]\d{1,2}[./]\d{2,4}/g,''));}
+    }
+    const noDates=answer.replace(/\d{4}-\d{2}-\d{2}|\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\s+\d{4})?/giu,'');
+    return /[-+]?\d[\d\s.,]*\s*(?:₽|руб|шт|запис|заказ|%)|(?:ООО|ИП|Китай)\s*[:—-]\s*[-+]?\d/iu.test(noDates);
 }
 export function outputText(response) {
   return (response.output??[]).filter(x=>x.type==='message').flatMap(x=>x.content??[]).filter(x=>x.type==='output_text').map(x=>x.text).join('\n').trim();

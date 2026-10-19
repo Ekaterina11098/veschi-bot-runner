@@ -4,7 +4,7 @@ const url=Deno.env.get('SUPABASE_URL')??'';
 let key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')??'';
 try {key=JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')??'{}').default??key;} catch {}
 Deno.serve((request:Request)=>handle(request,{
-  db:new Database({url,key}),secret:Deno.env.get('OWNER_AGENT_WEBHOOK_SECRET')??'',
+  db:new Database({url,key}),secret:'',
   dispatchJob:async(id:number)=>{
     const token=Deno.env.get('GITHUB_WORKFLOW_DISPATCH_TOKEN');
     if(!token)throw new Error('Dispatcher missing');

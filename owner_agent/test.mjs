@@ -42,6 +42,10 @@ test('finite arithmetic, zero baseline and unknown handling',()=>{
   for(const values of [[null],[Infinity],[]])assert.throws(()=>calculate({operation:'sum',values}));
   assert.throws(()=>calculate({operation:'divide',values:[1,0]}));
 });
+test('successful empty PostgREST insert response is accepted',async()=>{
+  const db=new Database({url:'https://example.supabase.co',key:'test',fetcher:async()=>new Response(null,{status:201})});
+  assert.equal(await db.request('owner_agent_setup',{method:'POST',body:{id:1}}),null);
+});
 test('no execution tools exposed to model',()=>{
   assert.deepEqual(TOOLS.map(x=>x.name),['sources','snapshots','read_snapshot','aggregate_snapshot','economics','costs','ozon','calculate']);
 });

@@ -1,1 +1,1 @@
-{"purpose":"Identify only the newly created owner bot and its group; persist metadata privately; no messages or model calls."}
+{"purpose":"Identify only the new owner bot/group after both participants sent setup messages; no sends or model calls.","attempt":2}

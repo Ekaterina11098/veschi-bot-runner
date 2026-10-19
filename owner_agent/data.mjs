@@ -30,7 +30,9 @@ export class Database {
     if(!/^(owner_agent_(config|members|jobs|setup)(\?|$)|rpc\/owner_agent_read$)/.test(path)) throw new Error('Endpoint forbidden');
     const r=await this.fetcher(this.url+path,{method,headers:{apikey:this.key,...(!this.key.startsWith('sb_secret_')?{Authorization:'Bearer '+this.key}:{}),'Content-Type':'application/json',...(prefer?{Prefer:prefer}:{})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(30000)});
     if(!r.ok) throw new Error('Database HTTP '+r.status);
-    return r.status===204?null:r.json();
+    if(r.status===204)return null;
+    const text=await r.text();
+    return text?JSON.parse(text):null;
   }
   read(operation,args) { return this.request('rpc/owner_agent_read',{method:'POST',body:{operation,args}}); }
 }

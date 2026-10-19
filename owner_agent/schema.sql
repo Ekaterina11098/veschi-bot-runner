@@ -9,7 +9,7 @@ grant select,insert,update,delete on public.owner_agent_setup to service_role;
 create table public.owner_agent_config (
  id smallint primary key check(id=1), chat_id bigint not null check(chat_id<0),
  bot_id bigint not null check(bot_id>0), bot_username text not null check(bot_username='veschi_owner_ai_bot'),
- active boolean not null default false, created_at timestamptz not null default now()
+ active boolean not null default false, secret_digest text check(secret_digest is null or secret_digest ~ '^[a-f0-9]{64}$'), created_at timestamptz not null default now()
 );
 create table public.owner_agent_members (
  user_id bigint primary key check(user_id>0), role text not null check(role in ('owner','observer')),

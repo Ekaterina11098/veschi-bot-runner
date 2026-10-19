@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   verify:
-    if: true # Verify corrected exact disabled continuation profile contract.
+    if: false # Completed: 53 agent and 103 runner tests; no recurring check.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

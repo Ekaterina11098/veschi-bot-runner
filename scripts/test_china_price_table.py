@@ -14,16 +14,20 @@ class TableTests(unittest.TestCase):
  def test_one_table_all_five_price_fields(self):
   text=self.text()
   rows=[[v.strip() for v in line.split('|')] for line in text.splitlines() if line.startswith(('Повышение','Снижение'))]
-  self.assertEqual(rows,[['Повышение','51-NoelBag-green','180','198','1 960','2 156'],['Снижение','123-Zont-pink','106,6','82','1 160','892']])
-  self.assertEqual(text.count('Новая ₽ (прогноз)'),1)
+  self.assertEqual(rows,[['Повышение','51-NoelBag-green','180 → 198 ¥','1 960 → 2 156 ₽'],['Снижение','123-Zont-pink','106,6 → 82 ¥','1 160 → 892 ₽']])
+  self.assertEqual(text.count('Цена покупателя (новая — прогноз)'),1)
  def test_product_navigation(self):
   payload=table_payload(self.text(),CAT)
-  urls=[row[0]['url'] for row in payload['reply_markup']['inline_keyboard']]
+  urls=[entity['url'] for entity in payload['entities']]
   self.assertEqual(urls,['https://www.wildberries.ru/catalog/1473243906/detail.aspx','https://www.wildberries.ru/catalog/1556488210/detail.aspx'])
-  self.assertEqual(payload['entities'][0]['type'],'pre')
+  self.assertEqual(payload['entities'][0]['type'],'text_link')
+  self.assertEqual(payload['reply_markup']['inline_keyboard'],[])
+  raw=self.text().encode('utf-16-le')
+  labels=[raw[e['offset']*2:(e['offset']+e['length'])*2].decode('utf-16-le') for e in payload['entities']]
+  self.assertEqual(labels,['51-NoelBag-green','123-Zont-pink'])
  def test_continuation_part_keeps_navigation(self):
   continuation='\n'.join(line for line in self.text().splitlines() if line.startswith('Снижение'))
-  self.assertEqual(len(table_payload(continuation,CAT)['reply_markup']['inline_keyboard']),1)
+  self.assertEqual(len(table_payload(continuation,CAT)['entities']),1)
  def test_missing_buyer_not_zero(self):
   self.assertIn('нет данных',self.text(buyer={}))
  def test_missing_review_not_no_candidates(self):

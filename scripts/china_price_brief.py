@@ -88,7 +88,7 @@ def render_table(answer,mode,review,day,catalogue,buyer=None):
     from china_agent.buyer_price_forecast import forecast
     up=raising(answer,mode);down=lowering(review,day)
     ids=catalogue_ids(catalogue)
-    headers=['Действие','Арт','Цена ¥','Новая ¥','Покупатель ₽','Новая ₽ (прогноз)']
+    headers=['Действие','Арт','Цена продавца','Цена покупателя (новая — прогноз)']
     rows=[]
     for action,offers in (('Повышение',up),('Снижение',down or [])):
         for article,old,new in offers:
@@ -98,7 +98,7 @@ def render_table(answer,mode,review,day,catalogue,buyer=None):
             before=forecast(buyer or {},nm,article,old,old,day)
             after=forecast(buyer or {},nm,article,old,new,day)
             rub=lambda value:'нет данных' if value is None else format(value,',').replace(',',' ')
-            rows.append([action,article,old,new,rub(before),rub(after)])
+            rows.append([action,article,old+' → '+new+' ¥',rub(before)+' → '+rub(after)+' ₽'])
     widths=[max(len(row[i]) for row in [headers]+rows) for i in range(len(headers))]
     def line(row):
         return ' | '.join(value.ljust(widths[i]) if i<2 else value.rjust(widths[i]) for i,value in enumerate(row)).rstrip()
@@ -110,18 +110,21 @@ def render_table(answer,mode,review,day,catalogue,buyer=None):
     return '\n'.join(lines)
 
 def table_payload(text,catalogue):
-    """Preformatted table with product navigation buttons (pre cannot contain links)."""
+    """Link each article cell inside the table; no separate navigation keyboard."""
     if not text.startswith('Рекомендации по ценам • ') and not re.search(r'(?m)^(?:Повышение|Снижение)\s+\|',text):return None
     ids=catalogue_ids(catalogue)
-    buttons=[];seen=set()
-    for line in text.splitlines():
-        cells=[cell.strip() for cell in line.split('|')]
-        if len(cells)!=6 or cells[0] not in ('Повышение','Снижение'):continue
-        article=cells[1];nm=ids.get(article.casefold())
+    entities=[]
+    for match in re.finditer(r'(?m)^(?:Повышение|Снижение)[^\n]*$',text):
+        line=match[0];cells=line.split('|')
+        if len(cells)!=4:continue
+        article=cells[1].strip()
+        nm=ids.get(article.casefold())
         if not nm:raise RuntimeError('Table product mapping missing')
-        if nm in seen:continue
-        seen.add(nm)
-        buttons.append([dict(text=article+' · WB '+nm,url='https://www.wildberries.ru/catalog/'+nm+'/detail.aspx')])
-    if not text.startswith('Рекомендации по ценам • ') and not buttons:return None
-    return dict(entities=[dict(type='pre',offset=0,length=len(text.encode('utf-16-le'))//2)],
-                reply_markup=dict(inline_keyboard=buttons),link_preview_options=dict(is_disabled=True))
+        first_pipe=line.index('|')
+        cell_start=first_pipe+1
+        start=match.start()+cell_start+len(cells[1])-len(cells[1].lstrip())
+        entities.append(dict(type='text_link',url='https://www.wildberries.ru/catalog/'+nm+'/detail.aspx',
+                             offset=len(text[:start].encode('utf-16-le'))//2,
+                             length=len(article.encode('utf-16-le'))//2))
+    return dict(entities=entities,reply_markup=dict(inline_keyboard=[]),
+                link_preview_options=dict(is_disabled=True))

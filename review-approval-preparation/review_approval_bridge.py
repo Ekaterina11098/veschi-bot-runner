@@ -33,7 +33,7 @@ class DurableBridge:
         if not self.project(projection).get('complete'):raise Rejected('Canonical draft unavailable')
         state=self.project(projection)
         if state['hold'] or state['answered'] or state['publication_state']!='idle':raise Rejected('Canonical review blocked')
-        return self.approval.create(cabinet,kind,item['id'],version,context,draft['variants'],message_id,binding=projection['binding'])
+        return self.approval.create(cabinet,kind,item['id'],version,context,draft['variants'],message_id,binding=projection['binding'],order_status=item.get('orderStatus'))
     def project(self,card):
         cabinet,kind,item_id=card['cabinet'],card['kind'],card['item_id']
         binding=card.get('binding') or {};key=self.draft_key(cabinet,kind,item_id,card['version'])

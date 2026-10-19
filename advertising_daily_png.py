@@ -40,6 +40,8 @@ def _render_page(bundle,outdir):
  total=bundle.get('total_spend');total_label=bundle.get('total_spend_label','Расход всех РК')
  if total is not None:
   d.text((PAD,y),total_label+': '+rub(total),font=font(36,True),fill=INK);y+=66
+ else:
+  d.text((PAD,y),'Общий расход неизвестен',font=font(36,True),fill=INK);y+=66
  for x,t in zip(xs,headers):d.text((x,y),t,font=font(32,True),fill=MUTED)
  y+=55
  for c in bundle['campaigns']:
@@ -112,7 +114,7 @@ def render_daily_png(view,outdir):
  for i in range(0,len(rows),12):
   known=[c['spend'] for c in rows if c.get('metrics_complete') and isinstance(c.get('spend'),(int,float))]
   label='Расход всех РК' if len(known)==len(rows) else 'Известный расход (данные неполные)'
-  paths=_render_page(dict(period=view['period'],observed_day=view['observed_day'],campaigns=rows[i:i+12],total_spend=sum(known),total_spend_label=label),root/str(i//12+1))
+  paths=_render_page(dict(period=view['period'],observed_day=view['observed_day'],campaigns=rows[i:i+12],total_spend=sum(known) if known else None,total_spend_label=label),root/str(i//12+1))
   for kind,path in zip(('drr','budgets'),paths):artifacts[kind].append(dict(kind=kind,path=path))
  return artifacts['drr']+artifacts['budgets']
 if __name__=='__main__':print(json.dumps(render_daily_png(json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')),sys.argv[2])))

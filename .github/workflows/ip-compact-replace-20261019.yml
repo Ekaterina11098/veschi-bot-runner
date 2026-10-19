@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   edit:
+    if: false # Both deletions and replacement deliveries confirmed.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

@@ -240,3 +240,31 @@ test('edited message archived once without triggering another answer',async()=>{
  assert.equal(saved.opts.body.revision,100);assert.equal(saved.opts.body.correction,true);
  assert.ok(!paths.some(x=>x.path.startsWith('owner_agent_jobs')));
 });
+import {currentPeriod,mpstatsReader} from './mpstats.mjs';
+test('current Moscow window ends yesterday and keeps explicit dates',()=>{
+ const now=new Date('2026-10-19T14:00:00Z');
+ assert.deepEqual(currentPeriod('Сравни последний период',now),{from:'2026-10-12',to:'2026-10-18'});
+ assert.deepEqual(currentPeriod('Что было вчера?',now),{from:'2026-10-18',to:'2026-10-18'});
+ assert.equal(currentPeriod('Последний период с 1 октября 2026',now),null);
+});
+test('MPStats recovery fetches only missing cabinets and rereads persisted data',async()=>{
+ let queries=0,scope;
+ const db={request:async()=>({rows:++queries===1?[{cabinet:'token_1',available:false},{cabinet:'token_2',available:true},{cabinet:'token_3',available:true}]:[{cabinet:'token_1',available:true}]})};
+ const read=mpstatsReader(db,{collect:async s=>{scope=s;return {status:'saved'};}});
+ const result=await read({from:'2026-10-18',to:'2026-10-18'});
+ assert.deepEqual(scope.cabinets,['token_1']);assert.equal(queries,2);assert.equal(result.rows[0].available,true);
+});
+test('MPStats cache reuse makes no provider call; unknown/future scopes denied',async()=>{
+ const read=mpstatsReader({request:async()=>({rows:[{cabinet:'token_2',available:true}]})},{collect:async()=>assert.fail('cache must be reused')});
+ await read({from:'2026-10-18',to:'2026-10-18',cabinet:'token_2'});
+ await assert.rejects(read({from:'2099-01-01',to:'2099-01-01'}));
+ await assert.rejects(read({from:'2026-10-18',to:'2026-10-18',cabinet:'other'}));
+});
+test('fresh comparison cannot silently choose an old window and all-three scope is allowed',async()=>{
+ const seen=[];let i=0;
+ const result=await runDialog({question:'Сравни ООО, ИП и Китай за последний период',model:'test',db:{},refreshMpstats:async args=>{seen.push(args);return {source:'mpstats_products_validated',period_from:args.from,period_to:args.to,rows:[{cabinet:'token_1',available:true,totals:{sales_count:10}}]};},request:async body=>{
+  if(i++===0){assert.equal(body.tool_choice.name,'mpstats_products');return {output:[{type:'function_call',name:'mpstats_products',arguments:'{"from":"2026-10-01","to":"2026-10-10"}',call_id:'fresh'}]};}
+  return {output:[{type:'message',content:[{type:'output_text',text:'Продажи: 10 шт. Прибыль не подтверждена.'}]}]};
+ }});
+ assert.deepEqual({from:seen[0].from,to:seen[0].to},currentPeriod('последний период'));assert.ok(result.answer.includes('MPStats'));
+});

@@ -1,6 +1,7 @@
 import {readFile} from 'node:fs/promises';
 import {TOOLS,dispatch,normalizeSource} from './data.mjs';
 import {MEMORY_TOOL} from './memory.mjs';
+import {MPSTATS_TOOL,currentPeriod} from './mpstats.mjs';
 export function questionScope(question,history=[]) {
   for(const text of [question,...history.filter(x=>x.role==='user').map(x=>x.content).reverse()]) {
     if(/(?:все[хм]?|кажд\S*)[^.]{0,35}(?:три|тр[её]х|тр[её]м)|(?:три|тр[её]х|тр[её]м)[^.]{0,20}кабинет/iu.test(text))return null;
@@ -47,6 +48,7 @@ export function outputText(response) {
 export function referenceFor(name,args,result) {
   if(name==='calculate')return null;
   if(name==='group_history')return {label:'История группы (сообщения участников и агента)'};
+  if(name==='mpstats_products')return {label:'MPStats: товарная статистика',cabinet:args.cabinet??'ООО, ИП, Китай',from:result.period_from,to:result.period_to};
   const known={orders:'WB: заказы',sales:'WB: продажи',stocks:'WB: остатки',cards:'WB: карточки',finance:'WB: финансы'};
   const raw=result.source??args.source??'';
   const label=name==='sources'?'Каталог сохранённых источников':name==='costs'?'Собственная себестоимость':name==='economics'?'Сохранённая экономика товаров':name==='ozon'?'Ozon':
@@ -71,7 +73,7 @@ export async function modelRequest(body,{key,fetcher=fetch}) {
   if(!r.ok) throw new Error('Model HTTP '+r.status); // no secret/raw bodies in logs
   return r.json();
 }
-export async function runDialog({question,history=[],memoryContext,readMemory,db,model,request,maxRounds=18}) {
+export async function runDialog({question,history=[],memoryContext,readMemory,refreshMpstats,db,model,request,maxRounds=18}) {
   if(!model || !request) throw new Error('Explicit model and transport required');
   const prompt=await readFile(new URL('./prompt.txt',import.meta.url),'utf8');
   const input=[{role:'developer',content:prompt+'\nТекущее время МСК: '+new Date().toLocaleString('sv-SE',{timeZone:'Europe/Moscow'})},
@@ -82,16 +84,18 @@ export async function runDialog({question,history=[],memoryContext,readMemory,db
   const pageCursors=new Map();
   const scope=questionScope(question,history);
   const market=marketplace(question,history);
-  const allowed=[...TOOLS.filter(x=>x.name!=='ozon'||market==='ozon'),...(readMemory?[MEMORY_TOOL]:[])];
+  const allowed=[...TOOLS.filter(x=>x.name!=='ozon'||market==='ozon'),...(readMemory?[MEMORY_TOOL]:[]),...(refreshMpstats&&market==='wb'?[MPSTATS_TOOL]:[])];
+  const freshPeriod=refreshMpstats&&market==='wb'?currentPeriod(question):null;
+  if(freshPeriod)input[0].content+='\nДля текущего вопроса целевое актуальное окно: '+JSON.stringify(freshPeriod)+'. Сначала получи товарную статистику MPStats по этому окну. Затем для вывода об ухудшении проверь предыдущий период той же длительности. Старый период можно показать отдельно с явным предупреждением о давности; не заменяй им текущий.';
   const memoryQuestion=Boolean(readMemory)&&/помни|вспом|договор|уточн|исправ|поправ|говорил|писал|обсуждал|называл|кодовое/iu.test(question);
   const savedEconomics=/net_profit|\beconomics\b/iu.test(question);
-  const material=new Set(['read_snapshot','count_snapshot','order_snapshot_counts','aggregate_snapshot','economics','costs','ozon']);
+  const material=new Set(['read_snapshot','count_snapshot','order_snapshot_counts','aggregate_snapshot','economics','costs','ozon','mpstats_products']);
   input[0].content+='\nОбласть текущего вопроса: '+JSON.stringify({marketplace:market,cabinets:scope??'all',source_ids:'Use exact IDs from sources. Empty search results are not zeros.'});
   let calls=0;
   const started=Date.now();
   for(let turn=0;turn<maxRounds;turn++) {
     if(Date.now()-started>8*60*1000)throw new Error('Analysis deadline exceeded');
-    const response=await request({model,input,tools:allowed,tool_choice:turn===0?{type:'function',name:memoryQuestion?'group_history':savedEconomics?'economics':'sources'}:'auto',parallel_tool_calls:false,max_output_tokens:2400,store:false});
+    const response=await request({model,input,tools:allowed,tool_choice:turn===0?{type:'function',name:memoryQuestion?'group_history':savedEconomics?'economics':freshPeriod?'mpstats_products':'sources'}:'auto',parallel_tool_calls:false,max_output_tokens:2400,store:false});
     if(response.status && response.status!=='completed') throw new Error('Model response incomplete');
     const output=response.output??[];
     const tools=output.filter(x=>x.type==='function_call');
@@ -112,6 +116,7 @@ export async function runDialog({question,history=[],memoryContext,readMemory,db
       let args={},result,success=false;
       try {
         args=JSON.parse(call.arguments||'{}');
+        if(call.name==='mpstats_products'&&freshPeriod&&!evidence.some(x=>x.name==='mpstats_products'))args={...args,...freshPeriod};
         const pageArgs=Object.fromEntries(Object.entries(args).filter(([k])=>!['offset','limit'].includes(k)).sort(([a],[b])=>a.localeCompare(b)));
         if(pageArgs.source)pageArgs.source=normalizeSource(pageArgs.source);
         if(pageArgs.search)pageArgs.search=normalizeSource(pageArgs.search);
@@ -119,10 +124,10 @@ export async function runDialog({question,history=[],memoryContext,readMemory,db
         const requestedOffset=args.offset;
         if(Number.isSafeInteger(requestedOffset)&&requestedOffset>0&&!pageCursors.get(pageKey)?.has(requestedOffset))args={...args,offset:0};
         if(!allowed.some(x=>x.name===call.name))throw new Error('Marketplace tool forbidden');
-        if(scope && ['snapshots','economics','order_snapshot_counts'].includes(call.name) && (!args.cabinet || !scope.includes(args.cabinet))) {
+        if(scope && ['snapshots','economics','order_snapshot_counts','mpstats_products'].includes(call.name) && ((!args.cabinet&&scope.length<3) || (args.cabinet&&!scope.includes(args.cabinet)))) {
           result={error:'Cabinet scope mismatch',required_cabinets:scope};
         } else {
-        result=call.name==='group_history'?await readMemory(args):await dispatch(db,call.name,args);
+        result=call.name==='group_history'?await readMemory(args):call.name==='mpstats_products'?await refreshMpstats(args):await dispatch(db,call.name,args);
         }
         if(!result.error&&result.has_more===true) {
           const next=result.next_offset??(Number.isSafeInteger(result.offset)&&Number.isSafeInteger(result.returned)?result.offset+result.returned:null);
@@ -135,7 +140,7 @@ export async function runDialog({question,history=[],memoryContext,readMemory,db
         success=!result.error && !result.too_large;
       } catch {result={error:'Tool unavailable or invalid arguments; do not infer zero. Narrow request or report the gap.'};}
       // Persistent audit stores metadata, never a second full copy of raw source payloads.
-      const hasData=success&&!result.no_matching_data;
+      const hasData=success&&!result.no_matching_data&&(!Array.isArray(result.rows)||!result.rows.length||!result.rows.every(x=>x.available===false));
       evidence.push({name:call.name,args,success,has_data:hasData,at:new Date().toISOString(),snapshot_id:result.id??null,source:result.source??null,period_from:result.period_from??null,period_to:result.period_to??null,status:result.status??null,has_more:result.has_more??null,reference:hasData?referenceFor(call.name,args,result):null});
       input.push({type:'function_call_output',call_id:call.call_id,output:JSON.stringify(result)});
     }

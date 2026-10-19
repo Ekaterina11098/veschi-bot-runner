@@ -3,6 +3,7 @@ import {pathToFileURL} from 'node:url';
 import {Database} from './data.mjs';
 import {runDialog,modelRequest} from './dialog.mjs';
 import {memoryReader,loadMemory} from './memory.mjs';
+import {mpstatsReader} from './mpstats.mjs';
 
 export function splitText(text,limit=3500) {
   const points=Array.from(text),parts=[];
@@ -44,7 +45,7 @@ export async function processJob(id,{db,token,model,request,send=telegram,dialog
     if(me.username!=='veschi_owner_ai_bot'||Number(me.id)!==Number(config.bot_id)) throw new Error('Wrong bot identity');
     const readMemory=memoryReader(db);
     const memory=await loadMemory(readMemory,job.request_text);
-    const result=await dialog({question:job.request_text,history:memory.history,memoryContext:memory.context,readMemory,db,model,request});
+    const result=await dialog({question:job.request_text,history:memory.history,memoryContext:memory.context,readMemory,refreshMpstats:mpstatsReader(db),db,model,request});
     const answer=result.answer;
     await save({answer,evidence:result.evidence});
     const hash=createHash('sha256').update(answer).digest('hex');

@@ -15,3 +15,4 @@ jobs:
           python-version: '3.12'
       - run: python -m unittest -v test_runner_isolation.py test_mpstats_selector.py test_finance_daily_selector.py test_daily_selector.py test_analytics_pause.py
 
+      - run: python -m unittest discover -s tests -p test_advertising_daily_tables.py -v

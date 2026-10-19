@@ -88,7 +88,7 @@ def render_table(answer,mode,review,day,catalogue,buyer=None):
     from china_agent.buyer_price_forecast import forecast
     up=raising(answer,mode);down=lowering(review,day)
     ids=catalogue_ids(catalogue)
-    headers=['Действие','Арт','Цена продавца, ¥','Цена покупателя, ₽ (новая — прогноз)']
+    headers=['Действие','Арт','Цена продавца','Цена покупателя (новая — прогноз)']
     rows=[]
     for action,offers in (('Повышение',up),('Снижение',down or [])):
         for article,old,new in offers:
@@ -98,7 +98,7 @@ def render_table(answer,mode,review,day,catalogue,buyer=None):
             before=forecast(buyer or {},nm,article,old,old,day)
             after=forecast(buyer or {},nm,article,old,new,day)
             rub=lambda value:'нет данных' if value is None else format(value,',').replace(',',' ')
-            rows.append([action,article,old+' → '+new,rub(before)+' → '+rub(after)])
+            rows.append([action,article,old+' → '+new+' ¥',rub(before)+' → '+rub(after)+' ₽'])
     widths=[max(len(row[i]) for row in [headers]+rows) for i in range(len(headers))]
     def line(row):
         return ' | '.join(value.ljust(widths[i]) if i<2 else value.rjust(widths[i]) for i,value in enumerate(row)).rstrip()

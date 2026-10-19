@@ -379,6 +379,12 @@ try:
      active=[r['id'] for r in rows if (r.get('wb_id') in wbactive if wbactive else r.get('status_id')==9)]
      report['full_catalog_count']=len(rows)
      more=[]
+     # Exact yesterday SKU x campaign reports feed the approved daily tables.
+     # Same collector, wanted() cache reuse, shared request cap and RetryAfter.
+     if os.environ.get('IP_DAILY_TABLE_REPORTS')=='true':
+      for cid in active:
+       req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,report='products',d1=str(end),d2=str(end)))
+       if req:more.append(req)
      retained_days=read('analytics_snapshots',{'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','payload->0->>report':'eq.days','period_from':'lte.'+str(end),'period_to':'gte.'+str(start),'select':'id,payload,collected_at','order':'id.desc','limit':1000})
      report['campaign_daily_gaps']={}
      for cid in active:

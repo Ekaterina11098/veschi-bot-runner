@@ -1,0 +1,202 @@
+{
+  "campaigns": [
+    {
+      "campaign_id": 35654841,
+      "spend": 427,
+      "drr": 2.819412347309343,
+      "direct_orders": 7,
+      "within5_count": 6,
+      "observed_campaign_status": 9,
+      "conditional_hours_at_18Oct_spend": 182.6697892271663,
+      "above5": [],
+      "budget": {
+        "balance": 3250,
+        "observed_at": "2026-10-19T09:22:29.000000Z",
+        "today_observation": true,
+        "valid": true
+      }
+    },
+    {
+      "campaign_id": 36514081,
+      "spend": 33,
+      "drr": 1.1785714285714286,
+      "direct_orders": 1,
+      "within5_count": 1,
+      "observed_campaign_status": 9,
+      "conditional_hours_at_18Oct_spend": 6421.09090909091,
+      "above5": [],
+      "budget": {
+        "balance": 8829,
+        "observed_at": "2026-10-19T09:22:29.000000Z",
+        "today_observation": true,
+        "valid": true
+      }
+    },
+    {
+      "campaign_id": 37155100,
+      "spend": 583,
+      "drr": 2.379591836734694,
+      "direct_orders": 1,
+      "within5_count": 0,
+      "observed_campaign_status": 9,
+      "conditional_hours_at_18Oct_spend": 119.38250428816467,
+      "above5": [
+        {
+          "article": "0-NoelBag-green",
+          "drr": 10.6
+        }
+      ],
+      "budget": {
+        "balance": 2900,
+        "observed_at": "2026-10-19T09:22:29.000000Z",
+        "today_observation": true,
+        "valid": true
+      }
+    },
+    {
+      "campaign_id": 37363108,
+      "spend": 1100,
+      "drr": 9.29054054054054,
+      "direct_orders": 0,
+      "within5_count": 0,
+      "observed_campaign_status": 9,
+      "conditional_hours_at_18Oct_spend": 192.15272727272725,
+      "above5": [],
+      "budget": {
+        "balance": 8807,
+        "observed_at": "2026-10-19T09:42:13.330482+00:00",
+        "today_observation": true,
+        "valid": true
+      }
+    },
+    {
+      "campaign_id": 37757330,
+      "spend": 2,
+      "drr": null,
+      "direct_orders": 0,
+      "within5_count": 0,
+      "observed_campaign_status": 9,
+      "conditional_hours_at_18Oct_spend": 91428,
+      "above5": [],
+      "budget": {
+        "balance": 7619,
+        "observed_at": "2026-10-19T09:22:29.000000Z",
+        "today_observation": true,
+        "valid": true
+      }
+    },
+    {
+      "campaign_id": 39410834,
+      "spend": 15101,
+      "drr": 6.639786837384361,
+      "direct_orders": 24,
+      "within5_count": 9,
+      "observed_campaign_status": 9,
+      "conditional_hours_at_18Oct_spend": 4.497715383087213,
+      "above5": [
+        {
+          "article": "534-NoelBag-emerald",
+          "drr": 11.507692307692308
+        },
+        {
+          "article": "141-PamelaBag-brown",
+          "drr": 10.37
+        },
+        {
+          "article": "021-AdeleBag-brown",
+          "drr": 7.5777777777777775
+        },
+        {
+          "article": "600-JessicaBag-blue",
+          "drr": 6.94
+        }
+      ],
+      "budget": {
+        "balance": 2830,
+        "observed_at": "2026-10-19T09:22:29.000000Z",
+        "today_observation": true,
+        "valid": true
+      }
+    },
+    {
+      "campaign_id": 39483230,
+      "spend": 182,
+      "drr": null,
+      "direct_orders": 0,
+      "within5_count": 0,
+      "observed_campaign_status": 11,
+      "conditional_hours_at_18Oct_spend": null,
+      "above5": [],
+      "budget": {
+        "balance": 3898,
+        "observed_at": "2026-10-19T08:42:02.000000Z",
+        "today_observation": true,
+        "valid": true
+      }
+    },
+    {
+      "campaign_id": 39634287,
+      "spend": 1687,
+      "drr": 3.567350391203214,
+      "direct_orders": 5,
+      "within5_count": 3,
+      "observed_campaign_status": 9,
+      "conditional_hours_at_18Oct_spend": 139.4617664493183,
+      "above5": [],
+      "budget": {
+        "balance": 9803,
+        "observed_at": "2026-10-19T09:22:29.000000Z",
+        "today_observation": true,
+        "valid": true
+      }
+    },
+    {
+      "campaign_id": 40192945,
+      "spend": 0,
+      "drr": null,
+      "direct_orders": 0,
+      "within5_count": 0,
+      "observed_campaign_status": 9,
+      "conditional_hours_at_18Oct_spend": null,
+      "above5": [],
+      "budget": {
+        "balance": 8386,
+        "observed_at": "2026-10-19T09:22:29.000000Z",
+        "today_observation": true,
+        "valid": true
+      }
+    },
+    {
+      "campaign_id": 40428505,
+      "spend": 761,
+      "drr": null,
+      "direct_orders": 0,
+      "within5_count": 0,
+      "observed_campaign_status": 11,
+      "conditional_hours_at_18Oct_spend": null,
+      "above5": [],
+      "budget": {
+        "balance": 27816,
+        "observed_at": "2026-10-19T05:21:54.000000Z",
+        "today_observation": true,
+        "valid": true
+      }
+    },
+    {
+      "campaign_id": 40428689,
+      "spend": 566,
+      "drr": 4.921739130434783,
+      "direct_orders": 1,
+      "within5_count": 1,
+      "observed_campaign_status": 9,
+      "conditional_hours_at_18Oct_spend": 304.70671378091873,
+      "above5": [],
+      "budget": {
+        "balance": 7186,
+        "observed_at": "2026-10-19T09:22:29.000000Z",
+        "today_observation": true,
+        "valid": true
+      }
+    }
+  ]
+}

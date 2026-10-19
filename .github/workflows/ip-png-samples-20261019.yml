@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   samples:
+    if: false # Two owner-approved sample photo receipts confirmed.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

@@ -1,1 +1,1 @@
-{"purpose":"Identify only the new owner bot/group after both participants sent setup messages; no sends or model calls.","attempt":2}
+{"purpose":"Identify the verified private group and both participants including the observer; no sends or model calls.","attempt":3}

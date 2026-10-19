@@ -21,4 +21,4 @@ try {
   const payload={bot_username:me.username,bot_id:me.id,privacy_disabled:me.can_read_all_group_messages===true,groups:[...groups.values()]};
   await db.request('owner_agent_setup?on_conflict=id',{method:'POST',body:{id:1,payload,observed_at:new Date().toISOString()},prefer:'resolution=merge-duplicates'});
   console.log(JSON.stringify({identified:true,groups:groups.size,telegram_sends:0,model_calls:0}));
-}catch {console.error('Discovery failed. Check OWNER_TELEGRAM_BOT_TOKEN, bot identity, webhook absence and pending group messages. No changes made.');process.exitCode=1;}
+}catch {console.error('Discovery failed. Check new bot identity, webhook absence, pending messages and private setup table. No Telegram sends or model calls.');process.exitCode=1;}

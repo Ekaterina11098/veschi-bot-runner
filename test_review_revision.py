@@ -15,6 +15,11 @@ class RevisionTests(unittest.TestCase):
         nonce=self.repo.get('cards',self.token)['nonce']
         r=self.click('ok.'+nonce,'confirm')
         self.assertEqual(self.repo.get('intents',r['result']['intent_id'])['answer'],'Точный текст владельца')
+    def test_complete_owner_reply_accepts_both_signatures(self):
+        from review_approval_revision import ready_owner_text
+        for signature in ('С уважением, команда VESCHI','С заботой, команда VESCHI'):
+            self.assertTrue(ready_owner_text('Елена, добрый день. Спасибо за подробный отзыв о нашей сумке. '+signature+' 👜✨'))
+        self.assertFalse(ready_owner_text('Добавь побольше заботы'))
     def test_second_variant_rejected(self):
         with self.assertRaises(Rejected):self.click('v2','bad')
     def test_reply_saved_and_resumable_once(self):

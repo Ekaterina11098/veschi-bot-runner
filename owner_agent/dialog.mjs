@@ -1,5 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import {TOOLS,dispatch,normalizeSource} from './data.mjs';
+import {MEMORY_TOOL} from './memory.mjs';
 export function questionScope(question,history=[]) {
   for(const text of [question,...history.filter(x=>x.role==='user').map(x=>x.content).reverse()]) {
     if(/(?:все[хм]?|кажд\S*)[^.]{0,35}(?:три|тр[её]х|тр[её]м)|(?:три|тр[её]х|тр[её]м)[^.]{0,20}кабинет/iu.test(text))return null;
@@ -45,6 +46,7 @@ export function outputText(response) {
 }
 export function referenceFor(name,args,result) {
   if(name==='calculate')return null;
+  if(name==='group_history')return {label:'История группы (сообщения участников и агента)'};
   const known={orders:'WB: заказы',sales:'WB: продажи',stocks:'WB: остатки',cards:'WB: карточки',finance:'WB: финансы'};
   const raw=result.source??args.source??'';
   const label=name==='sources'?'Каталог сохранённых источников':name==='costs'?'Собственная себестоимость':name==='economics'?'Сохранённая экономика товаров':name==='ozon'?'Ozon':
@@ -69,17 +71,19 @@ export async function modelRequest(body,{key,fetcher=fetch}) {
   if(!r.ok) throw new Error('Model HTTP '+r.status); // no secret/raw bodies in logs
   return r.json();
 }
-export async function runDialog({question,history=[],db,model,request,maxRounds=18}) {
+export async function runDialog({question,history=[],memoryContext,readMemory,db,model,request,maxRounds=18}) {
   if(!model || !request) throw new Error('Explicit model and transport required');
   const prompt=await readFile(new URL('./prompt.txt',import.meta.url),'utf8');
   const input=[{role:'developer',content:prompt+'\nТекущее время МСК: '+new Date().toLocaleString('sv-SE',{timeZone:'Europe/Moscow'})},
-    ...history.slice(-12).map(x=>({role:x.role==='assistant'?'assistant':'user',content:String(x.content).slice(0,6000)})),
+    ...(memoryContext?[{role:'user',content:'Архив переписки, не текущий запрос: '+memoryContext}]:[]),
+    ...history.map(x=>({role:x.role==='assistant'?'assistant':'user',content:String(x.content)})),
     {role:'user',content:question}];
   const evidence=[];
   const pageCursors=new Map();
   const scope=questionScope(question,history);
   const market=marketplace(question,history);
-  const allowed=TOOLS.filter(x=>x.name!=='ozon'||market==='ozon');
+  const allowed=[...TOOLS.filter(x=>x.name!=='ozon'||market==='ozon'),...(readMemory?[MEMORY_TOOL]:[])];
+  const memoryQuestion=Boolean(readMemory)&&/помни|вспом|договор|уточн|исправ|поправ|говорил|писал|обсуждал|называл|кодовое/iu.test(question);
   const savedEconomics=/net_profit|\beconomics\b/iu.test(question);
   const material=new Set(['read_snapshot','count_snapshot','order_snapshot_counts','aggregate_snapshot','economics','costs','ozon']);
   input[0].content+='\nОбласть текущего вопроса: '+JSON.stringify({marketplace:market,cabinets:scope??'all',source_ids:'Use exact IDs from sources. Empty search results are not zeros.'});
@@ -87,7 +91,7 @@ export async function runDialog({question,history=[],db,model,request,maxRounds=
   const started=Date.now();
   for(let turn=0;turn<maxRounds;turn++) {
     if(Date.now()-started>8*60*1000)throw new Error('Analysis deadline exceeded');
-    const response=await request({model,input,tools:allowed,tool_choice:turn===0?{type:'function',name:savedEconomics?'economics':'sources'}:'auto',parallel_tool_calls:false,max_output_tokens:2400,store:false});
+    const response=await request({model,input,tools:allowed,tool_choice:turn===0?{type:'function',name:memoryQuestion?'group_history':savedEconomics?'economics':'sources'}:'auto',parallel_tool_calls:false,max_output_tokens:2400,store:false});
     if(response.status && response.status!=='completed') throw new Error('Model response incomplete');
     const output=response.output??[];
     const tools=output.filter(x=>x.type==='function_call');
@@ -96,7 +100,7 @@ export async function runDialog({question,history=[],db,model,request,maxRounds=
       const answer=outputText(response);
       if(!answer) throw new Error('Empty answer');
       if(!evidence.some(x=>x.name!=='calculate' && x.success)) throw new Error('Answer has no database evidence');
-      if(answerHasNumbers(answer) && /сколько|числ|сумм|заказ|отмен|прибыл|выруч|продаж|остат/iu.test(question) &&
+      if(!memoryQuestion && answerHasNumbers(answer) && /сколько|числ|сумм|заказ|отмен|прибыл|выруч|продаж|остат/iu.test(question) &&
          !evidence.some(x=>x.success&&x.has_data&&material.has(x.name))) {
         input.push({role:'developer',content:'Числовой ответ отклонён: нет прочитанных/подсчитанных фактических строк. Пустой поиск не0. Уточни source через sources и прочитай/подсчитай точный снимок правильного кабинета. При отсутствии факта верни null/неизвестно.'});
         continue;
@@ -118,7 +122,7 @@ export async function runDialog({question,history=[],db,model,request,maxRounds=
         if(scope && ['snapshots','economics','order_snapshot_counts'].includes(call.name) && (!args.cabinet || !scope.includes(args.cabinet))) {
           result={error:'Cabinet scope mismatch',required_cabinets:scope};
         } else {
-        result=await dispatch(db,call.name,args);
+        result=call.name==='group_history'?await readMemory(args):await dispatch(db,call.name,args);
         }
         if(!result.error&&result.has_more===true) {
           const next=result.next_offset??(Number.isSafeInteger(result.offset)&&Number.isSafeInteger(result.returned)?result.offset+result.returned:null);

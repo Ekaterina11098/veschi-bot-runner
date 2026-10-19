@@ -30,9 +30,16 @@ export async function handle(request,{db,secret,dispatchJob}) {
     config??=(await db.request('owner_agent_config?id=eq.1&select=*'))?.[0];
     if(update.probe===true)return Response.json({authenticated:true,agent:'owner',active:config?.active===true});
     const members=await db.request('owner_agent_members?active=eq.true&select=user_id,active');
-    if(!validMessage(update,config,members)) return ok();
-    const m=update.message;
-    await db.request('owner_agent_jobs?on_conflict=update_id',{method:'POST',body:{update_id:update.update_id,chat_id:m.chat.id,sender_id:m.from.id,message_id:m.message_id,thread_id:m.message_thread_id??null,request_text:m.text.trim()},prefer:'resolution=ignore-duplicates,return=representation'});
+    const m=update.message??update.edited_message;
+    // Edits are retained as new immutable revisions, not a second question/send.
+    const raw=m?.text??m?.caption;
+    if(typeof raw!=='string'||!raw.trim()||raw.length>4096)return ok();
+    const candidate={...update,message:m?{...m,text:('Архив: '+raw).slice(0,4000)}:undefined};
+    if(!validMessage(candidate,config,members)) return ok();
+    const text=(m.text??m.caption).trim();
+    await db.request('owner_agent_messages?on_conflict=chat_id,message_id,revision',{method:'POST',body:{chat_id:m.chat.id,message_id:m.message_id,revision:update.edited_message?(m.edit_date??update.update_id):0,sender_id:m.from.id,role:'user',thread_id:m.message_thread_id??null,reply_to_message_id:m.reply_to_message?.message_id??null,content:text,message_at:new Date((m.date??Math.floor(Date.now()/1000))*1000).toISOString(),correction:Boolean(update.edited_message)||/исправ|поправ|уточн|запомни|договор|на самом деле|ошиб|неверн|впредь|всегда|теперь счита|имей в виду/iu.test(text)},prefer:'resolution=ignore-duplicates'});
+    if(update.edited_message||/^\//.test(text)||text.length>4000)return ok();
+    await db.request('owner_agent_jobs?on_conflict=update_id',{method:'POST',body:{update_id:update.update_id,chat_id:m.chat.id,sender_id:m.from.id,message_id:m.message_id,thread_id:m.message_thread_id??null,request_text:text},prefer:'resolution=ignore-duplicates,return=representation'});
     const job=(await db.request('owner_agent_jobs?update_id=eq.'+update.update_id+'&select=id,status,chat_id,sender_id'))?.[0];
     if(job?.status==='pending' && Number(job.chat_id)===m.chat.id && Number(job.sender_id)===m.from.id) await dispatchJob(job.id);
     return ok();

@@ -2,6 +2,7 @@ import {randomUUID,createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {Database} from './data.mjs';
 import {runDialog,modelRequest} from './dialog.mjs';
+import {memoryReader,loadMemory} from './memory.mjs';
 
 export function splitText(text,limit=3500) {
   const points=Array.from(text),parts=[];
@@ -41,9 +42,9 @@ export async function processJob(id,{db,token,model,request,send=telegram,dialog
   try {
     const me=await send(token,'getMe',{});
     if(me.username!=='veschi_owner_ai_bot'||Number(me.id)!==Number(config.bot_id)) throw new Error('Wrong bot identity');
-    const prior=await db.request('owner_agent_jobs?chat_id=eq.'+job.chat_id+'&status=eq.done&id=lt.'+id+'&order=id.desc&limit=6&select=request_text,answer,sender_id,thread_id');
-    const history=prior.filter(x=>(x.thread_id??null)===(job.thread_id??null)).reverse().flatMap(x=>[{role:'user',content:x.request_text},{role:'assistant',content:x.answer}]);
-    const result=await dialog({question:job.request_text,history,db,model,request});
+    const readMemory=memoryReader(db);
+    const memory=await loadMemory(readMemory,job.request_text);
+    const result=await dialog({question:job.request_text,history:memory.history,memoryContext:memory.context,readMemory,db,model,request});
     const answer=result.answer;
     await save({answer,evidence:result.evidence});
     const hash=createHash('sha256').update(answer).digest('hex');

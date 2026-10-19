@@ -119,6 +119,7 @@ function fakeDatabase(prior=[]) {
   let queries=[];
   return {job,queries,async request(path,opts={}) {
     queries.push({path,opts});
+    if(path==='rpc/owner_agent_history')return {rows:prior.filter(x=>x.thread_id==null).flatMap(x=>[{role:'assistant',content:x.answer},{role:'user',content:x.request_text}]),total:prior.length*2,has_more:false};
     if(path.startsWith('owner_agent_config'))return [{...config}];
     if(path.startsWith('owner_agent_members'))return members;
     if(path.startsWith('owner_agent_jobs?chat_id='))return prior;
@@ -206,4 +207,36 @@ test('SQL is additive, invoker-only and denies anonymous API access',async()=>{
   assert.ok(sql.includes('from public,anon,authenticated'));
   assert.ok(!/security definer|drop table|alter table public\.(?!owner_agent_)/i.test(sql));
   assert.ok(!/\bexecute\s+(format|query|sql)/i.test(sql));
+});
+import {memoryReader,loadMemory} from './memory.mjs';
+
+test('memory retrieval binds scope/time and strips caller chat/as_of overrides',async()=>{
+ let captured;
+ const read=memoryReader({request:async(path,opts)=>{captured={path,opts};return {rows:[]};}},'2026-10-19T12:00:00Z');
+ await read({query:'упаковка',chat_id:-999,as_of:'2099-01-01'});
+ assert.equal(captured.path,'rpc/owner_agent_history');
+ assert.deepEqual(captured.opts.body.args,{query:'упаковка',as_of:'2026-10-19T12:00:00Z'});
+});
+test('old corrections are seeded even after fifty later exchanges',async()=>{
+ const old={message_id:1,role:'user',content:'Запомни: ИП называем Север',correction:true};
+ const fresh=Array.from({length:20},(_,i)=>({message_id:100+i,role:'user',content:'Свежая тема '+i}));
+ const memory=await loadMemory(async args=>({rows:args.corrections_only?[old]:args.query?[old]:fresh,total:121,has_more:true}),'Что мы договорились про Север?');
+ assert.equal(memory.history.length,20);assert.ok(memory.context.includes('ИП называем Север'));
+});
+test('model can retrieve old archive messages as evidence beyond recent window',async()=>{
+ let count=0;
+ const result=await runDialog({question:'Какое кодовое имя мы договорились использовать?',history:Array.from({length:20},()=>({role:'user',content:'Свежая тема'})),memoryContext:'Архив доступен',readMemory:async()=>({source:'group_history',rows:[{content:'Поправка: кодовое имя Север',role:'user',message_id:1}]}),model:'test',db:{},request:async body=>{
+  if(count++===0){assert.equal(body.tool_choice.name,'group_history');return {output:[{type:'function_call',name:'group_history',arguments:'{"query":"кодовое"}',call_id:'m'}]};}
+  return {output:[{type:'message',content:[{type:'output_text',text:'Север'}]}]};
+ }});
+ assert.ok(result.answer.includes('Север'));assert.equal(result.evidence[0].name,'group_history');
+});
+test('edited message archived once without triggering another answer',async()=>{
+ const paths=[];let dispatches=0;
+ const db={request:async(path,opts)=>{paths.push({path,opts});if(path.startsWith('owner_agent_config'))return [config];if(path.startsWith('owner_agent_members'))return members;return [];}};
+ const r=await handle(new Request('https://example.test',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':'abc'},body:JSON.stringify({update_id:20,edited_message:{...update.message,text:'Поправка: Север',edit_date:100,date:50}})}),{db,secret:'abc',dispatchJob:async()=>dispatches++});
+ assert.equal(r.status,200);assert.equal(dispatches,0);
+ const saved=paths.find(x=>x.path.startsWith('owner_agent_messages'));
+ assert.equal(saved.opts.body.revision,100);assert.equal(saved.opts.body.correction,true);
+ assert.ok(!paths.some(x=>x.path.startsWith('owner_agent_jobs')));
 });

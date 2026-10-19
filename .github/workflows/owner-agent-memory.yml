@@ -1,0 +1,24 @@
+name: Owner agent — long term memory acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['owner_agent/memory-request.json']
+permissions: {contents: read}
+jobs:
+  memory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: node --test owner_agent/test.mjs
+      - name: Real model with synthetic archive, no Telegram sends
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OWNER_AI_MODEL: ${{ vars.OWNER_AI_MODEL || 'gpt-4.1-mini' }}
+        run: node owner_agent/memory-acceptance.mjs

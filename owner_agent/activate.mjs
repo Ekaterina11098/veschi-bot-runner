@@ -29,7 +29,7 @@ try {
   const probe=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-Telegram-Bot-Api-Secret-Token':secret},body:'{"probe":true}',signal:AbortSignal.timeout(20000)});
   const proof=await probe.json();
   if(!probe.ok||proof.agent!=='owner'||proof.authenticated!==true||proof.active!==true)throw new Error('New ingress probe failed');
-  await tg('setWebhook',{url,secret_token:secret,allowed_updates:['message'],drop_pending_updates:false});
+  await tg('setWebhook',{url,secret_token:secret,allowed_updates:['message','edited_message'],drop_pending_updates:false});
   const after=await tg('getWebhookInfo',{});
   if(after.url!==url)throw new Error('Webhook readback mismatch');
   console.log(JSON.stringify({active:true,bot_username:me.username,webhook_verified:true,telegram_sends:0}));

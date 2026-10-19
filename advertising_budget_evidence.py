@@ -240,6 +240,8 @@ def deliver_daily_tables(store,messages,chat,day,send):
         receipt=send(chat,msg['text'])
         if not receipt.get('ok') or receipt.get('chat_id')!=chat or type(receipt.get('message_id')) is not int:raise RuntimeError('Unconfirmed table receipt; no retry')
         value=dict(claim,status='confirmed',message_id=receipt['message_id'],confirmed_at=datetime.now(timezone.utc).isoformat())
+        for field in ('media_sha256','photo_file_unique_id'):
+            if receipt.get(field):value[field]=receipt[field]
         store.cache_set(key,value,ttl_days=365)
         if store.cache_get(key)!=value:raise RuntimeError('Table receipt readback mismatch')
         receipts.append(value)

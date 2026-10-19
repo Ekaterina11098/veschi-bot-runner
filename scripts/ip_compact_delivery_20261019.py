@@ -1,5 +1,5 @@
 import os,sys,json,hashlib,html
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 from urllib.parse import urlparse
 import requests
 sys.path.insert(0,'private-source')
@@ -30,7 +30,7 @@ for i,text in enumerate(MESSAGES,1):
   if old.get('status')!='confirmed':raise RuntimeError('Prior uncertain send; no retry')
   continue
  claim={'status':'prepared','sha256':digest,'chat_id':reg['chat_id'],'at':datetime.now(timezone.utc).isoformat()}
- rows=s.db('POST','telegram_api_cache',params={'on_conflict':'cache_key'},body={'cache_key':key,'payload':claim},prefer='resolution=ignore-duplicates,return=representation') or []
+ rows=s.db('POST','telegram_api_cache',params={'on_conflict':'cache_key'},body={'cache_key':key,'payload':claim,'expires_at':(datetime.now(timezone.utc)+timedelta(days=365)).isoformat(),'updated_at':datetime.now(timezone.utc).isoformat()},prefer='resolution=ignore-duplicates,return=representation') or []
  if len(rows)!=1:raise RuntimeError('Claim conflict; no send')
  assert s.cache_get(key)==claim
  # Persist uncertain before network: crash cannot lead to blind retry.

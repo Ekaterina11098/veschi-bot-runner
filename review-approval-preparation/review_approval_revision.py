@@ -2,7 +2,7 @@
 import json,time,re
 
 def ready_owner_text(text):
-    return len(text.strip())>=60 and bool(re.search(r'с уважением,\s*команда\s+VESCHI',text,re.I))
+    return len(text.strip())>=60 and bool(re.search(r'(?:с уважением|с заботой),\s*команда\s+VESCHI',text,re.I))
 from review_telegram_approval import sha,Rejected
 from review_approval_notice import NewNotice
 

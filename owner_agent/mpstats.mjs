@@ -40,7 +40,12 @@ export function renderComparison(facts,current,previous,analysis) {
   const pct=m.change_pct==null?(m.zero_baseline?'; процент не определён при нулевой базе':''):`; ${m.change_pct>0?'+':''}${f(m.change_pct)}%`;
   return `${labels[k]}: ${f(m.previous)} → ${f(m.current)} шт.${delta}${pct}`;
  }).join('\n')).join('\n\n');
- return `Сравнение ${current.from} — ${current.to} с ${previous.from} — ${previous.to}. В строках: предыдущий период → текущий.\n\n${rows}\n\n${analysis}\n\nСобственная чистая прибыль не подтверждена. Выплата for_pay не заменяет прибыль: нужны проверенная денежная база, собственная себестоимость и резерв. Итоги относятся к выданному каталогу MPStats; покрытие исключённых карточек и причины изменений отдельно не подтверждены.`;
+ const directions=[['sales_count','Продажи'],['orders_count','Статистические заказы'],['returns_count','Возвраты']].map(([key,label])=>{
+  const names=sign=>facts.filter(x=>x.metrics[key].delta!=null&&Math.sign(x.metrics[key].delta)===sign).map(x=>x.label).join(', ');
+  const missing=facts.filter(x=>x.metrics[key].delta==null).map(x=>x.label).join(', ');
+  return `${label}: снижение — ${names(-1)||'не выявлено'}; рост — ${names(1)||'не выявлен'}${names(0)?'; без изменений — '+names(0):''}${missing?'; недостаточно данных — '+missing:''}.`;
+ }).join('\n');
+ return `Сравнение ${current.from} — ${current.to} с ${previous.from} — ${previous.to}. В строках: предыдущий период → текущий.\n\n${rows}\n\n${directions}\n\nЧто проверить дальше: ${analysis}\n\nСобственная чистая прибыль не подтверждена. Выплата for_pay не заменяет прибыль: нужны проверенная денежная база, собственная себестоимость и резерв. Итоги относятся к выданному каталогу MPStats; покрытие исключённых карточек и причины изменений отдельно не подтверждены.`;
 }
 export function mpstatsReader(db,{collect=async scope=>{
  const {stdout}=await execute(process.env.OWNER_PYTHON||'python',[new URL('./mpstats_collect.py',import.meta.url).pathname.replace(/^\/(\w:)/,'$1'),JSON.stringify(scope)],{timeout:240000,maxBuffer:100000,windowsHide:true});

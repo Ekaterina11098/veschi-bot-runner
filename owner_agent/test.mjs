@@ -264,7 +264,7 @@ test('fresh comparison prepares same current and prior periods for all cabinets 
  const seen=[];let i=0;const p=currentPeriod('последний период'),b=previousPeriod(p);
  const result=await runDialog({question:'Сравни продажи ООО, ИП и Китай за последний период',model:'test',db:{},refreshMpstats:async args=>{seen.push(args);return {source:'mpstats_products_validated',period_from:args.from,period_to:args.to,rows:['token_1','token_2','token_3'].map(cabinet=>({cabinet,available:true,totals:{sales_count:{value:10}}}))};},request:async body=>{
   assert.equal(body.tool_choice,'none');
-  return {output:[{type:'message',content:[{type:'output_text',text:i++===0?'Сравнил 1–10 октября. Прибыль (for_pay) выросла.':'Продажи по представленным отчётам стабильны. Причины изменений требуют отдельной проверки.'}]}]};
+  return {output:[{type:'message',content:[{type:'output_text',text:i++===0?'Сравнил 1–10 октября. Прибыль (for_pay) выросла.':'Проверить вклад товаров в заказы и возвраты, полноту состава каталога и денежную базу для расчёта прибыли.'}]}]};
  }});
  assert.equal(i,2);assert.equal(seen.length,2);assert.deepEqual({from:seen[0].from,to:seen[0].to},p);assert.deepEqual({from:seen[1].from,to:seen[1].to},b);
  assert.equal(result.evidence[0].coverage.length,3);assert.ok(result.answer.includes('MPStats'));
@@ -277,4 +277,5 @@ test('comparison joins exact cabinets, preserves zero baseline and never invents
  const ip=facts.find(x=>x.cabinet==='token_2').metrics.sales_count,ooo=facts.find(x=>x.cabinet==='token_1').metrics.sales_count;
  assert.equal(ip.previous,0);assert.equal(ip.current,290);assert.equal(ip.delta,290);assert.equal(ip.change_pct,null);assert.equal(ooo.delta,28);
  assert.ok(renderComparison(facts,p,b,'Вывод').includes('процент не определён при нулевой базе'));
+ assert.ok(renderComparison(facts,p,b,'Проверить товары').includes('Продажи: снижение — не выявлено; рост — ИП, ООО.'));
 });

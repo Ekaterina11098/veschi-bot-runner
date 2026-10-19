@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   edit:
+    if: false # Confirmed in-place edit complete; no repeats.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

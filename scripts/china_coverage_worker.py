@@ -112,7 +112,10 @@ class CoverageWorker(ScheduledWorker):
         if self.audit.get('mode')=='intraday':
             from china_agent.price_brief import render as brief
             review=self.get('china_agent:daily_expected_candidates:'+str(self.day))
-            answer=brief(answer,'intraday',review,self.day,self.get('china_agent:prices:v1'))
+            from china_agent.buyer_price_forecast import load
+            buyer=load(self)
+            trace.append(dict(name='china_buyer_price_forecast',**buyer))
+            answer=brief(answer,'intraday',review,self.day,self.get('china_agent:prices:v1'),buyer)
         return answer,trace
 
 def main():

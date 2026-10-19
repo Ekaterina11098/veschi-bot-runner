@@ -68,6 +68,7 @@ jobs:
           cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
           cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
           cp ../scripts/china_price_brief.py china_agent/price_brief.py
+          cp ../scripts/china_buyer_price_forecast.py china_agent/buyer_price_forecast.py
           cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
           cp ../scripts/china_daily_expected_control.py china_agent/daily_expected_control.py
           cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py

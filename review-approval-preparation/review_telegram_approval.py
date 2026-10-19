@@ -44,7 +44,7 @@ class Approval:
     def __init__(self,repo,secret,owner_id,chat_id,bot_id,enabled=False,clock=time.time):
         if not secret or not all(str(x) for x in (owner_id,chat_id,bot_id)):raise ValueError('Explicit authentication configuration required')
         self.repo=repo;self.secret=secret;self.owner=str(owner_id);self.chat=str(chat_id);self.bot=str(bot_id);self.enabled=enabled;self.clock=clock
-    def create(self,cabinet,kind,item_id,version,source,texts,message_id,ttl=86400,binding=None):
+    def create(self,cabinet,kind,item_id,version,source,texts,message_id,ttl=None,binding=None):
         ref=identity(cabinet,kind,item_id)
         if len(texts) not in (1,2) or not all(isinstance(t,str) and t.strip() for t in texts) or (len(texts)==2 and texts[0]==texts[1]):raise ValueError('One revised text or two distinct variants required')
         if not version or not all(k in source for k in ('buyer','rating','text','pros','cons','article')):raise ValueError('Original context required')
@@ -59,7 +59,7 @@ class Approval:
             if old and old.get('version')==version:
                 if old['hashes']!=[sha(t) for t in texts] or old['source']!=source:raise Rejected('Same version content changed')
                 raise Rejected('Version already has a card; use its delivery journal, do not resend')
-            card={'ref':ref,'cabinet':cabinet,'kind':kind,'item_id':str(item_id),'version':version,'source':source,'texts':texts,'hashes':[sha(t) for t in texts],'message_id':message_id,'expires_at':self.clock()+ttl,'status':'awaiting','selected':None,'nonce':None}
+            card={'ref':ref,'cabinet':cabinet,'kind':kind,'item_id':str(item_id),'version':version,'source':source,'texts':texts,'hashes':[sha(t) for t in texts],'message_id':message_id,'expires_at':None if ttl is None else self.clock()+ttl,'status':'awaiting','selected':None,'nonce':None}
             if binding is not None:card['binding']=binding
             self.repo.put('cards',token,card)
             self.repo.put('items',ref,{'status':'open','token':token,'version':version})
@@ -118,7 +118,7 @@ class Approval:
             card=self.repo.get('cards',token)
             if msg.get('message_id')!=card['message_id']:raise Rejected('Wrong message binding')
             if item.get('token')!=token or item.get('version')!=card['version']:raise Rejected('Outdated card')
-            if self.clock()>card['expires_at']:raise Rejected('Expired card')
+            if card.get('expires_at') is not None and self.clock()>card['expires_at']:raise Rejected('Expired card')
             if card['hashes']!=[sha(t) for t in card['texts']]:raise Rejected('Text checksum changed')
             old=self.repo.get('events',q['id'])
             fingerprint=sha([token,action,self.owner,self.chat,card['message_id']])

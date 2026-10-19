@@ -2,7 +2,7 @@
 Run only under the runner's shared bot-mpstats-data concurrency group.
 Uses a separately pinned, unchanged private normalizer and restores provider cabinet selection.
 """
-import contextlib,io,json,os,sys,hashlib
+import contextlib,io,json,os,sys,signal
 from pathlib import Path
 from datetime import datetime,date,timedelta,timezone
 from zoneinfo import ZoneInfo
@@ -80,5 +80,8 @@ def collect(scope):
  return result
 
 if __name__=='__main__':
+ def interrupted(signum,frame):raise ProbeError('collection_interrupted')
+ signal.signal(signal.SIGTERM,interrupted)
+ signal.signal(signal.SIGINT,interrupted)
  try:print(json.dumps(collect(json.loads(sys.argv[1]))))
- except Exception as e:print(json.dumps({'status':'collection_failed','error_type':type(e).__name__,'reports':[],'wb_calls':0,'telegram_sends':0}));sys.exit(0)
+ except Exception as e:print(json.dumps({'status':'collection_failed','reason':getattr(e,'status',str(e) if isinstance(e,ValueError) else type(e).__name__),'error_type':type(e).__name__,'reports':[],'wb_calls':0,'telegram_sends':0}));sys.exit(0)

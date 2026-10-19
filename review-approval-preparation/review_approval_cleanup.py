@@ -9,6 +9,7 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None):
     events={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}events').fetchall()}
     owned={}
     completed={}
+    processed={}
     skip=set()
     for key,i in intents.items():
         if intent_id and key!=intent_id:continue
@@ -17,9 +18,11 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None):
         if i.get('answer_sha256')!=sha(i.get('answer')) or i.get('answer_sha256') not in card.get('hashes',[]):continue
         if any(i.get(k)!=card.get(k) for k in ('ref','cabinet','kind','item_id','version')):continue
         owned[key]=i
+        if item and item.get('token')==i['card_token'] and item.get('status') in ('approved','sent'):
+            processed[i['ref']]=i
         if i.get('status')=='confirmed' and i.get('actual_answer_sha256')==i['answer_sha256'] and item and item.get('token')==i['card_token'] and item.get('status')=='sent':
             completed[i['ref']]=i
-    tokens={k for k,c in cards.items() if c.get('ref') in completed}
+    tokens={k for k,c in cards.items() if c.get('ref') in processed}
     targets=set()
     def add(value):
         if isinstance(value,int) and not isinstance(value,bool) and value>0:targets.add(value)
@@ -30,7 +33,7 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None):
     for key,e in events.items():
         if key.startswith('owner-receipt:') and e.get('intent_id') in owned and e.get('stage') in NORMAL:add(e.get('message_id'))
         elif e.get('card_token') in tokens:add(e.get('message_id'))
-        elif e.get('ref') in completed and key.startswith('new-notice:'):add(e.get('message_id'))
+        elif e.get('ref') in processed and key.startswith('new-notice:'):add(e.get('message_id'))
         elif key.startswith(('owner-receipt:','owner-problem:')) and e.get('intent_id') in owned and owned[e['intent_id']]['ref'] in completed:add(e.get('message_id'))
         elif key.startswith('revision-delivery:'):
             edit=events.get(e.get('revision_event_id'),{})

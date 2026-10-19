@@ -128,3 +128,49 @@ def table_payload(text,catalogue):
                              length=len(article.encode('utf-16-le'))//2))
     return dict(entities=entities,reply_markup=dict(inline_keyboard=[]),
                 link_preview_options=dict(is_disabled=True))
+
+def render_plain(answer,mode,review,day,catalogue,buyer=None):
+    """Owner-approved two-line proposals, no table separators or extra headings."""
+    from china_agent.buyer_price_forecast import forecast
+    up=raising(answer,mode);down=lowering(review,day)
+    ids=catalogue_ids(catalogue)
+    blocks=[]
+    for action,offers in (('Повышение',up),('Снижение',down or [])):
+        for article,old,new in offers:
+            nm=ids.get(article.casefold())
+            if not nm:raise RuntimeError('Exact WB article missing')
+            if any(c in article for c in ('\n','\r')):raise RuntimeError('Invalid report article')
+            before=forecast(buyer or {},nm,article,old,old,day)
+            after=forecast(buyer or {},nm,article,old,new,day)
+            if before is None or after is None:
+                buyer_text='нет данных'
+            else:
+                rub=lambda value:format(value,',').replace(',',' ')
+                buyer_text=rub(before)+' → '+rub(after)+' ₽'
+            blocks.append(action+' · '+article+' Продавец: '+old+' → '+new+' ¥\nПокупатель: '+buyer_text)
+    if not blocks:
+        blocks.append('Повышение: нет')
+        if down is not None:blocks.append('Снижение: нет')
+    if down is None:blocks.append('Снижение: нет данных')
+    return '\n\n'.join(blocks)
+
+def plain_payload(text,catalogue):
+    """Apply bold prices and exact product links, including split-message parts."""
+    seller=list(re.finditer(r'(?m)^(Повышение|Снижение) · (.+?) Продавец: ([^\n]+)$',text))
+    buyer=list(re.finditer(r'(?m)^Покупатель: ([^\n]+)$',text))
+    if not seller and not buyer:return None
+    ids=catalogue_ids(catalogue)
+    entities=[]
+    def entity(kind,start,end,**extra):
+        entities.append(dict(type=kind,offset=len(text[:start].encode('utf-16-le'))//2,
+                             length=len(text[start:end].encode('utf-16-le'))//2,**extra))
+    for match in seller:
+        article=match[2];nm=ids.get(article.casefold())
+        if not nm:raise RuntimeError('Exact WB article missing')
+        entity('bold',match.start(1),match.end(1))
+        entity('text_link',match.start(2),match.end(2),url='https://www.wildberries.ru/catalog/'+nm+'/detail.aspx')
+        entity('bold',match.start(3),match.end(3))
+    for match in buyer:entity('bold',match.start(1),match.end(1))
+    entities.sort(key=lambda e:e['offset'])
+    return dict(entities=entities,reply_markup=dict(inline_keyboard=[]),
+                link_preview_options=dict(is_disabled=True))

@@ -51,3 +51,5 @@ jobs:
           retention-days: 90
 
 # Owner-requested cleanup of obsolete approved card chains, 2026-10-19.
+
+# Include authenticated owner's exact approved reply messages, per request.

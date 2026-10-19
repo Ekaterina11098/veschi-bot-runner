@@ -32,11 +32,26 @@ class CleanupTests(unittest.TestCase):
                 self.assertEqual(a.repo.get('intents','i'),before)
                 self.assertEqual(a.repo.get('cards','unprocessed')['message_id'],99)
                 cleanup_completed(a,tg);self.assertEqual(tg.call.call_count,5)
-    def test_pending_card_and_error_remain_but_old_routine_statuses_removed(self):
+    def test_approved_card_removed_while_wb_pending_but_error_remains(self):
         a,tg,i=self.setup_case(state='verify')
         a.repo.put('events','owner-problem:i',dict(intent_id='i',message_id=50,status='confirmed'));a.repo.conn.commit()
         cleanup_completed(a,tg)
-        self.assertEqual({call.args[1]['message_id'] for call in tg.call.call_args_list},{20,21,22,23})
+        self.assertEqual({call.args[1]['message_id'] for call in tg.call.call_args_list},{10,20,21,22,23})
+    def test_old_revision_chain_removed_after_final_approval(self):
+        a,tg,i=self.setup_case(state='awaiting_preflight')
+        card=copy.deepcopy(a.repo.get('cards','c'));card['message_id']=11
+        a.repo.put('cards','old',card)
+        a.repo.put('events','edit:old',{'token':'old'})
+        a.repo.put('events','revision-delivery:old',{'revision_event_id':'edit:old','message_id':12})
+        a.repo.conn.commit()
+        cleanup_completed(a,tg)
+        self.assertEqual({c.args[1]['message_id'] for c in tg.call.call_args_list},{10,11,12,20,21,22,23})
+        self.assertEqual(a.repo.get('intents','i')['status'],'awaiting_preflight')
+    def test_new_actionable_revision_is_preserved(self):
+        a,tg,i=self.setup_case()
+        a.repo.put('items',i['ref'],{'token':'unprocessed','status':'rework'});a.repo.conn.commit()
+        cleanup_completed(a,tg)
+        self.assertNotIn(99,{c.args[1]['message_id'] for c in tg.call.call_args_list})
     def test_foreign_owner_and_bad_checksum_never_delete(self):
         a,tg,i=self.setup_case(owner='other');cleanup_completed(a,tg);tg.call.assert_not_called()
         a,tg,i=self.setup_case();i['answer_sha256']='wrong';a.repo.put('intents','i',i);a.repo.conn.commit()

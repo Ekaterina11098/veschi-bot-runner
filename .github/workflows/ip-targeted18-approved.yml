@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   targeted:
-    if: true # Retained-only final projection, no collections.
+    if: false # Owner-approved targeted report completed and receipts verified.
     runs-on: ubuntu-latest
     timeout-minutes: 35
     concurrency:

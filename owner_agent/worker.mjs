@@ -74,7 +74,7 @@ if(process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href) {
   const raw=process.env.OWNER_AGENT_JOB_ID;
   if(!/^\d+$/.test(raw??'')) throw new Error('Job id missing');
   const db=new Database({url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SECRET_KEY});
-  const result=await processJob(Number(raw),{db,token:process.env.OWNER_TELEGRAM_BOT_TOKEN,model:process.env.OWNER_AI_MODEL||'gpt-4o-mini',request:body=>modelRequest(body,{key:process.env.OPENAI_API_KEY})});
+  const result=await processJob(Number(raw),{db,token:process.env.OWNER_TELEGRAM_BOT_TOKEN,model:process.env.OWNER_AI_MODEL||'gpt-4.1-mini',request:body=>modelRequest(body,{key:process.env.OPENAI_API_KEY})});
   console.log(JSON.stringify(result));
   if(!['done','already_claimed'].includes(result.status)) process.exitCode=1;
 }

@@ -40,7 +40,7 @@ declare
  result jsonb; snap public.analytics_snapshots%rowtype; value jsonb; rows_value jsonb;
  path text[]; off integer:=greatest(0,least(coalesce((args->>'offset')::integer,0),100000));
  lim integer:=greatest(1,least(coalesce((args->>'limit')::integer,30),100));
- fields text[]; group_field text:=coalesce(args->>'group_by',''); n integer; meta jsonb;
+ fields text[]; group_field text:=coalesce(args->>'group_by',''); n integer; missing integer; meta jsonb;
 begin
  if jsonb_typeof(args)<>'object' or octet_length(args::text)>12000 then raise exception 'Invalid arguments'; end if;
  if args ? 'cabinet' and args->>'cabinet' not in ('','token_1','token_2','token_3','shared') then raise exception 'Unknown cabinet'; end if;
@@ -69,7 +69,7 @@ begin
   ) x;
   return jsonb_build_object('rows',coalesce((select jsonb_agg(v) from jsonb_array_elements(result) with ordinality a(v,i) where i<=100),'[]'),
    'has_more',jsonb_array_length(result)>100,'next_offset',off+100,'note','Overlapping snapshots are revisions, not additive. Inspect all batch pages.');
- elsif operation in ('read_snapshot','aggregate_snapshot') then
+ elsif operation in ('read_snapshot','aggregate_snapshot','count_snapshot') then
   select * into snap from public.analytics_snapshots where id=(args->>'id')::bigint;
   if not found then raise exception 'Snapshot not found'; end if;
   select coalesce(array_agg(t),'{}') into path from jsonb_array_elements_text(coalesce(args->'path','[]')) t;
@@ -77,6 +77,16 @@ begin
   value:=case when cardinality(path)=0 then snap.payload else snap.payload#>path end;
   meta:=jsonb_build_object('id',snap.id,'source',snap.source,'cabinet',snap.cabinet,'period_from',snap.period_from,'period_to',snap.period_to,
    'collected_at',snap.collected_at,'status',snap.status,'run_id',snap.run_id,'path',path,'value_type',jsonb_typeof(value));
+  if operation='count_snapshot' then
+   if jsonb_typeof(value)<>'array' then raise exception 'Array path required'; end if;
+   if jsonb_typeof(coalesce(args->'filters','{}'))<>'object' then raise exception 'Filters must be object'; end if;
+   select count(*) into n from jsonb_array_elements(value) a(v)
+    where not exists(select 1 from jsonb_each_text(coalesce(args->'filters','{}')) f where v#>>string_to_array(f.key,'.') is distinct from f.value);
+   select count(*) into missing from jsonb_array_elements(value) a(v)
+    where exists(select 1 from jsonb_each_text(coalesce(args->'filters','{}')) f where v#>>string_to_array(f.key,'.') is null);
+   return meta||jsonb_build_object('count',case when missing=0 then n else null end,'observed_matches',n,'missing_filter_rows',missing,'source_array_rows',jsonb_array_length(value),'filters',coalesce(args->'filters','{}'),
+    'note','Exact count inside this snapshot, not proof of business scope or batch completeness.');
+  end if;
   if operation='read_snapshot' then
    if jsonb_typeof(value)='array' then
     n:=jsonb_array_length(value);

@@ -18,7 +18,10 @@ const results=[],history=[];
 const request=body=>modelRequest(body,{key:process.env.OPENAI_API_KEY});
 async function save() {
  const fresh=(await db.request('owner_agent_setup?id=eq.1&select=payload,observed_at'))?.[0];
- await db.request('owner_agent_setup?id=eq.1',{method:'PATCH',body:{payload:{...fresh.payload,acceptance:{run_id:process.env.GITHUB_RUN_ID,model:process.env.OWNER_AI_MODEL||'gpt-4o-mini',results,finished:results.length===cases.length,telegram_sends:0,at:new Date().toISOString()}}}});
+ const past=fresh.payload.acceptance;
+ const history=[...(fresh.payload.acceptance_history??[])];
+ if(past?.run_id && past.run_id!==process.env.GITHUB_RUN_ID && !history.some(x=>x.run_id===past.run_id))history.push(past);
+ await db.request('owner_agent_setup?id=eq.1',{method:'PATCH',body:{payload:{...fresh.payload,acceptance_history:history.slice(-5),acceptance:{run_id:process.env.GITHUB_RUN_ID,model:process.env.OWNER_AI_MODEL||'gpt-4o-mini',results,finished:results.length===cases.length,telegram_sends:0,at:new Date().toISOString()}}}});
 }
 for(const item of cases) {
  let result={id:item.id,question:item.question,pass:false};

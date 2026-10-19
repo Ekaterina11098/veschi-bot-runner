@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {Database,calculate,dispatch,TOOLS} from './data.mjs';
-import {runDialog,groundedFooter,referenceFor} from './dialog.mjs';
+import {runDialog,groundedFooter,referenceFor,questionScope,marketplace} from './dialog.mjs';
 import {validMessage,handle} from './ingress.mjs';
 import {processJob,splitText} from './worker.mjs';
 
@@ -47,7 +47,7 @@ test('successful empty PostgREST insert response is accepted',async()=>{
   assert.equal(await db.request('owner_agent_setup',{method:'POST',body:{id:1}}),null);
 });
 test('no execution tools exposed to model',()=>{
-  assert.deepEqual(TOOLS.map(x=>x.name),['sources','snapshots','read_snapshot','aggregate_snapshot','economics','costs','ozon','calculate']);
+  assert.deepEqual(TOOLS.map(x=>x.name),['sources','snapshots','read_snapshot','count_snapshot','aggregate_snapshot','economics','costs','ozon','calculate']);
 });
 test('footer comes from actual tool evidence, never model placeholder',()=>{
   const reference=referenceFor('aggregate_snapshot',{}, {source:'orders',cabinet:'token_1',period_from:'2026-10-01',period_to:'2026-10-07',id:123});
@@ -61,22 +61,53 @@ test('model chooses reads, receives evidence, keeps followup context',async()=>{
     {output:[{type:'message',content:[{type:'output_text',text:'Есть три кабинета. Данные: проверенный каталог.'}]}]}];
   const result=await runDialog({question:'А по всем кабинетам?',history:[{role:'user',content:'Какие источники есть?'}],db:{read:async()=>({rows:[{cabinet:'token_1'}]})},model:'test',request:async body=>{bodies.push(structuredClone(body));return responses.shift();}});
   assert.equal(result.evidence[0].success,true);
-  assert.equal(bodies[0].store,false);assert.equal(bodies[0].tool_choice,'required');
+  assert.equal(bodies[0].store,false);assert.deepEqual(bodies[0].tool_choice,{type:'function',name:'sources'});
   assert.ok(bodies[1].input.some(x=>x.type==='function_call_output'));
   assert.ok(bodies[0].input.some(x=>x.content==='Какие источники есть?'));
+});
+test('followups keep marketplace and most recent explicit cabinet',()=>{
+  const h=[{role:'user',content:'Заказы WB по трём кабинетам'},{role:'user',content:'Теперь только ИП'}];
+  assert.deepEqual(questionScope('А для Китая?',h),['token_3']);
+  assert.deepEqual(questionScope('Теперь аналогично для ООО',h),['token_1']);
+  assert.deepEqual(questionScope('Сколько осталось в последнем кабинете?',h),['token_2']);
+  assert.equal(questionScope('По всем трём кабинетам',h),null);
+  assert.equal(marketplace('А для Китая?',h),'wb');
+});
+test('empty lookup cannot produce a numeric zero without material evidence',async()=>{
+  const responses=[{output:[{type:'function_call',name:'snapshots',arguments:'{"source":"WB orders"}',call_id:'s'}]},
+    {output:[{type:'message',content:[{type:'output_text',text:'{"count":0}'}]}]},
+    {output:[{type:'function_call',name:'count_snapshot',arguments:'{"id":1,"path":[]}',call_id:'c'}]},
+    {output:[{type:'message',content:[{type:'output_text',text:'{"count":2164}'}]}]}];
+  const bodies=[];
+  const result=await runDialog({question:'Сколько записей заказов?',model:'test',db:{read:async(name,args)=>{
+    if(name==='snapshots'){assert.equal(args.source,'orders');return {rows:[]};}
+    return {id:1,source:'orders',cabinet:'token_1',count:2164};
+  }},request:async body=>{bodies.push(structuredClone(body));return responses.shift();}});
+  assert.ok(result.answer.startsWith('{"count":2164}'));
+  assert.ok(bodies[2].input.some(x=>x.role==='developer'&&x.content.includes('Числовой ответ отклонён')));
+});
+test('wrong cabinet snapshot and Ozon tool are blocked in WB followup',async()=>{
+  const responses=[{output:[{type:'function_call',name:'count_snapshot',arguments:'{"id":1,"path":[]}',call_id:'bad'}]},
+    {output:[{type:'function_call',name:'count_snapshot',arguments:'{"id":2,"path":[]}',call_id:'good'}]},
+    {output:[{type:'message',content:[{type:'output_text',text:'{"count":32}'}]}]}];
+  const result=await runDialog({question:'А для Китая?',history:[{role:'user',content:'Отмены WB ИП'}],model:'test',db:{read:async(name,args)=>({id:args.id,source:'orders',cabinet:args.id===1?'token_2':'token_3',count:args.id===1?2216:32})},request:async body=>{
+    assert.ok(!body.tools.some(x=>x.name==='ozon'));return responses.shift();
+  }});
+  assert.equal(result.evidence[0].success,false);assert.equal(result.evidence[0].reference,null);
+  assert.equal(result.evidence[1].reference.cabinet,'token_3');
 });
 test('ungrounded model answer and exhausted loop fail closed',async()=>{
   await assert.rejects(runDialog({question:'Прибыль?',db:{},model:'test',request:async()=>({output:[{type:'message',content:[{type:'output_text',text:'Миллион'}]}]})}),/no database evidence/);
   await assert.rejects(runDialog({question:'test',db:{},model:'test',maxRounds:1,request:async()=>({output:[{type:'function_call',name:'delete',arguments:'{}',call_id:'c'}]})}),/budget/);
 });
-function fakeDatabase() {
+function fakeDatabase(prior=[]) {
   const job={id:1,update_id:9,status:'pending',chat_id:-1001,sender_id:12,message_id:21,request_text:'Вопрос',delivery:{}};
   let queries=[];
   return {job,queries,async request(path,opts={}) {
     queries.push({path,opts});
     if(path.startsWith('owner_agent_config'))return [{...config}];
     if(path.startsWith('owner_agent_members'))return members;
-    if(path.startsWith('owner_agent_jobs?chat_id='))return [];
+    if(path.startsWith('owner_agent_jobs?chat_id='))return prior;
     if(path.startsWith('owner_agent_jobs?')){
       if(opts.method==='PATCH'){
         if(path.includes('status=eq.pending')&&job.status!=='pending')return [];
@@ -89,6 +120,17 @@ function fakeDatabase() {
   }};
 }
 const dialog=async()=>({answer:'Подтверждённый ответ',evidence:[{name:'sources',success:true}]});
+test('worker restores chronological followup context from stored group jobs',async()=>{
+  const prior=[{request_text:'А Китай?',answer:'Китай: 32',thread_id:null},
+    {request_text:'Посторонняя тема',answer:'Другая тема',thread_id:99},
+    {request_text:'Отмены ИП за период',answer:'ИП: 2216',thread_id:null}];
+  const db=fakeDatabase(prior);
+  const send=async(token,method)=>method==='getMe'?{id:44,username:'veschi_owner_ai_bot'}:{message_id:31,chat:{id:-1001}};
+  let restored;
+  await processJob(1,{db,token:'test',model:'test',send,dialog:async args=>{restored=args.history;return dialog();}});
+  assert.deepEqual(restored,[{role:'user',content:'Отмены ИП за период'},{role:'assistant',content:'ИП: 2216'},
+    {role:'user',content:'А Китай?'},{role:'assistant',content:'Китай: 32'}]);
+});
 test('duplicate dispatch cannot produce duplicate sends',async()=>{
   const db=fakeDatabase();let sends=0;
   const send=async(token,method)=>method==='getMe'?{id:44,username:'veschi_owner_ai_bot'}:(sends++,{message_id:31,chat:{id:-1001}});

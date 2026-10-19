@@ -1,5 +1,9 @@
 // No arbitrary SQL, eval, source collection or imports from operational agents.
 export const CABINETS = ['token_1', 'token_2', 'token_3'];
+export function normalizeSource(source) {
+  const aliases={'wb orders':'orders','wb sales':'sales','wb stocks':'stocks','wb cards':'cards','wb finance':'finance'};
+  return aliases[String(source).trim().toLowerCase()]??source;
+}
 export function validateArgs(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Object required');
   if (JSON.stringify(value).length > 12000) throw new Error('Arguments too large');
@@ -42,6 +46,7 @@ export const TOOLS=[
   spec('sources','Inventory of saved source/cabinet periods, statuses and freshness. All cabinets by default. Never treats latest collection as latest covered date.',{search:string,cabinet:string},[]),
   spec('snapshots','List exact snapshot metadata; narrow source/cabinet/date. Includes pages, completion markers and raw IDs; not summed.',{source:string,cabinet:string,from:string,to:string,offset:integer},['source']),
   spec('read_snapshot','Read one exact snapshot with JSON path array (e.g. ["0","products"]). Paged rows; inspect total, returned and has_more. Empty/null is not confirmed zero.',{id:integer,path:{type:'array',items:string},offset:integer,limit:integer},['id','path']),
+  spec('count_snapshot','Count ALL records in one exact snapshot array, not just a page. Filter equality supports JSON booleans as strings, e.g. filters={isCancel:"true"}. Preserves actual source, cabinet, period and status. A page is not a complete report.',{id:integer,path:{type:'array',items:string},filters:{type:'object',additionalProperties:string}},['id','path']),
   spec('aggregate_snapshot','Aggregate ONE snapshot array in database using exact nested field paths. Does not join batches or certify completeness. Missing counts retained. Optional exact field equality filters. Supported group/sum only.',{id:integer,path:{type:'array',items:string},group_by:string,fields:{type:'array',items:string},filters:{type:'object',additionalProperties:string}},['id','path','group_by','fields']),
   spec('economics','Read latest stored SKU economics for exact period/cabinet, with quality flags; not recomputed and not a complete business total. Paged.',{cabinet:string,from:string,to:string,article:string,offset:integer},['from','to']),
   spec('costs','Own article costs and dates. Missing is unknown. Paged.',{article:string,offset:integer},[]),
@@ -52,5 +57,6 @@ export async function dispatch(db,name,args) {
   validateArgs(args);
   if(!TOOLS.some(t=>t.name===name)) throw new Error('Tool forbidden');
   if(args.cabinet && ![...CABINETS,'shared'].includes(args.cabinet)) throw new Error('Unknown cabinet');
+  if(args.source)args={...args,source:normalizeSource(args.source)};
   return name==='calculate'?calculate(args):db.read(name,args);
 }

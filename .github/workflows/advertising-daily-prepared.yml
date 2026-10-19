@@ -27,7 +27,7 @@ jobs:
       - run: cp -a private-source combined && cp -a private-source pr19
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install -r combined/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: pip install -r combined/requirements.txt cryptography==46.0.2 Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Existing stages, dedicated approved day claim
         run: python advertising_daily_owner.py
         env:

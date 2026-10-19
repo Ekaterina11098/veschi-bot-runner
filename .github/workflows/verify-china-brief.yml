@@ -1,0 +1,29 @@
+name: Verify compact China price notifications
+on:
+  push:
+    branches: [china-brief-reports-20261019]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Check compact output without network or credentials
+        run: |
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_price_brief.py -v
+          python -m compileall -q scripts/china_price_brief.py scripts/china_morning_pair.py scripts/china_coverage_worker.py
+          python - <<'PY'
+          from pathlib import Path
+          pair=Path('scripts/china_morning_pair.py').read_text()
+          assert "('candidates',) if args.section=='all'" in pair
+          assert "status='paused_by_owner'" in pair
+          assert '9800000000' in pair and '9900000000' in pair
+          for name in ('morning','intraday'):
+              workflow=Path('.github/workflows/china-price-'+name+'.yml').read_text()
+              assert 'cp ../scripts/china_price_brief.py china_agent/price_brief.py' in workflow
+          assert "cron: '0,15,30,45 12 * * *'" in Path('.github/workflows/china-price-intraday.yml').read_text()
+          assert "cron: '30,45 7 * * *'" in Path('.github/workflows/china-price-morning.yml').read_text()
+          PY

@@ -99,6 +99,10 @@ class CoverageWorker(ScheduledWorker):
             if coverage.get('remaining'):
                 answer+='\nЗаказы ещё не проверены: '+', '.join(coverage['remaining'].values())+'.'
             trace.append(dict(name='china_order_catalogue_coverage',**self.audit['order_coverage']))
+        if self.audit.get('mode')=='intraday':
+            from china_agent.price_brief import render as brief
+            review=self.get('china_agent:daily_expected_candidates:'+str(self.day))
+            answer=brief(answer,'intraday',review,self.day)
         return answer,trace
 
 def main():

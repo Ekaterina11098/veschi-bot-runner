@@ -107,7 +107,10 @@ class PairWorker(CoverageWorker):
             from china_agent.daily_expected_control import build,render_candidates
             self.control_preview=preview
             build(self)
-            return render_candidates(self),trace
+            from china_agent.price_brief import render as brief
+            full=render_candidates(self)
+            review=self.get('china_agent:daily_expected_candidates:'+str(self.day)+(':verify' if preview else ''))
+            return brief(full,'morning',review,self.day),trace
         from china_agent.daily_expected_control import build,render
         self.control_preview=preview
         value=build(self)
@@ -120,7 +123,10 @@ def main():
     parser.add_argument('--verify',action='store_true')
     parser.add_argument('--section',choices=('all','candidates','control'),default='all')
     args=parser.parse_args()
-    for section in (('candidates','control') if args.section=='all' else (args.section,)):
+    for section in (('candidates',) if args.section=='all' else (args.section,)):
+        if section=='control':
+            print(json.dumps(dict(section=section,status='paused_by_owner',telegram_calls=0)))
+            continue
         w=PairWorker(section)
         try:
             w.run(preview=args.verify)

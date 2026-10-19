@@ -1,0 +1,17 @@
+name: Verify conditional China buyer price forecast
+on:
+  push:
+    branches: [china-buyer-rub-forecast-20261019]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_buyer_forecast.py -v
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_price_brief.py -v
+          python -m compileall -q scripts/china_buyer_price_forecast.py scripts/china_price_brief.py scripts/china_morning_pair.py scripts/china_coverage_worker.py

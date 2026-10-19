@@ -67,13 +67,18 @@ def article_entities(text):
                              length=len(match[1])))
     return entities
 
-def render(answer, mode, review, day, catalogue):
+def render(answer, mode, review, day, catalogue, buyer=None):
     up=raising(answer,mode);down=lowering(review,day)
     ids=catalogue_ids(catalogue)
     def row(article,old,new):
         nm=ids.get(article.casefold())
         if not nm:raise RuntimeError('Exact WB article missing')
-        return article+': '+old+' → '+new+' ¥\nАртикул WB: '+nm
+        text=article+': '+old+' → '+new+' ¥\nАртикул WB: '+nm
+        if buyer is not None:
+            from china_agent.buyer_price_forecast import forecast
+            amount=forecast(buyer,nm,article,old,new,day)
+            text+='\nЦена покупателя (прогноз): '+(format(amount,',').replace(',',' ')+' ₽' if amount is not None else 'нет данных')
+        return text
     def section(title,rows):
         if rows is None:return title+'\nНет данных'
         return title+'\n'+('\n'.join(row(a,old,new) for a,old,new in rows) if rows else 'Нет')

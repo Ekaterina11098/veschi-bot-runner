@@ -32,6 +32,7 @@ jobs:
         run: python advertising_daily_owner.py
         env:
           IP_DAILY_ADVERTISING_ENABLED: 'true'
+          IP_DAILY_TABLE_REPORTS: 'true'
           APPROVED_SOURCE_SHA: 2f798a9509b72030d6fb5ec68fb915c5d216c31b
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

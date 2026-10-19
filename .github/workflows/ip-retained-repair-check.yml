@@ -6,7 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   verify:
-    if: true
+    if: true # Verify corrected exact disabled continuation profile contract.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

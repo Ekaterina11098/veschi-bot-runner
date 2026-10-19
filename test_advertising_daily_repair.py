@@ -218,9 +218,11 @@ class ActualRunIdentity(SourceTests):
  def test_next_profile_stays_disabled(self):
   p=json.loads(Path('advertising_daily_continue.json').read_text())
   self.assertFalse(p['enabled'])
-  self.assertEqual(p['from_run_id'],'39015462359:1')
-  self.assertEqual(p['mode'],'budgets_only')
-  self.assertEqual(p['retained_source_manifest']['original_run_id'],'39004453781:1')
+  self.assertEqual(p['from_run_id'],'39202750461:1')
+  self.assertEqual(p['mode'],'retained_analysis_only')
+  self.assertEqual(p['private_manifest_path'],'docs/evidence/ip-daily-retained-manifest-20261019.json')
+  self.assertIs(p['source_collection'],False)
+  self.assertIs(p['telegram_delivery'],False)
 if __name__=='__main__':unittest.main()
 
 

@@ -107,7 +107,7 @@ class PairWorker(CoverageWorker):
             from china_agent.daily_expected_control import build,render_candidates
             self.control_preview=preview
             build(self)
-            from china_agent.price_brief import render as brief
+            from china_agent.price_brief import render_table as brief
             full=render_candidates(self)
             review=self.get('china_agent:daily_expected_candidates:'+str(self.day)+(':verify' if preview else ''))
             from china_agent.buyer_price_forecast import load

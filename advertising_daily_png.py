@@ -36,7 +36,10 @@ def _render_page(bundle,outdir):
   im.crop((0,0,W,y+38)).save(outdir/path,'PNG',optimize=True)
  # DRR: campaign totals already include associated orders once; never add them.
  im,d,y=canvas('ДРР по рекламным кампаниям',period+' · цель — до 5%')
- xs=[PAD,310,540];headers=['РК','ДРР РК','Выше 5% по товарам']
+ xs=[PAD,260,470,680];headers=['РК','Расход','ДРР РК','Выше 5% по товарам']
+ total=bundle.get('total_spend');total_label=bundle.get('total_spend_label','Расход всех РК')
+ if total is not None:
+  d.text((PAD,y),total_label+': '+rub(total),font=font(36,True),fill=INK);y+=66
  for x,t in zip(xs,headers):d.text((x,y),t,font=font(32,True),fill=MUTED)
  y+=55
  for c in bundle['campaigns']:
@@ -52,12 +55,13 @@ def _render_page(bundle,outdir):
    else:notes=['Превышений нет']
   if c.get('observed_campaign_status')==11:notes.append('РК приостановлена')
   lines=[]
-  for note in notes:lines+=wrap(note,font(30),W-xs[2]-PAD-15)
+  for note in notes:lines+=wrap(note,font(29),W-xs[3]-PAD-15)
   h=max(94,30+len(lines)*43)
   d.rounded_rectangle((PAD-14,y,W-PAD+14,y+h-8),radius=12,fill='white')
   d.text((xs[0],y+20),str(cid),font=font(36,True),fill=INK)
-  d.text((xs[1],y+23),label,font=font(31,True),fill=RED if v is not None and v>5 else INK)
-  for k,line in enumerate(lines):d.text((xs[2],y+18+k*43),line,font=font(30),fill=RED if above and k<len(above) else INK)
+  d.text((xs[1],y+23),rub(cost) if c.get('metrics_complete') and cost is not None else 'Нет данных',font=font(31),fill=INK)
+  d.text((xs[2],y+23),label,font=font(29,True),fill=RED if v is not None and v>5 else INK)
+  for k,line in enumerate(lines):d.text((xs[3],y+18+k*43),line,font=font(29),fill=RED if above and k<len(above) else INK)
   y+=h
  footer(im,d,y,'ДРР РК — с подтверждённым посткликом, учтённым один раз. По товарам — прямой ДРР: постклик не распределён. «Превышений нет» — только среди товаров с рассчитанным ДРР. Нет заказов или данных — не норма.', 'drr.png')
  # Budgets: every balance retains its original observation timestamp.
@@ -106,7 +110,9 @@ def render_daily_png(view,outdir):
  if not rows:raise ValueError('No approved campaign scope')
  root=Path(outdir);artifacts={'drr':[],'budgets':[]}
  for i in range(0,len(rows),12):
-  paths=_render_page(dict(period=view['period'],observed_day=view['observed_day'],campaigns=rows[i:i+12]),root/str(i//12+1))
+  known=[c['spend'] for c in rows if c.get('metrics_complete') and isinstance(c.get('spend'),(int,float))]
+  label='Расход всех РК' if len(known)==len(rows) else 'Известный расход (данные неполные)'
+  paths=_render_page(dict(period=view['period'],observed_day=view['observed_day'],campaigns=rows[i:i+12],total_spend=sum(known),total_spend_label=label),root/str(i//12+1))
   for kind,path in zip(('drr','budgets'),paths):artifacts[kind].append(dict(kind=kind,path=path))
  return artifacts['drr']+artifacts['budgets']
 if __name__=='__main__':print(json.dumps(render_daily_png(json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')),sys.argv[2])))

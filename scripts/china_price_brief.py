@@ -83,3 +83,45 @@ def render(answer, mode, review, day, catalogue, buyer=None):
         if rows is None:return title+'\nНет данных'
         return title+'\n'+('\n'.join(row(a,old,new) for a,old,new in rows) if rows else 'Нет')
     return section('Рекомендации к повышению:',up)+'\n\n'+section('Рекомендации к снижению:',down)
+
+def render_table(answer,mode,review,day,catalogue,buyer=None):
+    from china_agent.buyer_price_forecast import forecast
+    up=raising(answer,mode);down=lowering(review,day)
+    ids=catalogue_ids(catalogue)
+    headers=['Действие','Арт','Цена ¥','Новая ¥','Покупатель ₽','Новая ₽ (прогноз)']
+    rows=[]
+    for action,offers in (('Повышение',up),('Снижение',down or [])):
+        for article,old,new in offers:
+            nm=ids.get(article.casefold())
+            if not nm:raise RuntimeError('Exact WB article missing')
+            if any(c in article for c in ('|','\n','\r')):raise RuntimeError('Invalid table article')
+            before=forecast(buyer or {},nm,article,old,old,day)
+            after=forecast(buyer or {},nm,article,old,new,day)
+            rub=lambda value:'нет данных' if value is None else format(value,',').replace(',',' ')
+            rows.append([action,article,old,new,rub(before),rub(after)])
+    widths=[max(len(row[i]) for row in [headers]+rows) for i in range(len(headers))]
+    def line(row):
+        return ' | '.join(value.ljust(widths[i]) if i<2 else value.rjust(widths[i]) for i,value in enumerate(row)).rstrip()
+    lines=['Рекомендации по ценам • '+str(day),'',line(headers),
+           '-+-'.join('-'*width for width in widths)]+[line(row) for row in rows]
+    if not up:lines+=['','Рекомендации к повышению: нет.']
+    if down is None:lines+=['','Рекомендации к снижению: нет данных.']
+    elif not down:lines+=['','Рекомендации к снижению: нет.']
+    return '\n'.join(lines)
+
+def table_payload(text,catalogue):
+    """Preformatted table with product navigation buttons (pre cannot contain links)."""
+    if not text.startswith('Рекомендации по ценам • ') and not re.search(r'(?m)^(?:Повышение|Снижение)\s+\|',text):return None
+    ids=catalogue_ids(catalogue)
+    buttons=[];seen=set()
+    for line in text.splitlines():
+        cells=[cell.strip() for cell in line.split('|')]
+        if len(cells)!=6 or cells[0] not in ('Повышение','Снижение'):continue
+        article=cells[1];nm=ids.get(article.casefold())
+        if not nm:raise RuntimeError('Table product mapping missing')
+        if nm in seen:continue
+        seen.add(nm)
+        buttons.append([dict(text=article+' · WB '+nm,url='https://www.wildberries.ru/catalog/'+nm+'/detail.aspx')])
+    if not text.startswith('Рекомендации по ценам • ') and not buttons:return None
+    return dict(entities=[dict(type='pre',offset=0,length=len(text.encode('utf-16-le'))//2)],
+                reply_markup=dict(inline_keyboard=buttons),link_preview_options=dict(is_disabled=True))

@@ -36,7 +36,14 @@ class CoverageWorker(ScheduledWorker):
         if host=='api.telegram.org' and path.endswith('/sendMessage'):
             body=kw.get('json') or {}
             text=body.get('text','')
-            if text.startswith('Рекомендации к повышению:') or text.startswith('Рекомендации к снижению:'):
+            from china_agent.price_brief import table_payload
+            table=table_payload(text,self.get('china_agent:prices:v1'))
+            if table:
+                body=dict(body)
+                body.pop('parse_mode',None)
+                body.update(table)
+                kw=dict(kw,json=body)
+            elif text.startswith('Рекомендации к повышению:') or text.startswith('Рекомендации к снижению:'):
                 from china_agent.price_brief import article_entities
                 body=dict(body)
                 body.pop('parse_mode',None)
@@ -110,7 +117,7 @@ class CoverageWorker(ScheduledWorker):
                 answer+='\nЗаказы ещё не проверены: '+', '.join(coverage['remaining'].values())+'.'
             trace.append(dict(name='china_order_catalogue_coverage',**self.audit['order_coverage']))
         if self.audit.get('mode')=='intraday':
-            from china_agent.price_brief import render as brief
+            from china_agent.price_brief import render_table as brief
             review=self.get('china_agent:daily_expected_candidates:'+str(self.day))
             from china_agent.buyer_price_forecast import load
             buyer=load(self)

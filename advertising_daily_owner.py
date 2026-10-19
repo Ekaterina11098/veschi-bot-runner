@@ -164,7 +164,7 @@ def stage(filename,timeout,single_step=False,stage_name=None):
  def call():
   child=dict(os.environ)
   child.update(ADVERTISING_MIN_CONFIGURATION_AT=started,ADVERTISING_EXECUTION_ENABLED='false',ADVERTISING_BUDGET_STEP_ONLY='true' if single_step else 'false')
-  if filename!='advertising_analysis_owner.py':
+  if filename not in ('advertising_analysis_owner.py','advertising_daily_tables_owner.py'):
    child.pop('ADVERTISING_TELEGRAM_BOT_TOKEN',None)
    child['IP_LIMITED_TELEGRAM_DELIVERY']='false';child['IP_LIMITED_ANALYSIS_PUBLISH']='false'
   if resume_profile.get('mode')=='retained_analysis_only':
@@ -217,6 +217,20 @@ if __name__=='__main__':
  try:
   result=execute_day(store.cache_get,lambda k,v:store.cache_set(k,v,ttl_days=365),stages,
    os.environ['GITHUB_RUN_ID']+':'+os.environ.get('GITHUB_RUN_ATTEMPT','1'),single_writer=True,resume_from=resume_profile.get('from_run_id'),cas=daily_claim_cas,budget_only=resume_profile.get('mode')=='budgets_only',analysis_only=resume_profile.get('mode')=='retained_analysis_only')
+  if not result.get('skipped') and not resume_profile and os.environ.get('IP_DAILY_TABLE_REPORTS')=='true':
+   # Own saved delivery claims; no analysis replay, collection, recommendation edits.
+   import copy
+   before=copy.deepcopy(result)
+   try:
+    tables=stage('advertising_daily_tables_owner.py',300,stage_name='daily_tables')()
+    result['daily_tables_status']=tables.get('business_status','incomplete')
+    result['daily_tables_result']=tables
+    from advertising_daily_runtime_guard import merge_telemetry
+    if tables.get('telemetry') is not None:merge_telemetry(result,result['run_id'],'daily_tables',tables['telemetry'])
+   except Exception as exc:
+    result['daily_tables_status']='incomplete'
+    result['daily_tables_error']=type(exc).__name__
+   if not daily_claim_cas('advertising:ip:daily_run:v1:'+day,before,result):raise RuntimeError('Daily table status CAS failed')
  except Exception as exc:
   # Claim/storage failure must not turn into a green job or overwrite a rival claim.
   result=dict(status='failed',reason='claim_or_checkpoint_not_confirmed',error_type=type(exc).__name__,
@@ -225,7 +239,7 @@ if __name__=='__main__':
  seal('advertising-daily',result)
  summary=dict(status=result.get('status'),skipped=result.get('skipped',False),reason=result.get('reason'),
   failed_stage=result.get('failed_stage'),completed_stages=result.get('completed_stages',[]),pending_stages=result.get('pending_stages',[]),
-  analysis_complete=result.get('analysis_complete',False),analysis_status=result.get('analysis_status'),notification_status=result.get('notification_status'),budget_status=result.get('budget_status'),telemetry=result.get('telemetry'),wb_writes=0)
+  analysis_complete=result.get('analysis_complete',False),analysis_status=result.get('analysis_status'),notification_status=result.get('notification_status'),budget_status=result.get('budget_status'),daily_tables_status=result.get('daily_tables_status'),telemetry=result.get('telemetry'),wb_writes=0)
  print(json.dumps(summary))
  if os.environ.get('GITHUB_STEP_SUMMARY'):
   with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as stream:

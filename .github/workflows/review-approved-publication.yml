@@ -51,3 +51,5 @@ jobs:
           name: owner-encrypted-approved-publication-receipts
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
+
+# Resume the owner's exact selected confirmations recovered on 2026-10-19; no legacy queues.

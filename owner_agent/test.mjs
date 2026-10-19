@@ -162,6 +162,19 @@ test('invented page offset cannot hide an existing stored economics row',async()
   }},request:async()=>responses.shift()});
   assert.ok(result.answer.includes('-167.04'));assert.equal(result.evidence[0].args.offset,0);
 });
+test('valid next page remains usable when a source alias changes to its canonical ID',async()=>{
+  const responses=[{output:[{type:'function_call',name:'sources',arguments:'{}',call_id:'s'}]},
+    {output:[{type:'function_call',name:'snapshots',arguments:'{"source":"WB orders"}',call_id:'a'}]},
+    {output:[{type:'function_call',name:'snapshots',arguments:'{"source":"orders","offset":100}',call_id:'b'}]},
+    {output:[{type:'message',content:[{type:'output_text',text:'Снимки прочитаны.'}]}]}];
+  let pages=0;
+  await runDialog({question:'Какие снимки заказов доступны?',model:'test',db:{read:async(name,args)=>{
+    if(name==='sources')return {rows:[{source:'orders'}]};
+    pages++;if(pages===2)assert.equal(args.offset,100);
+    return {rows:[{id:pages}],has_more:pages===1,next_offset:100};
+  }},request:async()=>responses.shift()});
+  assert.equal(pages,2);
+});
 test('duplicate dispatch cannot produce duplicate sends',async()=>{
   const db=fakeDatabase();let sends=0;
   const send=async(token,method)=>method==='getMe'?{id:44,username:'veschi_owner_ai_bot'}:(sends++,{message_id:31,chat:{id:-1001}});

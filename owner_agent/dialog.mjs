@@ -1,5 +1,5 @@
 import {readFile} from 'node:fs/promises';
-import {TOOLS,dispatch} from './data.mjs';
+import {TOOLS,dispatch,normalizeSource} from './data.mjs';
 export function questionScope(question,history=[]) {
   for(const text of [question,...history.filter(x=>x.role==='user').map(x=>x.content).reverse()]) {
     if(/(?:все[хм]?|кажд\S*)[^.]{0,35}(?:три|тр[её]х|тр[её]м)|(?:три|тр[её]х|тр[её]м)[^.]{0,20}кабинет/iu.test(text))return null;
@@ -109,6 +109,8 @@ export async function runDialog({question,history=[],db,model,request,maxRounds=
       try {
         args=JSON.parse(call.arguments||'{}');
         const pageArgs=Object.fromEntries(Object.entries(args).filter(([k])=>!['offset','limit'].includes(k)).sort(([a],[b])=>a.localeCompare(b)));
+        if(pageArgs.source)pageArgs.source=normalizeSource(pageArgs.source);
+        if(pageArgs.search)pageArgs.search=normalizeSource(pageArgs.search);
         const pageKey=call.name+JSON.stringify(pageArgs);
         const requestedOffset=args.offset;
         if(Number.isSafeInteger(requestedOffset)&&requestedOffset>0&&!pageCursors.get(pageKey)?.has(requestedOffset))args={...args,offset:0};

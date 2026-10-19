@@ -1,5 +1,5 @@
 /** All current human group members may approve exact saved price recommendations.
- * This records a decision only. No WB writes or executable tasks are created.
+ * Future explicit decisions authorize exact WB seller prices through an isolated worker.
  */
 export function priceApprovalIntent(text:string):null|{all:boolean,articles:string[]} {
  const s=text.trim();
@@ -64,23 +64,24 @@ export async function handlePriceApproval(config:any,message:any,text:string,upd
   const p=variants[0];const prices=new Set(p.sizes?.map((s:any)=>Number(s.discountedPrice)));
   if(!Number.isSafeInteger(p.nmID)||p.nmID<=0||p.currencyIsoCode4217!=='CNY'||prices.size!==1||!prices.has(Number(row.current_cny)))
    return answer('Сохранённая цена отличается от отчёта или не подтверждена. Нужен обновлённый отчёт; подтверждение не сохранено.');
-  selected.push({...row,nm_id:String(p.nmID),seller_discount:p.discount});
+  selected.push({...row,nm_id:String(p.nmID),seller_discount:p.discount,base_cny:p.sizes[0].price,club_discount:p.clubDiscount,editable_size_price:p.editableSizePrice});
  }
  selected.sort((a,b)=>a.nm_id.localeCompare(b.nm_id));
  const reportHash=await deps.digest(job.answer);
  const selectionHash=await deps.digest(JSON.stringify(selected));
- const key='china_agent:price_recommendation_approval:v1:'+config.chat_id+':'+job.id+':'+message.from.id+':'+selectionHash;
- const payload={schema_version:1,agent_id:'china',chat_id:config.chat_id,bot_id:config.bot_id,report_date:day,
+ const key='china_agent:price_recommendation_approval:v2:'+config.chat_id+':'+job.id+':'+message.from.id+':'+selectionHash;
+ const payload={schema_version:2,agent_id:'china',chat_id:config.chat_id,bot_id:config.bot_id,report_date:day,
   report_job_id:job.id,report_message_id:quoted.message_id,report_sha256:reportHash,
   actor_user_id:message.from.id,actor_username:message.from.username??null,actor_first_name:message.from.first_name??null,
   update_id:updateId,input_message_id:message.message_id,input_text:text,scope:'price_recommendations',
   approval_policy:'all_current_human_group_members',decision:'approved_recommendation',status:'recorded',
-  selections:selected,created_at:now.toISOString(),execution_authorized:false,wb_writes:0};
+  selections:selected,created_at:now.toISOString(),execution_authorized:true,execution_policy:'confirmed_exact_seller_price_v1',wb_writes:0};
  const inserted=await deps.database('telegram_api_cache?on_conflict=cache_key','POST',{cache_key:key,payload,expires_at:'2036-10-19T00:00:00Z'},'resolution=ignore-duplicates,return=representation');
  const retained=(await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(key)+'&select=payload'))?.[0]?.payload;
- if(!retained||retained.actor_user_id!==message.from.id||retained.report_sha256!==reportHash||!deps.same(retained.selections,selected)||retained.execution_authorized!==false)throw Error('Approval readback mismatch');
+ if(!retained||retained.actor_user_id!==message.from.id||retained.report_sha256!==reportHash||!deps.same(retained.selections,selected)||retained.execution_authorized!==true)throw Error('Approval readback mismatch');
+ await deps.launchPrice(key);
  const listing=selected.map(p=>p.article+': '+p.current_cny.replace('.',',')+' → '+p.target_cny.replace('.',',')+' ¥').join('\n');
- return answer((inserted?.length?'Подтверждение сохранено':'Это подтверждение уже сохранено')+
+ return answer((inserted?.length?'Подтверждение принято':'Это подтверждение уже принято')+
   '.\nАвтор: '+(message.from.first_name??'участник')+' ('+message.from.id+').\n'+listing+
-  '\n\nЦены WB не изменены: автоматическое применение ещё не подключено.');
+  '\n\nПроверка и применение в WB запущены. Результат придёт отдельным сообщением; повторно подтверждать не нужно.');
 }

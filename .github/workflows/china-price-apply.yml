@@ -1,0 +1,42 @@
+name: Apply explicit China group price confirmations
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [verify, apply]
+        default: verify
+      approval_key:
+        type: string
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: china-confirmed-wb-price-writes
+  cancel-in-progress: false
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Check exact-price engine without credentials
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_price_apply.py
+      - name: Verify capability or apply one saved prospective confirmation
+        env:
+          MODE: ${{ inputs.mode }}
+          APPROVAL_KEY: ${{ inputs.approval_key }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          if [ "$MODE" = verify ]; then
+            python scripts/china_price_apply.py --verify
+          else
+            python scripts/china_price_apply.py --approval-key "$APPROVAL_KEY"
+          fi

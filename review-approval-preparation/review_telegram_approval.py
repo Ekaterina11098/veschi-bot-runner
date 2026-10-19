@@ -44,7 +44,7 @@ class Approval:
     def __init__(self,repo,secret,owner_id,chat_id,bot_id,enabled=False,clock=time.time):
         if not secret or not all(str(x) for x in (owner_id,chat_id,bot_id)):raise ValueError('Explicit authentication configuration required')
         self.repo=repo;self.secret=secret;self.owner=str(owner_id);self.chat=str(chat_id);self.bot=str(bot_id);self.enabled=enabled;self.clock=clock
-    def create(self,cabinet,kind,item_id,version,source,texts,message_id,ttl=None,binding=None):
+    def create(self,cabinet,kind,item_id,version,source,texts,message_id,ttl=None,binding=None,order_status=None):
         ref=identity(cabinet,kind,item_id)
         if len(texts) not in (1,2) or not all(isinstance(t,str) and t.strip() for t in texts) or (len(texts)==2 and texts[0]==texts[1]):raise ValueError('One revised text or two distinct variants required')
         if not version or not all(k in source for k in ('buyer','rating','text','pros','cons','article')):raise ValueError('Original context required')
@@ -60,6 +60,7 @@ class Approval:
                 if old['hashes']!=[sha(t) for t in texts] or old['source']!=source:raise Rejected('Same version content changed')
                 raise Rejected('Version already has a card; use its delivery journal, do not resend')
             card={'ref':ref,'cabinet':cabinet,'kind':kind,'item_id':str(item_id),'version':version,'source':source,'texts':texts,'hashes':[sha(t) for t in texts],'message_id':message_id,'expires_at':None if ttl is None else self.clock()+ttl,'status':'awaiting','selected':None,'nonce':None}
+            card['order_status']=order_status
             if binding is not None:card['binding']=binding
             self.repo.put('cards',token,card)
             self.repo.put('items',ref,{'status':'open','token':token,'version':version})
@@ -80,7 +81,7 @@ class Approval:
         lines=['Кабинет: '+{'token_1':'ООО','token_2':'ИП','token_3':'Китай'}[card['cabinet']],('[Вопросы:согласование]' if card['kind']=='questions' else '[Отзывы:согласование]'),s['article']+' · '+card['version']]
         lines+=['ID '+('вопроса' if card['kind']=='questions' else 'отзыва')+': '+card['item_id'],'Покупатель: '+str(s['buyer'] or 'Имя не указано')]
         if card['kind']=='questions':lines+=['Вопрос: '+str(s['text'] or '(без текста)')]
-        else:lines+=['Оценка: '+str(s['rating'])+'/5','Отзыв: '+str(s['text'] or '(без текста)'),'Достоинства: '+str(s['pros'] or '(не заполнены)'),'Недостатки: '+str(s['cons'] or '(не заполнены)')]
+        else:lines+=['Статус покупки: '+{'buyout':'Выкуп','rejected':'Отказ','returned':'Возврат'}.get(card.get('order_status'),'WB не передал статус'),'Оценка: '+str(s['rating'])+'/5','Отзыв: '+str(s['text'] or '(без текста)'),'Достоинства: '+str(s['pros'] or '(не заполнены)'),'Недостатки: '+str(s['cons'] or '(не заполнены)')]
         if card['status']=='selected':
             lines+=['','Выбран вариант '+str(card['selected']+1)+':',card['texts'][card['selected']],'','Подтвердить именно этот текст? Перед отправкой проверим WB.']
         elif card['status']=='approved':

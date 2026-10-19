@@ -1,0 +1,37 @@
+name: Verify retained IP daily repair without collection or delivery
+on:
+  push:
+    branches: [fix/ip-daily-retained-20261019]
+    paths: ['.github/workflows/ip-retained-repair-check.yml']
+permissions: {contents: write}
+jobs:
+  verify:
+    if: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: dcb6c1af73dc84a793f1873cae9e8da4993b4cd2
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: python advertising_retained_inventory.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      - name: Preserve only owner encrypted proof
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          cp "$RUNNER_TEMP/stock-deploy-proof/advertising-retained-inventory.aes.json" "recovery-output/advertising/retained-inventory-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/retained-inventory-*.aes.json
+          git diff --cached --quiet || git commit -m "Preserve owner encrypted retained-only repair verification"
+          git push origin HEAD:fix/ip-daily-retained-20261019

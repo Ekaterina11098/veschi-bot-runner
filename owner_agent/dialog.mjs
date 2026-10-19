@@ -9,7 +9,7 @@ export async function modelRequest(body,{key,fetcher=fetch}) {
   if(!r.ok) throw new Error('Model HTTP '+r.status); // no secret/raw bodies in logs
   return r.json();
 }
-export async function runDialog({question,history=[],db,model,request,maxRounds=10}) {
+export async function runDialog({question,history=[],db,model,request,maxRounds=18}) {
   if(!model || !request) throw new Error('Explicit model and transport required');
   const prompt=await readFile(new URL('./prompt.txt',import.meta.url),'utf8');
   const input=[{role:'developer',content:prompt+'\nТекущее время МСК: '+new Date().toLocaleString('sv-SE',{timeZone:'Europe/Moscow'})},
@@ -17,7 +17,9 @@ export async function runDialog({question,history=[],db,model,request,maxRounds=
     {role:'user',content:question}];
   const evidence=[];
   let calls=0;
+  const started=Date.now();
   for(let turn=0;turn<maxRounds;turn++) {
+    if(Date.now()-started>8*60*1000)throw new Error('Analysis deadline exceeded');
     const response=await request({model,input,tools:TOOLS,tool_choice:turn===0?'required':'auto',parallel_tool_calls:false,max_output_tokens:2400,store:false});
     if(response.status && response.status!=='completed') throw new Error('Model response incomplete');
     const output=response.output??[];

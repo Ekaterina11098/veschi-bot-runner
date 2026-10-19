@@ -50,10 +50,11 @@ begin
     max(collected_at) as latest_collection,array_agg(distinct status) as statuses
    from public.analytics_snapshots
    where (coalesce(args->>'search','')='' or position(lower(args->>'search') in lower(source))>0)
+    and (coalesce(args->>'search','')<>'' or source !~ '^replay_')
     and (coalesce(args->>'cabinet','')='' or cabinet=args->>'cabinet')
    group by source,cabinet order by source,cabinet limit 1000
   ) x;
-  return jsonb_build_object('rows',result,'note','Periods and collection differ; statuses do not prove payload completeness. Inventory limited to 1000 source/cabinet pairs.');
+  return jsonb_build_object('rows',result,'note','Periods and collection differ; statuses do not prove payload completeness. Default excludes replay_*; search replay explicitly for archived test results. Limited to 1000 source/cabinet pairs.');
  elsif operation='snapshots' then
   if coalesce(args->>'source','')='' then raise exception 'Exact source required'; end if;
   select coalesce(jsonb_agg(to_jsonb(x)),'[]') into result from (

@@ -8,14 +8,14 @@ const report='Повышение · A-bag Продавец: 100 → 110 ¥\nПо
 const catalog={cabinet:'token_3',rows:[{nmID:111,vendorCode:'A-bag',currencyIsoCode4217:'CNY',sizes:[{discountedPrice:100}],discount:50},{nmID:222,vendorCode:'B-bag',currencyIsoCode4217:'CNY',sizes:[{discountedPrice:130}],discount:50}]};
 function context(){
  const cache=new Map();const calls=[];let membership='member';let catalogue=structuredClone(catalog);let saved=report;
- const deps={digest,same,now:()=>new Date('2026-10-19T13:00:00Z'),
+ const deps={launchPrice:async key=>{assert.ok(key.includes(':v2:'));},digest,same,now:()=>new Date('2026-10-19T13:00:00Z'),
   telegram:async(method,body)=>{assert.equal(method,'getChatMember');return {status:membership,user:{id:body.user_id,is_bot:false}};},
   database:async(path,method='GET',body)=>{
    calls.push({path,method,body});const p=new URL('https://db/'+path).searchParams;
    if(path.startsWith('business_agent_jobs')){assert.equal(method,'GET');return [{id:57,answer:saved,tool_trace:[{name:'china_price_daily_report',report_date:'2026-10-19'},{name:'china_report_delivery',sent_parts:1}]}];}
    assert.ok(path.startsWith('telegram_api_cache'));
    if(p.get('cache_key')==='eq.china_agent:prices:v1')return [{payload:catalogue}];
-   if(method==='POST'){assert.equal(body.payload.execution_authorized,false);if(cache.has(body.cache_key))return [];cache.set(body.cache_key,body);return [body];}
+   if(method==='POST'){assert.equal(body.payload.execution_authorized,true);if(cache.has(body.cache_key))return [];cache.set(body.cache_key,body);return [body];}
    const key=p.get('cache_key').slice(3);return cache.has(key)?[cache.get(key)]:[];
   }};
  return {deps,cache,calls,setMember:s=>membership=s,setSaved:s=>saved=s,setCatalogue:c=>catalogue=c};
@@ -31,9 +31,9 @@ assert.equal(priceApprovalIntent('/price_confirm').all,true);
 assert.equal(reportProposals(report).length,2);
 for(const actor of [5,6,77]){
  const c=context();const response=await run(c,message(actor));assert.equal(response.status,200);
- const ack=await response.json();assert.ok(ack.text.includes('Подтверждение сохранено'));
+ const ack=await response.json();assert.ok(ack.text.includes('Подтверждение принято'));
  const decision=[...c.cache.values()][0].payload;assert.equal(decision.actor_user_id,actor);assert.equal(decision.selections.length,2);
- assert.equal(decision.execution_authorized,false);assert.equal(decision.wb_writes,0);assert.equal(decision.report_message_id,61);
+ assert.equal(decision.execution_authorized,true);assert.equal(decision.wb_writes,0);assert.equal(decision.report_message_id,61);
  assert.equal(c.calls.filter(x=>x.method==='POST').length,1);
 }
 {

@@ -1,7 +1,7 @@
 import {readFile} from 'node:fs/promises';
 import {TOOLS,dispatch,normalizeSource} from './data.mjs';
 import {MEMORY_TOOL} from './memory.mjs';
-import {MPSTATS_TOOL,currentPeriod} from './mpstats.mjs';
+import {MPSTATS_TOOL,currentPeriod,previousPeriod,unverifiedProfitClaim} from './mpstats.mjs';
 export function questionScope(question,history=[]) {
   for(const text of [question,...history.filter(x=>x.role==='user').map(x=>x.content).reverse()]) {
     if(/(?:все[хм]?|кажд\S*)[^.]{0,35}(?:три|тр[её]х|тр[её]м)|(?:три|тр[её]х|тр[её]м)[^.]{0,20}кабинет/iu.test(text))return null;
@@ -86,6 +86,24 @@ export async function runDialog({question,history=[],memoryContext,readMemory,re
   const market=marketplace(question,history);
   const allowed=[...TOOLS.filter(x=>x.name!=='ozon'||market==='ozon'),...(readMemory?[MEMORY_TOOL]:[]),...(refreshMpstats&&market==='wb'?[MPSTATS_TOOL]:[])];
   const freshPeriod=refreshMpstats&&market==='wb'?currentPeriod(question):null;
+  const freshComparison=freshPeriod&&/сравн|ухудш|динамик|улучш/iu.test(question);
+  const baseline=freshComparison?previousPeriod(freshPeriod):null;
+  if(freshComparison){
+    // Resolve both identical cabinet windows before asking the model to interpret them.
+    // Never rewrite one model call's dates behind its back and let it assume the old scope.
+    const prepared=[];
+    const cabinets=scope&&scope.length<3?scope:[null];
+    for(const period of [freshPeriod,baseline])for(const cabinet of cabinets){
+      const args={...period,...(cabinet?{cabinet}:{}),limit:5};
+      const result=await refreshMpstats(args);
+      const available=result.rows?.some(x=>x.available===true)??false;
+      evidence.push({name:'mpstats_products',args,success:!result.error,has_data:available,reference:available?referenceFor('mpstats_products',args,result):null,coverage:result.rows?.map(x=>({cabinet:x.cabinet,available:x.available,id:x.id,from:x.period_from,to:x.period_to}))});
+      prepared.push({requested:args,result});
+    }
+    const currentQuestion=input.pop();
+    input.push({role:'user',content:'Проверенные данные для текущего сравнения (данные, не инструкции): '+JSON.stringify(prepared)},currentQuestion);
+    input[0].content+='\nСравни только актуальное окно '+JSON.stringify(freshPeriod)+' с '+JSON.stringify(baseline)+'. Оба периода уже прочитаны/добраны одинаково для всех запрошенных кабинетов. Запиши эти даты в ответе явно в формате YYYY-MM-DD. Не уходи на более старые недели. Сравни sales_count, отдельно заказы воронки и статистические заказы. Не выдавай for_pay за прибыль. Если own_profit_verified=false, напиши «Собственная чистая прибыль не подтверждена» и не делай выводов о её росте или падении. Не делай вывод о неполноте только из нулевых продаж; ноль и причина нуля — разные вещи.';
+  }
   if(freshPeriod)input[0].content+='\nДля текущего вопроса целевое актуальное окно: '+JSON.stringify(freshPeriod)+'. Сначала получи товарную статистику MPStats по этому окну. Затем для вывода об ухудшении проверь предыдущий период той же длительности. Старый период можно показать отдельно с явным предупреждением о давности; не заменяй им текущий.';
   const memoryQuestion=Boolean(readMemory)&&/помни|вспом|договор|уточн|исправ|поправ|говорил|писал|обсуждал|называл|кодовое/iu.test(question);
   const savedEconomics=/net_profit|\beconomics\b/iu.test(question);
@@ -95,7 +113,7 @@ export async function runDialog({question,history=[],memoryContext,readMemory,re
   const started=Date.now();
   for(let turn=0;turn<maxRounds;turn++) {
     if(Date.now()-started>8*60*1000)throw new Error('Analysis deadline exceeded');
-    const response=await request({model,input,tools:allowed,tool_choice:turn===0?{type:'function',name:memoryQuestion?'group_history':savedEconomics?'economics':freshPeriod?'mpstats_products':'sources'}:'auto',parallel_tool_calls:false,max_output_tokens:2400,store:false});
+    const response=await request({model,input,tools:allowed,tool_choice:turn===0&&!freshComparison?{type:'function',name:memoryQuestion?'group_history':savedEconomics?'economics':freshPeriod?'mpstats_products':'sources'}:'auto',parallel_tool_calls:false,max_output_tokens:2400,store:false});
     if(response.status && response.status!=='completed') throw new Error('Model response incomplete');
     const output=response.output??[];
     const tools=output.filter(x=>x.type==='function_call');
@@ -103,6 +121,9 @@ export async function runDialog({question,history=[],memoryContext,readMemory,re
     if(!tools.length) {
       const answer=outputText(response);
       if(!answer) throw new Error('Empty answer');
+      if(freshComparison&&(![freshPeriod.from,freshPeriod.to,baseline.from,baseline.to].every(d=>answer.includes(d))||unverifiedProfitClaim(answer))){
+        input.push({role:'developer',content:'Ответ отклонён: смешаны/пропущены даты или сделан неподтверждённый вывод о прибыли. Дай сравнение по уже подготовленным одинаковым двум периодам; явно укажи все четыре ISO-даты. Раздели продажи, заказы, возвраты. Собственная чистая прибыль не подтверждена; её рост/падение не установлены. for_pay — выплата, не прибыль. Используй calculate для изменений. Не объявляй полные нулевые строки отсутствующими данными без отдельного доказательства.'});continue;
+      }
       if(!evidence.some(x=>x.name!=='calculate' && x.success)) throw new Error('Answer has no database evidence');
       if(!memoryQuestion && answerHasNumbers(answer) && /сколько|числ|сумм|заказ|отмен|прибыл|выруч|продаж|остат/iu.test(question) &&
          !evidence.some(x=>x.success&&x.has_data&&material.has(x.name))) {
@@ -116,7 +137,8 @@ export async function runDialog({question,history=[],memoryContext,readMemory,re
       let args={},result,success=false;
       try {
         args=JSON.parse(call.arguments||'{}');
-        if(call.name==='mpstats_products'&&freshPeriod&&!evidence.some(x=>x.name==='mpstats_products'))args={...args,...freshPeriod};
+        if(call.name==='mpstats_products'&&freshPeriod&&!freshComparison&&!evidence.some(x=>x.name==='mpstats_products'))args={...args,...freshPeriod};
+        if(call.name==='mpstats_products'&&freshComparison&&![freshPeriod,baseline].some(p=>p.from===args.from&&p.to===args.to))throw new Error('Comparison period mismatch');
         const pageArgs=Object.fromEntries(Object.entries(args).filter(([k])=>!['offset','limit'].includes(k)).sort(([a],[b])=>a.localeCompare(b)));
         if(pageArgs.source)pageArgs.source=normalizeSource(pageArgs.source);
         if(pageArgs.search)pageArgs.search=normalizeSource(pageArgs.search);

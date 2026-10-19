@@ -9,6 +9,14 @@ export function currentPeriod(question,now=new Date()) {
  const start=new Date(end);if(!/вчера/iu.test(question)||/недел|семь|7\s*дн/iu.test(question))start.setUTCDate(start.getUTCDate()-6);
  return {from:start.toISOString().slice(0,10),to:end.toISOString().slice(0,10)};
 }
+export function previousPeriod(period) {
+ const a=new Date(period.from+'T00:00:00Z'),b=new Date(period.to+'T00:00:00Z');
+ const length=(b-a)/86400000+1;
+ return {from:new Date(+a-length*86400000).toISOString().slice(0,10),to:new Date(+a-86400000).toISOString().slice(0,10)};
+}
+export function unverifiedProfitClaim(answer) {
+ return answer.split(/[.!?\n]+/u).some(s=>/прибыл/iu.test(s)&&!/не\b|нет\b|нельзя|недостат|неизвест|подтвержд|рассчит|провер|требу|себестоим|не являет/iu.test(s));
+}
 export function mpstatsReader(db,{collect=async scope=>{
  const {stdout}=await execute(process.env.OWNER_PYTHON||'python',[new URL('./mpstats_collect.py',import.meta.url).pathname.replace(/^\/(\w:)/,'$1'),JSON.stringify(scope)],{timeout:240000,maxBuffer:100000,windowsHide:true});
  return JSON.parse(stdout.trim());

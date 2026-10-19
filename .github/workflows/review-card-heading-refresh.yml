@@ -1,4 +1,4 @@
-name: Refresh Telegram cabinet and buyer headings
+name: Refresh Telegram purchase status
 on:
   workflow_dispatch:
   push:
@@ -29,6 +29,7 @@ jobs:
       - name: Validate independent notices and duplicate protection
         run: |
           python -m unittest test_review_questions.py test_review_morning.py test_review_approved_worker.py
+          python -m unittest discover -s review-approval-preparation -p test_review_purchase_status.py
           python -m py_compile review_morning.py review_questions_morning.py
       - name: Refresh active card headings only; no WB calls
         env:
@@ -51,3 +52,5 @@ jobs:
 # Independent question delivery; no legacy queues or other stopped tasks.
 
 # Include current rework cards; preserve their decision state.
+
+# Refresh WB purchase metadata in existing feedback cards, 2026-10-19.

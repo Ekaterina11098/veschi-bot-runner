@@ -166,6 +166,9 @@ def load_daily_table_view(store,now):
     if isinstance(cfg,list):cfg=cfg[0] if cfg else {}
     active=cfg.get('campaign_ids') or []
     if not active:raise RuntimeError('Current approved campaign scope missing')
+    overview=store.cache_get('advertising:ip:daily-overview-scope:v1') or {}
+    if overview.get('cabinet')=='token_2' and overview.get('chat_id')==store.registration()['chat_id']:
+        active=sorted(set(active)|set(overview.get('campaign_ids') or []))
     # Bounded normalized catalog reads, never reread the large entire report index.
     catrows=decode_rows(store.db('GET','analytics_snapshots',params={'source':'eq.mpstats_campaign_catalog','cabinet':'eq.token_2','select':'id,payload,collected_at','order':'id.desc','limit':8}) or [])
     catalogs=[p for snap in catrows for p in (snap.get('payload') or []) if isinstance(p,dict)]
@@ -177,12 +180,31 @@ def load_daily_table_view(store,now):
             if row.get('status_id') is not None:states[cid]=row['status_id']
             if _number(row.get('current_budget')) and row.get('current_budget_updated_at'):
                 mpbudgets[cid]=dict(balance=row['current_budget'],observed_at=row['current_budget_updated_at'],valid=True,source='MPStats')
+    week_start=str(now.date()-timedelta(days=7));week_end=day
+    weekly_pages={}
+    for cat in sorted(catalogs,key=lambda x:x.get('observed_at') or '',reverse=True):
+        if cat.get('report')=='stats' and cat.get('period_from')==week_start and cat.get('period_to')==week_end:
+            weekly_pages.setdefault(cat.get('start_row'),cat)
+    week_rows=[r for _,cat in sorted(weekly_pages.items()) for r in cat.get('rows') or []]
+    week_complete=bool(weekly_pages.get(0)) and len(week_rows)==weekly_pages[0].get('total') and len({r.get('id') for r in week_rows})==len(week_rows)
+    weekly={r['wb_id']:r.get('ac_spending_sum') for r in week_rows if r.get('wb_id') in active and _number(r.get('ac_spending_sum'))} if week_complete else {}
     snaps=decode_rows(store.db('GET','analytics_snapshots',params={'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','period_from':'eq.'+day,'period_to':'eq.'+day,'select':'id,payload,collected_at','order':'id.desc','limit':100}) or [])
     reports={}
     for snap in snaps:
         for p in snap.get('payload') or []:
             if p.get('report')=='products' and p.get('scope_nm_id') is None and p.get('spending_reconciled') is True and p.get('period_from')==day and p.get('period_to')==day:
                 reports.setdefault(p['campaign_id'],dict(p,snapshot_id=snap['id']))
+    missing={mapping[cid] for cid in active if cid in mapping and mapping[cid] not in reports}
+    if missing:
+        alternatives=decode_rows(store.db('GET','analytics_snapshots',params={'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','period_from':'eq.'+day,'period_to':'eq.'+day,'payload->0->>report':'eq.days','select':'id,payload,collected_at','order':'id.desc','limit':100}) or [])
+        for snap in alternatives:
+            for p in snap.get('payload') or []:
+                if p.get('campaign_id') not in missing or p.get('scope_nm_id') is not None or p.get('spending_reconciled') is not True:continue
+                values=p.get('rows') or []
+                if len(values)==1 and values[0].get('date')==day and all(_number(values[0].get(k)) for k in ('ac_spending_sum','ac_orders','ac_orders_sum')):
+                    aggregate=dict(p,snapshot_id=snap['id'],rows=[],sku_order_basis='aggregate_only')
+                    if values[0]['ac_spending_sum']==0 and values[0]['ac_orders']==0:aggregate['sku_order_basis']='direct_only'
+                    reports.setdefault(p['campaign_id'],aggregate)
     cards=Data('operations',lambda t,p:store.db('GET',t,params=p)).snapshot('cards','token_2')
     articles={int(x['nmID']):x['vendorCode'] for x in cards.get('rows',[]) if x.get('nmID') and x.get('vendorCode')}
     bsnaps=decode_rows(store.db('GET','analytics_snapshots',params={'source':'eq.advertising_campaign_budgets','cabinet':'eq.token_2','select':'id,payload,collected_at','order':'id.desc','limit':1}) or [])
@@ -215,8 +237,8 @@ def load_daily_table_view(store,now):
             except (TypeError,ValueError):continue
         result.append(dict(campaign_id=cid,metrics_complete=valid,spend=t.get('ac_spending_sum') if valid else None,revenue=t.get('ac_orders_sum') if valid else None,
           direct_orders=(t['ac_orders']-t['ac_orders_associated']) if valid and _number(t.get('ac_orders_associated')) and t['ac_orders']>=t['ac_orders_associated'] else None,
-          above5=sorted(above,key=lambda x:-x['drr']),within5_count=within,sku_order_basis=p.get('sku_order_basis'),status_id=states.get(cid),budget=budget,source_snapshot_id=p.get('snapshot_id')))
-    return dict(period=day,observed_day=str(now.date()),campaigns=result)
+          above5=sorted(above,key=lambda x:-x['drr']),within5_count=within,sku_order_basis=p.get('sku_order_basis'),status_id=states.get(cid),budget=budget,source_snapshot_id=p.get('snapshot_id'),weekly_spend=weekly.get(cid)))
+    return dict(period=day,observed_day=str(now.date()),campaigns=result,weekly_period_from=week_start,weekly_period_to=week_end)
 
 def deliver_daily_tables(store,messages,chat,day,send):
     """Durable claim before each request. An uncertain result is never retried."""

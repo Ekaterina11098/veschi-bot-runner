@@ -35,3 +35,4 @@ jobs:
           git add recovery-output/advertising/saved-401-raw-*.aes.json
           git diff --cached --quiet || git commit -m "Preserve owner encrypted saved report inputs"
           git push origin HEAD:ip-saved-png-readback-20261020
+# Two scoped GETs for saved same-day alternatives; no source calls.

@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Read-only API diagnostics with sanitized validation errors
+# Inspect existing chain, buyer and delivery trigger
 on:
   push:
     branches: [main]

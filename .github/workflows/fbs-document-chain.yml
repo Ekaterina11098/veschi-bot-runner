@@ -1,0 +1,36 @@
+name: China FBS document chain
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Status, read-only preview, one-time activation baseline, or gated execution
+        type: choice
+        options: [status, preview, bootstrap, run]
+        default: status
+  schedule:
+    - cron: '*/5 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: bot-stock-and-commands
+  cancel-in-progress: false
+jobs:
+  chain:
+    if: github.event_name == 'workflow_dispatch' || vars.FBS_DOC_CHAIN_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Execute selected mode with backend-only secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MODE: ${{ inputs.mode || 'run' }}
+        run: python scripts/fbs_document_chain.py --mode "$MODE"

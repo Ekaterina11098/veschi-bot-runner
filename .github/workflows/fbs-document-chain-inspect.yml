@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# JSON and gzip transport verified
+# Read-only API diagnostics with sanitized validation errors
 on:
   push:
     branches: [main]

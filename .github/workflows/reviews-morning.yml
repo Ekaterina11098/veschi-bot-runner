@@ -32,6 +32,7 @@ jobs:
         run: |
           python -m unittest test_review_morning.py
           python -m unittest test_review_autonomy.py
+          PYTHONPATH=private-source python -m unittest discover -s private-source/tests -p test_review_purchase_context.py
           python -m py_compile review_morning.py
       - name: Collect reviews and deliver only new approval cards
         env:

@@ -53,5 +53,5 @@ jobs:
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
 
-# Resume the owner's exact selected confirmations recovered on 2026-10-19; no legacy queues.
+# Durable inbox, idempotent Telegram UI repair and per-cabinet WB retry; no legacy queues.
 

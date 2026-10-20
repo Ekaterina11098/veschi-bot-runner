@@ -111,6 +111,8 @@ def main():
                     finally:
                         active=None
                 # Stay available while idle; GitHub schedules can be delayed.
+                with repo.transaction():
+                    repo.put('events','approved-worker:health:v1',dict(checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),code_commit=os.getenv('GITHUB_SHA'),pending_cabinets=len(pending),inbox=report.get('inbox',{}),errors=len(report['errors']),legacy_queue_calls=0))
                 time.sleep(10)
             preserve()
             counts={}

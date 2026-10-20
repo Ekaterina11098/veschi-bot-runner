@@ -1,6 +1,7 @@
 """Production transport/bootstrap building blocks; no startup or enable side effect."""
 import json
 import urllib.request
+import urllib.error
 from review_telegram_approval import identity, sha
 
 
@@ -24,6 +25,14 @@ class TelegramTransport:
         try:
             with self._open(request, timeout=8) as response:
                 result=json.load(response)
+        except urllib.error.HTTPError as exc:
+            # Both operations target an already bound exact message. A lost
+            # success response can be safely reconciled without resending a WB reply.
+            try:description=json.loads(exc.read(16384)).get('description','').lower()
+            except Exception:description=''
+            if exc.code==400 and ((method=='editMessageText' and 'message is not modified' in description) or (method=='deleteMessage' and 'message to delete not found' in description)):
+                return True
+            raise RuntimeError('Telegram transport unconfirmed') from None
         except Exception:
             raise RuntimeError('Telegram transport unconfirmed') from None
         if not result.get('ok'): raise RuntimeError('Telegram request rejected')

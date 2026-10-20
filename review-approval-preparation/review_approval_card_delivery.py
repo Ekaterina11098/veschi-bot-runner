@@ -13,8 +13,13 @@ def dismiss_approved(approval, telegram, token, preserve=None):
         if intent['owner_id']!=approval.owner or intent['chat_id']!=approval.chat:
             raise ValueError('Wrong approval owner/chat')
         old=card.get('telegram_card_removal')
-        if old:return old
-        removal={'status':'sending','message_id':card['message_id'],'intent_id':intent['id'],'created_at':approval.clock()}
+        if old:
+            if old['status']=='confirmed':return old
+            retry_at=old.get('retry_at',old.get('checked_at',old.get('created_at',0))+30)
+            if approval.clock()<retry_at:return old
+            if old.get('message_id')!=card['message_id'] or old.get('intent_id')!=intent['id']:
+                raise ValueError('Deletion retry binding changed')
+        removal={'status':'sending','message_id':card['message_id'],'intent_id':intent['id'],'created_at':old.get('created_at',approval.clock()) if old else approval.clock(),'attempts':(old or {}).get('attempts',0)+1,'retry_at':approval.clock()+30}
         card['telegram_card_removal']=removal;repo.put('cards',token,card)
     # Text, exact approval and deletion intent are committed before Telegram.
     if preserve:preserve()
@@ -26,7 +31,7 @@ def dismiss_approved(approval, telegram, token, preserve=None):
     except Exception:status='uncertain'
     with repo.transaction():
         current=repo.get('cards',token,lock=True)
-        current['telegram_card_removal'].update(status=status,checked_at=approval.clock())
+        current['telegram_card_removal'].update(status=status,checked_at=approval.clock(),retry_at=approval.clock()+min(300,15*2**min(removal['attempts'],5)))
         repo.put('cards',token,current)
     if preserve:preserve()
     return repo.get('cards',token)['telegram_card_removal']
@@ -94,3 +99,4 @@ def notify_owner_receipt(approval,telegram,intent,preserve=None):
     with repo.transaction():repo.put('events',key,event)
     if preserve:preserve()
     return event
+

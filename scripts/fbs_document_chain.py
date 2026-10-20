@@ -188,7 +188,7 @@ class Worker:
         positions = []
         for article, quantity in sorted(counts.items()):
             products = self.ms_rows("entity/product", {"filter": "article=" + article})
-            products = [p for p in products if p.get("article", "").strip() == article and not p.get("archived")]
+            products = [p for p in products if p.get("article", "").strip().casefold() == article.casefold() and not p.get("archived")]
             if len(products) != 1 or products[0].get("variantsCount", 0):
                 raise Stop("Product article missing, duplicated or has variants: " + article)
             product = products[0]

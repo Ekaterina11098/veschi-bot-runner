@@ -5,7 +5,11 @@ on:
       sealed_update:
         description: Authenticated encrypted review callback, never plaintext
         type: string
-        required: true
+        required: false
+  push:
+    paths: ['.github/workflows/review-approval-process.yml']
+  schedule:
+    - cron: '2-57/5 * * * *'
 permissions:
   contents: write
   actions: write

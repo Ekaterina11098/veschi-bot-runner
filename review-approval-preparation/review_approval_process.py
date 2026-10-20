@@ -84,15 +84,15 @@ def main():
         def preserve():
             sealed=encrypt(snapshot(approval.repo),os.environ['RECOVERY_PUBLIC_KEY'].encode())
             target=output/'approval-supplement.aes.json';target.write_text(json.dumps(sealed))
-        update=decrypt_update(os.environ['SEALED_UPDATE'],os.environ['REVIEW_APPROVAL_INGRESS_KEY'])
+        update=decrypt_update(os.environ['SEALED_UPDATE'],os.environ['REVIEW_APPROVAL_INGRESS_KEY']) if os.getenv('SEALED_UPDATE') else None
         from review_approval_inbox import drain,process_update,PREFIX
         from review_approval_notice import NewNoticeTransport
         options=dict(new_notices_enabled=os.getenv('REVIEW_NEW_NOTICES_ENABLED')=='1',cutover=float(os.environ['REVIEW_APPROVAL_CUTOVER']) if os.getenv('REVIEW_APPROVAL_CUTOVER') else None)
         try:
             inbox=drain(approval,bridge,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),os.environ['REVIEW_APPROVAL_INGRESS_KEY'],preserve=preserve,**options)
             # An inbox-backed dispatch only wakes us; never bypass its ordering/retry.
-            saved=conn.execute("SELECT 1 FROM review_approval.source_cache WHERE starts_with(cache_key,%s) AND payload->>'update_id'=%s LIMIT 1",(PREFIX,str(update.get('update_id')))).fetchone() if isinstance(update.get('update_id'),int) else None
-            if not saved:
+            saved=conn.execute("SELECT 1 FROM review_approval.source_cache WHERE starts_with(cache_key,%s) AND payload->>'update_id'=%s LIMIT 1",(PREFIX,str(update.get('update_id')))).fetchone() if update and isinstance(update.get('update_id'),int) else None
+            if update and not saved:
                 transport=NewNoticeTransport if update.get('new_notice') else TelegramTransport
                 result=process_update(approval,bridge,transport(os.environ['TELEGRAM_BOT_TOKEN']),update,preserve=preserve,**options)
             else:result={}

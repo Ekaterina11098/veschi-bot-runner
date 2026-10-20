@@ -250,9 +250,28 @@ class Worker:
         self.db.put(key, state)
         return meta(doc)
 
+    def order_annotation(self, supply):
+        rule = self.c.get("order_annotation")
+        if not rule:
+            return None
+        metadata = self.t.request(MS, "entity/customerorder/metadata")
+        states = [s for s in metadata.get("states", []) if s.get("name") == rule["state_name"]]
+        if len(states) != 1:
+            raise Stop("Required customer order completion state missing or ambiguous")
+        label = " ".join(supply.get("name", "").split())
+        if label.endswith(" Китай"):
+            label = label[:-len(" Китай")].strip()
+        elif label.startswith("Китай "):
+            label = label[len("Китай "):].strip()
+        if not label or label == "Китай":
+            raise Stop("Supply category missing for customer order comment")
+        date = stamp(supply["closedAt"]).astimezone(dt.timezone(dt.timedelta(hours=3))).strftime("%d %m %y")
+        return {"description": date + "  Гонконг " + label, "state": meta(states[0])}
+
     def process(self, state):
         supply = state["supply"]
         key = PREFIX + supply["id"]
+        annotation = self.order_annotation(supply)
         if "positions" not in state:
             state["positions"], state["order_ids"] = self.positions(supply)
             state["status"] = "prepared"
@@ -269,11 +288,23 @@ class Worker:
                            moment=stamp(supply["closedAt"]).astimezone(dt.timezone(dt.timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S"))
             if typ == "customerorder":
                 payload["name"] = supply["id"]
+                if annotation:
+                    payload["description"] = annotation["description"]
             elif typ == "demand":
                 payload["customerOrder"] = links["customerorder"]
             else:
                 payload["demand"] = links["demand"]
             links[typ] = self.ensure(typ, payload, state, key)
+        if annotation:
+            order_id = state["documents"]["customerorder"]["id"]
+            path = "entity/customerorder/" + order_id
+            order = self.t.request(MS, path)
+            if href(order.get("state", {})) != href(annotation["state"]) or order.get("description") != annotation["description"]:
+                self.t.request(MS, path, "PUT", annotation)
+                order = self.t.request(MS, path)
+            if href(order.get("state", {})) != href(annotation["state"]) or order.get("description") != annotation["description"]:
+                raise Stop("Customer order status/comment readback mismatch")
+            state["order_annotation"] = {"state_name": self.c["order_annotation"]["state_name"], "description": annotation["description"]}
         state.update(status="complete", completed_at=now())
         state.pop("error", None)
         self.db.put(key, state)

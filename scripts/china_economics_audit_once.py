@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from china_price_apply import IO
 from analytics.mpstats_probe import discover,unpack_tool,sanitize,ProbeError
 io=IO();now=datetime.now(timezone.utc);key='china_agent:economics_audit:2026-10-20:v1'
-cooldown=io.db('telegram_api_cache?cache_key=eq.mpstats:cooldown&expires_at=gt.'+now.isoformat()+'&select=cache_key')
+cooldown=io.db('telegram_api_cache?cache_key=eq.mpstats:cooldown&expires_at=gt.'+now.isoformat().replace('+00:00','Z')+'&select=cache_key')
 if cooldown:raise RuntimeError('Shared MPStats cooldown active')
 def read(call,checks,seen):
     def tool(name,args):return sanitize(unpack_tool(call('tools/call',dict(name=name,arguments=args))))

@@ -6,13 +6,23 @@ def get(base,path,token,params=None):
     url=base+path
     if params:url+='?'+urllib.parse.urlencode(params)
     time.sleep(.25)
-    req=urllib.request.Request(url,headers={'Authorization':('Bearer ' if base==MS else '')+token,'Accept-Encoding':'gzip','Accept':'application/json','User-Agent':'veschi-fbs-readonly/1'})
+    req=urllib.request.Request(url,headers={'Authorization':('Bearer ' if base==MS else '')+token,'Accept-Encoding':'gzip','Accept':'application/json;charset=utf-8','Content-Type':'application/json','User-Agent':'veschi-fbs-readonly/1'})
     try:
         with urllib.request.urlopen(req,timeout=40) as r:
             raw=r.read()
             if r.headers.get('Content-Encoding')=='gzip':raw=gzip.decompress(raw)
             return json.loads(raw)
-    except urllib.error.HTTPError as e:raise RuntimeError('HTTP_'+str(e.code)+' '+path.split('?')[0])
+    except urllib.error.HTTPError as e:
+        raw=e.read()
+        if e.headers.get('Content-Encoding')=='gzip':raw=gzip.decompress(raw)
+        try:
+            detail=json.loads(raw)
+            detail=[{k:x.get(k) for k in ['code','error','parameter']} for x in detail.get('errors',[])]
+            safe=json.dumps(detail,ensure_ascii=False)
+            for v in [os.getenv('MOYSKLAD_API_TOKEN',''),os.getenv('WB_TOKEN_3','')]:
+                if v:safe=safe.replace(v,'[redacted]')
+        except Exception:safe='unstructured response'
+        raise RuntimeError('HTTP_'+str(e.code)+' '+path.split('?')[0]+' '+safe)
 def rows(path,params=None):
     out=[];offset=0
     while True:

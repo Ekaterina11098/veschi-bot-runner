@@ -1,29 +1,44 @@
-# China FBS document chain — prepared 2026-10-20
+# FBS document chains — approved configuration, 2026-10-20
 
-User-approved process: new WB supply delivery transition -> one customer order on Moscow stock -> posted demand -> posted full sales return to Hong Kong WB FBO. All position prices are zero. Only China token_3; WB is read-only. Historical supplies must not be backfilled.
+Organization: ИП Лазарев Виктор Алексеевич.
+Every chain is one posted customer order on МСК -> one posted demand on МСК -> one posted full sales return on the configured marketplace warehouse. All position prices, discounts and document sums are zero. Customer order completion state is Возврат на ФБО, set after the full return is verified.
 
-Implementation: scripts/fbs_document_chain.py; workflow fbs-document-chain.yml.
-Secrets: existing WB_TOKEN_3, MOYSKLAD_API_TOKEN, SUPABASE_URL, SUPABASE_SECRET_KEY. Secret values never leave the runner.
-Private configuration: public.telegram_api_cache key fbs_document_chain:china:config:v1. Per-supply journals use fbs_document_chain:china:supply:v1:<supply ID>.
-Configuration templates were copied from the existing complete China chain WB-GI-295600580. Its organization is IP Lazarev Viktor Alekseevich, while its buyer is OOO Wildberries. This distinction needs acknowledgement during verification. Actual target warehouse name is Гонконг WB FBO.
+| Cabinet | API credential | Buyer | Return warehouse |
+| --- | --- | --- | --- |
+| WB China | WB_TOKEN_3 | ООО "Вайлдберис" | Гонконг WB FBO |
+| WB IP | WB_TOKEN_2 | ООО "Вайлдберис" | Склад WB FBO |
+| WB OOO | WB_TOKEN_1 | ООО "Вайлдберис" | Киргизия WB FBO |
+| Ozon | Existing Supabase OZON_CLIENT_ID / OZON_API_KEY | ООО."Интернет решения" | Склад OZON |
 
-## Current state
-Prepared and paused: writes_enabled=false, status=configured_pending_verification, scope_confirmed=false.
-Scheduled jobs additionally require repository variable FBS_DOC_CHAIN_ENABLED=true. Do not set this until verification is complete.
-The one-time read-only inspection workflow is separate and has no schedule.
-No live document chain test or creation has been executed by this automation.
+## WB
+Trigger: a new supply delivery transition (done=true, closedAt). One supply is one chain. Order name is the exact WB-GI supply ID. Comments are identical on all three documents: shipment date in Moscow, cabinet label and supply category. Example: 20 10 26  Гонконг Сумки.
+Raw supply order IDs are not a picking list quantity: canceled / canceled_by_client orders and supplier-canceled orders are excluded before document creation. Exact included and excluded IDs, articles and statuses are retained privately. Product matching uses a complete active product catalogue, case-insensitive exact articles and uniqueness checks. Unknown or duplicate articles, variants and marking/serial requirements block the chain for reconciliation.
+User reported 221 in the WB cabinet but 220 in the picking list for WB-GI-296250890. API identified canceled order 6071589005, article 534-NoelBag-emerald, one unit. The original order, demand 02740 and return 02440 were corrected and independently read back as 220 posted units each. Original source and repair proof remain in the private journal.
 
-## Verification and activation, deferred at user's request
-1. Confirm organization versus buyer from the existing chain; set scope_confirmed=true only after resolving the user's intent.
-2. Run status, then preview through workflow_dispatch. Preview reads one recent supply, validates complete order matching and exact articles, retains the report privately, and creates no MoySklad documents.
-3. Run bootstrap once at the agreed activation moment. It saves the timestamp and all currently closed supplies as the baseline. It creates no operational documents and cannot overwrite an existing baseline.
-4. Enable writes_enabled=true and status=active in private configuration and enable FBS_DOC_CHAIN_ENABLED. Run one new real supply under supervision, then verify all three posted documents and actual stock movement. Work is not proven until this live verification.
-5. Schedule polls every five minutes; GitHub queue delays can increase latency.
+## Ozon
+Trigger: the non-canceled postings of one act move to delivering (delivered is accepted for catch-up after an observed new transition). Act formation / awaiting_deliver never triggers stock movement.
+One act/list is one chain; acts are never merged by date.
+Order name is the act shipment date DDMMYY, for example 201026.
+The identical comment on all three documents contains every included posting number, comma-separated.
+Canceled-before-shipping postings are excluded. Cancellations explicitly marked as after shipping retain physically shipped goods.
+Act/posting products and quantities must agree; partial/split acts and ambiguous data stop for reconciliation.
 
-## Recovery
-Before each document creation, persist an inflight marker. Each document has deterministic externalCode fbs-china:<supply ID>:<document type>. Each next stage requires successful readback of organization, buyer, warehouse, zero sum, posted state, links and all quantities.
-If the response to a write is uncertain and no matching document is found, do not blindly retry: the marker blocks another create until manual reconciliation. Earlier stages must never clear a later stage's uncertain marker.
-Existing manual customer order with the same supply number stops creation for reconciliation.
-Unknown or duplicate articles, products with variants or marking/serial requirements stop that supply for configuration; do not substitute a similar product.
-Supply composition changes stop processing. No deletion, price changes, WB status changes or stock publishing are performed.
-Pause by clearing writes_enabled first and disabling FBS_DOC_CHAIN_ENABLED. Retain baseline and journals; do not erase them to retry.
+## Runtime and state
+Workflow .github/workflows/fbs-document-chain.yml polls every five minutes, subject to GitHub scheduling/queue delays. It processes the three WB cabinets with isolated state and attempts Ozon independently even if a WB worker fails.
+Shared stock concurrency prevents conflicting runs.
+Private state is in existing RLS-protected public.telegram_api_cache, under fbs_document_chain:<china|ip|ooo|ozon>: keys. Configuration and baseline are separate. No historical backfill is authorized, except the three exact WB pilots requested by the user.
+China retains its original operational activation boundary, including work arriving during the temporary reconciliation pause. IP, OOO and Ozon have individual verified baselines. Already delivered old supplies/acts are excluded. Ozon acts still awaiting shipment at setup are watched for a later delivery transition.
+writes_enabled and status=active are required for a cabinet to create documents. Pause a cabinet by setting writes_enabled=false; never erase its baseline or journal to retry.
+
+## Recovery and verification
+Deterministic externalCode plus per-source journals prevent repeat creation. An inflight marker is saved before every create; an uncertain write with no matching document blocks blind retry.
+Each stage is read back for posted state, zero prices/sum, quantities, organization, buyer, warehouse, comment and parent links.
+An order already entered manually for the same source stops creation for reconciliation.
+Existing verified documents are reused, not recreated. Source composition drift after a partial chain stops further execution.
+The three China pilots passed live API verification and idempotent reruns; the last was subsequently reconciled to the user's 220-unit picking list.
+Twenty-four offline checks cover shared chain behavior, comments, status timing, article case/ambiguity, 221 raw minus one cancellation equals 220 picked, Ozon shipment-date naming, delivery readiness and cancellation timing.
+Ozon live preview verified act 124091131: order name 201026, three postings, three units, all exact articles matched. It was awaiting shipment, so no Ozon documents were created during setup.
+
+## Credentials
+WB and MoySklad credentials remain in existing GitHub secrets.
+Ozon credentials remain in Supabase. fbs-ozon-read authenticates an existing backend Supabase key and allows only act list, act postings and posting detail reads. It cannot mutate Ozon. No provider credential values are returned or logged.

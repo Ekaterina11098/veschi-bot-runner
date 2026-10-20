@@ -3,7 +3,7 @@ from datetime import datetime,timedelta,timezone
 from zoneinfo import ZoneInfo
 from china_price_apply import IO
 from analytics.mpstats_probe import discover,unpack_tool,sanitize,ProbeError
-io=IO();now=datetime.now(timezone.utc);key='china_agent:economics_audit:2026-10-20:v1'
+io=IO();now=datetime.now(timezone.utc);key='china_agent:economics_audit:2026-10-20:cohort:v1'
 cooldown=io.db('telegram_api_cache?cache_key=eq.mpstats:cooldown&expires_at=gt.'+now.isoformat().replace('+00:00','Z')+'&select=cache_key')
 if cooldown:raise RuntimeError('Shared MPStats cooldown active')
 def read(call,checks,seen):
@@ -18,10 +18,8 @@ def read(call,checks,seen):
         tool('lk_wb_cabinets',dict(action='select',id=10026946))
         if [x['id'] for x in tool('lk_wb_cabinets',dict(action='list')) if x.get('selected')]!=[10026946]:raise ProbeError('Scope unverified')
         for name,args in [
-            ('lk_wb_dashboard_business_economics',dict(period_type='30days',date_from=str(today-timedelta(days=29)),date_to=str(today))),
-            ('lk_wb_dashboard_expenses',dict(period_type='30days',date_from=str(today-timedelta(days=29)),date_to=str(today))),
-            ('lk_wb_taxes',{}),
-            ('lk_wb_dashboard_table',dict(period_type='30days',date_from=str(today-timedelta(days=29)),date_to=str(today)))
+            ('lk_wb_dashboard_sales_funnel',dict(period_type='30days',date_from='2026-09-20',date_to='2026-10-19'))
+
         ]:
             if name not in seen:result['reports'][name]=dict(status='unavailable');continue
             try:result['reports'][name]=dict(status='received',arguments=args,data=tool(name,args),period_status='requested_only')

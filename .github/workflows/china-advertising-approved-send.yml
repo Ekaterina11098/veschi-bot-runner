@@ -1,0 +1,29 @@
+name: Send approved China advertising PNGs 20261020
+on:
+  push:
+    branches: [china-advertising-daily-20261020]
+    paths: [scripts/china_advertising_approved_send.py, .github/workflows/china-advertising-approved-send.yml]
+permissions:
+  contents: read
+concurrency:
+  group: china-advertising-daily-delivery
+  cancel-in-progress: false
+jobs:
+  approved:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Verify duplicate and uncertain safeguards
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_advertising_delivery.py
+      - name: Send the exact two owner-approved PNGs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: disabled
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: python scripts/china_advertising_approved_send.py

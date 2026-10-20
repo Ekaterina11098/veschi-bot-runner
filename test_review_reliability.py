@@ -123,5 +123,13 @@ class ReliabilityTests(unittest.TestCase):
         self.now+=31;self.tg.call.side_effect=None;self.tg.call.return_value=True
         result=process_update(self.a,self.bridge,self.tg,update)
         self.assertEqual(result['result']['decision'],'approved');self.assertEqual(self.repo.count('intents'),1)
+    def test_one_bad_draft_does_not_block_next_morning_card(self):
+        from review_morning import prepare_candidate
+        first={'status':'generate'};second={'status':'generate'};save=Mock();called=[]
+        fail=Mock(side_effect=RuntimeError('Two variants too similar'))
+        self.assertEqual(prepare_candidate(first,fail,save,lambda exc:type(exc).__name__,clock=lambda:self.now),'retry')
+        self.assertEqual(prepare_candidate(second,lambda:called.append('next'),save,lambda exc:type(exc).__name__,clock=lambda:self.now),'processed')
+        self.assertEqual(called,['next']);self.assertEqual(first['status'],'generate')
+        self.assertEqual(prepare_candidate(first,fail,save,str,clock=lambda:self.now),'waiting');self.assertEqual(fail.call_count,1)
 
 if __name__=='__main__':unittest.main()

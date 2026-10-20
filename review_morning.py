@@ -6,6 +6,19 @@ from pathlib import Path
 
 CABINETS=('token_1','token_2','token_3')
 
+def prepare_candidate(candidate,operation,save,redact,clock=time.time):
+    """One failed draft must not hide all later reviews in the same cabinet."""
+    if candidate.get('retry_at',0)>clock():return 'waiting'
+    had_retry='last_error' in candidate or 'retry_at' in candidate
+    try:operation()
+    except Exception as exc:
+        attempts=candidate.get('generation_attempts',0)+1
+        candidate.update(generation_attempts=attempts,retry_at=clock()+min(900,30*2**min(attempts,5)),last_error=redact(exc))
+        save();return 'retry'
+    candidate.pop('last_error',None);candidate.pop('retry_at',None)
+    if had_retry:save()
+    return 'processed'
+
 def target_day(now=None,manual=False):
     local=(now or datetime.now(timezone.utc)).astimezone(ZoneInfo('Europe/Moscow'))
     if not manual and not (450 <= local.hour*60+local.minute < 660):return None
@@ -24,7 +37,7 @@ def eligible(item,cabinet,source,repo,read_hold,kind='feedbacks'):
 def main(kind='feedbacks'):
     if kind not in ('feedbacks','questions'):raise ValueError('Unsupported morning scope')
     import psycopg,requests
-    from stock_deploy_support import seal,OWNER_PUBLIC
+    from stock_deploy_support import seal,OWNER_PUBLIC,error
     sys.path.insert(0,str(Path(__file__).parent/'review-approval-preparation'))
     from review_telegram_approval import Approval,Repository,sha
     from review_approval_bridge import SQLSource,DurableBridge
@@ -76,7 +89,7 @@ def main(kind='feedbacks'):
                 for cabinet in CABINETS:
                     scope=state['scopes'].setdefault(cabinet,{'status':'collecting','items':[],'skip':0})
                     if scope.get('status')=='complete':continue
-                    if scope.get('retry_at',0)>time.time() and (scope['status']=='collecting' or scope.get('last_error')!='WB 429'):continue
+                    if scope.get('retry_at',0)>time.time() and scope['status']=='collecting':continue
                     try:
                         if scope['status']=='collecting':
                             loader=wb.get_unanswered_questions if kind=='questions' else wb.get_unanswered_feedbacks
@@ -99,23 +112,25 @@ def main(kind='feedbacks'):
                             remaining=True
                             candidate=prior or {'version':'morning-'+day+'-'+sha([cabinet,item_id])[:12],'status':'preflight'}
                             state['items'][key]=candidate
-                            if not eligible(item,cabinet,source,repo,store.read,kind):
-                                candidate['status']='skipped';save();continue
-                            if candidate['status']=='preflight':
-                                # This is a notification, not a publication. The complete
-                                # current unanswered list is the WB observation. The approval
-                                # executor still performs its own exact pre-publication GET.
-                                candidate.update(status='generate',preflight_at=scope['observed_at']);save()
-                            if candidate['status']=='generate':
-                                # Canonical source and variants are durable before Telegram.
-                                version=candidate['version']
-                                store.insert('reviews:source:'+sha([cabinet,kind,item_id,version]),dict(cabinet=cabinet,kind=kind,item_id=item_id,version=version,item=item,source_sha256=sha(item),observed_at=scope['observed_at']))
-                                if not store.read(bridge.draft_key(cabinet,kind,item_id,version)):
-                                    generate_and_persist(store,item,cabinet,kind,version,generation.generate_question_drafts if kind=='questions' else generation.generate_draft)
-                                candidate['status']='notify';save()
-                            result=notice.deliver(item,cabinet,kind,candidate['version'],scope['observed_at'],cfg['cutover'])
-                            candidate.update(status='confirmed' if result.get('status')=='confirmed' else 'uncertain',delivery=result)
-                            state['telegram_confirmed']+=int(candidate['status']=='confirmed');save()
+                            def prepare_one():
+                                if not eligible(item,cabinet,source,repo,store.read,kind):
+                                    candidate['status']='skipped';save();return
+                                if candidate['status']=='preflight':
+                                    # This is a notification, not a publication. The complete
+                                    # current unanswered list is the WB observation. The approval
+                                    # executor still performs its own exact pre-publication GET.
+                                    candidate.update(status='generate',preflight_at=scope['observed_at']);save()
+                                if candidate['status']=='generate':
+                                    # Canonical source and variants are durable before Telegram.
+                                    version=candidate['version']
+                                    store.insert('reviews:source:'+sha([cabinet,kind,item_id,version]),dict(cabinet=cabinet,kind=kind,item_id=item_id,version=version,item=item,source_sha256=sha(item),observed_at=scope['observed_at']))
+                                    if not store.read(bridge.draft_key(cabinet,kind,item_id,version)):
+                                        generate_and_persist(store,item,cabinet,kind,version,generation.generate_question_drafts if kind=='questions' else generation.generate_draft)
+                                    candidate['status']='notify';save()
+                                result=notice.deliver(item,cabinet,kind,candidate['version'],scope['observed_at'],cfg['cutover'])
+                                candidate.update(status='confirmed' if result.get('status')=='confirmed' else 'uncertain',delivery=result)
+                                state['telegram_confirmed']+=int(candidate['status']=='confirmed');save()
+                            prepare_candidate(candidate,prepare_one,save,error)
                             if time.monotonic()>=deadline:break
                         if not remaining or all(state['items'].get(cabinet+':'+str(i['id']),{}).get('status') in ('confirmed','skipped','manual_present','uncertain','error') for i in scope['items']):
                             scope['status']='complete';save()
@@ -159,4 +174,5 @@ if __name__=='__main__':
         from stock_deploy_support import seal,error
         seal('reviews-morning-error',{'error':error(exc),'private_log':private_log.getvalue()})
         print('Morning reviews failed; protected diagnostic saved.');raise SystemExit(1)
+
 

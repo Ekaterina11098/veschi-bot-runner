@@ -14,12 +14,12 @@ def price(value):
 def raising(answer, mode):
     number=r'([0-9]+(?:[.,][0-9]+)?)'
     if mode=='morning':
-        heading=re.search(r'ПЕРВОЕ ПОВЫШЕНИЕ \+10%: (\d+)', answer)
+        heading=re.search(r'ПЕРВОЕ ПОВЫШЕНИЕ \+(?:5|10)%: (\d+)', answer)
         if not heading: raise RuntimeError('Missing morning proposal count')
         section=answer.split('Повторное повышение',1)[0]
         pattern=r'(?m)^([^\n]+)\nЗаказы по дням:[^\n]*\nЦена продавца после скидки: '+number+r' → '+number+r' ¥\.'
     else:
-        heading=re.search(r'Первое повышение \+10%: (\d+) кандидатов',answer)
+        heading=re.search(r'Первое повышение \+(?:5|10)%: (\d+) кандидатов',answer)
         if not heading: raise RuntimeError('Missing intraday proposal count')
         section=answer.split('Ближайшие кандидаты',1)[0]
         pattern=r'(?m)^• ([^:\n]+): заказы [^\n]+\n  Предложение: '+number+r' → '+number+r' ¥ после скидки'
@@ -28,7 +28,7 @@ def raising(answer, mode):
         raise RuntimeError('Proposal count mismatch')
     return [(a,price(old),price(new)) for a,old,new in rows]
 
-def lowering(review, day):
+def lowering(review, day, catalogue=None):
     if (not isinstance(review,dict) or review.get('report_date')!=str(day)
         or review.get('status')!='complete_disclosed_forecast_model'
         or review.get('model_version')!='wb_four_day_baseline_daily_means_v3'):
@@ -37,7 +37,20 @@ def lowering(review, day):
     for item in review['products']:
         if item.get('result',{}).get('status')!='rollback_review':continue
         if item.get('full_days',0)<4:raise RuntimeError('Premature rollback')
-        old=price(item['after_price']);new=price(item['before_price'])
+        matches=[r for r in (catalogue or {}).get('rows',[]) if r.get('vendorCode','').casefold()==item['article'].casefold()]
+        if len(matches)!=1:raise RuntimeError('Current China price missing for five percent decrease')
+        row=matches[0]
+        sizes=row.get('sizes') or []
+        bases={Decimal(str(s.get('price'))) for s in sizes}
+        currents={Decimal(str(s.get('discountedPrice'))) for s in sizes}
+        discount=Decimal(str(row.get('discount')))
+        if row.get('currencyIsoCode4217')!='CNY' or len(bases)!=1 or len(currents)!=1 or not 0<=discount<100:
+            raise RuntimeError('Ambiguous current China price')
+        base=bases.pop();current=currents.pop()
+        if not base.is_finite() or not current.is_finite() or base<=0 or current<=0 or current!=Decimal(str(item['after_price'])):
+            raise RuntimeError('Review no longer matches current seller price')
+        target_base=(base*Decimal('0.95')).to_integral_value(rounding='ROUND_CEILING')
+        old=price(current);new=price(target_base*(1-discount/100))
         if Decimal(old.replace(',','.'))<=Decimal(new.replace(',','.')):
             raise RuntimeError('Rollback is not a decrease')
         rows.append((item['article'],old,new))
@@ -68,7 +81,7 @@ def article_entities(text):
     return entities
 
 def render(answer, mode, review, day, catalogue, buyer=None):
-    up=raising(answer,mode);down=lowering(review,day)
+    up=raising(answer,mode);down=lowering(review,day,catalogue)
     ids=catalogue_ids(catalogue)
     def row(article,old,new):
         nm=ids.get(article.casefold())
@@ -86,7 +99,7 @@ def render(answer, mode, review, day, catalogue, buyer=None):
 
 def render_table(answer,mode,review,day,catalogue,buyer=None):
     from china_agent.buyer_price_forecast import forecast
-    up=raising(answer,mode);down=lowering(review,day)
+    up=raising(answer,mode);down=lowering(review,day,catalogue)
     ids=catalogue_ids(catalogue)
     headers=['Действие','Арт','Цена продавца','Цена покупателя (новая — прогноз)']
     rows=[]
@@ -132,7 +145,7 @@ def table_payload(text,catalogue):
 def render_plain(answer,mode,review,day,catalogue,buyer=None):
     """Owner-approved two-line proposals, no table separators or extra headings."""
     from china_agent.buyer_price_forecast import forecast
-    up=raising(answer,mode);down=lowering(review,day)
+    up=raising(answer,mode);down=lowering(review,day,catalogue)
     ids=catalogue_ids(catalogue)
     blocks=[]
     for action,offers in (('Повышение',up),('Снижение',down or [])):

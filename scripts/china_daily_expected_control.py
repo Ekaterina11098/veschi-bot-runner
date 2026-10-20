@@ -303,10 +303,10 @@ def render_candidates(worker):
    proposal=demand.offer(price)
    if proposal:initial.append((targets[nm],nm,values,proposal))
  review=build(worker,candidate_review=True)
- lines=['Китай • кандидаты на повышение и проверку снижения • '+str(worker.day),'Период: '+str(wanted[0])+'–'+str(wanted[-1])+'. Проверен каталог: '+str(len(targets))+' товаров.','ПЕРВОЕ ПОВЫШЕНИЕ +10%: '+str(len(initial))]
+ lines=['Китай • кандидаты на повышение и проверку снижения • '+str(worker.day),'Период: '+str(wanted[0])+'–'+str(wanted[-1])+'. Проверен каталог: '+str(len(targets))+' товаров.','ПЕРВОЕ ПОВЫШЕНИЕ +5%: '+str(len(initial))]
  for article,nm,values,p in sorted(initial):
   cancels=sum(daily[str(d)][nm]['cancelled'] for d in wanted)
-  lines+=['',article+'\nЗаказы по дням: '+('/'.join(map(str,values)))+'; отмены: '+str(cancels)+'.\nЦена продавца после скидки: '+_num(p['current_cny'])+' → '+_num(p['target_cny'])+' ¥.\nСкидка продавца сохраняется — '+_num(p['discount'])+'%.\nРезультат и действие: предлагается первый эксперимент с повышением на 10%, затем контроль прогнозной прибыли, конверсии и выкупа. Все изменения согласовываем.']
+  lines+=['',article+'\nЗаказы по дням: '+('/'.join(map(str,values)))+'; отмены: '+str(cancels)+'.\nЦена продавца после скидки: '+_num(p['current_cny'])+' → '+_num(p['target_cny'])+' ¥.\nСкидка продавца сохраняется — '+_num(p['discount'])+'%.\nРезультат и действие: предлагается первый эксперимент с повышением на 5%, затем контроль прогнозной прибыли, конверсии и выкупа. Все изменения согласовываем.']
  lines+=['','Повторное повышение — только по отдельному контролю ожидаемой прибыли и конверсии.','ПРОВЕРКА ВОЗМОЖНОГО СНИЖЕНИЯ: '+str(len(review['products']))]
  lines.extend(render_item(p) for p in review['products'])
  lines.append(model_notes())

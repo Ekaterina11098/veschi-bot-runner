@@ -186,9 +186,13 @@ class Worker:
                 raise Stop("WB article missing")
             counts[article.strip()] += 1
         positions = []
+        if not hasattr(self, "_product_index"):
+            self._product_index = {}
+            for product in self.ms_rows("entity/product", {"filter": "archived=false"}):
+                if not product.get("archived") and isinstance(product.get("article"), str):
+                    self._product_index.setdefault(product["article"].strip().casefold(), []).append(product)
         for article, quantity in sorted(counts.items()):
-            products = self.ms_rows("entity/product", {"filter": "article=" + article})
-            products = [p for p in products if p.get("article", "").strip().casefold() == article.casefold() and not p.get("archived")]
+            products = self._product_index.get(article.casefold(), [])
             if len(products) != 1 or products[0].get("variantsCount", 0):
                 raise Stop("Product article missing, duplicated or has variants: " + article)
             product = products[0]

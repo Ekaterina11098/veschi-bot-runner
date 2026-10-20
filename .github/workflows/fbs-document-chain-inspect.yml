@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Verify configuration and articles, then establish new-transition boundary
+# Verify complete supported order window before establishing activation boundary
 on:
   push:
     branches: [main]

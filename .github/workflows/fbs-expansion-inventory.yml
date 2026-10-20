@@ -30,7 +30,4 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           OZON_CLIENT_ID: ${{ secrets.OZON_CLIENT_ID }}
           OZON_API_KEY: ${{ secrets.OZON_API_KEY }}
-        run: |
-          python scripts/fbs_document_chain.py --mode preview
-          python scripts/fbs_wb_cabinets.py setup
-          python scripts/fbs_ozon_inventory.py
+        run: python scripts/fbs_ozon_inventory.py

@@ -35,3 +35,4 @@ jobs:
           git add recovery-output/advertising/saved-png-readback-*.aes.json
           git diff --cached --quiet || git commit -m "Preserve owner encrypted saved report inputs"
           git push origin HEAD:ip-saved-png-readback-20261020
+# Fixed local module path; previous attempt stopped before saved reads.

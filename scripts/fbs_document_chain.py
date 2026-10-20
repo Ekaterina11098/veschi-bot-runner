@@ -223,7 +223,7 @@ class Worker:
             raise Stop("Document positions mismatch")
 
     def ensure(self, typ, payload, state, key):
-        ext = "fbs-china:" + state["supply"]["id"] + ":" + typ
+        ext = self.c.get("document_prefix", "fbs-china") + ":" + state["supply"]["id"] + ":" + typ
         payload = {**payload, "externalCode": ext}
         docs = self.ms_rows("entity/" + typ, {"filter": "externalCode=" + ext})
         if len(docs) > 1:
@@ -261,6 +261,9 @@ class Worker:
         if len(states) != 1:
             raise Stop("Required customer order completion state missing or ambiguous")
         label = " ".join(supply.get("name", "").split())
+        cabinet_word = rule.get("cabinet_word", "Китай")
+        if cabinet_word != "Китай":
+            label = " ".join(word for word in label.split() if word != cabinet_word)
         if label.endswith(" Китай"):
             label = label[:-len(" Китай")].strip()
         elif label.startswith("Китай "):
@@ -268,7 +271,7 @@ class Worker:
         if not label or label == "Китай":
             raise Stop("Supply category missing for customer order comment")
         date = stamp(supply["closedAt"]).astimezone(dt.timezone(dt.timedelta(hours=3))).strftime("%d %m %y")
-        return {"description": date + "  Гонконг " + label, "state": meta(states[0])}
+        return {"description": date + "  " + rule.get("comment_prefix", "Гонконг") + " " + label, "state": meta(states[0])}
 
     def process(self, state):
         supply = state["supply"]

@@ -18,7 +18,7 @@ User reported 221 in the WB cabinet but 220 in the picking list for WB-GI-296250
 ## Ozon
 Trigger: the non-canceled postings of one act move to delivering (delivered is accepted for catch-up after an observed new transition). Act formation / awaiting_deliver never triggers stock movement.
 One act/list is one chain; acts are never merged by date.
-Order name is the act shipment date DDMMYY, for example 201026.
+Order name is the act shipment date DDMMYY followed by Озон, for example 201026 Озон.
 The identical comment on all three documents contains every included posting number, comma-separated.
 Canceled-before-shipping postings are excluded. Cancellations explicitly marked as after shipping retain physically shipped goods.
 Act/posting products and quantities must agree; partial/split acts and ambiguous data stop for reconciliation.

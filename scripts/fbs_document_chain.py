@@ -201,6 +201,8 @@ class Worker:
         return positions, sorted(ids)
 
     def verify(self, typ, doc, payload):
+        if self.c.get("order_annotation") and doc.get("description") != payload.get("description"):
+            raise Stop("Document comment mismatch")
         for key in ("organization", "agent", "store"):
             if href(doc.get(key, {})) != href(payload[key]):
                 raise Stop("Document " + key + " mismatch")
@@ -286,10 +288,10 @@ class Worker:
             payload.update(positions=state["positions"], applicable=True,
                            description="WB FBS China " + supply["id"] + " / " + supply.get("name", ""),
                            moment=stamp(supply["closedAt"]).astimezone(dt.timezone(dt.timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S"))
+            if annotation:
+                payload["description"] = annotation["description"]
             if typ == "customerorder":
                 payload["name"] = supply["id"]
-                if annotation:
-                    payload["description"] = annotation["description"]
             elif typ == "demand":
                 payload["customerOrder"] = links["customerorder"]
             else:

@@ -1,4 +1,5 @@
 name: FBS document chain API inspection
+# JSON and gzip transport verified
 on:
   push:
     branches: [main]

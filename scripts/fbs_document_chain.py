@@ -152,8 +152,8 @@ class Worker:
         ids = answer.get("orderIds")
         if not isinstance(ids, list) or not ids or len(set(ids)) != len(ids):
             raise Stop("Supply order identities missing or duplicated")
-        begin = stamp(supply["createdAt"]) - dt.timedelta(days=1)
-        end = min(begin + dt.timedelta(days=30), dt.datetime.now(dt.timezone.utc))
+        end = dt.datetime.now(dt.timezone.utc)
+        begin = end - dt.timedelta(days=30) + dt.timedelta(seconds=1)
         if stamp(supply["closedAt"]) > end:
             raise Stop("Supply requires wider historical order retrieval")
         found, cursor, visited = {}, 0, set()
@@ -176,6 +176,7 @@ class Worker:
             if set(found) == wanted:
                 break
             if not batch or not page["next"]:
+                self.db.put("fbs_document_chain:china:order_lookup_diagnostic:v1", {"at": now(), "supply": supply, "expected": len(ids), "found": len(found), "missing": sorted(wanted-set(found)), "dateFrom": begin.isoformat(), "dateTo": end.isoformat()})
                 raise Stop("Not all supply orders found")
             cursor = page["next"]
         counts = collections.Counter()

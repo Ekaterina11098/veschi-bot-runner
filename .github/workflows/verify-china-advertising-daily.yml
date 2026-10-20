@@ -1,0 +1,20 @@
+name: Verify China daily advertising PNG delivery
+on:
+  push:
+    branches: [china-advertising-daily-20261020]
+    paths: ['scripts/china_advertising_*.py', 'scripts/test_china_advertising_*.py', '.github/workflows/china-advertising-daily.yml', '.github/workflows/verify-china-advertising-daily.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Arithmetic, unknown data, postclick, rendering and duplicate safeguards
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
+      - name: Compile collection and production workflow worker
+        run: python -m py_compile scripts/china_advertising_collect.py scripts/china_advertising_daily.py scripts/china_advertising_png.py

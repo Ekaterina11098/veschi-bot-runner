@@ -113,7 +113,10 @@ class PairWorker(CoverageWorker):
             from china_agent.buyer_price_forecast import load
             buyer=load(self)
             trace.append(dict(name='china_buyer_price_forecast',**buyer))
-            return brief(full,'morning',review,self.day,self.get('china_agent:prices:v1'),buyer),trace
+            omitted=[]
+            answer=brief(full,'morning',review,self.day,self.get('china_agent:prices:v1'),buyer,omitted=omitted)
+            if omitted:trace.append(dict(name='china_price_proposal_exclusions',products=omitted))
+            return answer,trace
         from china_agent.daily_expected_control import build,render
         self.control_preview=preview
         value=build(self)

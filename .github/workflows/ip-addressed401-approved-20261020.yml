@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   addressed:
+    if: false # Owner request completed and readback verified; no repeats.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

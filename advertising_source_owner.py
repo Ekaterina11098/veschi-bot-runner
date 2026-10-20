@@ -376,6 +376,8 @@ try:
      configuration=read('analytics_snapshots',dict(source='eq.advertising_active_configuration',cabinet='eq.token_2',select='payload,collected_at',order='id.desc',limit=1)) or []
      cp=configuration[0]['payload'] if configuration else {}
      wbactive=set(cp.get('campaign_ids',[])) if isinstance(cp,dict) else set()
+     overview=get('advertising:ip:daily-overview-scope:v1') or {}
+     if overview.get('cabinet')=='token_2':wbactive.update(overview.get('campaign_ids') or [])
      active=[r['id'] for r in rows if (r.get('wb_id') in wbactive if wbactive else r.get('status_id')==9)]
      report['full_catalog_count']=len(rows)
      more=[]
@@ -385,6 +387,12 @@ try:
       for cid in active:
        req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,report='products',d1=str(end),d2=str(end)))
        if req:more.append(req)
+     if os.environ.get('IP_DAILY_TABLE_REPORTS')=='true':
+      empty_saved=database('GET','analytics_snapshots',params={'source':'eq.mpstats_wbbidder_campaign_stats','cabinet':'eq.token_2','period_from':'eq.'+str(end),'period_to':'eq.'+str(end),'payload->0->arguments->>report':'eq.products','payload->0->data->>returned':'eq.0','select':'id,cid:payload->0->arguments->>campaign_id,totals:payload->0->data->totals','order':'id.desc','limit':100}) or []
+      fallback_ids={int(x['cid']) for x in empty_saved if x.get('cid') and x.get('totals') is None}
+      for cid in sorted(fallback_ids.intersection(active)):
+       req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,report='days',d1=str(end),d2=str(end)))
+       if req:more.insert(0,req)
      retained_days=read('analytics_snapshots',{'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','payload->0->>report':'eq.days','period_from':'lte.'+str(end),'period_to':'gte.'+str(start),'select':'id,payload,collected_at','order':'id.desc','limit':1000})
      report['campaign_daily_gaps']={}
      for cid in active:

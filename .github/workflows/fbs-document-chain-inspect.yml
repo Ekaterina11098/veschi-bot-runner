@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Owner-authorized WB-GI-296253035 pilot with uniform comments and FBO return state
+# Owner-authorized WB-GI-296250890 pilot before scheduled activation
 on:
   push:
     branches: [main]

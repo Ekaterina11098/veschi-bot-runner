@@ -1,0 +1,29 @@
+name: Owner authorized four China prices 20261020
+on:
+  push:
+    branches: [china-owner-four-prices-20261020]
+    paths: [scripts/china_owner_four_prices_20261020.py, .github/workflows/china-owner-four-prices-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: china-confirmed-wb-price-writes
+  cancel-in-progress: false
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Existing exact-price regression checks
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_price_apply.py
+      - name: Apply only four explicitly authorized prices and verify
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+        run: python scripts/china_owner_four_prices_20261020.py

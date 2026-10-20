@@ -1,4 +1,7 @@
 name: FBS expansion read-only inventory
+concurrency:
+  group: bot-stock-and-commands
+  cancel-in-progress: false
 on:
   push:
     branches: [main]
@@ -27,4 +30,4 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           OZON_CLIENT_ID: ${{ secrets.OZON_CLIENT_ID }}
           OZON_API_KEY: ${{ secrets.OZON_API_KEY }}
-        run: python scripts/fbs_expansion_inventory.py
+        run: python scripts/fbs_wb_cabinets.py setup

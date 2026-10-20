@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime,timezone
 from urllib.parse import urlparse
 import requests
+sys.path.insert(0,str(Path.cwd()))
 sys.path.insert(0,'private-source')
 from stock_deploy_support import seal,error
 native=requests.sessions.Session.request;host=urlparse(os.environ['SUPABASE_URL']).hostname

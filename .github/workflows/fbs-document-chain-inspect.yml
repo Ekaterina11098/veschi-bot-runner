@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Inspect existing chain, buyer and delivery trigger
+# Verify configuration and articles, then establish new-transition boundary
 on:
   push:
     branches: [main]
@@ -8,13 +8,13 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: fbs-document-chain
+  group: bot-stock-and-commands
   cancel-in-progress: false
 jobs:
   inspect:
     if: github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,4 +28,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-        run: python scripts/fbs_document_chain_inspect.py
+        run: |
+          python -m py_compile scripts/fbs_document_chain.py
+          python scripts/fbs_document_chain.py --mode preview
+          python scripts/fbs_document_chain.py --mode bootstrap

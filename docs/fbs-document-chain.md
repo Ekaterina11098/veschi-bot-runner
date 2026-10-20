@@ -42,3 +42,6 @@ Ozon live preview verified act 124091131: order name 201026, three postings, thr
 ## Credentials
 WB and MoySklad credentials remain in existing GitHub secrets.
 Ozon credentials remain in Supabase. fbs-ozon-read authenticates an existing backend Supabase key and allows only act list, act postings and posting detail reads. It cannot mutate Ozon. No provider credential values are returned or logged.
+
+## Continuous comment reconciliation
+Every regular run independently audits up to ten completed, ledger-owned chains across all four cabinets, with a persistent round-robin cursor. New chains already require matching comments on all three documents before completion. The audit also restores comments removed or changed later from the recorded approved comment. It verifies scope, parent links, zero prices, posting and original quantities before writing only description, then reads back and verifies each document. Manual/untracked documents are outside this scope. Full on-demand inspection uses scripts/fbs_comment_audit.py --all. Private audit results are in fbs_document_chain:comment_audit:last_run:v1. First pilot demand 02738 and return 02438 were repaired to 20 10 26  Гонконг Зонты with 17 units unchanged.

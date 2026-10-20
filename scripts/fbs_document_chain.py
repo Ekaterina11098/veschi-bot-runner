@@ -296,7 +296,7 @@ class Worker:
         supplies = self.supplies()
         if mode == "bootstrap":
             self.db.put(STATE, {"activated_at": start, "baseline_done_ids":
-                sorted(s["id"] for s in supplies if s.get("done") is True), "created_at": now()})
+                sorted(s["id"] for s in supplies if s.get("done") is True and s.get("closedAt") and stamp(s["closedAt"]) <= stamp(start)), "created_at": now()})
             return {"status": "baseline_created", "writes": 0}
         if mode == "preview":
             # Does not change the activation boundary or create operational documents.

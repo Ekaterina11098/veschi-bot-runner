@@ -65,6 +65,7 @@ jobs:
           python ../scripts/test_china_period_buyout.py
           python ../scripts/china_chat_migration.py --root .
           python ../scripts/install_china_order_coverage.py
+          python ../scripts/check_china_installed_price_step.py china_agent/demand.py
           cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
           cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
           cp ../scripts/china_price_brief.py china_agent/price_brief.py

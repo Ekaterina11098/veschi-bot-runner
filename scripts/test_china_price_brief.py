@@ -3,6 +3,8 @@ from datetime import date
 from china_price_brief import render,article_entities,catalogue_ids
 DAY=date(2026,10,19)
 CAT=dict(cabinet='token_3',rows=[dict(vendorCode=a,nmID=n) for a,n in [('590-PamelaBag-brown',1473245510),('123-Zont-pink',1556488210),('15-FurPanama-cream',1535337778)]])
+for r in CAT['rows']:
+ if r['vendorCode']=='123-Zont-pink':r.update(currencyIsoCode4217='CNY',discount=35,sizes=[dict(price=164,discountedPrice=106.6)])
 def review(status='rollback_review',days=4):
  return dict(report_date=str(DAY),status='complete_disclosed_forecast_model',
  model_version='wb_four_day_baseline_daily_means_v3',products=[
@@ -10,7 +12,7 @@ def review(status='rollback_review',days=4):
 class BriefTests(unittest.TestCase):
  def test_morning(self):
   source='ПЕРВОЕ ПОВЫШЕНИЕ +10%: 1\n\n590-PamelaBag-brown\nЗаказы по дням: 1/3/1/1; отмены: 0.\nЦена продавца после скидки: 341,1 → 375,3 ¥.\nОбъяснение\nПовторное повышение\nПРОВЕРКА ВОЗМОЖНОГО СНИЖЕНИЯ'
-  self.assertEqual(render(source,'morning',review(),DAY,CAT),'Рекомендации к повышению:\n590-PamelaBag-brown: 341,1 → 375,3 ¥\nАртикул WB: 1473245510\n\nРекомендации к снижению:\n123-Zont-pink: 106,6 → 82 ¥\nАртикул WB: 1556488210')
+  self.assertEqual(render(source,'morning',review(),DAY,CAT),'Рекомендации к повышению:\n590-PamelaBag-brown: 341,1 → 375,3 ¥\nАртикул WB: 1473245510\n\nРекомендации к снижению:\n123-Zont-pink: 106,6 → 101,4 ¥\nАртикул WB: 1556488210')
  def test_intraday(self):
   source='Первое повышение +10%: 1 кандидатов.\n• 15-FurPanama-cream: заказы 1/1/2/1.\n  Предложение: 79 → 87 ¥ после скидки, с округлением.\nБлижайшие кандидаты — ждём сегодняшний заказ:\n• OTHER: 1/1/1/0.'
   self.assertEqual(render(source,'intraday',review('investigate'),DAY,CAT),'Рекомендации к повышению:\n15-FurPanama-cream: 79 → 87 ¥\nАртикул WB: 1535337778\n\nРекомендации к снижению:\nНет')

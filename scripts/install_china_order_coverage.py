@@ -16,3 +16,19 @@ for before,after,n in replacements:
     elif code.count(after)!=n:
         raise RuntimeError('Unexpected China demand implementation; nullable sales patch not applied')
 path.write_text(code)
+
+# Owner-approved future recommendation step. Preserve historical observations.
+path=Path('china_agent/demand.py')
+code=path.read_text()
+for before,after in [
+    ("'price_multiplier': 1.10", "'price_multiplier': 1.05"),
+    ("Decimal('1.10')", "Decimal('1.05')"),
+    ("if previous and current != previous:", "if previous and any(current.get(k) != previous.get(k) for k in ('current_cny','base_cny','discount','currency','club_discount')):")
+]:
+    if before in code: code=code.replace(before,after)
+    elif after not in code: raise RuntimeError('Unexpected China price policy source')
+code=code.replace('+10%', '+5%').replace('на 10%', 'на 5%')
+path.write_text(code)
+path=Path('china_agent/scheduled_price_worker.py')
+code=path.read_text().replace('+10%', '+5%').replace('на 10%', 'на 5%')
+path.write_text(code)

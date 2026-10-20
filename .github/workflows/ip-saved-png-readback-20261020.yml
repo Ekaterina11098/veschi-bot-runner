@@ -6,6 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   saved:
+    if: false # Saved readback verified; no further runs.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -35,4 +36,3 @@ jobs:
           git add recovery-output/advertising/saved-png-readback-*.aes.json
           git diff --cached --quiet || git commit -m "Preserve owner encrypted saved report inputs"
           git push origin HEAD:ip-saved-png-readback-20261020
-# Include the three newly paused campaigns in the established full overview; GET only.

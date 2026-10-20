@@ -22,13 +22,17 @@ def main():
  try:
   reg=store.registration();approval=store.cache_get('advertising:ip:daily_rollout:v1') or {}
   if not approval.get('enabled') or approval.get('chat_id')!=reg['chat_id'] or approval.get('owner_id')!=reg['registered_by_user_id']:raise PermissionError('Existing daily owner approval mismatch')
+  hold=store.cache_get('advertising:ip:notification_hold:v1') or {}
+  if hold.get('paused') and hold.get('chat_id')==reg['chat_id']:
+   report.update(business_status='complete',notification_status='held_by_owner',reason='Owner requested no sending; no Telegram calls')
+   return report
   view=load_daily_table_view(store,datetime.now(timezone.utc))
   report['view']=view
   images=render_daily_png(view,Path(os.environ['RUNNER_TEMP'])/'daily-advertising-png')
   import hashlib
   messages=[]
   for image in images:
-   caption=('ДРР за '+view['period']+' · РК с подтверждённым посткликом, по товарам — прямой ДРР.') if image['kind']=='drr' else ('Бюджеты · отчёт '+view['observed_day']+' · время МСК. Срок условный, по расходу '+view['period']+'.')
+   caption=('ДРР за '+view['period']+' · расход за день и 7 полных дней. РК с подтверждённым посткликом, по товарам — прямой ДРР.') if image['kind']=='drr' else ('Бюджеты · отчёт '+view['observed_day']+' · время МСК. Срок условный, по расходу '+view['period']+'.')
    messages.append(dict(kind=image['kind'],text=json.dumps(dict(path=image['path'],caption=caption,sha256=hashlib.sha256(Path(image['path']).read_bytes()).hexdigest()),ensure_ascii=False)))
   report['messages']=messages
   last=[None]

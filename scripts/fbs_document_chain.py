@@ -49,7 +49,7 @@ class Transport:
     def request(self, base, path, method="GET", body=None, params=None):
         if base not in (MS, WB, os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1/"):
             raise Stop("Unexpected API destination")
-        if base == WB and method != "GET":
+        if base == WB and method != "GET" and not (method == "POST" and path == "api/v3/orders/status"):
             raise Stop("WB writes are prohibited")
         if path.startswith(("http:", "https:")):
             raise Stop("Absolute API path prohibited")
@@ -179,8 +179,26 @@ class Worker:
                 self.db.put("fbs_document_chain:china:order_lookup_diagnostic:v1", {"at": now(), "supply": supply, "expected": len(ids), "found": len(found), "missing": sorted(wanted-set(found)), "dateFrom": begin.isoformat(), "dateTo": end.isoformat()})
                 raise Stop("Not all supply orders found")
             cursor = page["next"]
+        statuses = {}
+        for offset in range(0, len(ids), 100):
+            response = self.t.request(WB, "api/v3/orders/status", method="POST", body={"orders": ids[offset:offset+100]})
+            for status in response.get("orders", []):
+                if status.get("id") in statuses:
+                    raise Stop("Duplicate order status")
+                statuses[status["id"]] = status
+        if set(statuses) != set(ids):
+            raise Stop("Picking-list status scope incomplete")
+        cancelled = {ident for ident, status in statuses.items() if status.get("supplierStatus") == "cancel" or status.get("wbStatus") in ("canceled", "canceled_by_client")}
+        self.db.put("fbs_document_chain:china:picking_scope:v1:" + ident, {
+            "at": now(), "supply_id": ident, "raw_count": len(ids), "picking_count": len(ids)-len(cancelled),
+            "excluded": [{"id": i, "article": found[i]["article"], "status": statuses[i]} for i in sorted(cancelled)],
+            "included_order_ids": sorted(set(ids)-cancelled)})
+        if len(cancelled) == len(ids):
+            raise Stop("Picking list has no active orders")
         counts = collections.Counter()
         for order in found.values():
+            if order["id"] in cancelled:
+                continue
             article = order.get("article")
             if not isinstance(article, str) or not article.strip():
                 raise Stop("WB article missing")

@@ -36,17 +36,17 @@ def small(x):
     keys=['id','name','code','externalCode','meta','archived','applied','sum','moment','organization','agent','store','customerOrder','demand','salesReturns','demands','description','positions','vatEnabled','vatIncluded']
     return {k:x[k] for k in keys if k in x}
 try:
-    report['organizations']=[small(x) for x in rows('entity/organization')]
-    report['stores']=[small(x) for x in rows('entity/store')]
-    agents=rows('entity/counterparty',{'search':'Лазарев'})
-    report['counterparties']=[small(x) for x in agents]
-    report['recent_documents']={}
-    for typ in ['customerorder','demand','salesreturn']:
-        data=get(MS,'entity/'+typ,os.environ['MOYSKLAD_API_TOKEN'],{'limit':10,'order':'moment,desc'})
-        report['recent_documents'][typ]=[small(x) for x in data.get('rows',[])]
-    report['supply']=get(WB,'api/v3/supplies/WB-GI-286768405',os.environ['WB_TOKEN_3'])
+    report['counterparty']=get(MS,'entity/counterparty/4cc3ffa2-fd7c-11ee-0a80-0b56002b7934',os.environ['MOYSKLAD_API_TOKEN'])
+    report['chain']={}
+    for typ,ident in [('customerorder','7d54f191-cc4a-11f1-0a80-05e500053500'),('demand','8422897b-cc4a-11f1-0a80-05e500053658'),('salesreturn','8fda4684-cc4a-11f1-0a80-158c00056a4f')]:
+        report['chain'][typ]=get(MS,'entity/'+typ+'/'+ident,os.environ['MOYSKLAD_API_TOKEN'],{'expand':'positions.assortment'})
+    report['supply_order_ids']=get(WB,'api/marketplace/v3/supplies/WB-GI-286768405/order-ids',os.environ['WB_TOKEN_3'])
+    report['today_supplies']={}
+    for ident in ['WB-GI-296250890','WB-GI-296253035','WB-GI-296254552']:
+        report['today_supplies'][ident]=get(WB,'api/v3/supplies/'+ident,os.environ['WB_TOKEN_3'])
+
 except Exception as e:report['errors'].append(str(e) if isinstance(e,RuntimeError) else type(e).__name__)
-key='fbs_document_chain:api_inspection:2026-10-20'
+key='fbs_document_chain:chain_inspection:2026-10-20'
 base=os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache'
 secret=os.environ['SUPABASE_SECRET_KEY']
 headers={'apikey':secret,'Authorization':'Bearer '+secret,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}

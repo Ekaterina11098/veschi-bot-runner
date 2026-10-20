@@ -123,7 +123,9 @@ class CoverageWorker(ScheduledWorker):
             from china_agent.buyer_price_forecast import load
             buyer=load(self)
             trace.append(dict(name='china_buyer_price_forecast',**buyer))
-            answer=brief(answer,'intraday',review,self.day,self.get('china_agent:prices:v1'),buyer)
+            omitted=[]
+            answer=brief(answer,'intraday',review,self.day,self.get('china_agent:prices:v1'),buyer,omitted=omitted)
+            if omitted:trace.append(dict(name='china_price_proposal_exclusions',products=omitted))
         return answer,trace
 
 def main():

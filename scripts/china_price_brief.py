@@ -28,7 +28,7 @@ def raising(answer, mode):
         raise RuntimeError('Proposal count mismatch')
     return [(a,price(old),price(new)) for a,old,new in rows]
 
-def lowering(review, day, catalogue=None):
+def lowering(review, day, catalogue=None, omitted=None):
     if (not isinstance(review,dict) or review.get('report_date')!=str(day)
         or review.get('status')!='complete_disclosed_forecast_model'
         or review.get('model_version')!='wb_four_day_baseline_daily_means_v3'):
@@ -47,8 +47,11 @@ def lowering(review, day, catalogue=None):
         if row.get('currencyIsoCode4217')!='CNY' or len(bases)!=1 or len(currents)!=1 or not 0<=discount<100:
             raise RuntimeError('Ambiguous current China price')
         base=bases.pop();current=currents.pop()
-        if not base.is_finite() or not current.is_finite() or base<=0 or current<=0 or current!=Decimal(str(item['after_price'])):
-            raise RuntimeError('Review no longer matches current seller price')
+        if not base.is_finite() or not current.is_finite() or base<=0 or current<=0:
+            raise RuntimeError('Invalid current seller price')
+        if current!=Decimal(str(item['after_price'])):
+            if omitted is not None:omitted.append(dict(article=item['article'],nm_id=str(row['nmID']),status='price_changed_since_review',review_after_price=str(item['after_price']),current_price=str(current)))
+            continue  # The old experiment cannot recommend another cut after a new price change.
         target_base=(base*Decimal('0.95')).to_integral_value(rounding='ROUND_CEILING')
         old=price(current);new=price(target_base*(1-discount/100))
         if Decimal(old.replace(',','.'))<=Decimal(new.replace(',','.')):
@@ -142,10 +145,10 @@ def table_payload(text,catalogue):
     return dict(entities=entities,reply_markup=dict(inline_keyboard=[]),
                 link_preview_options=dict(is_disabled=True))
 
-def render_plain(answer,mode,review,day,catalogue,buyer=None):
+def render_plain(answer,mode,review,day,catalogue,buyer=None,omitted=None):
     """Owner-approved two-line proposals, no table separators or extra headings."""
     from china_agent.buyer_price_forecast import forecast
-    up=raising(answer,mode);down=lowering(review,day,catalogue)
+    up=raising(answer,mode);down=lowering(review,day,catalogue,omitted)
     ids=catalogue_ids(catalogue)
     blocks=[]
     for action,offers in (('Повышение',up),('Снижение',down or [])):

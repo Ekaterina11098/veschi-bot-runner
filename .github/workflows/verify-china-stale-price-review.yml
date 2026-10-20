@@ -1,0 +1,25 @@
+name: Verify stale China review does not block daily report
+on:
+  push:
+    branches: [china-stale-review-report-fix-20261020]
+    paths: ['scripts/china_price_brief.py']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check real-price change exclusion and retained reports
+        run: |
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_five_percent.py
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_price_brief.py
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_price_table.py
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_plain_format.py
+          python -m py_compile scripts/china_coverage_worker.py scripts/china_morning_pair.py

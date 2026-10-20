@@ -1,7 +1,7 @@
 """Explicit one-supply live verification; does not enable the scheduler."""
 import copy,json,sys
 from fbs_document_chain import Transport,Cache,Worker,Stop,MS,WB,CONFIG,PREFIX,TYPES,now,meta,href
-SID="WB-GI-296254552"
+SID="WB-GI-296253035"
 PROOF="fbs_document_chain:china:pilot:v1"
 def main():
     t=Transport(); db=Cache(t); config=db.get(CONFIG)

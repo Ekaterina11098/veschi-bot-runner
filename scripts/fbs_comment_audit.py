@@ -50,9 +50,11 @@ def run(full=False):
         cursor = cursors.get(cabinet)
         while True:
             # Indexed primary-key range; do not scan JSON across the shared cache.
-            lower = "cache_key.gt." + cursor if cursor else "cache_key.gte." + prefix
+            lower = "cache_key.gt." + cursor if cursor else None
             params = {"select": "cache_key,payload", "order": "cache_key.asc", "limit": 10,
-                      "and": "(" + lower + ",cache_key.lt." + prefix + "~)"}
+                      "cache_key": "like." + prefix + "*"}
+            if lower:
+                params["and"] = "(" + lower + ")"
             rows = t.request(db.base, "telegram_api_cache", params=params)
             for row in rows:
                 key, state = row["cache_key"], row["payload"]

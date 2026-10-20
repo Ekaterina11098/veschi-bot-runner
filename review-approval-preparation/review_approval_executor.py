@@ -56,7 +56,8 @@ class Executor:
         card=self.repo.get('cards',intent['card_token'])
         if not card or any(intent[key]!=card[key] for key in ('ref','cabinet','kind','item_id','version')) or sha(intent['answer'])!=intent['answer_sha256'] or intent['answer_sha256'] not in card['hashes'] or intent['source_sha256']!=sha(card['source']):raise Rejected('Immutable answer binding failed')
         # Verification is read-only even if a hold appeared after sending.
-        if intent['status']=='verify':return self.verify(intent)
+        if intent['status']=='verify':
+            return intent if intent.get('retry_at',0)>self.a.clock() else self.verify(intent)
         if intent.get('retry_at',0)>self.a.clock():return intent
         if self.wb.pause(intent['cabinet']):return intent
         if not self.guard(card):return self.save(intent,'blocked',reason='Canonical hold/version/journal')
@@ -83,8 +84,10 @@ class Executor:
     def verify(self,intent):
         if self.wb.pause(intent['cabinet']):return intent
         try:actual=self.wb.read(intent)
-        except Exception:return intent
-        if not isinstance(actual,str):return intent
+        except ExplicitRateLimit as exc:return self.save(intent,'verify',retry_at=self.a.clock()+exc.seconds)
+        except Exception as exc:return self.save(intent,'verify',retry_at=self.a.clock()+60,verification_error_type=type(exc).__name__)
+        if not isinstance(actual,str):return self.save(intent,'verify',retry_at=self.a.clock()+60,verification_error_type='InvalidAnswerType')
         if actual==intent['answer']:return self.save(intent,'confirmed',actual_answer_sha256=sha(actual),confirmed_at=self.a.clock())
         if actual.strip():return self.save(intent,'manual_present',actual_answer_sha256=sha(actual))
-        return intent
+        return self.save(intent,'verify',retry_at=self.a.clock()+60)
+

@@ -35,9 +35,24 @@ export async function routeReviewApproval(request, update, config, forward = fet
       const ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce,additionalData:new TextEncoder().encode('review-approval-update-v1')},key,new TextEncoder().encode(JSON.stringify(update)));
       const b64=value=>btoa(String.fromCharCode(...new Uint8Array(value)));
       const sealed=JSON.stringify({format:'review-approval-update-v1',nonce:b64(nonce),ciphertext:b64(ciphertext)});
-      const result=await forward(expected,{method:'POST',headers:{'Authorization':'Bearer '+config.dispatchToken,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{sealed_update:sealed}}),signal:AbortSignal.timeout(8000),redirect:'error'});
-      if(result.ok && q?.id)return Response.json({method:'answerCallbackQuery',callback_query_id:q.id,text:'Проверяю согласование…'});
-      return new Response(result.ok?'OK':'Review dispatch unavailable',{status:result.ok?200:503});
+      const ack=()=>q?.id?Response.json({method:'answerCallbackQuery',callback_query_id:q.id,text:'Нажатие сохранено. Обрабатываю…'}):new Response('OK');
+      let durable=false;
+      if(config.persistInbox){
+        if(!Number.isSafeInteger(update.update_id) || update.update_id<0 || new TextEncoder().encode(JSON.stringify(update)).length>65536)return new Response('Invalid update',{status:400});
+        await config.persistInbox(update,sealed);durable=true;
+      }
+      const dispatch=async()=>{
+        try{
+          const result=await forward(expected,{method:'POST',headers:{'Authorization':'Bearer '+config.dispatchToken,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{sealed_update:sealed}}),signal:AbortSignal.timeout(8000),redirect:'error'});
+          return result.ok;
+        }catch{return false;}
+      };
+      // A successful response means ciphertext is committed, not that WB published.
+      // Dispatch is a wake-up only; the isolated scheduled worker also drains inbox.
+      if(durable && config.defer){config.defer(dispatch());return ack();}
+      const launched=await dispatch();
+      if(durable || launched)return ack();
+      return new Response('Review dispatch unavailable',{status:503});
     }
     const result = await forward(config.receiverURL, {
       method: 'POST', headers: {'Content-Type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': config.receiverSecret},
@@ -48,4 +63,5 @@ export async function routeReviewApproval(request, update, config, forward = fet
     return new Response('Review receiver unavailable', {status: 503});
   }
 }
+
 

@@ -31,8 +31,9 @@ jobs:
           allowed=info.get('allowed_updates',[])
           result['callback_updates_enabled']=not allowed or 'callback_query' in allowed
           seal('review-ingress-probe',result)
-          print({key:result.get(key) for key in ('authenticated','dispatch_probe_accepted','dispatch_http','telegram_sends','wb_writes')})
+          print({key:result.get(key) for key in ('authenticated','durable_review_ingress','async_review_dispatch','enabled','publication_enabled','correct_webhook','callback_updates_enabled')})
           assert r.ok and result.get('authenticated') and result['correct_webhook'] and result['callback_updates_enabled']
+          assert result.get('durable_review_ingress') is True and result.get('async_review_dispatch') is True
           PY
       - uses: actions/upload-artifact@v4
         if: always()
@@ -40,3 +41,4 @@ jobs:
           name: owner-encrypted-review-ingress-probe
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
+

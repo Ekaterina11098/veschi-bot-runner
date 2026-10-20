@@ -41,7 +41,7 @@ class Receiver:
             if not self.reconcile(card):
                 try:self.telegram.call('answerCallbackQuery',{'callback_query_id':q.get('id',''),'text':'Согласование остановлено: данные изменились, ответ уже есть или действует блокировка.','show_alert':True})
                 except Exception:pass
-                raise Rejected('Canonical review state unavailable or blocked')
+                raise Rejected('Canonical state temporarily unavailable' if getattr(self.reconcile,'last_reason',None)=='unavailable' else 'Canonical review state unavailable or blocked')
             try:result = a.handle(update, header)
             except Rejected:
                 try:self.telegram.call('answerCallbackQuery',{'callback_query_id':q.get('id',''),'text':'Эта кнопка устарела или действие уже завершено. Используйте актуальную версию.','show_alert':True})
@@ -83,7 +83,7 @@ class Receiver:
             raise Rejected('Unknown or ambiguous review message')
         token, card = matches[0]
         if not self.reconcile(card):
-            raise Rejected('Canonical review state unavailable or blocked')
+            raise Rejected('Canonical state temporarily unavailable' if getattr(self.reconcile,'last_reason',None)=='unavailable' else 'Canonical review state unavailable or blocked')
         return a.record_edit(token, a.owner, a.chat, reply['message_id'], msg['text'])
 
     def wsgi(self, environ, start_response):
@@ -105,3 +105,4 @@ class Receiver:
             status = '503 Service Unavailable'
         start_response(status, [('Content-Type', 'text/plain')])
         return [b'OK']
+

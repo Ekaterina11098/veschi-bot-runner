@@ -73,7 +73,7 @@ class Approval:
         if card['status']=='selected':
             return {'inline_keyboard':[[button('Подтвердить публикацию','ok.'+card['nonce'])],[button('Назад','back'),button('Отложить','hold')]]}
         if card['status'] not in ('awaiting','selected'):return {'inline_keyboard':[]}
-        return {'inline_keyboard':[[button('Выбрать этот текст','v1')]] if len(card['texts'])==1 else [[button('Вариант 1','v1'),button('Вариант 2','v2')],[button('Доработать','edit'),button('Отложить','hold')]]}
+        return {'inline_keyboard':([[button('Подтвердить публикацию','p1')]] if len(card['texts'])==1 else [[button('Опубликовать вариант 1','p1')],[button('Опубликовать вариант 2','p2')]])+[[button('Доработать','edit'),button('Отложить','hold')]]}
     def view(self,token,card=None):
         card=card or self.repo.get('cards',token)
         if not card:raise Rejected('Unknown card')
@@ -99,6 +99,7 @@ class Approval:
         elif card['status']=='rework':lines+=['','Нужна доработка. Ответьте на это сообщение и укажите правки; новая версия потребует нового согласования.']
         else:
             for n,text in enumerate(card['texts'],1):lines+=['','Вариант '+str(n)+':',text]
+            lines+=['','Кнопка «Опубликовать» подтверждает выбранный текст и ставит его в автоматическую отправку WB.']
         return {'text':'\n'.join(lines),'reply_markup':self.keyboard(token,card),'message_id':card['message_id'],'status':card['status']}
     def handle(self,update,header):
         if not self.enabled:raise Rejected('Review callback integration disabled')
@@ -108,7 +109,7 @@ class Approval:
         if str(q.get('from',{}).get('id'))!=self.owner or str(msg.get('chat',{}).get('id'))!=self.chat:raise Rejected('Wrong owner or chat')
         if msg.get('chat',{}).get('type')!='private' or str(msg.get('from',{}).get('id'))!=self.bot or msg.get('forward_origin'):raise Rejected('Wrong message origin')
         data=q.get('data','')
-        match=re.fullmatch(r'rv1:([0-9a-f]{32}):(v1|v2|edit|hold|back|ok\.[0-9a-f]{12})',data)
+        match=re.fullmatch(r'rv1:([0-9a-f]{32}):(v1|v2|p1|p2|edit|hold|back|ok\.[0-9a-f]{12})',data)
         if not match or len(data.encode())>64 or not isinstance(q.get('id'),str) or not q['id']:raise Rejected('Invalid callback')
         token,action=match.groups()
         with self.repo.transaction():
@@ -128,10 +129,11 @@ class Approval:
                 return {'duplicate':True,'result':old['result'],'answer_callback_query':{'callback_query_id':q['id'],'text':'Уже обработано'}}
             # A delayed/repeated final click acknowledges the same immutable intent.
             # It never creates another intent or changes the approved answer.
-            if action=='ok.'+str(card.get('nonce')) and card.get('selected') in (0,1):
-                existing_id=sha([card['ref'],card['version'],card['hashes'][card['selected']]])
+            duplicate_selection=int(action[-1])-1 if action in ('p1','p2') else card.get('selected')
+            if (action in ('p1','p2') or action=='ok.'+str(card.get('nonce'))) and duplicate_selection in range(len(card['texts'])):
+                existing_id=sha([card['ref'],card['version'],card['hashes'][duplicate_selection]])
                 existing=self.repo.get('intents',existing_id)
-                if existing and existing.get('card_token')==token and existing.get('answer_sha256')==card['hashes'][card['selected']] and existing.get('owner_id')==self.owner and existing.get('chat_id')==self.chat:
+                if existing and existing.get('card_token')==token and existing.get('answer_sha256')==card['hashes'][duplicate_selection] and existing.get('owner_id')==self.owner and existing.get('chat_id')==self.chat:
                     return {'duplicate':True,'result':{'decision':'approved','intent_id':existing_id,'publication_created':False},'answer_callback_query':{'callback_query_id':q['id'],'text':'Согласование уже сохранено. Повторная отправка не создаётся.'}}
             if item['status'] in ('held','sent','uncertain','publishing'):raise Rejected('Review blocked or already answered')
             if item['status']=='approved':raise Rejected('Approval already recorded; do not enqueue again')
@@ -155,8 +157,14 @@ class Approval:
                 card.update(status='held',selected=None,nonce=None);item['status']='held'
                 result={'decision':'held','publication_created':False}
             else:
-                if card['status']!='selected' or action!='ok.'+str(card['nonce']):raise Rejected('Outdated confirmation')
-                selected=card['selected']
+                if action in ('p1','p2'):
+                    if card['status'] not in ('awaiting','selected'):raise Rejected('Card not approvable')
+                    selected=int(action[-1])-1
+                    if selected>=len(card['texts']):raise Rejected('Variant unavailable')
+                    card.update(selected=selected,nonce=None)
+                else:
+                    if card['status']!='selected' or action!='ok.'+str(card['nonce']):raise Rejected('Outdated confirmation')
+                    selected=card['selected']
                 intent_id=sha([card['ref'],card['version'],card['hashes'][selected]])
                 intent={'id':intent_id,'ref':card['ref'],'cabinet':card['cabinet'],'kind':card['kind'],'item_id':card['item_id'],'version':card['version'],'answer':card['texts'][selected],'answer_sha256':card['hashes'][selected],'source_sha256':sha(card['source']),'owner_id':self.owner,'chat_id':self.chat,'callback_id':q['id'],'status':'awaiting_preflight','created_at':self.clock(),'card_token':token}
                 if self.repo.get('intents',intent_id):raise Rejected('Publication intent exists')
@@ -186,3 +194,4 @@ class Approval:
             if self.repo.get('events',key):return {'status':'revision_requested','old_version_approvable':False,'publication_created':False,'duplicate':True,'revision_event_id':key}
             self.repo.put('events',key,{'decision':'revision_requested','token':token,'version':card['version'],'instruction':text,'actor':self.owner,'created_at':self.clock()})
             return {'status':'revision_requested','old_version_approvable':False,'publication_created':False,'revision_event_id':key}
+

@@ -33,6 +33,8 @@ def main():
         if not all(cfg.get(k) for k in ('enabled','publication_enabled','destination_verified')):return {'status':'disabled'}
         app=Approval(repo,base64.b64encode(hmac.new(root,b'veschi:review-approval-ingress:20261015:v1',hashlib.sha256).digest()).decode(),cfg['owner_id'],cfg['chat_id'],cfg['bot_id'],enabled=True)
         bridge=DurableBridge(app,SQLSource(conn));adapter=WBAdapter(wb)
+        # Shared setting is only a display flag; process_update never invokes WB.
+        os.environ['REVIEW_PUBLICATION_ENABLED']='1'
         report={'wb_writes':0,'checked':{},'errors':{},'legacy_queue_calls':0}
         out=Path(os.environ['RUNNER_TEMP'])/'stock-deploy-proof';out.mkdir(exist_ok=True)
         def preserve():
@@ -68,20 +70,26 @@ def main():
             deadline=time.monotonic()+33*60
             while time.monotonic()<deadline:
                 cfg=config()
-                if not cfg.get('publication_enabled'):break
+                if not all(cfg.get(k) for k in ('enabled','publication_enabled','destination_verified')):break
+                # Catch clicks even if their GitHub dispatch was unavailable. The
+                # UI lock is released BEFORE WB HTTP, so receipt never waits on WB.
+                locked=conn.execute("SELECT pg_try_advisory_lock(hashtextextended('review-approval-process-ui-v1',0))").fetchone()[0]
+                if locked:
+                    try:
+                        from review_approval_inbox import drain
+                        report['inbox']=drain(app,bridge,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),app.secret,preserve=preserve,new_notices_enabled=cfg.get('new_notices_enabled') is True,cutover=cfg['cutover'])
+                    finally:conn.execute("SELECT pg_advisory_unlock(hashtextextended('review-approval-process-ui-v1',0))")
                 pending=due_intents(repo,cfg)
-                if not pending:break
                 for intent in pending:
-                    if intent['id'] in report['errors']:continue
+                    if intent.get('worker_retry_at',0)>time.time():continue
                     if adapter.pause(intent['cabinet']) or intent.get('retry_at',0)>time.time():continue
-                    locked=conn.execute("SELECT pg_try_advisory_lock(hashtextextended('review-approval-process-ui-v1',0))").fetchone()[0]
-                    if not locked:continue
                     try:
                         active=intent;preserve()
                         from review_approval_card_delivery import notify_owner_receipt
                         receipt_transport=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN'])
                         notify_owner_receipt(app,receipt_transport,intent,preserve)
                         outcome=executor.run(intent['id'])
+                        if outcome.get('busy'):continue
                         report['checked'][intent['id']]={'cabinet':intent['cabinet'],'item_id':intent['item_id'],'status':outcome['status'],'retry_at':outcome.get('retry_at'),'actual_answer_sha256':outcome.get('actual_answer_sha256'),'answer_sha256':intent['answer_sha256']}
                         with repo.transaction():
                             card=repo.get('cards',intent['card_token'],lock=True)
@@ -89,12 +97,21 @@ def main():
                             repo.put('cards',intent['card_token'],card)
                         notify_owner_receipt(app,receipt_transport,outcome,preserve)
                         preserve()
-                    except Exception as exc:report['errors'][intent['id']]=error(exc);preserve()
+                        report['errors'].pop(intent['id'],None)
+                    except Exception as exc:
+                        report['errors'][intent['id']]=error(exc)
+                        # One cabinet outage must not stop the other two. Never
+                        # reset publication/verify state or repeat an unknown POST.
+                        with repo.transaction():
+                            saved=repo.get('intents',intent['id'],lock=True)
+                            failures=saved.get('worker_failures',0)+1
+                            saved.update(worker_failures=failures,worker_retry_at=time.time()+min(300,10*2**min(failures,5)),worker_error_type=type(exc).__name__)
+                            repo.put('intents',intent['id'],saved)
+                        preserve()
                     finally:
                         active=None
-                        conn.execute("SELECT pg_advisory_unlock(hashtextextended('review-approval-process-ui-v1',0))")
-                if report['errors']:break
-                time.sleep(30)
+                # Stay available while idle; GitHub schedules can be delayed.
+                time.sleep(10)
             preserve()
             counts={}
             for r in report['checked'].values():counts[r['status']]=counts.get(r['status'],0)+1
@@ -111,4 +128,5 @@ if __name__=='__main__':
         from stock_deploy_support import seal,error
         seal('approved-publication-failure',{'error':error(exc),'private_log':hidden.getvalue()})
         print('Approved review worker failed; diagnostic protected.');raise SystemExit(1)
+
 

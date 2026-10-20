@@ -39,9 +39,12 @@ class CanonicalGuard:
     def __init__(self, approval, reader): self.approval=approval; self.reader=reader
 
     def __call__(self, card):
+        self.last_reason='blocked'
         try: state=self.reader(card)
-        except Exception: return False
-        if not isinstance(state,dict) or state.get('complete') is not True: return False
+        except Exception:
+            self.last_reason='unavailable';return False
+        if not isinstance(state,dict) or state.get('complete') is not True:
+            self.last_reason='unavailable';return False
         if state.get('ref')!=card['ref']: return False
         reason=None
         if state.get('hold') is True: reason='held'
@@ -53,3 +56,4 @@ class CanonicalGuard:
         return (state.get('hold') is False and state.get('answered') is False
             and state.get('publication_state')=='idle' and state.get('version')==card['version']
             and state.get('hashes')==card['hashes'] and state.get('source_sha256')==sha(card['source']))
+

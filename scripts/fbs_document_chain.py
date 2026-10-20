@@ -295,6 +295,13 @@ class Worker:
         date = stamp(supply["closedAt"]).astimezone(dt.timezone(dt.timedelta(hours=3))).strftime("%d %m %y")
         return {"description": date + "  " + rule.get("comment_prefix", "Гонконг") + " " + label, "state": meta(states[0])}
 
+    def validate_source(self, state):
+        supply = state["supply"]
+        current = self.t.request(WB, "api/v3/supplies/" + supply["id"])
+        current_ids = self.t.request(WB, "api/marketplace/v3/supplies/" + supply["id"] + "/order-ids").get("orderIds", [])
+        if current.get("done") is not True or sorted(current_ids) != state["order_ids"]:
+            raise Stop("Supply composition/status changed")
+
     def process(self, state):
         supply = state["supply"]
         key = PREFIX + supply["id"]
@@ -303,10 +310,7 @@ class Worker:
             state["positions"], state["order_ids"] = self.positions(supply)
             state["status"] = "prepared"
             self.db.put(key, state)
-        current = self.t.request(WB, "api/v3/supplies/" + supply["id"])
-        current_ids = self.t.request(WB, "api/marketplace/v3/supplies/" + supply["id"] + "/order-ids").get("orderIds", [])
-        if current.get("done") is not True or sorted(current_ids) != state["order_ids"]:
-            raise Stop("Supply composition/status changed")
+        self.validate_source(state)
         links = {}
         for typ in TYPES:
             payload = json.loads(json.dumps(self.c["templates"][typ]))

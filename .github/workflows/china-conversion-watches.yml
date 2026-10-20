@@ -45,6 +45,8 @@ jobs:
       - name: Adapt isolated dialog and test without credentials
         run: |
           python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_buyout_policy.py
           python scripts/china_chat_migration.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
       - name: Install pinned read transport

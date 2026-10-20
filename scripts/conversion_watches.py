@@ -302,6 +302,9 @@ class Worker:
         from business_agents.data import Data
         cfg=self.config()
         if not question_allowed(job,cfg):raise PermissionError('Question scope mismatch')
+        from china_break_even import answer as break_even
+        computed=break_even(self,job,history)
+        if computed is not None:return computed
         from china_conversion_explanation import explain
         explanation=explain(job['request_text'],question_marker(job),history)
         if explanation is not None:return explanation
@@ -435,6 +438,9 @@ class Worker:
             raise
 
     def dialog(self,job,history):
+        from china_break_even import answer as break_even
+        computed=break_even(self,job,history)
+        if computed is not None:return computed
         from business_agents import conversation as c
         old_tools,old_dispatch=c.tools,c.dispatch
         def tools(agent_id):

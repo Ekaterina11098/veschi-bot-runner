@@ -1,0 +1,41 @@
+name: Verify China actual buyout and saved 119 answer
+on:
+  push:
+    branches: [china-actual-buyout-and-breakeven-20261020]
+    paths: ['scripts/china_*', 'scripts/test_china_buyout_policy.py', 'scripts/install_china_buyout.py']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - run: pip install requests==2.32.5
+      - name: Install shared policy and run offline regressions
+        run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_buyout_policy.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_expected_order_profit.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_period_buyout.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
+          python -m compileall -q scripts/china_break_even.py scripts/china_daily_expected_control.py source/china_agent/core.py
+      - name: Verify real saved 119 question with zero Telegram and WB access
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PYTHONPATH: scripts:source
+        run: python scripts/china_buyout_owner_verify.py

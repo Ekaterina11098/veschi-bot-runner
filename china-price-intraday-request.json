@@ -1,7 +1,7 @@
 {
   "mode": "intraday",
   "action": "run",
-  "report_date": "2026-10-17",
+  "report_date": "2026-10-20",
   "source_commit": "b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c",
-  "nonce": "owner-requested-missing-1500-report-recovery-2231"
+  "nonce": "owner-recovery-job61-stale-review-fixed-20261020-1618"
 }

@@ -28,3 +28,9 @@ assert.equal(response.status,200);assert.equal(stored.length,0);
 response=await routeReviewApproval(request,{...event,update_id:undefined},{...base,persistInbox},()=>{throw Error('Invalid update');});
 assert.equal(response.status,400);assert.equal(stored.length,0);
 console.log('Durable encrypted ingress: database failure, dispatch/network failure, background wake-up, authentication and identity passed');
+let attempts=[];
+response=await routeReviewApproval(request,event,{...base,persistInbox,fallbackDispatchToken:'fallback'},async (url,options)=>{
+  attempts.push(options.headers.Authorization);return new Response(null,{status:attempts.length===1?401:204});
+});
+assert.equal(response.status,200);assert.deepEqual(attempts,['Bearer dispatch','Bearer fallback']);
+console.log('Explicit dispatch authentication rejection falls back once; approval remains idempotent');

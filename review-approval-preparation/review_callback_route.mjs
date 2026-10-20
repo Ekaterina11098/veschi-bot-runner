@@ -43,9 +43,17 @@ export async function routeReviewApproval(request, update, config, forward = fet
       }
       const dispatch=async()=>{
         try{
-          const result=await forward(expected,{method:'POST',headers:{'Authorization':'Bearer '+config.dispatchToken,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{sealed_update:sealed}}),signal:AbortSignal.timeout(8000),redirect:'error'});
-          return result.ok;
-        }catch{return false;}
+          for(const token of [...new Set([config.dispatchToken,config.fallbackDispatchToken].filter(Boolean))]){
+            const result=await forward(expected,{method:'POST',headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{sealed_update:sealed}}),signal:AbortSignal.timeout(8000),redirect:'error'});
+            if(config.recordDispatch)await config.recordDispatch(update,{dispatch_http:result.status,dispatch_checked_at:Date.now()/1000});
+            if(result.ok)return true;
+            if(![401,403].includes(result.status))return false;
+          }
+          return false;
+        }catch{
+          try{if(config.recordDispatch)await config.recordDispatch(update,{dispatch_http:null,dispatch_checked_at:Date.now()/1000});}catch{}
+          return false;
+        }
       };
       // A successful response means ciphertext is committed, not that WB published.
       // Dispatch is a wake-up only; the isolated scheduled worker also drains inbox.

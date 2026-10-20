@@ -62,7 +62,11 @@ def main():
                     preserve()
             if '/rest/v1/review_replies' in str(url) and method!='GET':raise RuntimeError('Legacy queue mutation forbidden')
             if '/rpc/' in str(url):raise RuntimeError('Legacy queue RPC forbidden')
-            return native(session,method,url,*args,**kwargs)
+            response=native(session,method,url,*args,**kwargs)
+            if u.hostname and 'wildberries.' in u.hostname:
+                with repo.transaction():
+                    repo.put('events','approved-worker:wb-http:'+active['cabinet'],dict(checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),cabinet=active['cabinet'],item_id=active['item_id'],method=method,path=u.path,http_status=response.status_code,rate_headers={k:response.headers.get(k) for k in ('X-RateLimit-Retry','Retry-After','X-RateLimit-Reset','X-RateLimit-Limit','X-RateLimit-Remaining')}))
+            return response
         requests.sessions.Session.request=guarded
         try:
             from review_approval_cleanup import cleanup_completed

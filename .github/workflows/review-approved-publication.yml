@@ -53,5 +53,5 @@ jobs:
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
 
-# Durable inbox, idempotent Telegram UI repair and per-cabinet WB retry; no legacy queues.
+# Durable inbox, idempotent Telegram UI repair and actual WB rate headers; no legacy queues.
 

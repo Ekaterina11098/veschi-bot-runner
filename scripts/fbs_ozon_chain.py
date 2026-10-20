@@ -55,7 +55,7 @@ class OzonWorker(m.Worker):
  def __init__(self,t,db,c,act,scope):
   super().__init__(t,db,c);self.act=act;self.scope=scope
   self.comment=", ".join(scope["included"])
-  self.order_name=dt.date.fromisoformat(act["departure_date"]).strftime("%d%m%y")
+  self.order_name=dt.date.fromisoformat(act["departure_date"]).strftime("%d%m%y")+" Озон"
  def order_annotation(self,supply):
   metadata=self.t.request(m.MS,"entity/customerorder/metadata")
   states=[s for s in metadata.get("states",[]) if s.get("name")=="Возврат на ФБО"]

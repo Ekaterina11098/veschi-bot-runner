@@ -1,3 +1,4 @@
+# Act grouping detail inspection
 name: FBS expansion read-only inventory
 concurrency:
   group: bot-stock-and-commands

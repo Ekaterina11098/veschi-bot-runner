@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Verify all managed chain comments using exact cabinet journal prefixes
+# Apply requested Ozon order suffix and verify through API
 on:
   push:
     branches: [main]
@@ -30,4 +30,4 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
         run: |
           python -m unittest discover -s scripts -p 'test_fbs*.py'
-          python scripts/fbs_comment_audit.py --all
+          python scripts/fbs_ozon_name_repair.py

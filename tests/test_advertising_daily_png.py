@@ -39,5 +39,5 @@ class DailyPng(unittest.TestCase):
    seen.append(str(text));return original(draw,xy,text,*args,**kwargs)
   with tempfile.TemporaryDirectory() as d:
    with patch.object(ImageDraw.ImageDraw,'text',record):render_daily_png(self.view(),d)
-  self.assertIn('Расход всех РК: 16 962 ₽',seen);self.assertIn('15 101 ₽',seen);self.assertIn('1 100 ₽',seen)
+  self.assertIn('Расход всех РК: 16 962 ₽',seen);self.assertIn('День: 15 101 ₽',seen);self.assertIn('День: 1 100 ₽',seen)
 if __name__=='__main__':unittest.main()

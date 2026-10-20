@@ -341,6 +341,8 @@ class Worker:
         data=Data('china',read)
         prompt=('Ты агент кабинета VESCHI Китай. Отвечай по-русски: вывод, цифры с периодом, подтвержденная причина или гипотеза, предложение. '
                 'Только сохраненные источники. Вчерашний полный срез актуален весь текущий день МСК. '
+                'В экономических расчётах используй текущий фактический выкуп артикула по завершённым заказам; малую выборку и 0% не заменяй на 50%. 50% допустимы только при отсутствии собственной завершённой статистики с пометкой. '
+                'Короткий номер артикула сначала разрешай через find_products, затем обязательно запрашивай данные по найденному точному nm_id; ошибка прежнего запроса не доказывает отсутствия данных. '
                 'Различай установленную ставку и фактическую стоимость перехода, прибыль товара и результат РК. '
                 'Неизвестное не ноль. Не вызывай новые сборы, наблюдения, расписания, прогнозы или изменения WB. '
                 'Все участники могут спрашивать, но вопрос, да или хорошо не разрешают действия. '
@@ -358,8 +360,8 @@ class Worker:
         if request is None:
             request=question_request
         trace=[]
-        for turn in range(3):
-            out=request({'model':os.getenv('BUSINESS_AI_MODEL') or 'gpt-4o-mini','input':messages,'tools':allowed,'parallel_tool_calls':False,'tool_choice':'required' if turn==0 else ('none' if turn==2 else 'auto'),'max_output_tokens':1800,'store':False}).get('output') or []
+        for turn in range(6):
+            out=request({'model':os.getenv('BUSINESS_AI_MODEL') or 'gpt-4o-mini','input':messages,'tools':allowed,'parallel_tool_calls':False,'tool_choice':'required' if turn==0 else ('none' if turn==5 else 'auto'),'max_output_tokens':1800,'store':False}).get('output') or []
             calls=[x for x in out if x.get('type')=='function_call']
             if not calls:
                 answer='\n'.join(p.get('text','') for x in out if x.get('type')=='message' for p in x.get('content') or [] if p.get('type')=='output_text').strip()
@@ -367,7 +369,7 @@ class Worker:
                 return answer,trace
             messages.extend(out)
             for call in calls:
-                if len(trace)>=4:raise RuntimeError('Question tool budget exceeded')
+                if len(trace)>=8:raise RuntimeError('Question tool budget exceeded')
                 args=json.loads(call.get('arguments') or '{}');name=call['name']
                 if name not in allowed_names:raise PermissionError('Question tool forbidden')
                 try:

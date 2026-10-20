@@ -17,3 +17,11 @@ after="        from china_agent.forecast_policy import forecast_for_product\n   
 if before in text:text=text.replace(before,after)
 elif after not in text:raise RuntimeError('Unexpected forecast dispatch')
 path.write_text(text,encoding='utf-8')
+
+# Advertise actual-first semantics to all model/context consumers, not a fixed 50%.
+import json
+profile_path=root/'china_agent/profile.json'
+profile=json.loads(profile_path.read_text(encoding='utf-8'))
+profile['economics']['parameters']['buyout_rate']=dict(value=None,fallback_value=0.5,
+ source='current_article_settled_orders',rule='Use actual kept buyouts / finished orders, including small samples and true zero; 50% only when own settled sample is absent')
+profile_path.write_text(json.dumps(profile,ensure_ascii=False,indent=2),encoding='utf-8')

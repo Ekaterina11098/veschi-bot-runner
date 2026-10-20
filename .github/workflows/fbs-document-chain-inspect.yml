@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Verify third pilot after unique case-insensitive article matching
+# Read-only quantity reconciliation; no document mutations
 on:
   push:
     branches: [main]
@@ -30,4 +30,4 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
         run: |
           python scripts/test_fbs_chain.py
-          python scripts/fbs_document_chain_pilot.py
+          python scripts/fbs_quantity_audit.py

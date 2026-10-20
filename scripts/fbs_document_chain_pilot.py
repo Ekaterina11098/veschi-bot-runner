@@ -14,7 +14,13 @@ def main():
     supply=t.request(WB,"api/v3/supplies/"+SID)
     if supply.get("id")!=SID or supply.get("done") is not True or not supply.get("closedAt"):
         raise Stop("Exact pilot supply is not in delivery")
-    positions,ids=worker.positions(supply)
+    try:
+        positions,ids=worker.positions(supply)
+    except Stop as exc:
+        if "595-Noelbag-zblack" in str(exc):
+            candidates=worker.ms_rows("entity/product",{"search":"595"})
+            db.put(PROOF,{"supply_id":SID,"status":"mapping_blocked","error":str(exc),"candidates":[{k:p.get(k) for k in ("id","name","article","archived","variantsCount","trackingType","meta")} for p in candidates]})
+        raise
     key=PREFIX+SID
     state=db.get(key) or {"supply":supply,"positions":positions,"order_ids":ids,"status":"pilot_prepared","historical_exception":True}
     if "positions" in state and (state["positions"]!=positions or state["order_ids"]!=ids):

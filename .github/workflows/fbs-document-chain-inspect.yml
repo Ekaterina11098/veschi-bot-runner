@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Verify all managed chain comments using indexed cabinet journals
+# Verify all managed chain comments using exact cabinet journal prefixes
 on:
   push:
     branches: [main]

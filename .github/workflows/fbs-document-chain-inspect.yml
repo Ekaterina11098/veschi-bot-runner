@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Diagnose exact article mapping blocker before authorized third pilot
+# Verify third pilot after unique case-insensitive article matching
 on:
   push:
     branches: [main]

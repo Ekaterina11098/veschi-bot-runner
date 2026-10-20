@@ -12,10 +12,12 @@ def guard(session,method,url,*a,**kw):
 requests.sessions.Session.request=guard
 from advertising_agent import agent_store as s
 proof=dict(source_calls=0,wb_changes=0,telegram_calls=0)
-rows=s.db('GET','analytics_snapshots',params={'id':'eq.18542','select':'id,source,cabinet,period_from,period_to,payload,collected_at','limit':1})
+rows=[]
+proof['saved_alternatives']=s.db('GET','analytics_snapshots',params={'source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','payload->0->>campaign_id':'eq.12190110','period_from':'lte.2026-10-19','period_to':'gte.2026-10-19','select':'id,source,period_from,period_to,payload,collected_at','order':'id.desc','limit':5})
+proof['saved_native']=s.db('GET','analytics_snapshots',params={'source':'in.(advertising_all_spend_stats,advertising_active_stats)','cabinet':'eq.token_2','period_to':'eq.2026-10-19','select':'id,source,period_from,period_to,payload,collected_at','order':'id.desc','limit':2})
 proof['raw']=rows
 from analytics.mpstats_recovery import normalize
-try:proof['normalized']=normalize(rows[0]['payload'][0],'token_2')
+try:proof['normalized']=None
 except Exception as e:proof['normalization_error']=error(e)
 seal('saved-401-raw',proof)
 print(json.dumps({'saved_raw_count':len(rows),'source_calls':0,'telegram_calls':0,'normalized':bool(proof.get('normalized'))}))

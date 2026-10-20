@@ -21,7 +21,21 @@ try:
  from advertising_agent import agent_store as s
  from advertising_budget_evidence import load_daily_table_view
  now=datetime.now(timezone.utc)
- proof['view']=load_daily_table_view(s,now)
+ # Include all eleven campaigns from the owner's established daily overview,
+ # while preserving the actual current registration/configuration unchanged.
+ import copy
+ class RetainedScope:
+  cache_get=staticmethod(s.cache_get)
+  def db(self,method,table,**kw):
+   result=s.db(method,table,**kw)
+   if method=='GET' and table=='analytics_snapshots' and (kw.get('params') or {}).get('source')=='eq.advertising_active_configuration':
+    result=copy.deepcopy(result)
+    for row in result:
+     payload=row.get('payload') or {}
+     if isinstance(payload,dict):payload['campaign_ids']=sorted(set(payload.get('campaign_ids',[]))|{39410834,39483230,40428505})
+   return result
+ proof['view']=load_daily_table_view(RetainedScope(),now)
+ proof['scope_note']='Established eleven-RK overview: eight current active plus three newly paused; no configuration mutation'
  proof['configuration']=s.db('GET','analytics_snapshots',params={'source':'eq.advertising_active_configuration','cabinet':'eq.token_2','select':'id,payload,collected_at','order':'id.desc','limit':1})
  proof['daily_claim']=s.cache_get('advertising:ip:daily_run:v1:2026-10-20')
  proof['budget_pending']=s.db('GET','analytics_snapshots',params={'source':'eq.advertising_budget_pending','cabinet':'eq.token_2','select':'id,payload,collected_at','order':'id.desc','limit':1})

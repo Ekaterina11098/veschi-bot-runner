@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Exact one-supply live verification authorized by owner
+# Owner-authorized WB-GI-296253035 pilot with uniform comments and FBO return state
 on:
   push:
     branches: [main]

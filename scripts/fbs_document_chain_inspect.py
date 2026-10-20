@@ -1,4 +1,4 @@
-import os,json,time,urllib.request,urllib.parse,urllib.error,datetime
+import gzip,os,json,time,urllib.request,urllib.parse,urllib.error,datetime
 MS='https://api.moysklad.ru/api/remap/1.2/'
 WB='https://marketplace-api.wildberries.ru/'
 report={'observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'mode':'read_only','errors':[],'credential_present':{k:bool(os.getenv(k)) for k in ['MOYSKLAD_API_TOKEN','WB_TOKEN_3']}}
@@ -6,9 +6,12 @@ def get(base,path,token,params=None):
     url=base+path
     if params:url+='?'+urllib.parse.urlencode(params)
     time.sleep(.25)
-    req=urllib.request.Request(url,headers={'Authorization':('Bearer ' if base==MS else '')+token,'Accept-Encoding':'identity','User-Agent':'veschi-fbs-readonly/1'})
+    req=urllib.request.Request(url,headers={'Authorization':('Bearer ' if base==MS else '')+token,'Accept-Encoding':'gzip','Accept':'application/json','User-Agent':'veschi-fbs-readonly/1'})
     try:
-        with urllib.request.urlopen(req,timeout=40) as r:return json.load(r)
+        with urllib.request.urlopen(req,timeout=40) as r:
+            raw=r.read()
+            if r.headers.get('Content-Encoding')=='gzip':raw=gzip.decompress(raw)
+            return json.loads(raw)
     except urllib.error.HTTPError as e:raise RuntimeError('HTTP_'+str(e.code)+' '+path.split('?')[0])
 def rows(path,params=None):
     out=[];offset=0

@@ -1,0 +1,26 @@
+name: Owner no-send hold, no sources or Telegram
+on:
+  push:
+    branches: [ip-addressed401-approved-20261020]
+    paths: ['.github/workflows/ip-no-send-hold-20261020.yml']
+permissions: {contents: read}
+jobs:
+  hold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 2f798a9509b72030d6fb5ec68fb915c5d216c31b
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: python scripts/ip_no_send_hold_20261020.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

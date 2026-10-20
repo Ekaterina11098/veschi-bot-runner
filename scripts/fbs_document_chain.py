@@ -101,7 +101,7 @@ class Cache:
     def pending(self):
         rows = self.t.request(self.base, "telegram_api_cache", params={
             "cache_key": "like." + PREFIX + "*", "select": "cache_key,payload",
-            "limit": 1000})
+            "limit": 1000, "payload->>status": "neq.complete"})
         if len(rows) >= 1000:
             raise Stop("Pending state list incomplete")
         return [x for x in rows if x["payload"].get("status") != "complete"]
@@ -243,7 +243,8 @@ class Worker:
             doc = docs[0]
         self.verify(typ, doc, payload)
         state.setdefault("documents", {})[typ] = {"id": doc["id"], "name": doc["name"], **meta(doc)}
-        state.pop("inflight", None)
+        if state.get("inflight") == typ:
+            state.pop("inflight", None)
         state["status"] = typ + "_verified"
         self.db.put(key, state)
         return meta(doc)

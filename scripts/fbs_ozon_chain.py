@@ -131,11 +131,12 @@ def main(mode):
    state=state or {"act":act,"status":"waiting_delivery"}
    state["supply"]=virtual_supply(act,scope)
    if not scope["included"]:
+    if state.get("documents") or state.get("inflight"):raise m.Stop("All postings canceled after chain began; reconcile existing documents")
     state.update(status="complete",skipped_all_cancelled=True);db.put(key,state);continue
    if not scope["ready"]:
     state["observed_scope"]=scope;db.put(key,state);continue
    worker=OzonWorker(t,db,c,act,scope)
-   if "positions" in state and state.get("picking_scope",{}).get("included")!=scope["included"]:
+   if "positions" in state and (state.get("picking_scope",{}).get("included")!=scope["included"] or state.get("picking_scope",{}).get("counts")!=scope["counts"]):
     raise m.Stop("Frozen Ozon act composition changed")
    state["picking_scope"]=scope;db.put(key,state)
    worker.process(state)

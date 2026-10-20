@@ -1,5 +1,8 @@
 name: China FBS document chain
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/fbs-document-chain.yml']
   workflow_dispatch:
     inputs:
       mode:
@@ -16,7 +19,6 @@ concurrency:
   cancel-in-progress: false
 jobs:
   chain:
-    if: github.event_name == 'workflow_dispatch' || vars.FBS_DOC_CHAIN_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

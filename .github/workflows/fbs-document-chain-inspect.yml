@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Verify complete supported order window before establishing activation boundary
+# Exact one-supply live verification authorized by owner
 on:
   push:
     branches: [main]
@@ -29,6 +29,5 @@ jobs:
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
         run: |
-          python -m py_compile scripts/fbs_document_chain.py
-          python scripts/fbs_document_chain.py --mode preview
-          python scripts/fbs_document_chain.py --mode bootstrap
+          python scripts/test_fbs_chain.py
+          python scripts/fbs_document_chain_pilot.py

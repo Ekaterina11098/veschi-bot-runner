@@ -2,6 +2,7 @@ import {readFile} from 'node:fs/promises';
 import {TOOLS,dispatch,normalizeSource} from './data.mjs';
 import {MEMORY_TOOL} from './memory.mjs';
 import {MPSTATS_TOOL,currentPeriod,previousPeriod,unverifiedProfitClaim,comparisonFacts,renderComparison} from './mpstats.mjs';
+import {recommendationIntent,runRecommendations} from './recommendations.mjs';
 export function questionScope(question,history=[]) {
   for(const text of [question,...history.filter(x=>x.role==='user').map(x=>x.content).reverse()]) {
     if(/(?:все[хм]?|кажд\S*)[^.]{0,35}(?:три|тр[её]х|тр[её]м)|(?:три|тр[её]х|тр[её]м)[^.]{0,20}кабинет/iu.test(text))return null;
@@ -76,6 +77,12 @@ export async function modelRequest(body,{key,fetcher=fetch}) {
 export async function runDialog({question,history=[],memoryContext,readMemory,refreshMpstats,db,model,request,maxRounds=18}) {
   if(!model || !request) throw new Error('Explicit model and transport required');
   const prompt=await readFile(new URL('./prompt.txt',import.meta.url),'utf8');
+  if(refreshMpstats&&recommendationIntent(question,history)){
+    const explicitScope=questionScope(question,[]);
+    const scope=explicitScope??(/в этом|по нему|этого кабинета/iu.test(question)?questionScope(question,history):null);
+    const result=await runRecommendations({question,history,scope,db,refreshMpstats,model,request});
+    return {...result,answer:groundedFooter(result.answer,result.evidence)};
+  }
   const input=[{role:'developer',content:prompt+'\nТекущее время МСК: '+new Date().toLocaleString('sv-SE',{timeZone:'Europe/Moscow'})},
     ...(memoryContext?[{role:'user',content:'Архив переписки, не текущий запрос: '+memoryContext}]:[]),
     ...history.map(x=>({role:x.role==='assistant'?'assistant':'user',content:String(x.content)})),
@@ -173,3 +180,4 @@ export async function runDialog({question,history=[],memoryContext,readMemory,re
   error.evidence=evidence;
   throw error;
 }
+

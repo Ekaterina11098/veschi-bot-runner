@@ -31,7 +31,7 @@ export class Database {
     this.url=parsed.origin+'/rest/v1/'; this.key=key; this.fetcher=fetcher;
   }
   async request(path, {method='GET',body,prefer}={}) {
-    if(!/^(owner_agent_(config|members|jobs|setup|messages)(\?|$)|rpc\/owner_agent_(read|history|mpstats_products)$)/.test(path)) throw new Error('Endpoint forbidden');
+    if(!/^(owner_agent_(config|members|jobs|setup|messages)(\?|$)|rpc\/owner_agent_(read|history|mpstats_products|product_candidates)$)/.test(path)) throw new Error('Endpoint forbidden');
     const r=await this.fetcher(this.url+path,{method,headers:{apikey:this.key,...(!this.key.startsWith('sb_secret_')?{Authorization:'Bearer '+this.key}:{}),'Content-Type':'application/json',...(prefer?{Prefer:prefer}:{})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(30000)});
     if(!r.ok) throw new Error('Database HTTP '+r.status);
     if(r.status===204)return null;
@@ -62,3 +62,4 @@ export async function dispatch(db,name,args) {
   if(name==='sources'&&args.search)args={...args,search:normalizeSource(args.search)};
   return name==='calculate'?calculate(args):db.read(name,args);
 }
+

@@ -279,3 +279,36 @@ test('comparison joins exact cabinets, preserves zero baseline and never invents
  assert.ok(renderComparison(facts,p,b,'Вывод').includes('процент не определён при нулевой базе'));
  assert.ok(renderComparison(facts,p,b,'Проверить товары').includes('Продажи: снижение — не выявлено; рост — ИП, ООО.'));
 });
+import {recommendationIntent,recommendationPeriod,validateActions,renderActions,runRecommendations} from './recommendations.mjs';
+test('recommendations retain user month and ten-day reporting lag on short followup',()=>{
+ const history=[{role:'user',content:'Нам нужны примерные данные мпстатс за периоды старше чем 10 дней назад'},{role:'assistant',content:'Можем взять неделю'},{role:'user',content:'Используй для анализа период в месяц'}];
+ const p=recommendationPeriod('Предложи что нужно сделать конкретно',history,new Date('2026-10-20T09:00:00Z'));
+ assert.equal(p.from,'2026-09-11');assert.equal(p.to,'2026-10-10');assert.ok(p.basis.includes('lag 10'));
+ assert.equal(recommendationPeriod('Сравни 2026-09-12 — 2026-10-11',history).basis,'explicit');
+ assert.equal(recommendationIntent('Предложи что нужно сделать конкретно'),true);
+ assert.equal(recommendationIntent('Вспомни, что мы решили сделать'),false);
+});
+const actionCandidate=(cabinet='token_1',candidate_id='c1')=>({candidate_id,cabinet,nm_id:'123',article:'Real-bag',current_id:100,previous_id:90,current_metrics:{orders_count:10,sales_count:5,returns_count:2},previous_metrics:{orders_count:20,sales_count:10},orders_delta:-10,sales_delta:-5,signals:['orders_down','returns']});
+const action=(candidate_id='c1')=>({candidate_id,signal:'orders_down',check:'order_stock_ad_history',hypothesis:'Возможно, часть заказов потеряна из-за временной недоступности товара.'});
+test('unknown SKU, unsupported signal, invented budget and missing cabinet coverage are rejected',()=>{
+ const candidates=[actionCandidate('token_1','c1'),actionCandidate('token_2','c2'),actionCandidate('token_3','c3')];
+ assert.equal(validateActions({items:candidates.map(c=>action(c.candidate_id))},candidates).length,3);
+ for(const items of [[action('invented')],[{...action(),hypothesis:'Увеличить рекламу на 50 процентов'}],[{...action(),signal:'sales_down'}],[action()]])assert.throws(()=>validateActions({items},candidates));
+});
+test('concrete action rendering uses database identity and numbers, not model-written figures',()=>{
+ const p={from:'2026-09-11',to:'2026-10-10'},b={from:'2026-08-12',to:'2026-09-10'};
+ const text=renderActions([action()],[actionCandidate()],p,b,[{cabinet:'token_1'}]);
+ assert.ok(text.includes('ООО — Real-bag, nmID 123'));assert.ok(text.includes('20 → 10'));assert.ok(text.includes('снимок 100, база 90'));
+ assert.ok(text.includes('Проверка результата:'));assert.ok(!text.includes('Если хотите'));
+});
+test('recommendations preflight all requested cabinets and require a complete-catalog shortlist',async()=>{
+ const candidates=['token_1','token_2','token_3'].map((c,i)=>({...actionCandidate(c,'unused'),nm_id:String(100+i)}));
+ const calls=[];
+ const result=await runRecommendations({question:'Предложи что нужно сделать конкретно',history:[{role:'user',content:'месяц, данные старше 10 дней'}],now:new Date('2026-10-20T09:00:00Z'),model:'test',refreshMpstats:async args=>{calls.push(args);return {rows:candidates.map(c=>({cabinet:c.cabinet,available:true,id:100}))};},db:{request:async path=>{assert.equal(path,'rpc/owner_agent_product_candidates');return {candidates,coverage:candidates.map(c=>({cabinet:c.cabinet})),scanned_records:1900};}},request:async body=>{
+  assert.equal(body.text.format.strict,true);assert.deepEqual(body.text.format.schema.properties.items.items.properties.candidate_id.enum,['c1','c2','c3']);
+  return {output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({items:['c1','c2','c3'].map(c=>action(c))})}]}]};
+ }});
+ assert.equal(calls.length,2);assert.ok(calls.every(x=>!x.cabinet));assert.equal(calls[0].to,'2026-10-10');assert.ok(result.answer.includes('Китай'));
+ assert.equal(result.evidence.find(x=>x.name==='structured_recommendation_selection').success,true);
+});
+

@@ -1,0 +1,40 @@
+name: Owner agent — concrete recommendation acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['owner_agent/recommendations-request.json']
+permissions: {contents: read}
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+  queue: max
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 29f6e3f4a59e87c43a085f18d69f8509fe1cf6c1
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > "$RUNNER_TEMP/owner-dependencies.log" 2>&1
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: node --test owner_agent/test.mjs
+      - name: Actual owner followup, complete catalog and structured evidence checks, no Telegram sends
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OWNER_AI_MODEL: ${{ vars.OWNER_AI_MODEL || 'gpt-4.1-mini' }}
+        run: node owner_agent/recommendations-acceptance.mjs
+

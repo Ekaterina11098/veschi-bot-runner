@@ -1,10 +1,18 @@
-import os,json,urllib.request,datetime as d
+import datetime as d
 from fbs_document_chain import *
-t=Transport();db=Cache(t)
-end=d.datetime.now(d.timezone.utc);begin=end-d.timedelta(days=7)
-req=urllib.request.Request(os.environ["SUPABASE_URL"].rstrip("/")+"/functions/v1/fbs-ozon-read",method="POST",headers={"x-fbs-backend-key":os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json"},data=json.dumps({"path":"/v2/posting/fbs/act/list","body":{"limit":50,"filter":{"date_from":begin.date().isoformat(),"date_to":end.date().isoformat()}}}).encode())
+from fbs_ozon_api import ozon
+t=Transport();db=Cache(t);end=d.datetime.now(d.timezone.utc);begin=end-d.timedelta(days=7)
+report={"at":now(),"errors":[]}
 try:
- with urllib.request.urlopen(req,timeout=55) as response:data=json.load(response)
-except urllib.error.HTTPError as e:data={"error":"HTTP_"+str(e.code)}
-db.put("fbs_document_chain:ozon:api_inventory:v1",{"at":now(),"response":data})
-print(json.dumps({"saved":True,"document_writes":0}))
+ acts=ozon("/v2/posting/fbs/act/list",{"limit":50,"filter":{"date_from":begin.date().isoformat(),"date_to":end.date().isoformat()}})
+ report["acts"]=acts
+ latest=acts["result"][0]
+ answer=ozon("/v2/posting/fbs/act/get-postings",{"id":latest["id"]})
+ report["act_postings"]=answer
+ values=answer.get("result",[])
+ if isinstance(values,dict):values=values.get("postings",[])
+ if values and isinstance(values[0],dict) and values[0].get("posting_number"):
+  report["posting_example"]=ozon("/v3/posting/fbs/get",{"posting_number":values[0]["posting_number"],"with":{"analytics_data":False,"financial_data":False}})
+except Exception as e:report["errors"].append(str(e) if isinstance(e,Stop) else type(e).__name__)
+db.put("fbs_document_chain:ozon:detail_inventory:v1",report)
+print("Private act grouping inspection saved; no document writes")

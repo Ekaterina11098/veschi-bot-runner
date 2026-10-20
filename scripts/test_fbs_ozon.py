@@ -17,7 +17,7 @@ class OzonTests(unittest.TestCase):
   state={"supply":oz.virtual_supply(act,scope),"positions":[{"assortment":ref("product","p"),"quantity":3,"price":0}],"order_ids":["a-1","b-1"]}
   with patch.object(oz,"snapshot",return_value=scope):
    w.process(state);w.process(state)
-  self.assertEqual(t.docs["customerorder"][0]["name"],"201026")
+  self.assertEqual(t.docs["customerorder"][0]["name"],"201026 Озон")
   for kind in m.TYPES:self.assertEqual(t.docs[kind][0]["description"],"a-1, b-1")
   self.assertEqual(len(t.writes),4)
   self.assertEqual(state["status"],"complete")

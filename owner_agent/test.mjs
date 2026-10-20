@@ -287,9 +287,11 @@ test('recommendations retain user month and ten-day reporting lag on short follo
  assert.equal(recommendationPeriod('Сравни 2026-09-12 — 2026-10-11',history).basis,'explicit');
  assert.equal(recommendationIntent('Предложи что нужно сделать конкретно'),true);
  assert.equal(recommendationIntent('Вспомни, что мы решили сделать'),false);
+ assert.equal(recommendationIntent('Сколько конкретно заказов в ООО?'),false);
+ assert.equal(recommendationIntent('Что нужно сделать, чтобы бот подключился?'),false);
 });
 const actionCandidate=(cabinet='token_1',candidate_id='c1')=>({candidate_id,cabinet,nm_id:'123',article:'Real-bag',current_id:100,previous_id:90,current_metrics:{orders_count:10,sales_count:5,returns_count:2},previous_metrics:{orders_count:20,sales_count:10},orders_delta:-10,sales_delta:-5,signals:['orders_down','returns']});
-const action=(candidate_id='c1')=>({candidate_id,signal:'orders_down',check:'order_stock_ad_history',hypothesis:'Возможно, часть заказов потеряна из-за временной недоступности товара.'});
+const action=(candidate_id='c1')=>({candidate_id,signal:'orders_down',check:'order_stock_ad_history',hypothesis:'stock_gap'});
 test('unknown SKU, unsupported signal, invented budget and missing cabinet coverage are rejected',()=>{
  const candidates=[actionCandidate('token_1','c1'),actionCandidate('token_2','c2'),actionCandidate('token_3','c3')];
  assert.equal(validateActions({items:candidates.map(c=>action(c.candidate_id))},candidates).length,3);
@@ -310,5 +312,10 @@ test('recommendations preflight all requested cabinets and require a complete-ca
  }});
  assert.equal(calls.length,2);assert.ok(calls.every(x=>!x.cabinet));assert.equal(calls[0].to,'2026-10-10');assert.ok(result.answer.includes('Китай'));
  assert.equal(result.evidence.find(x=>x.name==='structured_recommendation_selection').success,true);
+});
+test('two explicitly requested cabinets never expand to a third cabinet',async()=>{
+ const scopes=[],reads=[];
+ const result=await runRecommendations({question:'Дай рекомендации ООО и ИП',scope:['token_1','token_2'],model:'test',refreshMpstats:async args=>{scopes.push(args.cabinet);return {rows:[{cabinet:args.cabinet,available:true}]};},db:{request:async(path,{body})=>{reads.push(body.args.cabinet);return {candidates:[actionCandidate(body.args.cabinet)],coverage:[{cabinet:body.args.cabinet,slot:'current'},{cabinet:body.args.cabinet,slot:'previous'}],scanned_records:100};}},request:async()=>({output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({items:[action('c1'),action('c2')]})}]}]})});
+ assert.deepEqual(scopes,['token_1','token_2','token_1','token_2']);assert.deepEqual(reads,['token_1','token_2']);assert.ok(!result.answer.includes('Китай'));
 });
 

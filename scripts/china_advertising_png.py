@@ -1,0 +1,87 @@
+import json,math
+from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from PIL import Image,ImageDraw,ImageFont
+
+def render(b,outdir):
+ root=Path(outdir);root.mkdir(parents=True,exist_ok=True)
+ def fmt(day):return datetime.fromisoformat(day).strftime('%d.%m.%Y')
+ W=1400;P=42;INK='#183448';MUTED='#536b7d';RED='#b42b3c';GREEN='#18705b';BG='#eef3f7';NAVY='#193d54'
+ def font(n,bold=False):
+  import os
+  path=('C:/Windows/Fonts/'+('arialbd.ttf' if bold else 'arial.ttf')) if os.name=='nt' else ('/usr/share/fonts/truetype/dejavu/'+('DejaVuSans-Bold.ttf' if bold else 'DejaVuSans.ttf'))
+  return ImageFont.truetype(path,n)
+ measure=ImageDraw.Draw(Image.new('RGB',(1,1)))
+ def wrap(t,f,width):
+  out=[];line=''
+  for word in t.split():
+   nxt=(line+' '+word).strip()
+   if line and measure.textlength(nxt,font=f)>width:out.append(line);line=word
+   else:line=nxt
+  if line:out.append(line)
+  return out
+ def number(v):return f'{v:,.0f}'.replace(',',' ')
+ def money(v):return number(v)+' ¥'
+ def pct(v):return f'{v:.2f}'.replace('.',',')+'%'
+ def canvas(title,subtitle):
+  im=Image.new('RGB',(W,12000),BG);d=ImageDraw.Draw(im);d.rectangle((0,0,W,190),fill=NAVY)
+  d.text((P,30),title,font=font(49,True),fill='white');d.text((P,110),subtitle,font=font(30),fill='#dceaf2');return im,d,220
+ def paragraph(d,y,text,size=27,color=MUTED):
+  for line in wrap(text,font(size),W-2*P):d.text((P,y),line,font=font(size),fill=color);y+=size+11
+  return y+10
+ im,d,y=canvas('Китай · ДРР и рекламные расходы',fmt(b['period'])+' · 7 дней: '+fmt(b['week_from'])+'–'+fmt(b['week_to'])+' · ориентир ДРР 5%')
+ y=paragraph(d,y,'Расход за день: '+money(b['total_day'])+'     За 7 дней: '+money(b['total_week']),36,INK)
+ y=paragraph(d,y,'Суммы — по сводкам кампаний MPStats. ДРР пересчитан по этим суммам; значения округлены источником.',25)
+ xs=[P,330,555,765]
+ for x,t in zip(xs,['Кампания WB','Расход','ДРР за день','Товары с ДРР > 5%']):d.text((x,y),t,font=font(28,True),fill=MUTED)
+ y+=58
+ for c in b['campaigns']:
+  notes=[]
+  for r in c['above5']:notes+=wrap(r['article']+' · '+pct(r['drr']),font(26),W-xs[3]-P-15)
+  if c['no_orders']:
+   notes+=wrap('Без прямых заказов: '+str(len(c['no_orders']))+' тов. · '+money(sum(r['spend'] for r in c['no_orders'])),font(26),W-xs[3]-P-15)
+  if c['is_new']:notes=['Создана '+fmt(c['created'][:10])+' — вне отчётного периода']
+  elif c['spend']==0:notes=['Нет расхода за день']
+  elif not notes:notes=['Среди рассчитанных ДРР превышений нет']
+  if not c['day_match']:notes+=wrap('Сводка: '+money(c['spend'])+'; дневной ряд: '+(money(c.get('day_row_spend')) if c.get('day_row_spend') is not None else 'нет данных'),font(25),W-xs[3]-P-15)
+  h=max(143,34+len(notes)*37)
+  d.rounded_rectangle((P-14,y,W-P+14,y+h-9),radius=14,fill='white')
+  d.text((xs[0],y+15),str(c['wb_id']),font=font(35,True),fill=INK)
+  for k,line in enumerate(wrap(c['name'],font(25),xs[1]-xs[0]-18)):d.text((xs[0],y+61+k*31),line,font=font(25),fill=MUTED)
+  d.text((xs[1],y+20),'День: '+money(c['spend']),font=font(29,True),fill=INK)
+  d.text((xs[1],y+65),'7 дн.: '+money(c['weekly_spend']),font=font(27),fill=MUTED)
+  label='Нет расхода' if c['spend']==0 else pct(c['drr']) if c['drr'] is not None else 'Без заказов'
+  for k,line in enumerate(wrap(label,font(28,True),xs[3]-xs[2]-20)):d.text((xs[2],y+22+k*35),line,font=font(28,True),fill=RED if c['drr'] and c['drr']>5 else INK)
+  for k,line in enumerate(notes):d.text((xs[3],y+18+k*37),line,font=font(26),fill=RED if c['above5'] else MUTED)
+  y+=h
+ y+=20
+ y=paragraph(d,y,'ДРР = расход / сумма рекламных заказов. Постклик уже включён в итог РК и повторно не прибавлен. По товарам — прямые заказы. Это рекламная атрибуция, не выкупы и не прибыль.',25)
+ y=paragraph(d,y,'Расхождения исходных срезов показаны в строках. Товарные суммы могут отличаться от итогов РК из-за точности и версий источника; итог РК не заменён суммой товаров. Нули новых кампаний не означают эффективность.',25)
+ im.crop((0,0,W,y+24)).save(root/'drr.png',optimize=True)
+ im,d,y=canvas('Китай · бюджеты кампаний','Проверка '+fmt(b['observed_day'])+' · валюта CNY · время МСК')
+ xs=[P,390,650,955]
+ for x,t in zip(xs,['Кампания WB','Остаток','Проверено','Хватит примерно*']):d.text((x,y),t,font=font(29,True),fill=MUTED)
+ y+=60
+ for c in b['campaigns']:
+  t=datetime.fromisoformat(c['balance_observed']).astimezone(ZoneInfo('Europe/Moscow')).strftime('%d.%m %H:%M')
+  hours=c['balance_hours']
+  if c['balance'] is None:label='Нет данных бюджета'
+  elif c['is_new']:label='Новая РК — нет базы'
+  elif c['status']!=9:label='Нет оценки · код '+str(c['status'])
+  elif not c['spend']:label='Нет расхода за день'
+  else:label=('≈ '+f'{hours:.1f}'.replace('.',',')+' ч') if hours<24 else ('≈ '+f'{hours/24:.1f}'.replace('.',',')+' дн.')
+  notes=wrap(label,font(29,True),W-xs[3]-P-15);h=max(133,35+len(notes)*37)
+  d.rounded_rectangle((P-14,y,W-P+14,y+h-9),radius=14,fill='white')
+  d.text((P,y+17),str(c['wb_id']),font=font(35,True),fill=INK)
+  for k,line in enumerate(wrap(c['name'],font(25),xs[1]-P-20)):d.text((P,y+64+k*31),line,font=font(25),fill=MUTED)
+  d.text((xs[1],y+23),(money(c['balance']) if c['balance'] is not None else 'Нет данных'),font=font(35,True),fill=INK)
+  d.text((xs[2],y+26),t,font=font(28),fill=INK)
+  for k,line in enumerate(notes):d.text((xs[3],y+22+k*37),line,font=font(29,True),fill=RED if hours is not None and hours<24 else INK)
+  y+=h
+ y+=22
+ y=paragraph(d,y,'*Условная оценка: остаток при проверке / расход за '+fmt(b['period'])+' × 24 часа. Это не прогноз по сегодняшнему темпу и не гарантия срока. Расход после проверки не вычтен.',28)
+ y=paragraph(d,y,'Для новых кампаний без полного дня расхода срок не рассчитывается. Нулевой бюджет и отсутствие расхода сами по себе не раскрывают причину статуса.',27)
+ im.crop((0,0,W,y+25)).save(root/'budgets.png',optimize=True)
+ 
+ return [root/'drr.png',root/'budgets.png']

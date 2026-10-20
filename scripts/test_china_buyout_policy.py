@@ -3,7 +3,7 @@ from datetime import datetime,timezone
 from decimal import Decimal
 from unittest.mock import patch
 from china_expected_order_profit import buyout_from_product,resolved_buyout_rate
-from china_break_even import calculate,resolve,answer
+from china_break_even import calculate,resolve,answer,compact_report,compact_payload
 NM='1473243898';ART='119-NoelBag-darkblack'
 PRODUCT=dict(nm_id=int(NM),sa_name=ART,p_id=1,is_payed=1,finish_as_return=0,finished_orders=3,is_payed_percent_after_returns=33.33,orders_count=4,advertisement=0,sales_ret_sum=2293.83,total_commission_without_spp=458.82,acquiring=0,sales_sum=1903.96,returns_sum=0,taxes=95.2,price_after_spp=1594,deduction=0,penalty=0,storage_fee=0,acceptance=0,total_cashback=0)
 class Fake:
@@ -55,7 +55,7 @@ class PolicyTests(unittest.TestCase):
   w=Fake();text,trace=w.run();r=trace[0]
   self.assertEqual(r['buyout']['sample_size'],3);self.assertAlmostEqual(r['buyout']['percent'],100/3)
   self.assertEqual(len(r['scenarios']),2);self.assertGreater(r['scenarios'][1]['seller_after_cny'],r['scenarios'][0]['seller_after_cny'])
-  self.assertIn('33,33%',text);self.assertIn('ДРР 5% от суммы заказов',text);self.assertEqual(r['ads'],0)
+  self.assertIn('33,3%',text);self.assertIn('ДРР 5% от заказов',text);self.assertEqual(r['ads'],0)
  def test_zero_percent_no_finite_price(self):
   w=Fake();w.product.update(is_payed=0,finished_orders=3,is_payed_percent_after_returns=0)
   text,trace=w.run();self.assertTrue(all(r['status']=='no_finite_break_even' for r in trace[0]['scenarios']))
@@ -74,6 +74,21 @@ class PolicyTests(unittest.TestCase):
    profit=p*(price*(1-Decimal('.2')-Decimal('.05')*Decimal(1594)/(Decimal('146.4')*12))-Decimal('869.2275752773376'))-196-Decimal('19329.76')/1184-price*drr
    self.assertGreaterEqual(profit,0)
    self.assertAlmostEqual(r['seller_after_cny'],r['base_cny']*.4)
+class CompactTests(unittest.TestCase):
+ def test_short_approved_layout_and_links(self):
+  text,trace=Fake().run()
+  self.assertLess(len(text),600);self.assertNotIn('Учтено:',text)
+  self.assertIn('Нынешняя реклама: 166,4 ¥',text)
+  self.assertIn('ДРР 5% от заказов: 207,6 ¥',text)
+  self.assertIn('33,3% · 1 из 3, выборка мала',text)
+  payload=compact_payload(text,[(NM,ART)])
+  self.assertEqual(payload['entities'][0]['url'],'https://www.wildberries.ru/catalog/'+NM+'/detail.aspx')
+  self.assertEqual(trace[0]['inputs']['cost_rub'],869.2275752773376)
+ def test_fallback_explicit(self):
+  w=Fake();w.product.update(is_payed=0,finish_as_return=0,finished_orders=0,is_payed_percent_after_returns=0)
+  self.assertIn('50% · принято для расчёта',w.run()[0])
+ def test_generic_message_not_formatted(self):
+  self.assertEqual(compact_payload('Обычный вопрос',[]),{})
 class InitialPriceTests(unittest.TestCase):
  def test_initial_price_uses_actual_small_sample(self):
   import importlib.util

@@ -580,7 +580,9 @@ def runtime():
     bot=os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()
     def send(chat,text):
         # No retries after a timeout: at-most-once delivery takes precedence.
-        return session.post('https://api.telegram.org/bot'+bot+'/sendMessage',json={'chat_id':chat,'text':text,'disable_web_page_preview':True,**({'reply_parameters':{'message_id':worker.reply_id,'allow_sending_without_reply':True}} if getattr(worker,'reply_id',None) else {})},timeout=35).json()
+        from china_break_even import compact_payload
+        formatting=compact_payload(text,worker.catalog()) if '\nБезубыточность:' in text and '\nВыкуп:' in text else {}
+        return session.post('https://api.telegram.org/bot'+bot+'/sendMessage',json={'chat_id':chat,'text':text,'disable_web_page_preview':True,**formatting,**({'reply_parameters':{'message_id':worker.reply_id,'allow_sending_without_reply':True}} if getattr(worker,'reply_id',None) else {})},timeout=35).json()
     def collect(days):
         from analytics.mpstats_probe import discover
         from analytics.mpstats_gaps import execute_reads

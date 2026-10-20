@@ -50,6 +50,43 @@ def calculate(cost,dispatch,ads_per_order,reserve_per_order,probability,commissi
   output.append(dict(scenario=label,status='calculated',raw_after_cny=float(raw),base_cny=int(base),seller_after_cny=float(after),
    buyer_rub=int((after*dec(fx)*dec(buyer_ratio)).quantize(Decimal('1')))))
  return output
+def compact_report(article,nm,rate,paid,current_cny,scenarios):
+ def num(v):
+  text=format(dec(v).normalize(),'f')
+  return text.replace('.',',')
+ def rub(v):return format(int(v),',').replace(',',' ')
+ percent=format(dec(rate['percent']).quantize(Decimal('.1')),'f').replace('.',',')
+ if rate['source']=='own_article':
+  rate_text=percent+'% · '+str(paid)+' из '+str(rate['sample_size'])
+  if rate['sample_size']<10:rate_text+=', выборка мала'
+ else:rate_text='50% · принято для расчёта, собственной статистики нет'
+ lines=[article,'Выкуп: '+rate_text+'.','Текущая цена: '+num(current_cny)+' ¥','','Безубыточность:','']
+ for s in scenarios:
+  label='Нынешняя реклама' if s['scenario']=='current' else 'ДРР 5% от заказов'
+  value=num(s['seller_after_cny'])+' ¥ · покупатель ≈'+rub(s['buyer_rub'])+' ₽' if s['status']=='calculated' else 'конечной цены безубыточности нет'
+  lines.append('• '+label+': '+value)
+ known=[dec(s['seller_after_cny']) for s in scenarios if s['status']=='calculated']
+ if len(known)==2:
+  relation='ниже обоих порогов' if dec(current_cny)<min(known) else 'не ниже обоих порогов' if dec(current_cny)>=max(known) else 'между двумя порогами'
+  lines+=['','Текущая цена '+relation+'.']
+ lines+=['Пороги расчётные, без прибыли; цены покупателя — прогноз.']
+ return '\n'.join(lines)
+
+def compact_payload(text,catalogue):
+ lines=text.splitlines()
+ if len(lines)<4 or not lines[1].startswith('Выкуп: ') or '\nБезубыточность:' not in text:return {}
+ ids={a:str(n) for n,a in catalogue}
+ nm=ids.get(lines[0])
+ if not nm:raise ValueError('Compact product link unresolved')
+ entities=[]
+ def entity(kind,start,end,**kw):
+  entities.append(dict(type=kind,offset=len(text[:start].encode('utf-16-le'))//2,length=len(text[start:end].encode('utf-16-le'))//2,**kw))
+ entity('text_link',0,len(lines[0]),url='https://www.wildberries.ru/catalog/'+nm+'/detail.aspx')
+ for m in re.finditer(r'\d+(?:[ ,]\d+)*(?:%| ¥| ₽)',text):
+  entity('bold',m.start(),m.end())
+ pos=text.index('Безубыточность:');entity('bold',pos,pos+len('Безубыточность:'))
+ return dict(entities=entities,link_preview_options=dict(is_disabled=True))
+
 def _latest_audits(w,prefix):
  rows=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':100}) or []
  if len(rows)>=100:raise ValueError('Audit list incomplete')
@@ -136,22 +173,9 @@ def answer(w,job,history=()):
   extra=sum((dec(product.get(k)) for k in ('penalty','storage_fee','acceptance','total_cashback')),Decimal(0))/n
   reserve+=extra
   scenarios=calculate(costs[0]['cost'],delivery*fx+handling,ads/n,reserve,rate['probability'],commission,tax,ratio,fx,price['discount'])
-  fmt=lambda v:format(dec(v).quantize(Decimal('.01')),'f').replace('.',',')
-  percent=fmt(rate['percent'])
-  lines=[article+' · WB '+nm,str(start)+'–'+str(end)+' · полные дни МСК',
-   'Выкуп сейчас: '+percent+'%'+(' — '+str(product.get('is_payed',0))+' из '+str(rate['sample_size'])+' завершённых заказов.' if rate['source']=='own_article' else ' — принято для расчёта, собственной завершённой статистики нет.'),
-   'Незавершённые заказы не включены в знаменатель.'+(' Выборка небольшая.' if 0<rate['sample_size']<10 else ''),
-   'Цена безубыточности, продавец после скидки:']
-  for s in scenarios:
-   label='При текущем расходе на рекламу ('+fmt(ads)+' ₽ за период)' if s['scenario']=='current' else 'При ДРР 5% от суммы заказов до скидки WB'
-   lines.append(label+': '+(fmt(s['seller_after_cny'])+' ¥; покупатель ≈'+str(s['buyer_rub'])+' ₽ (прогноз).' if s['status']=='calculated' else 'конечной безубыточной цены нет при текущем выкупе/расходах.'))
-  lines+=['Текущая цена продавца: '+fmt(current_cny)+' ¥. Скидка продавца '+str(price['discount'])+'%.',
-   'Учтено: себестоимость '+fmt(costs[0]['cost'])+' ₽; комиссия '+fmt(commission*100)+'%; налог '+fmt(tax*100)+'% (настройка MPStats); доставка '+fmt(delivery*fx)+' ₽/заказ; обработка '+fmt(handling)+' ₽/заказ; резерв общих удержаний '+fmt(reserve)+' ₽/заказ.',
-   'Обычный возврат на склад WB в России включён в доставку. Доставка: '+delivery_source+'. Курс расчёта '+fmt(fx)+' ₽/¥.',
-   'Общие удержания распределены по числу заказов — расчётный резерв, а не установленный расход именно этого товара. Возможное пересечение с оплатой WB Promotion пока не исключено.',
-   'Скидки WB для прогноза покупательской цены считаются неизменными. Целевая прибыль 30% в пороги не заложена. Цены не менялись.']
-  trace=[dict(name='china_break_even',version=1,nm_id=nm,article=article,period_from=str(start),period_to=str(end),source_snapshot_id=marker['id'],finance_audit=key,overhead_source=overhead_source,
-   buyout={k:v for k,v in rate.items() if k!='probability'},scenarios=scenarios,ads=float(ads),orders=float(n),shared_reserve_per_order=float(reserve),wb_writes=0)]
-  return '\n'.join(lines),trace
+  text=compact_report(article,nm,rate,product.get('is_payed',0),current_cny,scenarios)
+  trace=[dict(name='china_break_even',version=2,nm_id=nm,article=article,period_from=str(start),period_to=str(end),source_snapshot_id=marker['id'],finance_audit=key,overhead_source=overhead_source,
+   buyout={k:v for k,v in rate.items() if k!='probability'},scenarios=scenarios,ads=float(ads),orders=float(n),shared_reserve_per_order=float(reserve),inputs=dict(cost_rub=float(dec(costs[0]['cost'])),commission=float(commission),tax=float(tax),delivery_rub=float(delivery*fx),handling_rub=float(handling),seller_discount=price['discount'],current_cny=float(current_cny),rub_per_cny=float(fx),delivery_source=delivery_source),assumptions=['common_deductions_allocated_per_order','possible_WB_Promotion_overlap_retained','unchanged_WB_discounts_for_buyer_forecast','ordinary_return_to_WB_RF_included'],wb_writes=0)]
+  return text,trace
  except (ValueError,KeyError,TypeError,ArithmeticError) as exc:
   return 'Расчёт безубыточности пока не завершён: '+str(exc)+' Пропуски не считаются нулями. Цены не менялись.',[dict(name='china_break_even',status='incomplete',detail=str(exc),wb_writes=0)]

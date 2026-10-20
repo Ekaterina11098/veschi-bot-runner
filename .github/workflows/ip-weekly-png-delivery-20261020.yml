@@ -6,6 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   addressed:
+    if: false # Both PNG receipts verified; today's slots confirmed.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

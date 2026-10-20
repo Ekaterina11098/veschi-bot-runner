@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# User-authorized exact canceled-unit correction to picking list quantity 220
+# Repair missing comments on first exact pilot chain without changing quantities
 on:
   push:
     branches: [main]
@@ -30,4 +30,4 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
         run: |
           python scripts/test_fbs_chain.py
-          python scripts/fbs_quantity_repair.py
+          python scripts/fbs_comment_repair.py

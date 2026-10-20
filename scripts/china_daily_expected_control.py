@@ -82,7 +82,7 @@ def build(worker,candidate_review=False):
  from china_agent import demand
  from china_agent.control_owner_preview import Preview
  from china_agent.daily_report_worker import MSK
- from china_agent.expected_order_profit import resolved_buyout_rate,expected_profit
+ from china_agent.expected_order_profit import resolved_buyout_rate,expected_profit,buyout_from_product
  from china_agent.price_experiment_result import experiment_result,zero_buyout_signal
  from china_agent.wb_order_gaps import counts
  from analytics.mpstats_primary import products
@@ -188,8 +188,8 @@ def build(worker,candidate_review=False):
   if pair:
    for label,(a,b) in zip(('before','after'),pair):outcomes[label]=order_outcomes(wb_raw,outcome_rows[nm],nm,article,str(a),str(b))
   base=outcomes.get('before',{})
-  resolved=resolved_buyout_rate(base.get('paid'),base.get('completed'))
-  item=dict(nm_id=nm,article=article,detected_at=str(detected),before_price=(change.get('before_price') or {}).get('current_cny'),after_price=(change.get('after_price') or {}).get('current_cny'),buyout_percent=resolved['percent'],buyout_sample=resolved['sample_size'],buyout_fallback=resolved['source']=='fallback',assessment_date=str(detected+timedelta(days=5)))
+  resolved=buyout_from_product(params)
+  item=dict(nm_id=nm,article=article,detected_at=str(detected),before_price=(change.get('before_price') or {}).get('current_cny'),after_price=(change.get('after_price') or {}).get('current_cny'),buyout_percent=resolved['percent'],buyout_sample=resolved['sample_size'],buyout_fallback=resolved['source']=='fallback',buyout_period_from=str(rate_start),buyout_period_to=str(end),buyout_note=resolved['note'],assessment_date=str(detected+timedelta(days=5)))
   if not pair:item.update(status='zero_full_days',result_action='Нет завершённых дней после изменения; ждём первый полный день.');output.append(item);continue
   retention=None
   if params:
@@ -247,7 +247,7 @@ def render_item(item):
  lines=[item['article']]
  if item.get('status')=='zero_full_days':return item['article']+'\n'+item['result_action']
  a,b=item['before'],item['after'];p=item['buyout_percent']/100
- rate=('50% — принято для расчёта, завершённой собственной статистики базового периода нет' if item['buyout_fallback'] else _pct(p)+' — '+str(a['outcomes']['paid'])+' из '+str(item['buyout_sample'])+' завершённых заказов'+('; выборка очень мала' if item['buyout_sample']<10 else ''))
+ rate=('50% — принято для расчёта, собственной завершённой статистики за последние30 полных дней нет' if item['buyout_fallback'] else _pct(p)+' — '+str(item['buyout_sample'])+' завершённых заказов за '+item['buyout_period_from']+'–'+item['buyout_period_to']+('; выборка очень мала' if item['buyout_sample']<10 else ''))
  lines+=['Базовый выкуп: '+rate+'.']
  for label,title in (('before','До повышения'),('after','После повышения')):
   v=item[label];o=v['outcomes']

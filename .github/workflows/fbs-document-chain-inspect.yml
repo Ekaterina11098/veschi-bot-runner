@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Owner-authorized WB-GI-296250890 pilot before scheduled activation
+# Diagnose exact article mapping blocker before authorized third pilot
 on:
   push:
     branches: [main]

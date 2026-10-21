@@ -4,6 +4,24 @@ from datetime import datetime,timezone,timedelta
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parent/'review-approval-preparation'))
 
+def schedule_answer(text):
+ import re
+ if not re.search(r'расписани|(?:постоянн|регулярн).*отч[её]т',text,re.I):return None
+ root=Path(__file__).parent/'.github/workflows'
+ known={
+  'stock-daily-1630-prepared.yml':["0 4 * * *","30 13 * * 0-6"],
+  'reviews-morning.yml':["0,20,40 5-7 * * *"],
+  'questions-morning.yml':["10,30,50 5-7 * * *"]}
+ if not all(all(value in (root/name).read_text(encoding='utf8') for value in values) for name,values in known.items()):
+  return 'Настройки расписания изменились. Не могу подтвердить время отчётов без проверки действующих запусков.'
+ return ('Постоянные рассылки, время МСК:\n'
+  '• Остатки: запуск ежедневно в 07:00 и 16:30. После завершения — итог изменений и необходимые ручные увеличения.\n'
+  '• Проверка остатков МСК 1–19 шт.: после тех же запусков; отдельный блок «Нет в продаже на ВБ». Пустой список не отправляется.\n'
+  '• Отзывы трёх кабинетов: с 08:00, повторные проверки каждые 20 минут до 10:40. Карточки, требующие согласования, приходят сюда.\n'
+  '• Вопросы трёх кабинетов: с 08:10, повторные проверки каждые 20 минут до 10:50.\n'
+  'Фактическая доставка может быть позже из-за очереди запуска и ограничений WB.\n'
+  'Ежемесячную проверку «Подделки» этим обработчиком подтвердить нельзя. Даты сохранённых данных не являются расписанием отчётов.')
+
 def main():
  import psycopg,requests
  from review_telegram_approval import Repository
@@ -44,6 +62,19 @@ def main():
    if not key.startswith('sb_secret_'):headers['Authorization']='Bearer '+key
    r=requests.request(method,os.environ['SUPABASE_URL']+'/rest/v1/business_agent_jobs',params=params,json=body,headers=headers,timeout=20)
    r.raise_for_status();return r.json() if r.content else []
+
+  # Correct our exact delivered schedule answer if an earlier model confused snapshot dates with schedules.
+  recent=db('GET',{'agent_id':'eq.operations','chat_id':'eq.'+chat,'status':'eq.done','order':'id.desc','limit':'10'})
+  for saved in recent:
+   correct=schedule_answer(saved['request_text'])
+   if not correct or saved.get('answer')==correct:continue
+   receipt=repo.get('events','content-group:answer:'+str(saved['id']))
+   if not receipt or receipt.get('status')!='confirmed' or str(receipt.get('chat_id'))!=chat:continue
+   response=tg('editMessageText',{'chat_id':chat,'message_id':receipt['message_id'],'text':correct})
+   if str(response.get('chat',{}).get('id'))!=chat:raise RuntimeError('Correction identity mismatch')
+   db('PATCH',{'id':'eq.'+str(saved['id']),'chat_id':'eq.'+chat},{'answer':correct,'tool_trace':[{'name':'content_report_schedule','source':'deployed_workflows'}]})
+   with repo.transaction():repo.put('events','content-group:schedule-correction:'+str(saved['id']),dict(status='confirmed',message_id=receipt['message_id'],checked_at=time.time()))
+
   report={'done':0,'errors':0}
   try:
    rows=db('GET',{'agent_id':'eq.operations','chat_id':'eq.'+chat,'status':'eq.pending','retry_at':'lte.'+datetime.now(timezone.utc).isoformat(),'order':'id.asc','limit':'6'})
@@ -59,7 +90,9 @@ def main():
       response=requests.post('https://api.openai.com/v1/responses',headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY']},json=body,timeout=(10,100))
       if response.status_code!=200:raise RuntimeError('Content model unavailable')
       return response.json()
-     answer,trace=dialog.run_dialog(job,request=model_request,previous=list(reversed(history)))
+     known_schedule=schedule_answer(job['request_text'])
+     if known_schedule:answer,trace=known_schedule,[{'name':'content_report_schedule','source':'deployed_workflows'}]
+     else:answer,trace=dialog.run_dialog(job,request=model_request,previous=list(reversed(history)))
      patch({'answer':answer,'tool_trace':trace})
      # Commit send intent first: an unknown send outcome is never retried blindly.
      key='content-group:answer:'+str(job['id'])

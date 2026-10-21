@@ -112,7 +112,8 @@ def context(worker, job, history):
     if job.get('agent_id')!='china' or not re.search(r'поиск|запрос|позици|продвиж|реклам|показ|клик|анализ.*продаж|почему.*(?:заказ|продаж)',text,re.I):return None,[]
     try:
         from china_break_even import resolve
-        nm,article=resolve(text,worker.catalog())
+        lookup=re.sub(r'(артикул[а-яё]*|арт[.:]?)(?=\d)',r'\1 ',text,flags=re.I)
+        nm,article=resolve(lookup,worker.catalog())
         current,previous=period(text,worker.now)
         value=collect(worker,nm,article,current,previous)
     except (ValueError,KeyError,TypeError,RuntimeError):

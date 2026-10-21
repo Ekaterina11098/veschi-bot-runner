@@ -1,0 +1,36 @@
+name: Restore two owner screenshot edits for approval
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-visible-edit-recovery.yml']
+permissions: {contents: read}
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 73ecafcd12d9c38b194eaf289b38bfb1e39e31fd
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' requests==2.32.5 cryptography==46.0.2 python-dotenv==1.1.1
+      - name: Restore exact visible texts without publication
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python review_visible_edit_recovery.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-visible-edit-recovery
+          path: ${{ runner.temp }}/stock-deploy-output/*.aes.json
+          retention-days: 90

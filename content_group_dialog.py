@@ -20,6 +20,8 @@ def main():
    data=r.json()
    if not r.ok or not data.get('ok'):raise RuntimeError('Telegram '+method+' unconfirmed')
    return data['result']
+  webhook=tg('getWebhookInfo',{})
+  with repo.transaction():repo.put('events','content-group:webhook-health:v1',dict(pending_update_count=webhook.get('pending_update_count'),last_error_date=webhook.get('last_error_date'),last_error_message=webhook.get('last_error_message'),allowed_updates=webhook.get('allowed_updates'),checked_at=time.time()))
   bot=tg('getMe',{});group=tg('getChat',{'chat_id':chat});member=tg('getChatMember',{'chat_id':chat,'user_id':bot['id']})
   if str(bot['id'])!=str(policy['bot_id']) or bot['username'].lower()!='veschi_brand_ai_bot' or str(group['id'])!=chat or group['type'] not in ('group','supergroup') or member['status']!='administrator':raise RuntimeError('Group identity or administrator access mismatch')
   with repo.transaction():repo.put('events','content-group:preflight:v1',dict(chat_id=chat,bot_id=str(bot['id']),title=group.get('title'),chat_type=group['type'],bot_status=member['status'],checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID')))

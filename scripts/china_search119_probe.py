@@ -5,8 +5,9 @@ import requests
 from china_price_apply import IO
 io=IO();key='china_agent:search_api_probe:2026-10-21:v1'
 if io.get(key):print('already_collected');raise SystemExit()
-token=io.token;part=token.split('.')[1];claim=json.loads(base64.urlsafe_b64decode(part+'='*((-len(part))%4)))
-if str(claim.get('sid'))!='250184767':raise RuntimeError('Seller scope')
+token=io.token
+card=io.prices(['1473243898'])['1473243898']
+if card.get('vendorCode')!='119-NoelBag-darkblack' or card.get('currencyIsoCode4217')!='CNY':raise RuntimeError('Seller scope')
 state={'cabinet':'token_3','nm_id':1473243898,'started_at':datetime.now(timezone.utc).isoformat(),'observations':[],'wb_writes':0,'telegram_calls':0}
 period={'start':'2026-10-14','end':'2026-10-20'}
 queries=[

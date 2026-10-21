@@ -1,0 +1,41 @@
+name: Ozon stock read-only preflight21Oct
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-ozon-preflight-20261021.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-stock
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: aa0cd45ba56661a85d201ec1247e0253beadac99
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/read-install.log" 2>&1
+      - name: Read Ozon only and save private checkpoint
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_URL: https://abxgjoqlddhtcmjcjwxw.supabase.co
+        run: python private-source/owner_ozon_stock_preflight_20261021.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-ozon-stock-preflight
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 30

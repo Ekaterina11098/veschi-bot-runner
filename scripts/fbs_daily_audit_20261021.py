@@ -28,7 +28,7 @@ def check(w,cab,state,expected_positions,comment,order_name):
   if typ=="demand":payload["customerOrder"]=links["customerorder"]
   if typ=="salesreturn":payload["demand"]=links["demand"]
   w.verify(typ,doc,payload)
-  ext=w.c["document_prefix"]+":"+state["supply"]["id"]+":"+typ
+  ext=w.c.get("document_prefix","fbs-china")+":"+state["supply"]["id"]+":"+typ
   matches=w.ms_rows("entity/"+typ,{"filter":"externalCode="+ext})
   if len(matches)!=1 or matches[0]["id"]!=ident:raise m.Stop("Duplicate/missing external-code document")
   if typ=="customerorder":

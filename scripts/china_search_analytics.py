@@ -58,7 +58,7 @@ def collect(worker, nm, article, current, previous, transport=None, sleeper=time
     import requests
     token=os.getenv('WB_TOKEN_3','').strip()
     if not token:return {'available':False,'reason':'WB analytics credential unavailable; missing is not zero'}
-    key='china_agent:search_analytics:v1:'+str(nm)+':'+current['start']+':'+current['end']+':both'
+    key='china_agent:search_analytics:v2:'+str(nm)+':'+current['start']+':'+current['end']+':both'
     now=datetime.now(timezone.utc); cached=worker.get(key)
     if cached and cached.get('article')==article and cached.get('cabinet')=='token_3':
         expiry=datetime.fromisoformat(cached['expires_at'])
@@ -109,7 +109,7 @@ def collect(worker, nm, article, current, previous, transport=None, sleeper=time
 
 def context(worker, job, history):
     text=job.get('request_text','')
-    if job.get('agent_id')!='china' or not re.search(r'поиск|запрос|позици|продвиж|реклам|показ|клик|анализ.*продаж|почему.*(?:заказ|продаж)',text,re.I):return None,[]
+    if job.get('agent_id')!='china' or not re.search(r'поиск|запрос|позици|продвиж|реклам|показ|клик|анализ.*продаж|почему.*(?:заказ|прода)',text,re.I):return None,[]
     try:
         from china_break_even import resolve
         lookup=re.sub(r'(артикул[а-яё]*|арт[.:]?)(?=\d)',r'\1 ',text,flags=re.I)

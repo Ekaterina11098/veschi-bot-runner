@@ -27,25 +27,25 @@ class Driver(unittest.TestCase):
    def fenced(self,aid):return True
   return Port()
  def test_notice_confirmed_once(self):
-  p=self.port();calls=[];action=dict(id='a',chat_id=7)
+  p=self.port();calls=[];action=dict(id='a',chat_id=7,specification=dict(cabinet='token_2',campaign_id=39410834,nm_id=1007948808))
   send=lambda chat,text:(calls.append(chat) or 123)
   self.assertEqual(m.notify_recovery_incident(p,action,send,datetime.now(timezone.utc))['status'],'confirmed')
   m.notify_recovery_incident(p,action,send,datetime.now(timezone.utc));self.assertEqual(calls,[7])
  def test_notice_unknown_not_repeated(self):
   p=self.port();calls=[]
   def send(chat,text):calls.append(chat);raise TimeoutError('lost response')
-  m.notify_recovery_incident(p,dict(id='a',chat_id=7),send,datetime.now(timezone.utc))
+  m.notify_recovery_incident(p,dict(id='a',chat_id=7,specification=dict(cabinet='token_2',campaign_id=39410834,nm_id=1007948808)),send,datetime.now(timezone.utc))
   self.assertEqual(p.state['incident_notice']['status'],'uncertain')
-  m.notify_recovery_incident(p,dict(id='a',chat_id=7),send,datetime.now(timezone.utc));self.assertEqual(len(calls),1)
+  m.notify_recovery_incident(p,dict(id='a',chat_id=7,specification=dict(cabinet='token_2',campaign_id=39410834,nm_id=1007948808)),send,datetime.now(timezone.utc));self.assertEqual(len(calls),1)
  def test_notice_no_storage_no_send(self):
   calls=[]
-  with self.assertRaises(RuntimeError):m.notify_recovery_incident(self.port(True),dict(id='a',chat_id=7),lambda *a:calls.append(a),datetime.now(timezone.utc))
+  with self.assertRaises(RuntimeError):m.notify_recovery_incident(self.port(True),dict(id='a',chat_id=7,specification=dict(cabinet='token_2',campaign_id=39410834,nm_id=1007948808)),lambda *a:calls.append(a),datetime.now(timezone.utc))
   self.assertEqual(calls,[])
  def fixture(self,status='done',lease_due=None):
   import copy
   now=datetime(2026,10,16,13,tzinfo=timezone.utc)
   watch=dict(id='w',status='active',campaign_id=39410834,nm_id=1007948808,chat_id=7,sender_id=8,policy=dict(mode='sku_membership_recovery',action_id='a',executor_job_id=9,approved_digest='d',backup_operator_id=8))
-  action=dict(id='a',job_id=9,chat_id=7,sender_id=8,approved_by=8,digest='d',specification=dict(execution_authorized=True,restore_authorized=True))
+  action=dict(id='a',job_id=9,chat_id=7,sender_id=8,approved_by=8,digest='d',specification=dict(cabinet='token_2',campaign_id=39410834,nm_id=1007948808,execution_authorized=True,restore_authorized=True))
   job=dict(id=9,status=status,lease_token='old',lease_until=lease_due,request_text='/_sku57_reserved_recovery a')
   class Store:
    calls=[]
@@ -85,4 +85,29 @@ class Driver(unittest.TestCase):
  def test_existing_authority_required(self):
   f=self.fixture();f[2]['specification']['restore_authorized']=False
   with self.assertRaises(PermissionError):self.invoke(f)
-if __name__=='__main__':unittest.main()
+
+
+class ScopeDriver(Driver):
+ def test_valid_other_watch_cannot_drive_action(self):
+  f=self.fixture();f[1]['nm_id']=7
+  with self.assertRaises(PermissionError):self.invoke(f)
+  self.assertFalse(any(method=='PATCH' for method,table,kw in f[-2].calls))
+ def test_campaign_conflict_no_mutation(self):
+  f=self.fixture();original=f[-2].db
+  def db(method,table,**kw):
+   if method=='GET' and table=='advertising_agent_watches' and kw.get('params',{}).get('select')=='id':
+    return [{'id':'w'},{'id':'employee-or-second-test'}]
+   return original(method,table,**kw)
+  f[-2].db=db
+  with self.assertRaises(PermissionError):self.invoke(f)
+  self.assertEqual(f[-1].stepped,0)
+  self.assertFalse(any(method=='PATCH' for method,table,kw in f[-2].calls))
+
+class CompletedIncident(Driver):
+ def test_completed_incident_without_active_watch_still_selected(self):
+  f=self.fixture();f[1]['status']='completed';f[1]['state']={'notification_pending':True}
+  original=f[-2].db
+  def db(method,table,**kw):
+   if method=='GET' and table=='advertising_agent_watches' and kw.get('params',{}).get('select')=='id':return []
+   return original(method,table,**kw)
+  f[-2].db=db;self.invoke(f);self.assertEqual(f[-1].stepped,1)

@@ -73,7 +73,7 @@ class SearchTests(unittest.TestCase):
         answer=s.explicit_answer({'request_text':'Проверь поисковые запросы119'},[{'result':value}])
         self.assertIn('9',answer);self.assertIn('Выборка мала',answer);self.assertIn('Проверить комплектацию',answer)
         self.assertIn('не равны всем заказам',answer);self.assertNotIn('48%',answer);self.assertNotIn('скидку',answer)
-        self.assertIn('\\n',answer)
+        self.assertGreater(len(answer.splitlines()),5)
     def test_short_article_without_space_resolves_exact_product(self):
         with patch.object(s,'collect',return_value={'available':False}) as mocked:
             s.context(Worker(),{'agent_id':'china','request_text':'поисковые запросы артикула119'},[])

@@ -71,5 +71,11 @@ class GroupApprovalTests(unittest.TestCase):
   self.assertEqual(notify_owner_problem(self.a,Notices(),intent)['chat_id'],'-1001')
   self.assertEqual(notify_owner_receipt(self.a,Notices(),intent)['chat_id'],'-1001')
   self.assertTrue(all(str(payload['chat_id'])=='-1001' for _,payload in calls))
+ def test_production_delivery_never_falls_back_to_private(self):
+  self.assertEqual(self.a.delivery_chat(),'-1001')
+  self.a.group['enabled']=False;self.repo.pg=True
+  try:
+   with self.assertRaises(Rejected):self.a.delivery_chat()
+  finally:self.repo.pg=False
 
 if __name__=='__main__':unittest.main()

@@ -59,7 +59,7 @@ def main(kind='feedbacks'):
         if not all(cfg.get(k) for k in ('enabled','new_notices_enabled','destination_verified')):raise RuntimeError('Review notice configuration unavailable')
         if str(cfg['chat_id'])!=os.environ['TELEGRAM_ALLOWED_CHAT_ID']:raise RuntimeError('Destination mismatch')
         app=Approval(repo,base64.b64encode(hmac.new(root,b'veschi:review-approval-ingress:20261015:v1',hashlib.sha256).digest()).decode(),cfg['owner_id'],cfg['chat_id'],cfg['bot_id'],enabled=True)
-        if app.group_chat():app.chat=app.group_chat()
+        app.chat=app.delivery_chat()
         source=SQLSource(conn);bridge=DurableBridge(app,source);store=DurableReviews(_request)
         control=('questions-morning:' if kind=='questions' else 'reviews-morning:')+day
         state=repo.get('events',control) or {'status':'collecting','date':day,'scopes':{},'items':{},'created_at':time.time(),'telegram_confirmed':0}

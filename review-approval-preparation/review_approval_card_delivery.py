@@ -41,7 +41,7 @@ def notify_owner_problem(approval,telegram,intent,preserve=None):
     if intent.get('status')!='blocked':return None
     if intent['owner_id']!=approval.owner or intent['chat_id']!=approval.chat:
         raise ValueError('Wrong problem recipient')
-    destination=approval.group_chat() or approval.chat
+    destination=approval.delivery_chat()
     key='owner-problem:'+intent['id']
     with approval.repo.transaction():
         approval.repo.get('intents',intent['id'],lock=True)
@@ -75,7 +75,7 @@ def notify_owner_receipt(approval,telegram,intent,preserve=None):
         from review_approval_cleanup import cleanup_completed
         cleanup=cleanup_completed(approval,telegram,preserve,intent_id=intent['id'])
         return {'status':'suppressed','stage':stage,'cleanup':cleanup}
-    destination=approval.group_chat() or approval.chat
+    destination=approval.delivery_chat()
     key='owner-receipt:'+intent['id']+':'+stage
     repo=approval.repo
     with repo.transaction():

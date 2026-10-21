@@ -55,6 +55,11 @@ class Approval:
         return str(actor)==self.owner if self.chat!=self.group_chat() else str(actor)==str(self.group_actor)
     def card_chat(self,card):
         return str(card.get("chat_id",self.legacy_chat))
+    def delivery_chat(self):
+        destination=self.group_chat()
+        if destination:return destination
+        if self.repo.pg:raise Rejected('Verified content-group delivery is required')
+        return self.chat
     def create(self,cabinet,kind,item_id,version,source,texts,message_id,ttl=None,binding=None,order_status=None):
         ref=identity(cabinet,kind,item_id)
         if len(texts) not in (1,2) or not all(isinstance(t,str) and t.strip() for t in texts) or (len(texts)==2 and texts[0]==texts[1]):raise ValueError('One revised text or two distinct variants required')

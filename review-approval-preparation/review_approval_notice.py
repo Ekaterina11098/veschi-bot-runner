@@ -10,6 +10,7 @@ class NewNotice:
         self.a=approval;self.bridge=bridge;self.tg=telegram;self.enabled=enabled;self.preserve=preserve
     def deliver(self,item,cabinet,kind,version,observed_at,cutover):
         if not self.enabled:raise Rejected('New review notices disabled')
+        self.a.chat=self.a.delivery_chat()
         if not callable(self.preserve):raise Rejected('Protected backup hook required before new notification')
         if observed_at<cutover:raise Rejected('Old observation before cutover')
         source=self.bridge.source

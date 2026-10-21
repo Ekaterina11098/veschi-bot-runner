@@ -35,7 +35,7 @@ def revise(approval,bridge,store,telegram,event_id,preserve,cutover):
         result={'status':'needs_full_text','revision_event_id':event_id}
         with repo.transaction():repo.put('events',delivery_key,dict(result,delivery='sending'))
         preserve()
-        response=telegram.call('sendMessage',{'chat_id':approval.chat,'text':'Правки получены и сохранены. Пришлите готовый текст ответа целиком ответом на прежнюю карточку — верну его для подтверждения. В WB ничего не отправлено.'})
+        response=telegram.call('sendMessage',{'chat_id':approval.delivery_chat(),'text':'Правки получены и сохранены. Пришлите готовый текст ответа целиком ответом на прежнюю карточку — верну его для подтверждения. В WB ничего не отправлено.'})
         result.update(message_id=response['message_id'])
         with repo.transaction():repo.put('events',delivery_key,result)
         preserve();return result

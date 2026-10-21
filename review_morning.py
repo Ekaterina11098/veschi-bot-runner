@@ -108,13 +108,21 @@ def main(kind='feedbacks'):
                         for item in scope['items']:
                             item_id=str(item['id']);key=cabinet+':'+item_id
                             prior=state['items'].get(key,{})
-                            if prior.get('status') in ('confirmed','skipped','manual_present','uncertain','error'):continue
+                            if prior.get('status') in ('confirmed','skipped','manual_present','uncertain','error','auto_queued'):continue
                             remaining=True
                             candidate=prior or {'version':'morning-'+day+'-'+sha([cabinet,item_id])[:12],'status':'preflight'}
                             state['items'][key]=candidate
                             def prepare_one():
                                 if not eligible(item,cabinet,source,repo,store.read,kind):
                                     candidate['status']='skipped';save();return
+                                if kind=='feedbacks':
+                                    from review_auto_five_star import CONFIG_KEY,classify,policy_allows,enqueue
+                                    policy=source.read(CONFIG_KEY) or {}
+                                    if policy_allows(policy,app,cabinet,scope['observed_at']) and classify(item)['eligible']:
+                                        result=enqueue(app,bridge,store,item,cabinet,candidate['version'],scope['observed_at'],policy)
+                                        candidate.update(status='auto_queued' if result['status']=='queued' else 'skipped',delivery=result)
+                                        if result['status']=='queued':state['auto_queued']=state.get('auto_queued',0)+1
+                                        save();return
                                 if candidate['status']=='preflight':
                                     # This is a notification, not a publication. The complete
                                     # current unanswered list is the WB observation. The approval
@@ -132,7 +140,7 @@ def main(kind='feedbacks'):
                                 state['telegram_confirmed']+=int(candidate['status']=='confirmed');save()
                             prepare_candidate(candidate,prepare_one,save,error)
                             if time.monotonic()>=deadline:break
-                        if not remaining or all(state['items'].get(cabinet+':'+str(i['id']),{}).get('status') in ('confirmed','skipped','manual_present','uncertain','error') for i in scope['items']):
+                        if not remaining or all(state['items'].get(cabinet+':'+str(i['id']),{}).get('status') in ('confirmed','skipped','manual_present','uncertain','error','auto_queued') for i in scope['items']):
                             scope['status']='complete';save()
                     except wb.ReviewRateLimit as exc:
                         scope['retry_at']=time.time()+exc.retry_seconds;scope['last_error']='WB 429';save()
@@ -146,7 +154,7 @@ def main(kind='feedbacks'):
                         names={'token_1':'ООО','token_2':'ИП','token_3':'Китай'}
                         text=('❓ Утренние вопросы · ' if kind=='questions' else '📩 Утренние отзывы · ')+day+'\n'
                         text+='\n'.join(names[c]+': без ответа в WB — '+str(len(state['scopes'][c]['items'])) for c in CABINETS)
-                        text+='\nНовых карточек отправлено: '+str(state['telegram_confirmed'])+'. Уже присланные и отложенные повторно не отправлялись.\nhttps://veschi-ai.streamlit.app/review_manager'
+                        text+='\nАвтоматически поставлено в отправку: '+str(state.get('auto_queued',0))+'\nНовых карточек отправлено: '+str(state['telegram_confirmed'])+'. Уже присланные и отложенные повторно не отправлялись.\nhttps://veschi-ai.streamlit.app/review_manager'
                         summary={'status':'sending','created_at':time.time()}
                         with repo.transaction():repo.put('events',control+':summary',summary)
                         preserve()

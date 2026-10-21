@@ -14,6 +14,7 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None):
     for key,i in intents.items():
         if intent_id and key!=intent_id:continue
         card=cards.get(i.get('card_token'));item=repo.get('items',i.get('ref',''))
+        if card and card.get('delivery_mode')=='automatic_policy':continue
         if not card or i.get('owner_id')!=a.owner or i.get('chat_id')!=a.chat:continue
         if i.get('answer_sha256')!=sha(i.get('answer')) or i.get('answer_sha256') not in card.get('hashes',[]):continue
         if any(i.get(k)!=card.get(k) for k in ('ref','cabinet','kind','item_id','version')):continue

@@ -1,6 +1,8 @@
 """Execute one new Telegram approval intent only. No legacy queue enumeration."""
 from review_telegram_approval import Rejected,sha
 
+class AutomaticPolicyChanged(Exception):pass
+
 class ExplicitRateLimit(Exception):
     def __init__(self,seconds):self.seconds=max(1,int(seconds))
 
@@ -65,6 +67,7 @@ class Executor:
         fresh=(isinstance(verified_at,(int,float)) and 0<=self.a.clock()-verified_at<=900)
         if not fresh:
             try:actual=self.wb.read(intent)
+            except AutomaticPolicyChanged:return self.save(intent,'blocked',reason='Automatic five-star eligibility changed in WB')
             except ExplicitRateLimit as exc:return self.save(intent,intent['status'],retry_at=self.a.clock()+exc.seconds)
             if not isinstance(actual,str):raise Rejected('Unknown WB answer')
             if actual.strip():return self.save(intent,'confirmed' if actual==intent['answer'] else 'manual_present',actual_answer_sha256=sha(actual))

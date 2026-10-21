@@ -68,6 +68,8 @@ def notify_owner_receipt(approval,telegram,intent,preserve=None):
         raise ValueError('Wrong receipt recipient')
     stage=('public' if intent.get('wb_ui_status')=='Опубликован для всех' else
            {'confirmed':'accepted','verify':'verifying','manual_present':'manual_present','blocked':'blocked'}.get(intent.get('status'),'approved'))
+    if intent.get('authorization_channel')=='automatic_policy' and stage in ('approved','verifying','accepted','public'):
+        return {'status':'suppressed','stage':stage,'automatic_policy':True}
     if stage in ('approved','verifying','accepted','public'):
         from review_approval_cleanup import cleanup_completed
         cleanup=cleanup_completed(approval,telegram,preserve,intent_id=intent['id'])

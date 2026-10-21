@@ -51,7 +51,28 @@ jobs:
           TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
           AUTO_STOCK_FAIL_FAST: '1'
         run: |
-          python content_group_destination.py private-source/stock_regular_job.py
+          cat > "$RUNNER_TEMP/owner_wholesale.py" <<'PY'
+          import os,json,psycopg,time
+          from datetime import datetime,timezone,timedelta
+          from stock_deploy_support import runtime_db,password,HOST,ROLE,PROJECT,seal,error
+          from stock_regular_job import send
+          from stock_regular_service import run
+          SLOT='2026-10-21:owner-wholesale-1516'
+          try:
+              if datetime.now(timezone(timedelta(hours=3))).date().isoformat()!='2026-10-21':
+                  raise RuntimeError('Owner extra run date closed')
+              os.environ['STOCK_DATABASE_URL']=psycopg.conninfo.make_conninfo(host=HOST,port=5432,dbname='postgres',user=ROLE+'.'+PROJECT,password=password(),sslmode='require')
+              result=run(runtime_db,send,SLOT)
+              seal('owner-wholesale-stock',result)
+              print(json.dumps(result))
+              if result.get('status') not in ('complete','complete_with_holds','done'):
+                  raise SystemExit(75)
+          except Exception as exc:
+              seal('owner-wholesale-stock-error',error(exc))
+              print(json.dumps({'status':'stopped','error_type':type(exc).__name__}))
+              raise SystemExit(1)
+          PY
+          python content_group_destination.py "$RUNNER_TEMP/owner_wholesale.py"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

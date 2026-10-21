@@ -20,3 +20,5 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           REVIEW_APPROVAL_DSN: ${{ secrets.REVIEW_APPROVAL_DSN }}
         run: python review_webhook_diagnostic.py
+
+# Verify delivery queue after the empty-response fix.

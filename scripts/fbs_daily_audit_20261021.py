@@ -18,6 +18,7 @@ def signature(rows):
  out=collections.Counter()
  for p in rows:out[m.href(p["assortment"])]+=p["quantity"]
  return out
+daily_docs={}
 def check(w,cab,state,expected_positions,comment,order_name):
  if not state or state.get("status")!="complete":raise m.Stop("Missing or incomplete chain")
  links=state["documents"];result={"source":state["supply"]["id"],"quantity":sum(p["quantity"] for p in expected_positions),"documents":{},"comment":comment}
@@ -42,7 +43,9 @@ def check(w,cab,state,expected_positions,comment,order_name):
    parent="customerOrder" if typ=="demand" else "demand"
    parenttype="customerorder" if typ=="demand" else "demand"
    parentid=links[parenttype]["id"]
-   duplicates=[d for d in w.ms_rows("entity/"+typ,{"filter":parent+"="+m.MS+"entity/"+parenttype+"/"+parentid}) if d["id"]!=ident]
+   if typ not in daily_docs:
+    daily_docs[typ]=w.ms_rows("entity/"+typ,{"filter":"moment>=2026-10-21 00:00:00;moment<2026-10-22 00:00:00"})
+   duplicates=[d for d in daily_docs[typ] if d["id"]!=ident and m.href(d.get(parent,{}))==m.MS+"entity/"+parenttype+"/"+parentid]
   if duplicates:raise m.Stop("Additional document for same source/link")
   result["documents"][typ]={"id":ident,"name":doc["name"],"posted":doc["applicable"],"sum":doc["sum"]}
  return result

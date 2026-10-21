@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {webcrypto} from 'node:crypto';
+globalThis.crypto ??= webcrypto;
+import {routeReviewApproval} from './review-approval-preparation/review_callback_route.mjs';
+const request=new Request('https://example.test',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':'secret'}});
+const update={callback_query:{id:'c',data:'rv1:x:p1',from:{id:20,is_bot:false},message:{chat:{id:-1001,type:'supergroup'},from:{id:99}}}};
+let forwards=0;
+const config={enabled:true,webhookSecret:'secret',receiverURL:'https://example.test/receiver',receiverSecret:'receiver',ownerId:'1',chatId:'1',botId:'99',groupChatId:'-1001',verifyMember:async id=>id===20};
+const forward=async()=>{forwards++;return new Response('OK')};
+assert.equal((await routeReviewApproval(request,update,config,forward)).status,200);assert.equal(forwards,1);
+await routeReviewApproval(request,update,{...config,verifyMember:async()=>false},forward);assert.equal(forwards,1);
+await routeReviewApproval(request,{...update,callback_query:{...update.callback_query,message:{...update.callback_query.message,chat:{id:-1002,type:'supergroup'}}}},config,forward);assert.equal(forwards,1);
+assert.equal((await routeReviewApproval(request,update,{...config,verifyMember:async()=>{throw Error('outage')}},forward)).status,503);
+console.log('group route: member, outsider, wrong chat and unavailable membership checked');

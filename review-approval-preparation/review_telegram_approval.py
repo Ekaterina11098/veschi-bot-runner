@@ -43,7 +43,18 @@ class Repository:
 class Approval:
     def __init__(self,repo,secret,owner_id,chat_id,bot_id,enabled=False,clock=time.time):
         if not secret or not all(str(x) for x in (owner_id,chat_id,bot_id)):raise ValueError('Explicit authentication configuration required')
-        self.repo=repo;self.secret=secret;self.owner=str(owner_id);self.chat=str(chat_id);self.bot=str(bot_id);self.enabled=enabled;self.clock=clock
+        self.repo=repo;self.secret=secret;self.owner=str(owner_id);self.chat=str(chat_id);self.bot=str(bot_id);self.enabled=enabled;self.clock=clock;self.legacy_chat=self.chat;self.group={};self.group_actor=None
+        if repo.pg:
+            row=repo.conn.execute("SELECT payload FROM review_approval.source_cache WHERE cache_key=%s",('reviews:content-group:v1',)).fetchone()
+            self.group=row[0] if row else {}
+    def group_chat(self):
+        return str(self.group.get("chat_id","")) if self.group.get("enabled") is True and self.group.get("destination_verified") is True else ""
+    def allowed_chat_type(self,kind):
+        return kind in ("group","supergroup") if self.chat==self.group_chat() else kind=="private"
+    def actor_allowed(self,actor):
+        return str(actor)==self.owner if self.chat!=self.group_chat() else str(actor)==str(self.group_actor)
+    def card_chat(self,card):
+        return str(card.get("chat_id",self.legacy_chat))
     def create(self,cabinet,kind,item_id,version,source,texts,message_id,ttl=None,binding=None,order_status=None):
         ref=identity(cabinet,kind,item_id)
         if len(texts) not in (1,2) or not all(isinstance(t,str) and t.strip() for t in texts) or (len(texts)==2 and texts[0]==texts[1]):raise ValueError('One revised text or two distinct variants required')
@@ -60,6 +71,7 @@ class Approval:
                 if old['hashes']!=[sha(t) for t in texts] or old['source']!=source:raise Rejected('Same version content changed')
                 raise Rejected('Version already has a card; use its delivery journal, do not resend')
             card={'ref':ref,'cabinet':cabinet,'kind':kind,'item_id':str(item_id),'version':version,'source':source,'texts':texts,'hashes':[sha(t) for t in texts],'message_id':message_id,'expires_at':None if ttl is None else self.clock()+ttl,'status':'awaiting','selected':None,'nonce':None}
+            card['chat_id']=self.chat
             card['order_status']=order_status
             if binding is not None:card['binding']=binding
             self.repo.put('cards',token,card)
@@ -106,8 +118,8 @@ class Approval:
         if not hmac.compare_digest(str(header),self.secret):raise Rejected('Webhook authentication failed')
         q=update.get('callback_query') or {}
         msg=q.get('message') or {}
-        if str(q.get('from',{}).get('id'))!=self.owner or str(msg.get('chat',{}).get('id'))!=self.chat:raise Rejected('Wrong owner or chat')
-        if msg.get('chat',{}).get('type')!='private' or str(msg.get('from',{}).get('id'))!=self.bot or msg.get('forward_origin'):raise Rejected('Wrong message origin')
+        if not self.actor_allowed(q.get('from',{}).get('id')) or str(msg.get('chat',{}).get('id'))!=self.chat:raise Rejected('Wrong owner or chat')
+        if not self.allowed_chat_type(msg.get('chat',{}).get('type')) or str(msg.get('from',{}).get('id'))!=self.bot or msg.get('forward_origin'):raise Rejected('Wrong message origin')
         data=q.get('data','')
         match=re.fullmatch(r'rv1:([0-9a-f]{32}):(v1|v2|p1|p2|edit|hold|back|ok\.[0-9a-f]{12})',data)
         if not match or len(data.encode())>64 or not isinstance(q.get('id'),str) or not q['id']:raise Rejected('Invalid callback')
@@ -118,12 +130,12 @@ class Approval:
             if not card:raise Rejected('Unknown card')
             item=self.repo.get('items',card['ref'],lock=True)
             card=self.repo.get('cards',token)
-            if msg.get('message_id')!=card['message_id']:raise Rejected('Wrong message binding')
+            if self.card_chat(card)!=self.chat or msg.get('message_id')!=card['message_id']:raise Rejected('Wrong message binding')
             if item.get('token')!=token or item.get('version')!=card['version']:raise Rejected('Outdated card')
             if card.get('expires_at') is not None and self.clock()>card['expires_at']:raise Rejected('Expired card')
             if card['hashes']!=[sha(t) for t in card['texts']]:raise Rejected('Text checksum changed')
             old=self.repo.get('events',q['id'])
-            fingerprint=sha([token,action,self.owner,self.chat,card['message_id']])
+            fingerprint=sha([token,action,str(q['from']['id']),self.chat,card['message_id']])
             if old:
                 if old['fingerprint']!=fingerprint:raise Rejected('Callback id reused with different content')
                 return {'duplicate':True,'result':old['result'],'answer_callback_query':{'callback_query_id':q['id'],'text':'Уже обработано'}}
@@ -166,13 +178,13 @@ class Approval:
                     if card['status']!='selected' or action!='ok.'+str(card['nonce']):raise Rejected('Outdated confirmation')
                     selected=card['selected']
                 intent_id=sha([card['ref'],card['version'],card['hashes'][selected]])
-                intent={'id':intent_id,'ref':card['ref'],'cabinet':card['cabinet'],'kind':card['kind'],'item_id':card['item_id'],'version':card['version'],'answer':card['texts'][selected],'answer_sha256':card['hashes'][selected],'source_sha256':sha(card['source']),'owner_id':self.owner,'chat_id':self.chat,'callback_id':q['id'],'status':'awaiting_preflight','created_at':self.clock(),'card_token':token}
+                intent={'id':intent_id,'ref':card['ref'],'cabinet':card['cabinet'],'kind':card['kind'],'item_id':card['item_id'],'version':card['version'],'answer':card['texts'][selected],'answer_sha256':card['hashes'][selected],'source_sha256':sha(card['source']),'owner_id':self.owner,'chat_id':self.chat,'callback_id':q['id'],'approved_by_user_id':str(q['from']['id']),'status':'awaiting_preflight','created_at':self.clock(),'card_token':token}
                 if self.repo.get('intents',intent_id):raise Rejected('Publication intent exists')
                 self.repo.put('intents',intent_id,intent)
                 card['status']='approved';item['status']='approved'
                 result={'decision':'approved','intent_id':intent_id,'publication_created':True,'wb_write_performed':False}
             self.repo.put('items',card['ref'],item);self.repo.put('cards',token,card)
-            self.repo.put('events',q['id'],{'fingerprint':fingerprint,'result':result,'created_at':self.clock(),'owner_id':self.owner})
+            self.repo.put('events',q['id'],{'fingerprint':fingerprint,'result':result,'created_at':self.clock(),'owner_id':self.owner,'actor_id':str(q['from']['id'])})
             view=self.view(token,card)
             return {'duplicate':False,'result':result,'edit_message':view,'answer_callback_query':{'callback_query_id':q['id'],'text':{'selected':'Проверьте выбранный текст','approved':'Согласование сохранено; ждём проверку WB','held':'Отложено','rework':'Ожидаю ваши правки','back':'Вернулись к выбору'}[result['decision']]}}
     def set_item_state(self,ref,status,reason):
@@ -184,14 +196,15 @@ class Approval:
             old.update(status=status,reason=reason)
             self.repo.put('items',ref,old)
     def record_edit(self,token,actor,chat,message_id,text):
-        if str(actor)!=self.owner or str(chat)!=self.chat or not text.strip():raise Rejected('Invalid owner edit')
+        if not self.actor_allowed(actor) or str(chat)!=self.chat or not text.strip():raise Rejected('Invalid owner edit')
         with self.repo.transaction():
             card=self.repo.get('cards',token)
-            if not card or card['message_id']!=message_id:raise Rejected('Reply to the exact review message')
+            if not card or self.card_chat(card)!=self.chat or card['message_id']!=message_id:raise Rejected('Reply to the exact review message')
             item=self.repo.get('items',card['ref'],lock=True)
             if item.get('token')!=token or item.get('status')!='rework':raise Rejected('No pending rework for this card')
             key='edit:'+sha([token,str(actor),message_id,text])
             if self.repo.get('events',key):return {'status':'revision_requested','old_version_approvable':False,'publication_created':False,'duplicate':True,'revision_event_id':key}
-            self.repo.put('events',key,{'decision':'revision_requested','token':token,'version':card['version'],'instruction':text,'actor':self.owner,'created_at':self.clock()})
+            self.repo.put('events',key,{'decision':'revision_requested','token':token,'version':card['version'],'instruction':text,'actor':str(actor),'created_at':self.clock()})
             return {'status':'revision_requested','old_version_approvable':False,'publication_created':False,'revision_event_id':key}
+
 

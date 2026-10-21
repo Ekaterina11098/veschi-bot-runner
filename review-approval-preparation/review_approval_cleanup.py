@@ -23,7 +23,7 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None):
             processed[i['ref']]=i
         if i.get('status')=='confirmed' and i.get('actual_answer_sha256')==i['answer_sha256'] and item and item.get('token')==i['card_token'] and item.get('status')=='sent':
             completed[i['ref']]=i
-    tokens={k for k,c in cards.items() if c.get('ref') in processed}
+    tokens={k for k,c in cards.items() if c.get('ref') in processed and a.card_chat(c)==a.chat}
     targets=set()
     def add(value):
         if isinstance(value,int) and not isinstance(value,bool) and value>0:targets.add(value)
@@ -41,7 +41,7 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None):
             if edit.get('token') in tokens:add(e.get('message_id'))
     # Owner explicitly requested removing their completed reply messages too.
     # Match authenticated private replies to a tracked card AND the exact approved text.
-    by_message={c.get('message_id'):c for c in cards.values()}
+    by_message={c.get('message_id'):c for c in cards.values() if a.card_chat(c)==a.chat}
     for key,e in events.items():
         if not key.startswith('telegram-ingress:'):continue
         message=(e.get('update') or {}).get('message') or {}
@@ -79,3 +79,4 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None):
         dirty=True
     if dirty and preserve:preserve()
     return report
+

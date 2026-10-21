@@ -6,7 +6,7 @@ from review_telegram_approval import identity, sha
 
 
 class TelegramTransport:
-    ALLOWED = frozenset(('editMessageText', 'answerCallbackQuery', 'deleteMessage', 'notifyOwnerReviewProblem', 'notifyOwnerReviewReceipt'))
+    ALLOWED = frozenset(('getChatMember', 'editMessageText', 'answerCallbackQuery', 'deleteMessage', 'notifyOwnerReviewProblem', 'notifyOwnerReviewReceipt'))
 
     def __init__(self, token, opener=urllib.request.urlopen):
         if not token: raise ValueError('Bot token required')
@@ -65,4 +65,5 @@ class CanonicalGuard:
         return (state.get('hold') is False and state.get('answered') is False
             and state.get('publication_state')=='idle' and state.get('version')==card['version']
             and state.get('hashes')==card['hashes'] and state.get('source_sha256')==sha(card['source']))
+
 

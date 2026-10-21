@@ -24,7 +24,7 @@ class NewNotice:
         state=self.bridge.project(card)
         if not state.get('complete') or state['hold'] or state['answered'] or state['publication_state']!='idle':raise Rejected('Review blocked')
         bot=self.tg.call('getMe',{});chat=self.tg.call('getChat',{'chat_id':self.a.chat})
-        if str(bot.get('id'))!=self.a.bot or str(chat.get('id'))!=self.a.chat or chat.get('type')!='private':raise Rejected('Verified destination mismatch')
+        if str(bot.get('id'))!=self.a.bot or str(chat.get('id'))!=self.a.chat or not self.a.allowed_chat_type(chat.get('type')):raise Rejected('Verified destination mismatch')
         notice_key='new-notice:'+sha([ref,version])
         with self.a.repo.transaction():
             if self.a.repo.pg:self.a.repo.execute('SELECT pg_advisory_xact_lock(hashtextextended(?,0))',(notice_key,))
@@ -52,4 +52,5 @@ class NewNotice:
         except Exception:attachment='uncertain'
         self.preserve()
         return {'status':'confirmed','message_id':message_id,'card_token':token,'buttons':attachment,'automatic_retry':False}
+
 

@@ -30,7 +30,7 @@ def process_update(approval,bridge,telegram,update,preserve=None,**options):
 def pending(repo,now,limit=25):
     return repo.conn.execute("""SELECT c.cache_key,c.payload FROM review_approval.source_cache c
         LEFT JOIN review_approval.events e ON e.id='telegram-inbox:'||c.cache_key
-        WHERE starts_with(c.cache_key,%s)
+        WHERE (starts_with(c.cache_key,%s) OR starts_with(c.cache_key,'reviews:telegram-group-ingress:v1:'))
           AND coalesce(e.payload::jsonb->>'status','') NOT IN ('processed','rejected')
         ORDER BY (c.payload->>'update_id')::bigint,c.cache_key LIMIT %s""",(PREFIX,limit)).fetchall()
 
@@ -70,3 +70,4 @@ def drain(approval,bridge,telegram,key,preserve=None,limit=25,**options):
         if preserve:preserve()
         # Preserve order for the same card; a broken card cannot stop other cabinets.
     return report
+

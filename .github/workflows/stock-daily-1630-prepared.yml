@@ -60,10 +60,11 @@ jobs:
           TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
           AUTO_STOCK_FAIL_FAST: '1'
         run: |
-          python private-source/stock_regular_job.py
+          python content_group_destination.py private-source/stock_regular_job.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: owner-encrypted-stock-daily-receipt
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
+

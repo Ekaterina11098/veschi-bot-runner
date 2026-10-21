@@ -34,7 +34,7 @@ def classify(item,kind='feedbacks'):
 def policy_allows(policy,app,cabinet,observed_at):
  return (policy.get('enabled') is True and policy.get('version')==POLICY_VERSION and
    policy.get('authorization_channel')=='owner_chat' and policy.get('authorization_ref') and
-   str(policy.get('owner_id'))==app.owner and str(policy.get('chat_id'))==app.chat and
+   str(policy.get('owner_id'))==app.owner and str(policy.get('chat_id'))==getattr(app,'legacy_chat',app.chat) and
    cabinet in CABINETS and cabinet in policy.get('cabinets',[]) and
    isinstance(policy.get('cutover'),(int,float)) and observed_at>=policy['cutover'])
 def answer_for(item):
@@ -79,3 +79,4 @@ def authorized_card(app,source,card):
  return (isinstance(item,dict) and sha(item)==card['binding']['raw_source_sha256'] and
    str(item.get('id'))==card['item_id'] and classify(item)['eligible'] and
    card.get('texts')==[answer_for(item)] and card.get('hashes')==[sha(answer_for(item))])
+

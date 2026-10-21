@@ -24,10 +24,23 @@ class Receiver:
         if not hmac.compare_digest(str(header), a.secret):
             raise Rejected('Webhook authentication failed')
         q = update.get('callback_query')
+        inbound=(q or {}).get('message') or update.get('message') or {}
+        actor=(q or {}).get('from') or inbound.get('from') or {}
+        chat=inbound.get('chat') or {}
+        a.group_actor=None
+        if str(chat.get('id'))==a.group_chat():
+            if actor.get('is_bot') or not isinstance(actor.get('id'),int) or chat.get('type') not in ('group','supergroup'):
+                raise Rejected('Invalid group actor')
+            member=self.telegram.call('getChatMember',{'chat_id':a.group_chat(),'user_id':actor['id']})
+            if member.get('user',{}).get('id')!=actor['id'] or member.get('status') not in ('creator','administrator','member'):
+                raise Rejected('Group membership required')
+            a.chat=a.group_chat();a.group_actor=str(actor['id'])
+        else:
+            a.chat=a.legacy_chat
         if q:
             # Authenticate before any source read. Core repeats full validation.
             msg = q.get('message') or {}
-            if str(q.get('from', {}).get('id')) != a.owner or str(msg.get('chat', {}).get('id')) != a.chat:
+            if not a.actor_allowed(q.get('from', {}).get('id')) or str(msg.get('chat', {}).get('id')) != a.chat:
                 raise Rejected('Wrong owner or chat')
             data = str(q.get('data', ''))
             if not data.startswith('rv1:'):
@@ -36,7 +49,7 @@ class Receiver:
             card = a.repo.get('cards', token)
             if not card:
                 raise Rejected('Unknown card')
-            if msg.get('message_id') != card['message_id'] or msg.get('chat',{}).get('type')!='private' or str(msg.get('from',{}).get('id'))!=a.bot or msg.get('forward_origin'):
+            if a.card_chat(card)!=a.chat or msg.get('message_id') != card['message_id'] or not a.allowed_chat_type(msg.get('chat',{}).get('type')) or str(msg.get('from',{}).get('id'))!=a.bot or msg.get('forward_origin'):
                 raise Rejected('Wrong message binding')
             if not self.reconcile(card):
                 try:self.telegram.call('answerCallbackQuery',{'callback_query_id':q.get('id',''),'text':'Согласование остановлено: данные изменились, ответ уже есть или действует блокировка.','show_alert':True})
@@ -72,19 +85,19 @@ class Receiver:
         reply = msg.get('reply_to_message') or {}
         if not reply or not msg.get('text'):
             return {'ignored': True}
-        if str(msg.get('from', {}).get('id')) != a.owner or str(msg.get('chat', {}).get('id')) != a.chat:
+        if not a.actor_allowed(msg.get('from', {}).get('id')) or str(msg.get('chat', {}).get('id')) != a.chat:
             raise Rejected('Wrong owner or chat')
-        if msg.get('chat', {}).get('type') != 'private' or str(reply.get('from', {}).get('id')) != a.bot:
+        if not a.allowed_chat_type(msg.get('chat', {}).get('type')) or str(reply.get('from', {}).get('id')) != a.bot:
             raise Rejected('Wrong reply origin')
         rows = a.repo.execute('SELECT id,payload FROM {p}cards').fetchall()
         matches = [(token, json.loads(payload)) for token, payload in rows
-                   if json.loads(payload)['message_id'] == reply.get('message_id')]
+                   if a.card_chat(json.loads(payload))==a.chat and json.loads(payload)['message_id'] == reply.get('message_id')]
         if len(matches) != 1:
             raise Rejected('Unknown or ambiguous review message')
         token, card = matches[0]
         if not self.reconcile(card):
             raise Rejected('Canonical state temporarily unavailable' if getattr(self.reconcile,'last_reason',None)=='unavailable' else 'Canonical review state unavailable or blocked')
-        return a.record_edit(token, a.owner, a.chat, reply['message_id'], msg['text'])
+        return a.record_edit(token, str(msg['from']['id']), a.chat, reply['message_id'], msg['text'])
 
     def wsgi(self, environ, start_response):
         if environ.get('REQUEST_METHOD') != 'POST':
@@ -105,4 +118,5 @@ class Receiver:
             status = '503 Service Unavailable'
         start_response(status, [('Content-Type', 'text/plain')])
         return [b'OK']
+
 

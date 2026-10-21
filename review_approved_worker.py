@@ -9,7 +9,7 @@ def due_intents(repo,cfg):
     for intent_id,raw in rows:
         i=json.loads(raw)
         if (i.get('cabinet') not in groups or i.get('status') not in ('awaiting_preflight','verify') or
-            i.get('created_at',0)<cfg['cutover'] or str(i.get('owner_id'))!=str(cfg['owner_id']) or str(i.get('chat_id'))!=str(cfg['chat_id'])):continue
+            i.get('created_at',0)<cfg['cutover'] or str(i.get('owner_id'))!=str(cfg['owner_id']) or str(i.get('chat_id')) not in {str(cfg['chat_id']),str(cfg.get('content_group_chat_id',''))}):continue
         groups[i['cabinet']].append(i)
     # Finish a cabinet's current write/readback before consuming its GET quota on another review.
     return [sorted(rows,key=lambda i:(0 if i['status']=='verify' else 1 if i.get('preflight_verified_at') else 2,i['created_at']))[0] for rows in groups.values() if rows]
@@ -28,7 +28,10 @@ def main():
         repo=Repository(conn,postgres=True)
         def config():
             row=conn.execute("SELECT payload FROM review_approval.source_cache WHERE cache_key='reviews:telegram-approval:config:v1'").fetchone()
-            return row[0] if row else {}
+            value=dict(row[0]) if row else {}
+            group=conn.execute("SELECT payload FROM review_approval.source_cache WHERE cache_key='reviews:content-group:v1'").fetchone()
+            if group and group[0].get('enabled') is True and group[0].get('destination_verified') is True:value['content_group_chat_id']=str(group[0]['chat_id']);value['content_group_policy']=group[0]
+            return value
         cfg=config()
         if not all(cfg.get(k) for k in ('enabled','publication_enabled','destination_verified')):return {'status':'disabled'}
         app=Approval(repo,base64.b64encode(hmac.new(root,b'veschi:review-approval-ingress:20261015:v1',hashlib.sha256).digest()).decode(),cfg['owner_id'],cfg['chat_id'],cfg['bot_id'],enabled=True)
@@ -87,7 +90,7 @@ def main():
             cleanup_completed(app,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),preserve)
             deadline=time.monotonic()+33*60
             while time.monotonic()<deadline:
-                cfg=config()
+                cfg=config();app.group=cfg.get('content_group_policy',{})
                 if not all(cfg.get(k) for k in ('enabled','publication_enabled','destination_verified')):break
                 # Catch clicks even if their GitHub dispatch was unavailable. The
                 # UI lock is released BEFORE WB HTTP, so receipt never waits on WB.
@@ -102,7 +105,7 @@ def main():
                     if intent.get('worker_retry_at',0)>time.time():continue
                     if adapter.pause(intent['cabinet']) or intent.get('retry_at',0)>time.time():continue
                     try:
-                        active=intent;preserve()
+                        app.chat=str(intent['chat_id']);active=intent;preserve()
                         from review_approval_card_delivery import notify_owner_receipt
                         receipt_transport=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN'])
                         notify_owner_receipt(app,receipt_transport,intent,preserve)
@@ -127,7 +130,7 @@ def main():
                             repo.put('intents',intent['id'],saved)
                         preserve()
                     finally:
-                        active=None
+                        active=None;app.chat=app.legacy_chat
                 # Stay available while idle; GitHub schedules can be delayed.
                 with repo.transaction():
                     repo.put('events','approved-worker:health:v1',dict(checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),code_commit=os.getenv('GITHUB_SHA'),pending_cabinets=len(pending),inbox=report.get('inbox',{}),errors=len(report['errors']),legacy_queue_calls=0))
@@ -148,5 +151,6 @@ if __name__=='__main__':
         from stock_deploy_support import seal,error
         seal('approved-publication-failure',{'error':error(exc),'private_log':hidden.getvalue()})
         print('Approved review worker failed; diagnostic protected.');raise SystemExit(1)
+
 
 

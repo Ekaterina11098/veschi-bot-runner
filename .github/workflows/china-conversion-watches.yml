@@ -47,6 +47,7 @@ jobs:
           python scripts/install_china_dialog.py
           python scripts/install_china_buyout.py --root source
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_buyout_policy.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_search_analytics.py
           python scripts/china_chat_migration.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
       - name: Install pinned read transport
@@ -59,6 +60,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           BUSINESS_AI_MODEL: ${{ vars.BUSINESS_AI_MODEL || 'gpt-4o-mini' }}

@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Read-only daily reconciliation for 2026-10-21 Moscow
+# Read-only daily reconciliation including default China document prefix
 on:
   push:
     branches: [main]

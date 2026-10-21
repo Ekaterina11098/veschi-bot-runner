@@ -1,5 +1,5 @@
 name: FBS document chain API inspection
-# Read-only daily reconciliation including default China document prefix
+# Read-only daily reconciliation with supported document date queries
 on:
   push:
     branches: [main]

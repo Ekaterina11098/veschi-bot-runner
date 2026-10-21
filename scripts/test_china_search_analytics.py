@@ -66,4 +66,19 @@ class SearchTests(unittest.TestCase):
     def test_other_cabinet_has_no_enrichment(self):
         self.assertEqual(s.context(Worker(),{'agent_id':'ip','request_text':'реклама119'},[]),(None,[]))
 
+    def test_explicit_search_keeps_small_sample_and_missing_distinct(self):
+        value={'available':True,'article':ART,'period':{'start':'2026-10-14','end':'2026-10-20'},
+            'product':{'rows':[{'name':'Клатч без ремня','openCard':9,'addToCart':0,'orders':0,'avgPosition':50,'visibility':35}]},
+            'queries':{'rows':[{'name':'Клатч без ремня','text':'клатч на ремешке','openCard':2,'orders':0,'avgPosition':2,'frequency':0}]}}
+        answer=s.explicit_answer({'request_text':'Проверь поисковые запросы119'},[{'result':value}])
+        self.assertIn('9',answer);self.assertIn('Выборка мала',answer);self.assertIn('Проверить комплектацию',answer)
+        self.assertIn('не равны всем заказам',answer);self.assertNotIn('48%',answer);self.assertNotIn('скидку',answer)
+        self.assertIn('\\n',answer)
+    def test_short_article_without_space_resolves_exact_product(self):
+        with patch.object(s,'collect',return_value={'available':False}) as mocked:
+            s.context(Worker(),{'agent_id':'china','request_text':'поисковые запросы артикула119'},[])
+        self.assertEqual(mocked.call_args.args[1],NM)
+    def test_plain_historical_conversion_stays_unchanged(self):
+        self.assertEqual(s.context(Worker(),{'agent_id':'china','request_text':'Сравни конверсию119 за5дней'},[]),(None,[]))
+
 if __name__=='__main__':unittest.main()

@@ -1,0 +1,30 @@
+name: Verify review quota pacing without WB requests
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-rate-budget-checks.yml']
+permissions:
+  contents: read
+jobs:
+  rate-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 18649db15489c3dc77edc22bec5a4ddc5ed6a410
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 openai==1.109.1
+      - name: Offline rate and duplicate-safety regression checks
+        run: |
+          PYTHONPATH=private-source python -m unittest discover -s private-source/tests -p test_review_rate_budget.py
+          PYTHONPATH=private-source python -m unittest discover -s private-source/tests -p test_review_publication.py
+          python -m unittest test_review_approved_worker.py test_review_reliability.py test_review_auto_five_star.py
+          python -m unittest discover -s review-approval-preparation -p test_review_telegram.py

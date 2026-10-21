@@ -204,7 +204,8 @@ class Approval:
             if item.get('token')!=token or item.get('status')!='rework':raise Rejected('No pending rework for this card')
             key='edit:'+sha([token,str(actor),message_id,text])
             if self.repo.get('events',key):return {'status':'revision_requested','old_version_approvable':False,'publication_created':False,'duplicate':True,'revision_event_id':key}
-            self.repo.put('events',key,{'decision':'revision_requested','token':token,'version':card['version'],'instruction':text,'actor':str(actor),'created_at':self.clock()})
+            self.repo.put('events',key,{'decision':'revision_requested','token':token,'version':card['version'],'instruction':text,'actor':str(actor),'chat_id':self.chat,'created_at':self.clock()})
             return {'status':'revision_requested','old_version_approvable':False,'publication_created':False,'revision_event_id':key}
+
 
 

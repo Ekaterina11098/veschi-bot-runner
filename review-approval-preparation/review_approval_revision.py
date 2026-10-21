@@ -12,8 +12,9 @@ from review_approval_notice import NewNotice
 
 def revise(approval,bridge,store,telegram,event_id,preserve,cutover):
     repo=approval.repo;event=repo.get('events',event_id)
-    if not event or event.get('decision')!='revision_requested' or event.get('actor')!=approval.owner:raise Rejected('Owner revision unavailable')
+    if not event or event.get('decision')!='revision_requested' or not approval.actor_allowed(event.get('actor')):raise Rejected('Owner revision unavailable')
     old=repo.get('cards',event['token']);ref=repo.get('items',old['ref']) if old else None
+    if not old or approval.card_chat(old)!=approval.chat or str(event.get('chat_id',approval.legacy_chat))!=approval.chat:raise Rejected('Revision chat binding mismatch')
     delivery_key='revision-delivery:'+sha(event_id)
     previous=repo.get('events',delivery_key)
     if previous and previous.get('status')!='needs_full_text':return previous
@@ -47,4 +48,5 @@ def revise(approval,bridge,store,telegram,event_id,preserve,cutover):
     result=dict(result,revision_event_id=event_id)
     with repo.transaction():repo.put('events',delivery_key,result)
     preserve();return result
+
 

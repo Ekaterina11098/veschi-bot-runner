@@ -24,9 +24,15 @@ def main():
             seal('revision-resume',dict(results=results,snapshot=snapshot(repo)))
         for event_id,raw in repo.execute("SELECT id,payload FROM {p}events WHERE id LIKE ?", ('edit:%',)).fetchall():
             event=json.loads(raw)
-            if event.get('actor')!=app.owner:continue
             card=repo.get('cards',event.get('token',''))
             if not card or card.get('status')!='rework':continue
+            chat=app.card_chat(card);app.chat=app.legacy_chat;app.group_actor=None
+            if chat==app.group_chat():
+                from review_telegram_runtime import TelegramTransport
+                member=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']).call('getChatMember',{'chat_id':chat,'user_id':int(event.get('actor',0))})
+                if str(member.get('user',{}).get('id'))!=str(event.get('actor')) or member.get('status') not in ('creator','administrator','member'):continue
+                app.chat=chat;app.group_actor=str(event['actor'])
+            if not app.actor_allowed(event.get('actor')) or str(event.get('chat_id',app.legacy_chat))!=app.chat:continue
             results[event_id]=revise(app,bridge,store,NewNoticeTransport(os.environ['TELEGRAM_BOT_TOKEN']),event_id,preserve,cfg['cutover'])
         preserve()
         print(json.dumps({'revisions':len(results),'confirmed':sum(r.get('status')=='confirmed' for r in results.values()),'wb_writes':0}))
@@ -43,4 +49,5 @@ if __name__=='__main__':
         save_diagnostic('review-revisions',traceback.format_exc())
         seal('revision-resume-error',{'error':error(exc),'private_log':hidden.getvalue()})
         print('Revision delivery failed; diagnostic protected.');raise SystemExit(1)
+
 

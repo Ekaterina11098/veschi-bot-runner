@@ -32,6 +32,7 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None):
         if removal.get('status')=='confirmed':skip.add(card['message_id'])
         else:add(card.get('message_id'))
     for key,e in events.items():
+        if key.startswith(('owner-receipt:','owner-problem:')) and str(e.get('chat_id',a.legacy_chat))!=a.chat:continue
         if key.startswith('owner-receipt:') and e.get('intent_id') in owned and e.get('stage') in NORMAL:add(e.get('message_id'))
         elif e.get('card_token') in tokens:add(e.get('message_id'))
         elif e.get('ref') in processed and key.startswith('new-notice:'):add(e.get('message_id'))
@@ -79,4 +80,5 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None):
         dirty=True
     if dirty and preserve:preserve()
     return report
+
 

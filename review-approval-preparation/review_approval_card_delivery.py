@@ -41,19 +41,20 @@ def notify_owner_problem(approval,telegram,intent,preserve=None):
     if intent.get('status')!='blocked':return None
     if intent['owner_id']!=approval.owner or intent['chat_id']!=approval.chat:
         raise ValueError('Wrong problem recipient')
+    destination=approval.group_chat() or approval.chat
     key='owner-problem:'+intent['id']
     with approval.repo.transaction():
         approval.repo.get('intents',intent['id'],lock=True)
         old=approval.repo.get('events',key)
         if old:return old
-        event={'status':'sending','intent_id':intent['id'],'created_at':approval.clock(),'needs_owner_decision':True}
+        event={'status':'sending','intent_id':intent['id'],'created_at':approval.clock(),'needs_owner_decision':True,'chat_id':destination}
         approval.repo.put('events',key,event)
     if preserve:preserve()
     card=approval.repo.get('cards',intent['card_token'])
     cabinet={'token_1':'ООО','token_2':'ИП','token_3':'Китай'}[intent['cabinet']]
     text='Отзывы · '+cabinet+' · '+str(card['source']['article'])[:150]+'\nНужно ваше решение: публикация остановлена, поскольку данные, версия ответа или блокировка изменились. Ответ не подтверждён WB. Проверьте актуальный отзыв перед новым согласованием.'
     try:
-        response=telegram.call('notifyOwnerReviewProblem',{'chat_id':approval.chat,'text':text})
+        response=telegram.call('notifyOwnerReviewProblem',{'chat_id':destination,'text':text})
         mid=response.get('message_id') if isinstance(response,dict) else None
         if not isinstance(mid,int) or mid<=0:raise ValueError('Message id unconfirmed')
         event.update(status='confirmed',message_id=mid)
@@ -74,13 +75,14 @@ def notify_owner_receipt(approval,telegram,intent,preserve=None):
         from review_approval_cleanup import cleanup_completed
         cleanup=cleanup_completed(approval,telegram,preserve,intent_id=intent['id'])
         return {'status':'suppressed','stage':stage,'cleanup':cleanup}
+    destination=approval.group_chat() or approval.chat
     key='owner-receipt:'+intent['id']+':'+stage
     repo=approval.repo
     with repo.transaction():
         repo.get('intents',intent['id'],lock=True)
         old=repo.get('events',key)
         if old:return old
-        event={'status':'sending','intent_id':intent['id'],'stage':stage,'created_at':approval.clock()}
+        event={'status':'sending','intent_id':intent['id'],'stage':stage,'created_at':approval.clock(),'chat_id':destination}
         repo.put('events',key,event)
     if preserve:preserve()
     card=repo.get('cards',intent['card_token'])
@@ -94,11 +96,12 @@ def notify_owner_receipt(approval,telegram,intent,preserve=None):
            'blocked':'Публикация остановлена: изменились исходные данные, версия ответа или блокировка. Требуется ваша проверка; повторно отправлять прежний текст нельзя.'}[stage]
     text=kind+' · '+cabinet+' · '+str(card['source']['article'])[:150]+'\nID: '+intent['item_id']+'\n'+state
     try:
-        response=telegram.call('notifyOwnerReviewReceipt',{'chat_id':approval.chat,'text':text})
-        if not isinstance(response,dict) or str(response.get('chat',{}).get('id'))!=approval.chat or not isinstance(response.get('message_id'),int):raise ValueError('Receipt unconfirmed')
+        response=telegram.call('notifyOwnerReviewReceipt',{'chat_id':destination,'text':text})
+        if not isinstance(response,dict) or str(response.get('chat',{}).get('id'))!=destination or not isinstance(response.get('message_id'),int):raise ValueError('Receipt unconfirmed')
         event.update(status='confirmed',message_id=response['message_id'])
     except Exception:event['status']='uncertain'
     with repo.transaction():repo.put('events',key,event)
     if preserve:preserve()
     return event
+
 

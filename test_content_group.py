@@ -40,5 +40,36 @@ class GroupApprovalTests(unittest.TestCase):
   self.receiver.receive(self.update(action='edit'),'secret');self.tg.members.remove(20)
   edit={'message':{'message_id':6,'chat':{'id':-1001,'type':'supergroup'},'from':{'id':20},'text':'Изменить','reply_to_message':{'message_id':5,'from':{'id':99}}}}
   with self.assertRaises(Rejected):self.receiver.receive(edit,'secret')
+ def test_member_revision_is_returned_for_group_confirmation(self):
+  from types import SimpleNamespace
+  from unittest.mock import Mock,patch
+  from review_telegram_approval import sha
+  from review_approval_revision import revise
+  self.receiver.receive(self.update(action='edit'),'secret')
+  answer='Добрый день! Спасибо за подробный отзыв о нашей сумке. С уважением, команда VESCHI'
+  event=self.a.record_edit(self.token,20,-1001,5,answer)
+  raw={'id':'review','text':'Отзыв'}
+  with self.repo.transaction():
+   card=self.repo.get('cards',self.token);card['binding']={'draft_key':'draft','raw_source_sha256':sha(raw)};self.repo.put('cards',self.token,card)
+  source=SimpleNamespace(read=lambda key:{'source_sha256':sha(raw)},matching=lambda *args:[{'version':'v1','item':raw}])
+  bridge=SimpleNamespace(source=source,draft_key=lambda *args:'revised-draft')
+  store=SimpleNamespace(insert=lambda *args:None)
+  with patch.dict(sys.modules,{'validator':SimpleNamespace(validate_answer=lambda *args:{'valid':True})}),patch('review_approval_revision.NewNotice') as notice:
+   notice.return_value.deliver.return_value={'status':'confirmed'}
+   result=revise(self.a,bridge,store,self.tg,event['revision_event_id'],lambda:None,0)
+  self.assertEqual(result['status'],'confirmed');self.assertEqual(self.a.chat,'-1001');self.assertEqual(self.repo.get('events',event['revision_event_id'])['actor'],'20')
+ def test_legacy_intent_problem_goes_to_group(self):
+  from review_approval_card_delivery import notify_owner_problem,notify_owner_receipt
+  self.a.chat='1'
+  token,_=self.a.create('token_2','feedbacks','legacy','v1',self.source,['A','B'],8)
+  update={'callback_query':{'id':'legacy','from':{'id':1},'message':{'message_id':8,'chat':{'id':1,'type':'private'},'from':{'id':99}},'data':'rv1:'+token+':p1'}}
+  result=self.a.handle(update,'secret');intent=self.repo.get('intents',result['result']['intent_id']);intent['status']='blocked'
+  calls=[]
+  class Notices:
+   def call(_,method,payload):
+    calls.append((method,payload));return {'message_id':100+len(calls),'chat':{'id':int(payload['chat_id'])}}
+  self.assertEqual(notify_owner_problem(self.a,Notices(),intent)['chat_id'],'-1001')
+  self.assertEqual(notify_owner_receipt(self.a,Notices(),intent)['chat_id'],'-1001')
+  self.assertTrue(all(str(payload['chat_id'])=='-1001' for _,payload in calls))
 
 if __name__=='__main__':unittest.main()

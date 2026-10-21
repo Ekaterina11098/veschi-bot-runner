@@ -1,0 +1,19 @@
+name: Content group delivery and member approval checks
+on:
+  push:
+    paths: ['review-approval-preparation/**', 'review_approved_worker.py', 'review_morning.py', 'review_revision_resume.py', 'test_content_group.py', '.github/workflows/content-group-checks.yml']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  group-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m unittest test_content_group test_review_revision test_review_autonomy test_review_cleanup test_review_reliability test_review_morning test_review_questions test_review_approved_worker
+      - run: python -m unittest discover -s review-approval-preparation -p test_review_telegram.py
+      - run: node test_content_group_route.mjs

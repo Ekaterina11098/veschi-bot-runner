@@ -53,7 +53,11 @@ def main():
      membership=tg('getChatMember',{'chat_id':chat,'user_id':job['sender_id']})
      if membership.get('user',{}).get('id')!=job['sender_id'] or membership.get('status') not in ('creator','administrator','member'):raise ValueError('Sender no longer a group member')
      history=db('GET',{'agent_id':'eq.operations','chat_id':'eq.'+chat,'status':'eq.done','id':'lt.'+str(job['id']),'select':'agent_id,chat_id,request_text,answer','order':'id.desc','limit':'6'})
-     answer,trace=dialog.run_dialog(job,previous=list(reversed(history)))
+     def model_request(body):
+      response=requests.post('https://api.openai.com/v1/responses',headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY']},json=body,timeout=(10,100))
+      if response.status_code!=200:raise RuntimeError('Content model unavailable')
+      return response.json()
+     answer,trace=dialog.run_dialog(job,request=model_request,previous=list(reversed(history)))
      patch({'answer':answer,'tool_trace':trace})
      # Commit send intent first: an unknown send outcome is never retried blindly.
      key='content-group:answer:'+str(job['id'])

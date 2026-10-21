@@ -33,7 +33,7 @@ jobs:
           STOCK_DAILY_ENABLED: 'true'
           STOCK_NOTIFICATIONS_ENABLED: 'true'
           STOCK_CLOUD_EXECUTION_ENABLED: 'false'
-          STOCK_OZON_ENABLED: 'true'
+          STOCK_OZON_ENABLED: 'false'
           STOCK_JOURNAL_IMPORT_ACCEPTED: 'true'
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

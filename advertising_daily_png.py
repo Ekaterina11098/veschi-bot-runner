@@ -83,18 +83,22 @@ def _render_weekly_drr(bundle,outdir):
  wt=bundle.get('weekly_total_spend');prefix='За 7 полных дней' if bundle.get('weekly_total_complete') else 'Известный расход за 7 дней'
  d.text((PAD,y),prefix+' ('+week+'): '+(rub(wt) if wt is not None else 'нет данных'),font=font(33,True),fill=INK);y+=66
  xs=[PAD,260,500,700]
- for x,t in zip(xs,['РК','Расход','ДРР за день','Выше 5% по товарам']):d.text((x,y),t,font=font(29,True),fill=MUTED)
+ for x,t in zip(xs,['РК','Расход','ДРР за день','Товары · результат']):d.text((x,y),t,font=font(29,True),fill=MUTED)
  y+=55
  for c in rows:
   spend=c.get('spend');ratio=c.get('drr');above=c.get('above5') or []
   notes=[a['article']+' — '+pct(a['drr']) for a in above]
-  if above and c.get('within5_count'):notes.append('Остальные с ДРР — до 5%')
+  if above and c.get('within5_count'):notes.append('Остальные с заказами — до 5%')
   if not notes:
    if not c.get('metrics_complete'):notes=['Нет полного среза за день']
    elif spend==0:notes=['За день не откручивалась']
-   elif c.get('direct_orders')==0:notes=['Без прямых заказов']
+   elif c.get('direct_orders')==0:notes=[]
    elif c.get('sku_basis')!='direct_only':notes=['Прямой ДРР товаров неизвестен']
-   else:notes=['Превышений нет']
+   else:notes=['У товаров с заказами ДРР до 5%']
+  if c.get('metrics_complete') and spend is not None and spend>0:
+   n=c.get('no_order_count');amount=c.get('no_order_spend')
+   if n is None or amount is None:notes.append('Без заказов: разбивка неизвестна')
+   else:notes.append('Без заказов: '+str(n)+' '+('товар' if n%10==1 and n%100!=11 else 'товара' if n%10 in (2,3,4) and n%100 not in (12,13,14) else 'товаров')+' · '+rub(amount))
   if c.get('observed_campaign_status')==11:notes.append('РК приостановлена')
   lines=[]
   for note in notes:lines.extend(wrap(note,font(29),W-xs[3]-PAD-12))
@@ -109,7 +113,7 @@ def _render_weekly_drr(bundle,outdir):
   for k,line in enumerate(lines):d.text((xs[3],y+18+k*43),line,font=font(29),fill=RED if above and k<len(above) else INK)
   y+=h
  y+=25
- foot='ДРР РК — за день, с подтверждённым посткликом один раз. По товарам — прямой ДРР. Расход за неделю — сумма за '+week+', а не средний день. Нулевой расход означает отсутствие открутки за этот период, а не эффективность. «Превышений нет» — только среди товаров с рассчитанным ДРР. Суммы относятся к показанным РК.'
+ foot='ДРР РК — с подтверждённым посткликом один раз. По товарам — прямые заказы за день. «Без заказов» — товары с расходом, но без прямых заказов; поздние и связанные заказы могут изменить оценку. Суммы строк товаров могут немного отличаться от итога РК. Неделя: '+week+'.'
  for line in wrap(foot,font(28),W-PAD*2):d.text((PAD,y),line,font=font(28),fill=MUTED);y+=38
  im.crop((0,0,W,y+36)).save(Path(outdir)/'drr.png','PNG',optimize=True)
 
@@ -135,5 +139,7 @@ def render_daily_png(view,outdir):
   for kind,path in zip(('drr','budgets'),paths):artifacts[kind].append(dict(kind=kind,path=path))
  return artifacts['drr']+artifacts['budgets']
 if __name__=='__main__':print(json.dumps(render_daily_png(json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')),sys.argv[2])))
+
+
 
 

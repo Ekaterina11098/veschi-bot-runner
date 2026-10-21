@@ -154,6 +154,23 @@ def render_daily_tables(view,limit=3800):
       'Оценка = баланс на момент наблюдения / суточный расход '+period+'. Это условный срок при сохранении темпа, не гарантия. Последующий расход не вычтен. При малом расходе оценка неустойчива. Для исторического баланса, неизвестного расхода и приостановленной РК срок не рассчитывается.')
     return [dict(kind='drr',text=t) for t in first]+[dict(kind='budgets',text=t) for t in second]
 
+def no_order_spend_summary(p):
+    """SKU with positive spend and zero DIRECT orders; unknown is never zero."""
+    unknown=dict(no_order_count=None,no_order_spend=None)
+    if p.get('sku_order_basis')!='direct_only':return unknown
+    rows=p.get('rows') or []
+    if not rows:
+        return dict(no_order_count=0,no_order_spend=0) if (p.get('totals') or {}).get('ac_spending_sum')==0 else unknown
+    grouped={}
+    for r in rows:
+        cost=r.get('ac_spending_sum');orders=r.get('ac_orders');nm=r.get('nm_id')
+        if not _number(cost) or cost<0:return unknown
+        if cost==0 and nm is None:continue
+        if nm is None or not _number(orders) or orders<0:return unknown
+        old=grouped.setdefault(nm,[0,0]);old[0]+=cost;old[1]+=orders
+    selected=[v[0] for v in grouped.values() if v[0]>0 and v[1]==0]
+    return dict(no_order_count=len(selected),no_order_spend=sum(selected))
+
 def load_daily_table_view(store,now):
     """One bounded exact-day report query; no WB/MPStats requests or cache TTL."""
     from datetime import timedelta
@@ -216,6 +233,7 @@ def load_daily_table_view(store,now):
         p=reports.get(mapping.get(cid),{});t=p.get('totals') or {}
         valid=bool(p) and all(_number(t.get(k)) for k in ('ac_spending_sum','ac_orders_sum','ac_orders'))
         above=[];within=0
+        no_orders=no_order_spend_summary(p)
         if p.get('sku_order_basis')=='direct_only':
             for r in p.get('rows') or []:
                 spend=r.get('ac_spending_sum');rev=r.get('ac_orders_sum')
@@ -237,7 +255,7 @@ def load_daily_table_view(store,now):
             except (TypeError,ValueError):continue
         result.append(dict(campaign_id=cid,metrics_complete=valid,spend=t.get('ac_spending_sum') if valid else None,revenue=t.get('ac_orders_sum') if valid else None,
           direct_orders=(t['ac_orders']-t['ac_orders_associated']) if valid and _number(t.get('ac_orders_associated')) and t['ac_orders']>=t['ac_orders_associated'] else None,
-          above5=sorted(above,key=lambda x:-x['drr']),within5_count=within,sku_order_basis=p.get('sku_order_basis'),status_id=states.get(cid),budget=budget,source_snapshot_id=p.get('snapshot_id'),weekly_spend=weekly.get(cid)))
+          above5=sorted(above,key=lambda x:-x['drr']),within5_count=within,**no_orders,sku_order_basis=p.get('sku_order_basis'),status_id=states.get(cid),budget=budget,source_snapshot_id=p.get('snapshot_id'),weekly_spend=weekly.get(cid)))
     return dict(period=day,observed_day=str(now.date()),campaigns=result,weekly_period_from=week_start,weekly_period_to=week_end)
 
 def deliver_daily_tables(store,messages,chat,day,send):
@@ -268,3 +286,5 @@ def deliver_daily_tables(store,messages,chat,day,send):
         if store.cache_get(key)!=value:raise RuntimeError('Table receipt readback mismatch')
         receipts.append(value)
     return receipts
+
+

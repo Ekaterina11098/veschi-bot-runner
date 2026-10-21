@@ -6,6 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   saved:
+    if: false # Retained reconciliation verified; no repeated reads.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

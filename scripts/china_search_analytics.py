@@ -109,7 +109,7 @@ def collect(worker, nm, article, current, previous, transport=None, sleeper=time
 
 def context(worker, job, history):
     text=job.get('request_text','')
-    if job.get('agent_id')!='china' or not re.search(r'поиск|запрос|позици|продвиж|реклам|показ|клик|конверс|анализ.*продаж|почему.*(?:заказ|продаж)',text,re.I):return None,[]
+    if job.get('agent_id')!='china' or not re.search(r'поиск|запрос|позици|продвиж|реклам|показ|клик|анализ.*продаж|почему.*(?:заказ|продаж)',text,re.I):return None,[]
     try:
         from china_break_even import resolve
         nm,article=resolve(text,worker.catalog())

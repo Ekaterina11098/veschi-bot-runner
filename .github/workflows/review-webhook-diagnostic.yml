@@ -1,0 +1,22 @@
+name: Read-only review webhook diagnosis
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-webhook-diagnostic.yml']
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' requests==2.32.5
+      - name: Read webhook delivery status only
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          REVIEW_APPROVAL_DSN: ${{ secrets.REVIEW_APPROVAL_DSN }}
+        run: python review_webhook_diagnostic.py

@@ -6,6 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   saved:
+    if: false # Saved-only preview evidence retained; do not repeat.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

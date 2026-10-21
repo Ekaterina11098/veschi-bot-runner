@@ -1,4 +1,4 @@
-name: Ozon stock read-only preflight21Oct
+name: Ozon49 warehouse stock verification21Oct
 on:
   push:
     branches: [main]
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: c680b39cb4373f9a06a693e24802f676f3fffd1b
+          ref: 0f1dc5dde5693a478f7224bfbea98ecedcf6b255
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -32,7 +32,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           SUPABASE_URL: https://abxgjoqlddhtcmjcjwxw.supabase.co
-        run: python private-source/owner_ozon_stock_preflight_20261021.py
+        run: python private-source/owner_ozon_warehouse_probe_20261021.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

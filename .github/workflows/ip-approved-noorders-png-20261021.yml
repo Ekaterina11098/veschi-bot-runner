@@ -6,6 +6,7 @@ on:
 permissions: {contents: write}
 jobs:
   addressed:
+    if: false # Authorized single image delivered; no repeated sending.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

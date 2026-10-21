@@ -1,0 +1,38 @@
+name: Owner approved corrected no-order DRR PNG
+on:
+  push:
+    branches: [ip-approved-noorders-png-20261021]
+    paths: ['.github/workflows/ip-approved-noorders-png-20261021.yml']
+permissions: {contents: write}
+jobs:
+  addressed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 2f798a9509b72030d6fb5ec68fb915c5d216c31b
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: python scripts/send_approved_noorders_20261021.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+      - name: Preserve owner encrypted response
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          cp "$RUNNER_TEMP/stock-deploy-proof/approved-noorders-png.aes.json" "recovery-output/advertising/approved-noorders-png-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/approved-noorders-png-*.aes.json
+          git diff --cached --quiet || git commit -m "Preserve encrypted single addressed 40192945 receipt"
+          git push origin HEAD:ip-approved-noorders-png-20261021

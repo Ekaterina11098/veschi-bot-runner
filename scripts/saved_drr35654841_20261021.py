@@ -14,11 +14,7 @@ def guard(session,method,url,*a,**kw):
  if u.hostname!=host or not u.path.startswith('/rest/v1/') or method.upper()!='GET':raise PermissionError('Saved GET only')
  return native(session,method,url,*a,**kw)
 requests.sessions.Session.request=guard
-rows=decode_rows(s.db('GET','analytics_snapshots',params={'id':'eq.18734','source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','period_from':'eq.2026-10-20','period_to':'eq.2026-10-20','select':'id,payload,collected_at','limit':1}) or [])
-assert len(rows)==1
-p=rows[0]['payload'][0]
-cards=Data('operations',lambda t,q:s.db('GET',t,params=q)).snapshot('cards','token_2')
-names={int(r['nmID']):r['vendorCode'] for r in cards.get('rows',[]) if r.get('nmID') and r.get('vendorCode')}
-for r in p.get('rows') or []:r['article']=names.get(r.get('nm_id'))
-seal('saved-drr35654841',dict(report=rows,source_calls=0,telegram_calls=0,wb_changes=0))
-print(json.dumps(dict(complete=True,rows=len(p.get('rows') or []),source_calls=0,telegram_calls=0)))
+rows=decode_rows(s.db('GET','analytics_snapshots',params={'id':'in.(18736,18738,18740,18742,18744,18746,18748,18750,18752,18754)','source':'eq.mpstats_campaign_report','cabinet':'eq.token_2','period_from':'eq.2026-10-20','period_to':'eq.2026-10-20','select':'id,payload,collected_at','limit':10}) or [])
+assert len(rows)==10
+seal('saved-noorders',dict(report=rows,source_calls=0,telegram_calls=0,wb_changes=0))
+print(json.dumps(dict(complete=True,snapshots=len(rows),source_calls=0,telegram_calls=0)))

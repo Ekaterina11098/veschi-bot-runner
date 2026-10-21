@@ -3,7 +3,7 @@ import os,json,time,base64
 from datetime import datetime,timezone
 import requests
 from china_price_apply import IO
-io=IO();key='china_agent:search_api_probe:2026-10-21:v1'
+io=IO();key='china_agent:search_api_probe:2026-10-21:v2'
 if io.get(key):print('already_collected');raise SystemExit()
 token=io.token
 card=io.prices(['1473243898'])['1473243898']
@@ -11,7 +11,7 @@ if card.get('vendorCode')!='119-NoelBag-darkblack' or card.get('currencyIsoCode4
 state={'cabinet':'token_3','nm_id':1473243898,'started_at':datetime.now(timezone.utc).isoformat(),'observations':[],'wb_writes':0,'telegram_calls':0}
 period={'start':'2026-10-14','end':'2026-10-20'}
 queries=[
-('/api/v2/search-report/table/details',{'currentPeriod':period,'pastPeriod':{'start':'2026-10-07','end':'2026-10-13'},'nmIds':[1473243898],'includeSubstitutedSKUs':True,'includeSearchTexts':True,'orderBy':{'field':'openCard','mode':'desc'},'limit':10,'offset':0}),
+('/api/v2/search-report/table/details',{'currentPeriod':period,'pastPeriod':{'start':'2026-10-07','end':'2026-10-13'},'nmIds':[1473243898],'includeSubstitutedSKUs':True,'includeSearchTexts':True,'orderBy':{'field':'openCard','mode':'desc'},'limit':10,'offset':0,'positionCluster':'all'}),
 ('/api/v2/search-report/product/search-texts',{'currentPeriod':period,'pastPeriod':{'start':'2026-10-07','end':'2026-10-13'},'nmIds':[1473243898],'topOrderBy':'openCard','includeSubstitutedSKUs':True,'includeSearchTexts':True,'orderBy':{'field':'openCard','mode':'desc'},'limit':30})]
 for i,(path,body) in enumerate(queries):
  if i:time.sleep(21)

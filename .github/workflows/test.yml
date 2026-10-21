@@ -19,3 +19,5 @@ jobs:
       - run: python -m unittest discover -s tests -p test_advertising_daily_tables.py -v
       - run: python -m unittest discover -s tests -p test_advertising_daily_png.py -v
       - run: python -m unittest discover -s tests -p test_advertising_weekly_png.py -v
+
+      - run: python -m unittest discover -s tests -p test_no_order_spend.py -v

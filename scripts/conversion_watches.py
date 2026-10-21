@@ -305,6 +305,10 @@ class Worker:
         from china_break_even import answer as break_even
         computed=break_even(self,job,history)
         if computed is not None:return computed
+        from china_search_analytics import context as search_analytics_context, explicit_answer
+        search_context,search_trace=search_analytics_context(self,job,history)
+        search_answer=explicit_answer(job,search_trace)
+        if search_answer is not None:return search_answer,search_trace
         from china_conversion_explanation import explain
         explanation=explain(job['request_text'],question_marker(job),history)
         if explanation is not None:return explanation
@@ -330,8 +334,6 @@ class Worker:
                 lines.append('Это воронка MPStats, не подтверждённые продажи WB. Рекламные расходы и фактическая прибыль этим срезом не установлены. Новые сборы и изменения не запускались.')
                 return '\n'.join(lines),[{'name':'saved_conversion_history','arguments':{'nm_id':nm,'article':article},'result':value}]
             except ValueError as exc:return str(exc),[]
-        from china_search_analytics import context as search_analytics_context
-        search_context,search_trace=search_analytics_context(self,job,history)
         allowed_names={'get_status','find_products','get_product','get_mpstats_data','get_wb_sources','get_stock_context','get_sales_report'}
         allowed=[t for t in c.tools('china') if t['name'] in allowed_names]
         reads=0
@@ -446,6 +448,10 @@ class Worker:
         from china_break_even import answer as break_even
         computed=break_even(self,job,history)
         if computed is not None:return computed
+        from china_search_analytics import context as search_analytics_context, explicit_answer
+        search_context,search_trace=search_analytics_context(self,job,history)
+        search_answer=explicit_answer(job,search_trace)
+        if search_answer is not None:return search_answer,search_trace
         from business_agents import conversation as c
         old_tools,old_dispatch=c.tools,c.dispatch
         def tools(agent_id):
@@ -476,8 +482,6 @@ class Worker:
                 return self.conversion_history(**arguments)
             return old_dispatch(job,data,name,arguments,**kwargs)
         c.tools,c.dispatch=tools,dispatch
-        from china_search_analytics import context as search_analytics_context
-        search_context,search_trace=search_analytics_context(self,job,history)
         base_request=getattr(self,'model_request',None)
         if base_request is None:
             from advertising_agent.conversation import response_request

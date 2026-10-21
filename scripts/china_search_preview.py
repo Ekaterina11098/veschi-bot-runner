@@ -7,7 +7,7 @@ job=dict(id=0,agent_id='china',chat_id=cfg['chat_id'],sender_id=cfg['owner_user_
 with saved_network_guard():
  answer,trace=w.saved_question(job,[])
 search=[x for x in trace if x['name']=='get_search_analytics']
-if len(search)!=1 or not search[0]['result'].get('complete'):raise RuntimeError('Complete search context missing')
+if len(search)!=1 or search[0]['result'].get('nm_id')!='1473243898' or not search[0]['result'].get('complete'):raise RuntimeError('Complete search context missing')
 result=dict(status='verified',answer=answer,trace=trace,telegram_calls=0,wb_writes=0)
 w.save('china_agent:search_analytics_preview:'+os.environ['GITHUB_RUN_ID'],result)
 print(json.dumps(dict(status='verified',tool_calls=len(trace),telegram_calls=0,wb_writes=0)))

@@ -36,7 +36,9 @@ def normalize(p,day,articles):
   data=prod['data']['data'];risk=[];no_orders=[]
   if len({s['nm_id'] for s in data})!=len(data):raise ValueError('Duplicate product rows')
   for r in data:
-   spend=number(r.get('ac_spending_sum'));revenue=number(r.get('ac_orders_sum'));label=articles.get(str(r['nm_id']),'WB '+str(r['nm_id']))
+   spend=number(r.get('ac_spending_sum'));revenue=number(r.get('ac_orders_sum'));orders=number(r.get('ac_orders'))
+   if (orders==0)!=(revenue==0):raise ValueError('Product orders and turnover inconsistent')
+   label=articles.get(str(r['nm_id']),'WB '+str(r['nm_id']))
    if revenue>0:
     ratio=100*spend/revenue
     if ratio>5:risk.append(dict(article=label,nm=r['nm_id'],drr=ratio,spend=spend,orders=number(r.get('ac_orders')),orders_sum=revenue))
@@ -52,7 +54,7 @@ def normalize(p,day,articles):
    source_drr=d.get('ac_share_of_advert_spend'),postclick_orders=d.get('ac_orders_associated'),postclick_orders_sum=d.get('ac_orders_sum_associated'),
    above5=sorted(risk,key=lambda x:x['drr'],reverse=True),no_orders=sorted(no_orders,key=lambda x:x['spend'],reverse=True),
    balance=balance,balance_observed=conf['observed_at'],balance_hours=balance/spend*24 if balance is not None and not new and c['status_id']==9 and spend>0 else None,
-   sku_rows=len(data),sku_spend_sum=sum(number(x.get('ac_spending_sum')) for x in data),
+   sku_rows=len(data),sku_with_orders_count=sum(number(x.get('ac_orders'))>0 for x in data),sku_spend_sum=sum(number(x.get('ac_spending_sum')) for x in data),
    day_match=day_row_spend==spend,day_row_spend=day_row_spend,weekly_sum_day_rows=sum(number(x['ac_spending_sum']) for x in days['data']['data'])))
  result['total_day']=sum(x['spend'] for x in result['campaigns']);result['total_week']=sum(x['weekly_spend'] for x in result['campaigns'])
  return result

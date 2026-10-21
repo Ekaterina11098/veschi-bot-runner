@@ -4,6 +4,18 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from PIL import Image,ImageDraw,ImageFont
 
+def campaign_notes(c,money,pct):
+ """Positive-spend zero-direct-order products are distinct from calculable DRR."""
+ notes=[r['article']+' · '+pct(r['drr']) for r in c['above5']]
+ if c['is_new']:return ['Создана '+datetime.fromisoformat(c['created'][:10]).strftime('%d.%m.%Y')+' — вне отчётного периода']
+ if c['spend']==0:return ['За день не откручивалась']
+ if not notes:
+  notes=['У товаров с заказами ДРР до 5%'] if c.get('sku_with_orders_count',0)>0 else ['Прямых заказов нет']
+ count=len(c['no_orders'])
+ word='товар' if count%10==1 and count%100!=11 else 'товара' if count%10 in (2,3,4) and count%100 not in (12,13,14) else 'товаров'
+ notes.append('Без заказов: '+str(count)+' '+word+' · '+money(sum(r['spend'] for r in c['no_orders'])))
+ return notes
+
 def render(b,outdir):
  root=Path(outdir);root.mkdir(parents=True,exist_ok=True)
  def fmt(day):return datetime.fromisoformat(day).strftime('%d.%m.%Y')
@@ -34,16 +46,11 @@ def render(b,outdir):
  y=paragraph(d,y,'Расход за день: '+money(b['total_day'])+'     За 7 дней: '+money(b['total_week']),36,INK)
  y=paragraph(d,y,'Суммы — по сводкам кампаний MPStats. ДРР пересчитан по этим суммам; значения округлены источником.',25)
  xs=[P,330,555,765]
- for x,t in zip(xs,['Кампания WB','Расход','ДРР за день','Товары с ДРР > 5%']):d.text((x,y),t,font=font(28,True),fill=MUTED)
+ for x,t in zip(xs,['Кампания WB','Расход','ДРР за день','Товары: ДРР и расход']):d.text((x,y),t,font=font(28,True),fill=MUTED)
  y+=58
  for c in b['campaigns']:
   notes=[]
-  for r in c['above5']:notes+=wrap(r['article']+' · '+pct(r['drr']),font(26),W-xs[3]-P-15)
-  if c['no_orders']:
-   notes+=wrap('Без прямых заказов: '+str(len(c['no_orders']))+' тов. · '+money(sum(r['spend'] for r in c['no_orders'])),font(26),W-xs[3]-P-15)
-  if c['is_new']:notes=['Создана '+fmt(c['created'][:10])+' — вне отчётного периода']
-  elif c['spend']==0:notes=['Нет расхода за день']
-  elif not notes:notes=['Среди рассчитанных ДРР превышений нет']
+  for line in campaign_notes(c,money,pct):notes+=wrap(line,font(26),W-xs[3]-P-15)
   if not c['day_match']:notes+=wrap('Сводка: '+money(c['spend'])+'; дневной ряд: '+(money(c.get('day_row_spend')) if c.get('day_row_spend') is not None else 'нет данных'),font(25),W-xs[3]-P-15)
   h=max(143,34+len(notes)*37)
   d.rounded_rectangle((P-14,y,W-P+14,y+h-9),radius=14,fill='white')
@@ -56,7 +63,7 @@ def render(b,outdir):
   for k,line in enumerate(notes):d.text((xs[3],y+18+k*37),line,font=font(26),fill=RED if c['above5'] else MUTED)
   y+=h
  y+=20
- y=paragraph(d,y,'ДРР = расход / сумма рекламных заказов. Постклик уже включён в итог РК и повторно не прибавлен. По товарам — прямые заказы. Это рекламная атрибуция, не выкупы и не прибыль.',25)
+ y=paragraph(d,y,'ДРР = расход / сумма рекламных заказов. Постклик уже включён в итог РК и повторно не прибавлен. По товарам — прямые заказы. «Без заказов» — товары с расходом, но без прямых заказов; поздние и связанные заказы могут изменить оценку. Это рекламная атрибуция, не выкупы и не прибыль.',25)
  y=paragraph(d,y,'Расхождения исходных срезов показаны в строках. Товарные суммы могут отличаться от итогов РК из-за точности и версий источника; итог РК не заменён суммой товаров. Нули новых кампаний не означают эффективность.',25)
  im.crop((0,0,W,y+24)).save(root/'drr.png',optimize=True)
  im,d,y=canvas('Китай · бюджеты кампаний','Проверка '+fmt(b['observed_day'])+' · валюта CNY · время МСК')

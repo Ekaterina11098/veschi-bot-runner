@@ -1,0 +1,123 @@
+name: Owner approved fresh current-order reserve22Oct
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-current-reserve-approved-20261022.yml']
+# Daily07:00/16:30MSK; bounded10-minute checks resume unfinished slots only.
+# Completed slots and unexpired Retry-After are skipped without business API calls.
+# Owner approved daily stock execution and new stock notifications, 2026-10-15.
+permissions:
+  contents: read
+concurrency:
+  group: bot-stock
+  cancel-in-progress: false
+jobs:
+  stock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 1bcefcbf628ac30a261515166881adf67ecb5871
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/daily-install.log" 2>&1
+      - name: Current reserve offline regression
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
+        run: python -m unittest test_stock_current_order_reserve test_stock_unposted_orders test_stock_regular_service test_stock_group_execution test_stock_shared_requests test_stock_ozon
+      - name: Owner-authorized fresh reserve calculation and execution
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
+          STOCK_DAILY_ENABLED: 'true'
+          STOCK_OZON_ENABLED: 'true'
+          STOCK_PENDING_RESERVE_ENABLED: 'true'
+          STOCK_RUN_SLOT: ${{ (github.event.schedule == '0 4 * * *' || github.event.schedule == '10,20,30,40,50 4 * * *' || github.event.schedule == '*/10 5-8 * * *') && '0700' || '1630' }}
+          STOCK_NOTIFICATIONS_ENABLED: 'true'
+          STOCK_CLOUD_EXECUTION_ENABLED: 'true'
+          STOCK_JOURNAL_IMPORT_ACCEPTED: 'true'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+          WB_STOCK_WAREHOUSE_1: ${{ vars.WB_STOCK_WAREHOUSE_1 }}
+          WB_STOCK_WAREHOUSE_2: ${{ vars.WB_STOCK_WAREHOUSE_2 }}
+          WB_STOCK_WAREHOUSE_3: ${{ vars.WB_STOCK_WAREHOUSE_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MOYSKLAD_STORE_NAME: МСК
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+          AUTO_STOCK_FAIL_FAST: '1'
+        run: |
+          cat > "$RUNNER_TEMP/owner_current_reserve.py" <<'PY'
+          import os,json,psycopg
+          from datetime import datetime,timezone,timedelta
+          from stock_deploy_support import runtime_db,password,HOST,ROLE,PROJECT,seal,error
+          SLOT='2026-10-22:owner-reserve-approved'
+          ROOT='technical:owner-pending-reserve-preview:2026-10-22:current-ledger-revision-3'
+          try:
+              if datetime.now(timezone(timedelta(hours=3))).date().isoformat()!='2026-10-22':
+                  raise RuntimeError('Owner extra run date closed')
+              os.environ['STOCK_DATABASE_URL']=psycopg.conninfo.make_conninfo(host=HOST,port=5432,dbname='postgres',user=ROLE+'.'+PROJECT,password=password(),sslmode='require')
+              import tg_agent_new as g
+              from stock_execution_fence import cloud_writer
+              from stock_operation_store import Store
+              from stock_shared_requests import SharedRequests
+              from stock_current_order_reserve import ledger_key
+              with cloud_writer(runtime_db()):
+                  with runtime_db() as db:
+                      store=Store(db,postgres=True)
+                      row=store.sql('SELECT snapshot FROM stock_runs WHERE id=?',(ROOT,)).fetchone()
+                      db.commit()
+                      reviewed=json.loads(row[0])
+                      assert reviewed.get('execution_authorized') is True
+                      assert reviewed['candidate_source']=='1bcefcbf628ac30a261515166881adf67ecb5871'
+                      baseline=reviewed['approved_bootstrap']
+                      ledger=baseline['ledger']
+                      assert ledger['reviewed'] is True
+                      assert ledger['owner_baseline_confirmation']['confirmed'] is True
+                      assert ledger['tracking_started_at']==1792650931.7729614
+                      assert not ledger.get('bootstrap_quarantine')
+                      shared=SharedRequests(store)
+                      key=ledger_key(g,baseline['identity'])
+                      existing=shared.get(key)
+                      if existing is None:
+                          shared.put(key,ledger,31536000)
+                          actual=shared.get(key)
+                          assert actual['source_observed_at']==ledger['source_observed_at']
+                          print(json.dumps({'baseline_initialized':True,'open_units':len(actual['open_units'])}))
+                      else:
+                          assert existing.get('reviewed') is True
+                          print(json.dumps({'baseline_already_exists':True}))
+              from stock_regular_job import send
+              from stock_regular_service import run
+              result=run(runtime_db,send,SLOT)
+              seal('owner-current-reserve-approved',result)
+              print(json.dumps(result))
+              if result.get('status') not in ('complete','complete_with_holds','done'):
+                  raise SystemExit(75)
+          except Exception as exc:
+              seal('owner-current-reserve-approved-error',error(exc))
+              print(json.dumps({'status':'stopped','error_type':type(exc).__name__}))
+              raise SystemExit(1)
+          PY
+          python content_group_destination.py "$RUNNER_TEMP/owner_current_reserve.py"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-current-reserve-approved-receipt
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90
+

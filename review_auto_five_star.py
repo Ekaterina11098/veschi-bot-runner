@@ -80,3 +80,24 @@ def authorized_card(app,source,card):
    str(item.get('id'))==card['item_id'] and classify(item)['eligible'] and
    card.get('texts')==[answer_for(item)] and card.get('hashes')==[sha(answer_for(item))])
 
+
+def validate_preflight_response(intent,method,url,response):
+ """Qualify only the exact WB review read, never cache/Telegram HTTP traffic."""
+ from urllib.parse import urlsplit
+ u=urlsplit(str(url))
+ if not (intent and intent.get('authorization_channel')=='automatic_policy' and
+   intent.get('kind')=='feedbacks' and intent.get('status')=='awaiting_preflight' and
+   str(method).upper()=='GET' and u.hostname=='feedbacks-api.wildberries.ru' and
+   u.path=='/api/v1/feedback' and response.status_code==200):
+  return
+ from review_approval_executor import AutomaticPolicyChanged
+ body=response.json()
+ item=body.get('data') if isinstance(body,dict) else None
+ if not isinstance(item,dict) or str(item.get('id'))!=intent['item_id'] or body.get('error'):
+  raise RuntimeError('Automatic review preflight incomplete')
+ answer=item.get('answer')
+ if answer is not None and not isinstance(answer,dict):
+  raise RuntimeError('Automatic review answer shape incomplete')
+ # Preserve existing-answer reconciliation; never overwrite or resend it.
+ if not (answer or {}).get('text') and not classify(item)['eligible']:
+  raise AutomaticPolicyChanged()

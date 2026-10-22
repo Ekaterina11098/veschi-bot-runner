@@ -73,16 +73,8 @@ def main():
             if u.hostname and 'wildberries.' in u.hostname:
                 with repo.transaction():
                     repo.put('events','approved-worker:wb-http:'+active['cabinet'],dict(checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),cabinet=active['cabinet'],item_id=active['item_id'],method=method,path=u.path,http_status=response.status_code,rate_headers={k:response.headers.get(k) for k in ('X-RateLimit-Retry','Retry-After','X-RateLimit-Reset','X-RateLimit-Limit','X-RateLimit-Remaining')}))
-            if (active and active.get('authorization_channel')=='automatic_policy' and method=='GET' and
-                active.get('status')=='awaiting_preflight' and response.status_code==200):
-                from review_auto_five_star import classify
-                from review_approval_executor import AutomaticPolicyChanged
-                body=response.json();item=body.get('data')
-                if (not isinstance(item,dict) or str(item.get('id'))!=active['item_id'] or body.get('error')):
-                    raise RuntimeError('Automatic review preflight incomplete')
-                # An existing answer is reconciled by Executor, never overwritten.
-                if not (item.get('answer') or {}).get('text') and not classify(item)['eligible']:
-                    raise AutomaticPolicyChanged()
+            from review_auto_five_star import validate_preflight_response
+            validate_preflight_response(active,method,url,response)
             return response
         requests.sessions.Session.request=guarded
         try:

@@ -2,7 +2,7 @@ name: Validate owner-authorized automatic five-star policy
 on:
   workflow_dispatch:
   push:
-    paths: ['.github/workflows/review-auto-five-star-checks.yml','review_auto_five_star.py','test_review_auto_five_star.py']
+    paths: ['.github/workflows/review-auto-five-star-checks.yml','review_auto_five_star.py','test_review_auto_five_star.py','test_review_auto_preflight.py']
 permissions: {contents: read}
 jobs:
   validate:
@@ -16,7 +16,7 @@ jobs:
       - run: pip install 'psycopg[binary]==3.2.10'
       - name: Verify qualification, manual exclusions and duplicate protection
         run: |
-          python -m unittest test_review_auto_five_star.py test_review_morning.py test_review_approved_worker.py test_review_autonomy.py test_review_cleanup.py test_review_reliability.py
+          python -m unittest test_review_auto_preflight.py test_review_auto_five_star.py test_review_morning.py test_review_approved_worker.py test_review_autonomy.py test_review_cleanup.py test_review_reliability.py
           python -m unittest discover -s review-approval-preparation -p test_review_telegram.py
           python -m py_compile review_auto_five_star.py review_morning.py review_approved_worker.py
       - name: Verify private policy activation without WB or Telegram calls

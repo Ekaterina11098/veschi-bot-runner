@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: b4fdb1b9b24c0944e2fd876aba789f3640318bfe
+          ref: 21460501a069d9b2c76618c49fcbe7ebccb458d2
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -51,7 +51,7 @@ jobs:
           AUTO_STOCK_FAIL_FAST: '1'
         run: |
           python -m unittest test_stock_presence_two test_owner_low_rule test_stock_regular_service test_stock_group_execution test_stock_batch_transport test_stock_reduction_credit test_stock_ozon test_stock_shared_requests test_stock_unposted_orders
-          python private-source/owner_pending_reserve_preview_20261022.py
+          python private-source/owner_pending_fbo_finalize_20261022.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

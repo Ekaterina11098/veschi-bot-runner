@@ -286,6 +286,9 @@ class Worker:
         cabinet_word = rule.get("cabinet_word", "Китай")
         if cabinet_word != "Китай":
             label = " ".join(word for word in label.split() if word != cabinet_word)
+        # ООО supply prefix К already denotes Киргизия; keep the destination once.
+        if rule.get("comment_prefix") == "Киргизия" and label.startswith("К "):
+            label = label[2:].strip()
         if label.endswith(" Китай"):
             label = label[:-len(" Китай")].strip()
         elif label.startswith("Китай "):

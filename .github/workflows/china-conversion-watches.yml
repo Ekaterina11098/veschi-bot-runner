@@ -49,10 +49,11 @@ jobs:
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_buyout_policy.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_search_analytics.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_control.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_ads.py
           python scripts/china_chat_migration.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
       - name: Install pinned read transport
-        run: pip install requests==2.32.5 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
+        run: pip install requests==2.32.5 Pillow==12.3.0 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
       - name: Process owner watch commands and due conversion reports
         env:
           EVENT_NAME: ${{ github.event_name }}

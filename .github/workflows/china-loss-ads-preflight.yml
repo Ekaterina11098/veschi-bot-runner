@@ -1,0 +1,42 @@
+name: China loss ads read-only preflight
+on:
+  push:
+    branches: [china-loss-107-binding-20261022]
+    paths: ['.github/workflows/china-loss-ads-preflight.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Read campaign states and compute exclusion payload without writing WB
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import json
+          from china_price_apply import IO
+          from china_loss_ads import current,operation,stamp
+          io=IO();p=io.get('china_agent:loss_plan:v1:loss-20261022-107')
+          try:
+            before=current(io);body=operation(p,before)
+            out=dict(status='ready',observed_at=stamp(),before=before,request=body,wb_writes=0,telegram_calls=0)
+          except Exception as e:out=dict(status='blocked',reason=str(e),wb_writes=0,telegram_calls=0)
+          key='china_agent:loss_ads_preflight:2026-10-22:107'
+          if not io.create(key,out):io.put(key,out)
+          print(json.dumps({k:v for k,v in out.items() if k not in ['before','request']}))
+          if out['status']!='ready':raise SystemExit(1)
+          PY

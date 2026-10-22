@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-stock-and-commands
+  group: weekly-document-read-only
   cancel-in-progress: false
 jobs:
   inspect:

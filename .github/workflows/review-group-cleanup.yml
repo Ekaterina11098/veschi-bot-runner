@@ -1,0 +1,44 @@
+name: Clean completed owner replies in verified content group
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-group-cleanup.yml']
+permissions: {contents: read}
+concurrency:
+  group: review-group-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10'
+      - name: Check cleanup scope and unchanged publication state
+        run: python -m unittest test_review_cleanup.py
+      - name: Delete only tracked processed Telegram messages; no WB calls
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,sys,hmac,hashlib,json,time,psycopg
+          sys.path.insert(0,'review-approval-preparation')
+          from review_telegram_approval import Approval,Repository
+          from review_telegram_runtime import TelegramTransport
+          from review_approval_cleanup import cleanup_completed
+          root=os.environ['SUPABASE_SECRET_KEY'].encode()
+          pw=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
+          with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=pw,sslmode='require',autocommit=True,connect_timeout=15) as conn:
+              repo=Repository(conn,postgres=True)
+              cfg=conn.execute("SELECT payload FROM review_approval.source_cache WHERE cache_key='reviews:telegram-approval:config:v1'").fetchone()[0]
+              a=Approval(repo,'cleanup-only',cfg['owner_id'],cfg['chat_id'],cfg['bot_id'])
+              result=cleanup_completed(a,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']))
+              with repo.transaction():
+                  repo.put('events','telegram-group-cleanup:20261022:v1',dict(result=result,checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),code_commit=os.getenv('GITHUB_SHA'),wb_calls=0))
+              print(json.dumps(result))
+              if result['unconfirmed']:raise RuntimeError('Some Telegram deletions need review')
+          PY

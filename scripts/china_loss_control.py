@@ -12,8 +12,17 @@ def digest(x):return hashlib.sha256(json.dumps(x,sort_keys=True,ensure_ascii=Fal
 def is_all(t):return bool(re.fullmatch(r'(?:сделай|выполни|примени)\s+вс[её][.!]?',t.strip(),re.I))
 def marker(job):return next((x for x in job.get('tool_trace',[]) if x.get('name')=='china_saved_question'),{})
 def context(w):
- from china_loss_policy import POLICY
- return POLICY
+ from china_loss_policy import POLICY,evaluate
+ value=w.get('china_agent:loss_economics:latest:v1')
+ if not value:return POLICY
+ assessed=[];missing=[]
+ for row in value.get('records',[]):
+  try:
+   v=evaluate(row)
+   if v['expected_total_profit_rub']<0:assessed.append(dict(article=row['article'],nm_id=row['nm_id'],**v))
+  except (ValueError,KeyError,TypeError):missing.append(row.get('article'))
+ info=dict(period_from=value.get('period_from'),period_to=value.get('period_to'),observed_at=value.get('observed_at'),catalogue_count=value.get('catalogue_count'),assessed_count=len(value.get('records',[]))-len(missing),unassessed_count=len(missing),losses=assessed,limitations=value.get('limitations'),current=False)
+ return POLICY+'\nСохранённый расчёт (даты обязательны, это не новая проверка): '+json.dumps(info,ensure_ascii=False)
 def handle(w,job):
  """DB-only hook; explicit execution queued for isolated post-dialog phase."""
  m=marker(job);latest=w.get(LATEST)

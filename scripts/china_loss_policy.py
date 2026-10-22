@@ -25,7 +25,8 @@ def evaluate(r):
  drr=ad/order_sum if order_sum else None
  retained=price*(1-fee)-number(r.get('own_cogs_rub'))-number(r.get('tax_per_kept_rub'))-number(r.get('other_per_kept_rub'))
  pre=p*retained-number(r.get('logistics_per_order_rub'))-number(r.get('other_per_order_rub'))
- total=pre*n-ad-number(r.get('shared_confirmed_rub'))
+ scenario_ad=drr*price*n if r.get('ad_model')=='constant_drr' and drr is not None else ad
+ total=pre*n-scenario_ad-number(r.get('shared_confirmed_rub'))
  return dict(buyout_percent=float(p*100),buyout_source='own_completed' if done else 'fallback50_no_completed',sample_size=int(done),
   actual_drr_percent=float(drr*100) if drr is not None else None,
   expected_total_profit_rub=float(total),max_drr_percent=float(pre/price*100),

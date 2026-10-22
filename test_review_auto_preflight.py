@@ -1,4 +1,6 @@
-import unittest
+import unittest,sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).parent/'review-approval-preparation'))
 from unittest.mock import Mock
 from review_auto_five_star import validate_preflight_response
 from review_approval_executor import AutomaticPolicyChanged

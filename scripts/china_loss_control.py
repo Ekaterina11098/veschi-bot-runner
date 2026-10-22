@@ -36,7 +36,7 @@ def handle(w,job):
   return None
  if job.get('sender_id')!=OWNER or job.get('chat_id')!=CHAT or m.get('bot_id')!=BOT:
   return ('Запускать этот план может только владелец группы.',[])
- if not latest:return ('Нет сохранённого плана. Ответьте на новую таблицу рекомендаций.',[])
+ if not latest or latest.get('status')=='retired':return ('Нет сохранённого плана. Ответьте на новую таблицу рекомендаций.',[])
  p=w.get(PLAN+latest['plan_id'])
  if not p or p.get('chat_id')!=CHAT or p.get('bot_id')!=BOT or p.get('plan_sha256')!=digest(p['items']):raise ValueError('План изменился')
  if m.get('reply_message_id') not in p.get('report_message_ids',[]):return ('Ответьте «Сделай всё» именно на таблицу или сообщение с этим планом. Другие отчёты не запускаю.',[])

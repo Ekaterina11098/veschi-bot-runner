@@ -19,13 +19,22 @@ doc=t.request(m.MS,PATH)
 ps=w.ms_rows(PATH+"/positions")
 assert doc["name"]=="02729" and doc["sum"]==0 and all(p["price"]==0 for p in ps)
 assert len(ps)==120 and sum(p["quantity"] for p in ps)==272
-out={"at":m.now(),"status":"reading_costs","before":doc,"original_positions":ps,"costs":[]}
+out={"at":m.now(),"status":"reading_costs","before":doc,"original_positions":ps,"costs":prior.get("costs",[]) if prior else [],"missing":[]}
+done={p["id"] for p in out["costs"]}
 db.put(KEY,out)
 for p in ps:
+ if p["id"] in done:continue
  rows=w.ms_rows("report/stock/all",{"filter":"product="+m.href(p["assortment"]),"stockMode":"all","quantityMode":"all"})
- assert len(rows)==1 and rows[0].get("price",0)>0, "Missing or ambiguous cost"
+ if len(rows)!=1 or rows[0].get("price",0)<=0:
+  item={"position":p,"stock_rows":rows}
+  item["product"]=t.request(m.MS,m.href(p["assortment"])[len(m.MS):])
+  try:item["historical_stock"]=w.ms_rows("report/stock/all",{"filter":"product="+m.href(p["assortment"]),"stockMode":"all","quantityMode":"all","moment":doc["moment"]})
+  except Exception as e:item["historical_error"]=str(e)
+  out["missing"].append(item);db.put(KEY,out);continue
  out["costs"].append({"id":p["id"],"quantity":p["quantity"],"stock":rows[0],"price":float(Decimal(str(rows[0]["price"])).quantize(Decimal("1"),rounding=ROUND_HALF_UP))})
- if len(out["costs"])%20==0:db.put(KEY,out)
+ db.put(KEY,out)
+if out["missing"]:
+ out["status"]="missing_costs";db.put(KEY,out);print("Missing costs recorded privately");raise SystemExit
 total=sum(Decimal(str(c["price"]))*Decimal(str(c["quantity"])) for c in out["costs"])
 out["calculated_sum_kopecks"]=float(total)
 out["status"]="calculated"

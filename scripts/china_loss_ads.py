@@ -55,7 +55,7 @@ def execute(io,approval,p):
     a=current(io,[int(k) for k in e['before']]);b={int(k):v for k,v in e['before'].items()}
     e.update(status='verified' if check(p,b,a) else 'accepted',after=a,verified_at=stamp())
    except Exception as ex:e.update(status='uncertain',reason=type(ex).__name__)
-   io.put(key,e)
+   io.put(key,json.loads(json.dumps(e)))
   return e
  e=dict(status='preflight',plan_id=p['plan_id'],approval_job=approval['job_id'],created_at=stamp(),wb_writes=0)
  if not io.create(key,e):return io.get(key)
@@ -64,14 +64,14 @@ def execute(io,approval,p):
   for item in p['items']:
    if item['kind']=='ad_exclude_sku' and item['campaign_id'] not in before:raise ValueError('Согласованная РК уже не активна')
    if item['kind']=='keep_outside_ads' and any(item['nm_id'] in nmset(c) for c in before.values()):raise ValueError('Товар внеРК появился в рекламе — нужен новый план')
-  body=operation(p,before);e.update(before=before,request=body,status='submitting' if body['nms'] else 'verified');io.put(key,e)
+  body=operation(p,before);e.update(before=before,request=body,status='submitting' if body['nms'] else 'verified');io.put(key,json.loads(json.dumps(e)))
   if not body['nms']:return e
   response=http(io,'/adv/v0/auction/nms','PATCH',body)
-  e.update(status='accepted',response=response,submitted_at=stamp(),wb_writes=1);io.put(key,e)
+  e.update(status='accepted',response=response,submitted_at=stamp(),wb_writes=1);io.put(key,json.loads(json.dumps(e)))
   after=current(io,list(before))
-  e.update(after=after,status='verified' if check(p,before,after) else 'accepted',verified_at=stamp());io.put(key,e)
+  e.update(after=after,status='verified' if check(p,before,after) else 'accepted',verified_at=stamp());io.put(key,json.loads(json.dumps(e)))
  except Exception as ex:
-  e.update(status='uncertain' if e['status']=='submitting' else ('accepted' if e['status']=='accepted' else 'blocked'),reason=str(ex) if isinstance(ex,(RuntimeError,ValueError)) else type(ex).__name__);io.put(key,e)
+  e.update(status='uncertain' if e['status']=='submitting' else ('accepted' if e['status']=='accepted' else 'blocked'),reason=str(ex) if isinstance(ex,(RuntimeError,ValueError)) else type(ex).__name__);io.put(key,json.loads(json.dumps(e)))
  return e
 def results(plan,e):
  out=[]

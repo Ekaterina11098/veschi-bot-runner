@@ -1,0 +1,105 @@
+"""Reply-bound owner loss plans; no model writes, independent item receipts."""
+import copy,hashlib,json,re
+from datetime import datetime,timezone,timedelta
+CHAT=-1004342917488
+BOT=8780468043
+OWNER=5122667182
+LATEST='china_agent:loss_plan:latest:v1'
+PLAN='china_agent:loss_plan:v1:'
+APPROVAL='china_agent:loss_plan_approval:v1:'
+EXEC='china_agent:loss_plan_execution:v1:'
+def digest(x):return hashlib.sha256(json.dumps(x,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+def is_all(t):return bool(re.fullmatch(r'(?:сделай|выполни|примени)\s+вс[её][.!]?',t.strip(),re.I))
+def marker(job):return next((x for x in job.get('tool_trace',[]) if x.get('name')=='china_saved_question'),{})
+def context(w):
+ from china_loss_policy import POLICY
+ return POLICY
+def handle(w,job):
+ """DB-only hook; explicit execution queued for isolated post-dialog phase."""
+ m=marker(job);latest=w.get(LATEST)
+ if not is_all(job.get('request_text','')):
+  if latest and job.get('sender_id')==OWNER and m.get('reply_message_id') in latest.get('reply_ids',[]):
+   text=job.get('request_text','')
+   if re.search(r'см|замер|фото|материал|рем[её]н|подклад|размер|натуральн|горловин',text,re.I):
+    key='china_agent:loss_plan_clarification:v1:'+str(job['id'])
+    w.save(key,dict(plan_id=latest['plan_id'],sender_id=OWNER,input_text=text,message_id=m.get('message_id'),received_at=w.now.isoformat()),insert=True)
+    return ('Уточнение сохранено для плана '+latest['plan_id']+'. Проверю его применимость к указанному артикулу. Неполные замеры и фотографии не подменяю предположениями; несвязанные пункты не меняю.',[{'name':'loss_plan_clarification','key':key}])
+  return None
+ if job.get('sender_id')!=OWNER or job.get('chat_id')!=CHAT or m.get('bot_id')!=BOT:
+  return ('Запускать этот план может только владелец группы.',[])
+ if not latest:return ('Нет сохранённого плана. Ответьте на новую таблицу рекомендаций.',[])
+ p=w.get(PLAN+latest['plan_id'])
+ if not p or p.get('chat_id')!=CHAT or p.get('bot_id')!=BOT or p.get('plan_sha256')!=digest(p['items']):raise ValueError('План изменился')
+ if m.get('reply_message_id') not in p.get('report_message_ids',[]):return ('Ответьте «Сделай всё» именно на таблицу или сообщение с этим планом. Другие отчёты не запускаю.',[])
+ created=datetime.fromisoformat(p['created_at']);at=datetime.fromisoformat(job['created_at'].replace('Z','+00:00'))
+ if not created<=at<=datetime.fromisoformat(p['expires_at']):return ('Этот план устарел; сначала обновлю рекомендации, затем потребуется подтверждение нового плана.',[])
+ k=APPROVAL+str(job['id'])
+ a=dict(status='approved',plan_id=latest['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=OWNER,chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)
+ w.save(k,a,insert=True)
+ return ('Команда принята по таблице '+latest['plan_id']+'. Выполню готовые пункты. По остальным пришлю конкретный список недостающих данных. Цены не меняю.',[{'name':'loss_plan_approval','key':k,'plan_id':latest['plan_id']}])
+
+def build_card_update(card,item):
+ if card.get('nmID')!=item['nm_id'] or card.get('vendorCode')!=item['article']:raise ValueError('Карточка не совпадает с планом')
+ text=card.get('description')
+ if not isinstance(text,str) or not text:raise ValueError('Нет полного описания')
+ before=text
+ for old,new in item['replacements']:
+  if old not in text:
+   if new in text:continue
+   raise ValueError('Описание изменилось; требуется новый план')
+  text=text.replace(old,new)
+ if before==text:return None
+ required=['nmID','vendorCode','title','brand','dimensions','characteristics','sizes']
+ if any(k not in card for k in required):raise ValueError('Карточка неполна; перезапись запрещена')
+ result={k:copy.deepcopy(card[k]) for k in required}
+ if 'kizMarked' in card:result['kizMarked']=card['kizMarked']
+ result['description']=text
+ result['dimensions']={k:v for k,v in result['dimensions'].items() if k in ['length','width','height','weightBrutto']}
+ result['characteristics']=[{k:v for k,v in c.items() if k in ['id','value']} for c in result['characteristics']]
+ result['sizes']=[{k:v for k,v in s.items() if k in ['chrtID','techSize','wbSize','skus']} for s in result['sizes']]
+ return result
+
+def process(io,a):
+ p=io.get(PLAN+a['plan_id']);key=EXEC+str(a['job_id']);e=io.get(key)
+ if not p or a['plan_sha256']!=p['plan_sha256'] or digest(p['items'])!=p['plan_sha256']:raise ValueError('Plan scope')
+ if a.get('sender_id')!=OWNER or a.get('chat_id')!=CHAT or a.get('bot_id')!=BOT or a.get('price_changes') is not False:raise ValueError('Owner scope')
+ if e and e.get('status')=='done':return e
+ if not e:
+  e=dict(status='running',plan_id=a['plan_id'],approval_job=a['job_id'],items=[])
+  if not io.create(key,e):return io.get(key)
+ io.validate_owner(a)
+ for item in p['items']:
+  state=next((x for x in e['items'] if x['id']==item['id']),None)
+  if state:
+   if state['status'] in ['submitting','accepted','uncertain']:
+    # Read-only recovery; never repeat the write.
+    if state.get('after'):
+     try:
+      c=io.card(item['nm_id'])
+      if c.get('description')==state['after']['description']:state['status']='verified'
+      else:state['status']='uncertain'
+     except Exception:state['status']='uncertain'
+   io.put(key,e);continue
+  state=dict(id=item['id'],article=item['article'],status='pending');e['items'].append(state)
+  if item['kind']=='needs_data':state.update(status='needs_data',question=item['question']);io.put(key,e);continue
+  if item['kind']!='card_text_replace':state.update(status='blocked',question='Тип операции пока не подтверждён для WB');io.put(key,e);continue
+  try:
+   c=io.card(item['nm_id']);after=build_card_update(c,item)
+   if after is None:state['status']='already_at_target';io.put(key,e);continue
+   state.update(status='submitting',before=c,after=after);io.put(key,e)
+   io.update_card(after)
+   state['status']='accepted';io.put(key,e)
+   got=io.card(item['nm_id'])
+   state['status']='verified' if got.get('description')==after['description'] else 'accepted'
+  except Exception as ex:
+   state.update(status='uncertain' if state['status']=='submitting' else 'blocked',reason=type(ex).__name__)
+  io.put(key,e)
+ e['status']='awaiting_verification' if any(x['status'] in ['accepted','submitting'] for x in e['items']) else 'done';e['finished_at']=datetime.now(timezone.utc).isoformat();io.put(key,e)
+ return e
+
+def summary(e):
+ lines=['Обработка «Сделай всё» по таблице '+e['plan_id']+'.','Ошибочный ответ про119 удалён; к этому плану он не относится.','Цены не менялись.']
+ for x in e['items']:
+  labels={'verified':'Выполнено, проверено WB','already_at_target':'Уже соответствует плану','accepted':'WB принял, отображение ещё проверяется','uncertain':'Результат записи не подтверждён; повтор не выполняю','blocked':'Не выполнено','needs_data':'Нужно уточнение/данные'}
+  lines.append(x['article']+' — '+labels.get(x['status'],x['status'])+('. '+x.get('question','') if x.get('question') else ''))
+ return '\n'.join(lines)

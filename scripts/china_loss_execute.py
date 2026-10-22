@@ -47,6 +47,10 @@ def run():
   if not p:continue
   # Expiration gates new writes; an existing execution may only recover readback.
   if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']) and not io.get(EXEC+str(a['job_id'])):continue
+  if p.get('execution_kind')=='ad_exclusions':
+   from china_loss_ads import process_and_deliver
+   process_and_deliver(io,a,p)
+   continue
   e=process(io,a);body=summary(e);delivery='china_agent:loss_plan_delivery:v1:'+str(a['job_id'])+':'+digest(body)
   if io.get(delivery):continue
   if not io.create(delivery,dict(status='sending',text=body)):continue

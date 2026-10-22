@@ -4,13 +4,26 @@ import fbs_document_chain as m
 class ReadOnly(m.Transport):
  def request(self,base,path,method="GET",body=None,params=None):
   if base==m.MS and method!="GET":raise m.Stop("Document writes prohibited")
-  return super().request(base,path,method,body,params)
-t=ReadOnly();db=m.Cache(t);w=m.Worker(t,db,{})
+  for attempt in range(3):
+   try:return super().request(base,path,method,body,params)
+   except m.Stop:
+    if method!="GET" or attempt==2:raise
+t=ReadOnly();db=m.Cache(t)
+class SmallPages(m.Worker):
+ def ms_rows(self,path,params=None):
+  rows=[]
+  while True:
+   data=self.t.request(m.MS,path,params={**(params or {}),"limit":100,"offset":len(rows)})
+   batch=data["rows"];rows.extend(batch)
+   if len(rows)==data["meta"]["size"]:return rows
+   assert batch and len(rows)<20000
+w=SmallPages(t,db,{})
 orders=w.ms_rows("entity/customerorder",{"filter":"name=869904413, 869904457"})
 assert len(orders)==1,"Order not uniquely identified"
 root=orders[0]
 result={"at":m.now(),"status":"reading","root":root,"documents":[],"references":{}}
 KEY="weekly_report_review:order:869904413_869904457:inspection:v1"
+db.put(KEY,result)
 queue=[m.href(root)]
 seen=set()
 def add(link):
@@ -22,7 +35,7 @@ while queue:
  seen.add(link);path=link[len(m.MS):]
  doc=t.request(m.MS,path)
  if doc.get("positions"):
-  doc["expanded_positions"]=w.ms_rows(path+"/positions",{"expand":"assortment","fields":"stock"})
+  doc["expanded_positions"]=w.ms_rows(path+"/positions",{"expand":"assortment"})
  try:doc["audit_events"]=t.request(m.MS,path+"/audit")
  except Exception as e:doc["audit_error"]=str(e)
  for key in ("organization","agent","store","state"):

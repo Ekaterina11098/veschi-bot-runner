@@ -36,7 +36,13 @@ jobs:
               repo=Repository(conn,postgres=True)
               cfg=conn.execute("SELECT payload FROM review_approval.source_cache WHERE cache_key='reviews:telegram-approval:config:v1'").fetchone()[0]
               a=Approval(repo,'cleanup-only',cfg['owner_id'],cfg['chat_id'],cfg['bot_id'])
-              result=cleanup_completed(a,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']))
+              tg=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN'])
+              member=tg.call('getChatMember',dict(chat_id=a.group_chat(),user_id=a.bot))
+              rights=dict(status=member.get('status'),can_delete_messages=member.get('can_delete_messages') is True,checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'))
+              with repo.transaction():repo.put('events','telegram-group-cleanup:permissions:v1',rights)
+              print(json.dumps(rights))
+              if member.get('status')!='creator' and not rights['can_delete_messages']:raise RuntimeError('Bot requires Delete messages permission in content group')
+              result=cleanup_completed(a,tg)
               with repo.transaction():
                   repo.put('events','telegram-group-cleanup:20261022:v1',dict(result=result,checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),code_commit=os.getenv('GITHUB_SHA'),wb_calls=0))
               print(json.dumps(result))

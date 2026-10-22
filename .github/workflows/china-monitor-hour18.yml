@@ -1,0 +1,51 @@
+name: Read only China campaign41155909
+on:
+  push:
+    branches: [china-monitor-41155909-20261022h18]
+    paths: ['.github/workflows/china-monitor-hour18.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: GET campaign, budget, ad counters and FBS orders only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import requests,json,time
+          from datetime import datetime,timezone
+          from china_price_apply import IO
+          io=IO()
+          out=dict(observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0,telegram_calls=0,cabinet='token_3')
+          def read(key,base,path,params=None):
+            time.sleep(2)
+            try:
+              r=requests.get(base+path,params=params,headers={'Authorization':io.token},timeout=40)
+              out[key]={'http':r.status_code,'data':r.json() if r.ok else None}
+            except Exception as e:out[key]={'error':type(e).__name__}
+          read('campaign','https://advert-api.wildberries.ru','/api/advert/v2/adverts',{'ids':'41155909'})
+          read('budget','https://advert-api.wildberries.ru','/adv/v1/budget',{'id':41155909})
+          read('ads','https://advert-api.wildberries.ru','/adv/v3/fullstats',{'ids':'41155909','beginDate':'2026-10-21','endDate':'2026-10-22'})
+          read('orders','https://marketplace-api.wildberries.ru','/api/v3/orders',{'limit':1000,'next':0,'dateFrom':1792526400,'dateTo':int(time.time())})
+          if out.get('orders',{}).get('http')==200:
+            d=out['orders']['data'];out['orders']['data']={'next':d.get('next'),'orders':[o for o in d.get('orders',[]) if o.get('nmId')==1473243898]}
+          out['completed_at']=datetime.now(timezone.utc).isoformat()
+          key='china_agent:campaign_monitor:41155909:2026-10-22T18:direct:v1'
+          if not io.create(key,out):raise SystemExit('Existing read preserved')
+          print(json.dumps({k:{'http':v.get('http'),'error':v.get('error')} for k,v in out.items() if isinstance(v,dict)}))
+          PY

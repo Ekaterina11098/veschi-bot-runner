@@ -3,22 +3,13 @@ on:
   push:
     branches: [main]
     paths: ['.github/workflows/stock-checkpoint-warehouses-20261022.yml']
-# Daily07:00/16:30MSK; bounded10-minute checks resume unfinished slots only.
-# Completed slots and unexpired Retry-After are skipped without business API calls.
-# Owner approved daily stock execution and new stock notifications, 2026-10-15.
 permissions:
   contents: read
-concurrency:
-  group: bot-stock
-  cancel-in-progress: false
 jobs:
-  stock:
+  offline:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -29,39 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/daily-install.log" 2>&1
-      - name: Fresh stock calculation and newly created stock-only notifications
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography
+      - name: Offline recovery, exact warehouse proof and no-repeat regression
         env:
-          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
-          STOCK_DAILY_ENABLED: 'true'
-          STOCK_OZON_ENABLED: 'true'
-          STOCK_PENDING_RESERVE_ENABLED: 'true'
-          STOCK_RUN_SLOT: ${{ (github.event.schedule == '0 4 * * *' || github.event.schedule == '10,20,30,40,50 4 * * *' || github.event.schedule == '*/10 5-8 * * *') && '0700' || '1630' }}
-          STOCK_NOTIFICATIONS_ENABLED: 'true'
-          STOCK_CLOUD_EXECUTION_ENABLED: 'false'
-          STOCK_JOURNAL_IMPORT_ACCEPTED: 'true'
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
-          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-          WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
-          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
-          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
-          WB_STOCK_WAREHOUSE_1: ${{ vars.WB_STOCK_WAREHOUSE_1 }}
-          WB_STOCK_WAREHOUSE_2: ${{ vars.WB_STOCK_WAREHOUSE_2 }}
-          WB_STOCK_WAREHOUSE_3: ${{ vars.WB_STOCK_WAREHOUSE_3 }}
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          MOYSKLAD_STORE_NAME: МСК
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
-          AUTO_STOCK_FAIL_FAST: '1'
-        run: |
-          python -m unittest test_stock_checkpoint_warehouses test_stock_automatic_recovery test_stock_current_order_reserve test_stock_regular_service test_stock_group_execution test_stock_shared_requests test_stock_unposted_orders
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: owner-encrypted-stock-daily-receipt
-          path: ${{ runner.temp }}/stock-deploy-proof
-          retention-days: 90
-
+          PYTHONPATH: ${{ github.workspace }}/private-source
+        run: python -m unittest test_stock_checkpoint_warehouses test_stock_automatic_recovery test_stock_current_order_reserve test_stock_regular_service test_stock_group_execution test_stock_shared_requests test_stock_unposted_orders

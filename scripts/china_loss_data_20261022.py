@@ -50,7 +50,7 @@ def finance_main():
 from analytics.mpstats_probe import discover,unpack_tool,sanitize,ProbeError
 io=IO()
 finance_main()
-key='china_agent:economics_audit:2026-10-22:v1'
+key='china_agent:economics_audit:2026-10-22:v2'
 def reader(call,checks,seen):
  def tool(name,args):return sanitize(unpack_tool(call('tools/call',dict(name=name,arguments=args))))
  cabinets=checks['lk_wb_cabinets'];selected=[x['id'] for x in cabinets if x.get('selected')]
@@ -61,7 +61,8 @@ def reader(call,checks,seen):
   if [x['id'] for x in tool('lk_wb_cabinets',dict(action='list')) if x.get('selected')]!=[10026946]:raise ProbeError('Scope mismatch')
   for name in ['lk_wb_dashboard_table','lk_wb_dashboard_expenses','lk_wb_products']:
    args=dict(period_type='30days',date_from='2026-09-22',date_to='2026-10-21')
-   if name=='lk_wb_products':args.update(start_row=0,end_row=1500)
+   if name=='lk_wb_products':
+    args.pop('period_type');args.update(start_row=0,end_row=1500)
    out['reports'][name]=dict(status='received',arguments=args,data=tool(name,args))
  finally:tool('lk_wb_cabinets',dict(action='select',id=selected[0]) if selected else dict(action='reset'))
  return out

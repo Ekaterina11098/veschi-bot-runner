@@ -9,6 +9,11 @@ for article in articles:
   a=(p.get("article") or "").strip().casefold()
   if a==article:
    out["products"].setdefault(a,[]).append({k:p.get(k) for k in ("id","article","name","buyPrice","salePrices","attributes","archived","uom")})
+for article,products in out["products"].items():
+ for p in products:
+  try:
+   p["stock_cost_rows"]=w.ms_rows("report/stock/all",{"filter":"product="+m.MS+"entity/product/"+p["id"],"stockMode":"all","quantityMode":"all"})
+  except m.Stop as exc:p["stock_cost_error"]=str(exc)
 out["status"]="verified" if all(len(out["products"].get(a,[]))==1 for a in articles) else "needs_review"
 db.put("weekly_report_review:ip:20261012_18:costs:v1",out)
 print(json.dumps({"status":out["status"],"articles":len(out["products"])}))

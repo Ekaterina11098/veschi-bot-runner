@@ -5,8 +5,8 @@ CONFIG_KEY='reviews:auto-five-star:config:v1'
 POLICY_VERSION='five-star-positive-v1'
 CABINETS=('token_1','token_2','token_3')
 # A closed vocabulary is deliberate. Unknown words/sarcasm/questions go to a person.
-WORDS=set(('а аж ах в во всем всех все всё вы выбор внешний вид вещь вещи для да даже доставка доставку день добрый заказ за и из изделие изделия как кожи кожа к покупке купила купил качество качества легкая легкий лёгкая лёгкий мне моя мой мы на нам она он они от очень по покупка покупки покупку приятно просто размер размера размеру с со спасибо сумка сумки сумку сумочка сумочки сумочку товар товара то только удобство упаковка упаковку у фурнитура фурнитуры цвет цвета швы швов это я рекомендую рекомендовать всем').split())
-STEMS=('красив','качествен','отличн','прекрасн','великолепн','замечательн','удобн','вместител','хорош','классн','шикарн','супер','довол','понрав','восторг','аккуратн','ровн','мягк','стильн','приятн','лучш','идеальн','быстр','любим','рекоменд','соответств','спасиб')
+WORDS=set(('маленькая маленький маленькое маленькие а аж ах в во всем всех все всё вы выбор внешний вид вещь вещи для да даже доставка доставку день добрый заказ за и из изделие изделия как кожи кожа к покупке купила купил качество качества легкая легкий лёгкая лёгкий мне моя мой мы на нам она он они от очень по покупка покупки покупку приятно просто размер размера размеру с со спасибо сумка сумки сумку сумочка сумочки сумочку товар товара то только удобство упаковка упаковку у фурнитура фурнитуры цвет цвета швы швов это я рекомендую рекомендовать всем').split())
+STEMS=('потрясающ','отменн','красив','качествен','отличн','прекрасн','великолепн','замечательн','удобн','вместител','хорош','классн','шикарн','супер','довол','понрав','восторг','аккуратн','ровн','мягк','стильн','приятн','лучш','идеальн','быстр','любим','рекоменд','соответств','спасиб')
 EMOJI=set('👍❤♥🥰😍🔥✨💯😊🙂🙏🤗👏👌💖💕💗💙💚👜🌂💋🌟⭐✅')
 NO_CONS={'','нет','нет.','нет!','не обнаружено','не обнаружены','недостатков нет','отсутствуют','-','—'}
 def field(item,key):
@@ -19,11 +19,17 @@ def classify(item,kind='feedbacks'):
  fields=[field(item,k) for k in ('text','pros','cons')]
  if any(v is None for v in fields):return {'eligible':False,'reason':'unsupported_source'}
  text,pros,cons=fields
- if cons.strip().lower() not in NO_CONS:return {'eligible':False,'reason':'cons_present'}
- full=(text+' '+pros).strip().lower().replace('ё','е')
+ # Buyers sometimes put praise in cons. Qualify its text by the same closed
+ # vocabulary; never treat the field name alone as evidence of a complaint.
+ cons='' if cons.strip().lower() in NO_CONS else cons
+ # Normalize phrases within each field so separate fields cannot cancel a negation.
+ def normalize(value):
+  value=value.lower().replace('ё','е')
+  value=re.sub(r'\b(?:без нареканий|без недостатков|нет недостатков|недостатков нет)\b',' ',value)
+  return re.sub(r'\bмаленькая,?\s+но\s+вместительна(?:я)?\b','маленькая вместительная',value)
+ full=' '.join(normalize(v) for v in (text,pros,cons)).strip()
  if not full:return {'eligible':True,'reason':'five_star_without_text'}
  if '?' in full:return {'eligible':False,'reason':'question'}
- full=re.sub(r'\b(?:без нареканий|без недостатков|нет недостатков|недостатков нет)\b',' ',full)
  tokens=re.findall(r'[a-zа-я]+',full)
  if not tokens:return {'eligible':all(c.isspace() or c in EMOJI or c in '.,!—-:;()\uFE0F\u200D' for c in full),'reason':'emoji_only'}
  # Never infer positive intent from stars alone or silently discard unknown words.

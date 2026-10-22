@@ -43,6 +43,19 @@ class PolicyTests(unittest.TestCase):
   self.assertFalse(classify(self.review(answer='broken'))['eligible'])
   self.assertFalse(classify(self.review(answer={'text':'already'}))['eligible'])
   self.assertFalse(classify(self.review(),'questions')['eligible'])
+ def test_positive_cons_and_real_complaints_in_every_field(self):
+  praise='Сумка потрясающая! Маленькая, но вместительна, качество отменное!'
+  # A contrast can describe a benefit, but unknown contrasts remain manual.
+  accepted=(praise,'Отличная сумка!', 'Качество отличное!', 'Сумка потрясающая! Маленькая, вместительная, качество отличное!')
+  complaints=('Не рекомендую','Отличная, но молния заедает','Качество не отличное',
+   'Маленькая, но неудобная','Отличная сумка, ремень порвался','Красивая, но',
+   'Без нареканий?','Потрясающе плохая сумка','Спасибо, не понравилась')
+  for key in ('text','pros','cons'):
+   for value in accepted:
+    with self.subTest(key=key,value=value):self.assertTrue(classify(self.review(**{key:value}))['eligible'])
+   for value in complaints:
+    with self.subTest(key=key,value=value):self.assertFalse(classify(self.review(**{key:value}))['eligible'])
+  self.assertFalse(classify(self.review(text='Отличная сумка',cons='Молния заедает'))['eligible'])
  def test_purchase_status_neutral(self):
   for status in ('buyout','rejected','returned',None):
    answer=answer_for(self.review(orderStatus=status))
@@ -51,7 +64,7 @@ class PolicyTests(unittest.TestCase):
    self.assertIn('Спасибо',answer)
  def test_all_cabinets_once_and_existing_answer(self):
   for cab in ('token_1','token_2','token_3'):
-   item=self.review();item['id']=cab
+   item=self.review(cons='Сумка потрясающая! Маленькая, но вместительна, качество отменное!');item['id']=cab
    result=enqueue(self.app,self.bridge,self.source,item,cab,'v1',150,self.policy)
    self.assertEqual(result['status'],'queued')
    self.assertEqual(enqueue(self.app,self.bridge,self.source,item,cab,'v1',150,self.policy)['status'],'existing')

@@ -31,6 +31,12 @@ class AnnotationTests(Tests):
         self.assertEqual(self.t.writes,["customerorder","demand","salesreturn","annotation"])
         self.w.process(self.state)
         self.assertEqual(len(self.t.writes),4)
+    def test_ooo_short_cabinet_prefix(self):
+        self.c["order_annotation"].update(comment_prefix="Киргизия",cabinet_word="Киргизия")
+        supply=dict(self.t.supply,name="К МСК",closedAt="2026-10-21T10:44:21Z")
+        self.assertEqual(self.w.order_annotation(supply)["description"],"21 10 26  Киргизия МСК")
+        supply["name"]="Киргизия МСК"
+        self.assertEqual(self.w.order_annotation(supply)["description"],"21 10 26  Киргизия МСК")
     def test_moscow_date(self):
         supply=dict(self.t.supply,name="Сумки Китай",closedAt="2026-10-20T22:00:00Z")
         self.assertEqual(self.w.order_annotation(supply)["description"],"21 10 26  Гонконг Сумки")

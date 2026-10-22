@@ -14,6 +14,11 @@ for key in ("organization","agent","store","customerOrder","project","contract",
  value=doc.get(key)
  if isinstance(value,dict) and m.href(value).startswith(m.MS):
   refs[key]=t.request(m.MS,m.href(value)[len(m.MS):].split("?")[0])
+audit={}
+for kind,uid in (("demand",ident),("customerorder","04f61946-cbb4-11f1-0a80-0d28004f08b7")):
+ try:audit[kind]=t.request(m.MS,"entity/"+kind+"/"+uid+"/audit",params={"limit":1000})
+ except Exception as e:audit[kind]={"error":str(e)[:500]}
+db.put("weekly_report_review:demand:02729:audit:v1",{"at":m.now(),"audit":audit})
 related={}
 for key in ("returns","salesReturns","invoicesOut","payments"):
  for value in doc.get(key,[]) if isinstance(doc.get(key),list) else []:

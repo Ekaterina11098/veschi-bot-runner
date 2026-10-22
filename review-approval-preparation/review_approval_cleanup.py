@@ -3,6 +3,17 @@ import json
 from review_telegram_approval import sha
 NORMAL=frozenset(('approved','verifying','accepted','public'))
 def cleanup_completed(a,tg,preserve=None,intent_id=None):
+    # Worker starts in the legacy private chat; sweep the verified group too.
+    original=a.chat
+    report={'deleted':0,'already_deleted':0,'unconfirmed':0}
+    try:
+        for chat in dict.fromkeys(filter(None,(original,a.group_chat()))):
+            a.chat=chat
+            for key,value in _cleanup_chat(a,tg,preserve,intent_id).items():report[key]+=value
+    finally:a.chat=original
+    return report
+
+def _cleanup_chat(a,tg,preserve=None,intent_id=None):
     repo=a.repo
     intents={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}intents').fetchall()}
     cards={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}cards').fetchall()}
@@ -41,14 +52,14 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None):
             edit=events.get(e.get('revision_event_id'),{})
             if edit.get('token') in tokens:add(e.get('message_id'))
     # Owner explicitly requested removing their completed reply messages too.
-    # Match authenticated private replies to a tracked card AND the exact approved text.
+    # Match authenticated owner replies in private or the verified content group to a tracked card AND the exact approved text.
     by_message={c.get('message_id'):c for c in cards.values() if a.card_chat(c)==a.chat}
     for key,e in events.items():
         if not key.startswith('telegram-ingress:'):continue
         message=(e.get('update') or {}).get('message') or {}
         if str((message.get('from') or {}).get('id'))!=a.owner:continue
         chat=message.get('chat') or {}
-        if str(chat.get('id'))!=a.chat or chat.get('type')!='private':continue
+        if str(chat.get('id'))!=a.chat or not a.allowed_chat_type(chat.get('type')):continue
         reply=message.get('reply_to_message') or {}
         if str((reply.get('from') or {}).get('id'))!=a.bot:continue
         original=by_message.get(reply.get('message_id'))

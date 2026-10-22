@@ -63,6 +63,32 @@ class CleanupTests(unittest.TestCase):
         deleted={c.args[1]['message_id'] for c in tg.call.call_args_list}
         self.assertIn(70,deleted)
         self.assertTrue(deleted.isdisjoint({71,72,73,99}))
+    def test_group_owner_reply_swept_from_legacy_worker_chat(self):
+        a,tg,i=self.setup_case()
+        a.group=dict(enabled=True,destination_verified=True,chat_id='group')
+        c=a.repo.get('cards','c');c['chat_id']='group'
+        i['chat_id']='group'
+        a.repo.put('cards','c',c);a.repo.put('intents','i',i)
+        for mid,text,owner,chat,reply in ((70,'answer','owner','group',10),(71,'other draft','owner','group',10),(72,'answer','other','group',10),(73,'answer','owner','foreign',10),(74,'answer','owner','group',99)):
+            a.repo.put('events','telegram-ingress:'+str(mid),{'update':{'message':{
+                'message_id':mid,'text':text,'from':{'id':owner},
+                'chat':{'id':chat,'type':'supergroup'},
+                'reply_to_message':{'message_id':reply,'from':{'id':'bot'}}}}})
+        a.repo.conn.commit()
+        before=copy.deepcopy(a.repo.get('intents','i'))
+        cleanup_completed(a,tg)
+        self.assertEqual(a.chat,'chat')
+        group_deleted={x.args[1]['message_id'] for x in tg.call.call_args_list if x.args[1]['chat_id']=='group'}
+        self.assertEqual(group_deleted,{10,70})
+        self.assertEqual(a.repo.get('intents','i'),before)
+        count=tg.call.call_count;cleanup_completed(a,tg)
+        self.assertEqual(tg.call.call_count,count)
+    def test_unverified_group_not_swept(self):
+        a,tg,i=self.setup_case()
+        a.group=dict(enabled=True,destination_verified=False,chat_id='group')
+        c=a.repo.get('cards','c');c['chat_id']='group';i['chat_id']='group'
+        a.repo.put('cards','c',c);a.repo.put('intents','i',i);a.repo.conn.commit()
+        cleanup_completed(a,tg);tg.call.assert_not_called()
     def test_foreign_owner_and_bad_checksum_never_delete(self):
         a,tg,i=self.setup_case(owner='other');cleanup_completed(a,tg);tg.call.assert_not_called()
         a,tg,i=self.setup_case();i['answer_sha256']='wrong';a.repo.put('intents','i',i);a.repo.conn.commit()

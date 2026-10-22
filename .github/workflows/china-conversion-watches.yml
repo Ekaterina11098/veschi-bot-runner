@@ -48,6 +48,7 @@ jobs:
           python scripts/install_china_buyout.py --root source
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_buyout_policy.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_search_analytics.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_control.py
           python scripts/china_chat_migration.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
       - name: Install pinned read transport
@@ -80,3 +81,13 @@ jobs:
             python scripts/conversion_watches.py
           fi
 
+
+      - name: Apply only newly owner-approved loss plan items and report gaps
+        if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.action == 'dialog')
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          PYTHONPATH: scripts:source
+        run: python scripts/china_loss_execute.py

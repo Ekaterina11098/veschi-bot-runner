@@ -101,7 +101,7 @@ def process(io,a):
    got=io.card(item['nm_id'])
    state['status']='verified' if got.get('description')==after['description'] else 'accepted'
   except Exception as ex:
-   state.update(status='uncertain' if state['status']=='submitting' else 'blocked',reason=type(ex).__name__)
+   state.update(status='uncertain' if state['status']=='submitting' else 'blocked',reason=str(ex)[:200] if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__)
   io.put(key,e)
  e['status']='awaiting_verification' if any(x['status'] in ['accepted','submitting'] for x in e['items']) else 'done';e['finished_at']=datetime.now(timezone.utc).isoformat();io.put(key,e)
  return e
@@ -110,5 +110,9 @@ def summary(e):
  lines=['Обработка «Сделай всё» по таблице '+e['plan_id']+'.','Ошибочный ответ про119 удалён; к этому плану он не относится.','Цены не менялись.']
  for x in e['items']:
   labels={'verified':'Выполнено, проверено WB','already_at_target':'Уже соответствует плану','accepted':'WB принял, отображение ещё проверяется','uncertain':'Результат записи не подтверждён; повтор не выполняю','blocked':'Не выполнено','needs_data':'Нужно уточнение/данные'}
-  lines.append(x['article']+' — '+labels.get(x['status'],x['status'])+('. '+x.get('question','') if x.get('question') else ''))
+  label='Нужно подготовить точное предложение по рекламе' if x['status']=='needs_data' and x['id'].endswith('_ad') else labels.get(x['status'],x['status'])
+  details=x.get('question') or x.get('reason')
+  if details=='Content HTTP 403':details='Токен WB не дал доступ к карточке; требуется проверить право «Контент» этого кабинета.'
+  lines.append(x['article']+' — '+label+('. '+details if details else ''))
+ lines.append('По рекламе: точные РК/SKU и ставка старая→новая либо отключениеSKU предложу отдельно после проверки данных. ДРР не записывается вWB как настройка; общиеРК целиком не останавливаю.')
  return '\n'.join(lines)

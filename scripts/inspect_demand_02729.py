@@ -30,3 +30,9 @@ for key in ("returns","salesReturns","invoicesOut","payments"):
    related.setdefault(key,[]).append(d)
 db.put("weekly_report_review:demand:02729:inspection:v1",{"at":m.now(),"status":"verified","document":doc,"positions":positions,"references":refs,"related":related})
 print(json.dumps({"status":"verified","positions":len(positions),"quantity":sum(p["quantity"] for p in positions)}))
+
+valuation={"at":m.now()}
+for label,path,params in (("document", "entity/demand/"+ident, {"fields":"stock","expand":"positions"}),("positions","entity/demand/"+ident+"/positions",{"fields":"stock"})):
+ try:valuation[label]=t.request(m.MS,path,params=params) if label=="document" else w.ms_rows(path,params)
+ except Exception as e:valuation[label]={"error":str(e)}
+db.put("weekly_report_review:demand:02729:stockfields:v1",valuation)

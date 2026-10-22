@@ -1,0 +1,31 @@
+name: Adopt automatic review preflight fix once
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-auto-preflight-cutover.yml']
+permissions:
+  contents: read
+  actions: write
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Replace only the known isolated publisher using the broken preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module - <<'JS'
+          const base='https://api.github.com/repos/Ekaterina11098/veschi-bot-runner';
+          const headers={Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','Content-Type':'application/json'};
+          async function request(path,method='GET',body) {
+            const r=await fetch(base+path,{method,headers,body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(15000)});
+            if(!r.ok)throw new Error('GitHub control request failed: '+r.status);
+            return r.status===204||r.status===202?null:r.json();
+          }
+          const run=await request('/actions/runs/39730691387');
+          if(run.path!=='.github/workflows/review-approved-publication.yml'||run.head_sha!=='ac29b2c0c4d6e499b1b671f6016ecf71db2a4b14')throw new Error('Unexpected workflow; no cancellation');
+          if(!['completed'].includes(run.status))await request('/actions/runs/39730691387/cancel','POST');
+          await request('/actions/workflows/review-approved-publication.yml/dispatches','POST',{ref:'main'});
+          console.log('Only isolated publisher restart requested; durable approvals and other workflows untouched.');
+          JS

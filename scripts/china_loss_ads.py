@@ -80,7 +80,7 @@ def results(plan,e):
    text='Уже вне активных РК — без изменений' if i['kind']=='keep_outside_ads' else 'Исключён из РК '+str(i['campaign_id'])
   elif e['status']=='accepted':text='WB принял; результат проверяется'
   else:text='Не выполнено: '+e.get('reason','результат не подтверждён')
-  out.append((i['article'],text))
+  out.append([i['article'],text])
  return out
 def render(plan,e,path):
  from PIL import Image,ImageDraw,ImageFont
@@ -109,5 +109,8 @@ def process_and_deliver(io,a,p):
    r=requests.post('https://api.telegram.org/bot'+io.bot+'/sendDocument',data={'chat_id':CHAT,'caption':'Результат выполнения. Цены не менялись.','reply_parameters':json.dumps(dict(message_id=a['input_message_id'],allow_sending_without_reply=True))},files={'document':(path.name,path.read_bytes(),'image/png')},timeout=45).json()
    if not r.get('ok'):raise RuntimeError('Telegram result not confirmed')
    io.put(delivery,dict(status='sent',plan_id=p['plan_id'],message_id=r['result']['message_id'],chat_id=CHAT,results=results(p,e)))
- except Exception:io.put(delivery,dict(status='uncertain',plan_id=p['plan_id']))
+ except Exception:
+  if 'r' in locals() and r.get('ok'):
+   io.put(delivery,dict(status='sent',plan_id=p['plan_id'],message_id=r['result']['message_id'],chat_id=CHAT,results=results(p,e)))
+  else:io.put(delivery,dict(status='uncertain',plan_id=p['plan_id']))
  return e

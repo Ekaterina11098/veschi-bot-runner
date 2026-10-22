@@ -1,0 +1,30 @@
+name: Requested weekly report read-only review
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/weekly-report-review-876125188.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bot-stock-and-commands
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read requested WB reports into private audit cache
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python scripts/weekly_report_review_876125188.py

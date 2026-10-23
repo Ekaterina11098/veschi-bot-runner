@@ -37,7 +37,13 @@ def main():
     assert memory['result']['total_events']>0
     assert not any(r['nm_id']==1473243891 for r in calculation['result']['rows']),'Repeated bid raise proposed during cooldown'
     results.append(dict(question=text,answer=value,tool_names=[t['name'] for t in trace],calculation=calculation['result'],memory_events=memory['result']['total_events']))
-   audit=dict(status='verified',observed_at=datetime.now(timezone.utc).isoformat(),run_id=os.environ.get('GITHUB_RUN_ID'),model='gpt-6.1-sol',cases=results,network=network,wb_writes=0,telegram_sends=0,confirmation_required=True)
+   from china_agent_reports import make,photo,daily_loss
+   report_job=dict(id=900000003,chat_id=-1004342917488)
+   report=make(w,report_job,'advertising',repeat=True)
+   w.active_question_id=report_job['id'];assert photo(w,report_job['chat_id'],report['marker'])[0]
+   assert report['execution_authorized'] is False
+   assert daily_loss()=='delivered','Expected existing daily receipt; no duplicate report may be sent'
+   audit=dict(status='verified',observed_at=datetime.now(timezone.utc).isoformat(),run_id=os.environ.get('GITHUB_RUN_ID'),model='gpt-6.1-sol',cases=results,network=network,reports=dict(explicit_repeat_prepared=True,schedule_identity_unchanged=True,existing_daily_receipt_respected=True),wb_writes=0,telegram_sends=0,confirmation_required=True)
    w.save('china_agent:memory_live_verification:v1',audit)
    print(json.dumps(dict(status='verified',cases=len(results),model=audit['model'],wb_writes=0,telegram_sends=0,memory_events=len(events))))
  finally:requests.sessions.Session.request=original

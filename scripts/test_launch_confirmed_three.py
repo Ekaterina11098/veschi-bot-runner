@@ -1,4 +1,4 @@
-import copy,unittest,sys,types
+import copy,unittest,sys,types,json
 try:import requests
 except ImportError:sys.modules['requests']=types.ModuleType('requests')
 from unittest.mock import patch
@@ -17,7 +17,10 @@ class I:
   p=dict(items=items,plan_sha256=m.digest(items),expires_at=(m.now()+timedelta(hours=1)).isoformat(),price_changes=False)
   self.mem={'china_agent:loss_plan:v1:'+m.PID:p,'china_agent:codex_approval:v1:'+m.PID:dict(source='explicit_human_codex_message',status='approved',quote='Да, запускай 3 РК по 100 юаней, всего 300. Проверь, чтобы всё прошло правильно.',plan_sha256=p['plan_sha256'])}
  def get(self,k):return copy.deepcopy(self.mem.get(k))
- def put(self,k,v):self.mem[k]=copy.deepcopy(v)
+ def put(self,k,v):
+  saved=json.loads(json.dumps(v))
+  if saved!=v:raise RuntimeError('State readback mismatch')
+  self.mem[k]=saved
  def create(self,k,v):
   if k in self.mem:return False
   self.put(k,v);return True

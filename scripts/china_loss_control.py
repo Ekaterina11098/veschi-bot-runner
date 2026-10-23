@@ -26,12 +26,13 @@ def context(w):
 def handle(w,job):
  """DB-only hook; explicit execution queued for isolated post-dialog phase."""
  m=marker(job);latest=w.get(LATEST)
+ from china_group_permissions import allowed
  if not is_all(job.get('request_text','')):
-  if latest and job.get('sender_id')==OWNER and m.get('reply_message_id') in latest.get('reply_ids',[]):
+  if latest and allowed(w,job) and m.get('reply_message_id') in latest.get('reply_ids',[]):
    text=job.get('request_text','')
    if re.search(r'см|замер|фото|материал|рем[её]н|подклад|размер|натуральн|горловин',text,re.I):
     key='china_agent:loss_plan_clarification:v1:'+str(job['id'])
-    w.save(key,dict(plan_id=latest['plan_id'],sender_id=OWNER,input_text=text,message_id=m.get('message_id'),received_at=w.now.isoformat()),insert=True)
+    w.save(key,dict(plan_id=latest['plan_id'],sender_id=job['sender_id'],input_text=text,message_id=m.get('message_id'),received_at=w.now.isoformat()),insert=True)
     return ('Уточнение сохранено для плана '+latest['plan_id']+'. Проверю его применимость к указанному артикулу. Неполные замеры и фотографии не подменяю предположениями; несвязанные пункты не меняю.',[{'name':'loss_plan_clarification','key':key}])
   return None
  from china_group_permissions import allowed

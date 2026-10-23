@@ -1,4 +1,4 @@
-name: Read-only new advertising launch reconciliation
+name: Recover exact confirmed draft after absent-state reconciliation
 on:
   push:
     branches: [china-free-analytic-dialog]
@@ -46,7 +46,25 @@ jobs:
               get('/api/advert/v2/adverts?ids='+','.join(map(str,ids[start:start+50])))
           get('/adv/v1/supplier/subjects?payment_type=cpc')
           get('/adv/v2/supplier/nms','POST',[50,61])
-          key='china_agent:new_ad_reconcile:2026-10-23:v1'
+          key='china_agent:new_ad_reconcile:2026-10-23:v2'
           io.put(key,out) if io.get(key) else io.create(key,out)
-          print('Read-only reconciliation saved privately; WB writes=0; Telegram sends=0')
+          from china_loss_execute import IO as CheckedIO
+          from china_loss_control import PLAN,APPROVAL,digest
+          checked=CheckedIO()
+          pid='china-new-ad-test-20261023-8sku-v3'
+          p=io.get(PLAN+pid);a=io.get(APPROVAL+'86')
+          checked.validate_owner(a)
+          assert a['plan_sha256']==p['plan_sha256']==digest(p['items'])
+          assert now().isoformat()<p['expires_at']
+          campaigns=[c for r in out['responses'] if r['path'].startswith('/api/advert/v2/adverts?') for c in r['data'].get('adverts',[])]
+          assert not any(c.get('settings',{}).get('name') in [s['name'] for s in p['items']] for c in campaigns)
+          recovery='china_agent:new_ad_create_recovery:2026-10-23:v1'
+          assert io.create(recovery,dict(status='submitting',approval_job=86,plan_sha256=p['plan_sha256'],before=key,at=now().isoformat()))
+          spec=p['items'][0]
+          body=dict(name=spec['name'],nms=[s['nm_id'] for s in spec['skus']],bid_type='manual',payment_type='cpc',placement_types=['recommendations'])
+          r=requests.post('https://advert-api.wildberries.ru/adv/v2/seacat/save-ad',headers={'Authorization':io.token},json=body,timeout=45)
+          try:j=r.json()
+          except ValueError:j=r.text[:3000]
+          io.put(recovery,dict(status='accepted' if r.ok else 'rejected',http_status=r.status_code,response=j,body=body,at=now().isoformat(),approval_job=86))
+          print('Exact confirmed create outcome saved privately; no deposits or starts')
           PY

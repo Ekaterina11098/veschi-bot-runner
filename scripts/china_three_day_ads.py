@@ -61,13 +61,21 @@ def requested_days(text,history=()):
   if re.search(r'за\s+(?:последнюю\s+)?неделю',value):return 7
  return 3
 def load(w,count):
- today=w.now.astimezone(MSK).date()
- keys=['china_agent:advertising_source:'+str(date.fromisoformat(day)+timedelta(days=1))+':v1' for day in periods(today,count)]
- rows=w.db('GET','telegram_api_cache',params={'cache_key':'in.('+','.join(keys)+')','select':'cache_key,payload','limit':count}) or []
- found={r['cache_key']:r['payload'] for r in rows}
- missing=[day for day,key in zip(periods(today,count),keys) if key not in found]
- if missing:raise ValueError('Нет суточных срезов за '+', '.join(missing)+'. Период не сокращён.')
- return [found[k] for k in keys]
+ today=w.now.astimezone(MSK).date();dates=periods(today,count)
+ keys=['china_agent:advertising_source:'+str(date.fromisoformat(day)+timedelta(days=1))+':v1' for day in dates]
+ keys+=['china_agent:ad_cost_source:'+day+':v1' for day in dates]
+ def read():
+  rows=w.db('GET','telegram_api_cache',params={'cache_key':'in.('+','.join(keys)+')','select':'cache_key,payload','limit':2*count}) or []
+  found={r['cache_key']:r['payload'] for r in rows}
+  return [next((found[k] for k in (keys[i],keys[count+i]) if k in found and found[k].get('status')=='complete'),None) for i in range(count)]
+ result=read();missing=[day for day,p in zip(dates,result) if p is None]
+ if missing:
+  from china_ad_cost_collect import collect
+  collect(w,missing)
+  result=read();missing=[day for day,p in zip(dates,result) if p is None]
+ if missing:raise ValueError('Сбор ещё не завершён: '+', '.join(missing)+'. Полный период не подменён коротким.')
+ return result
+
 def context(w,job,history=()):
  text=' '.join([job.get('request_text','')]+[h.get('request_text','') for h in history[-4:]]).casefold()
  if not re.search(r'дрр|ддр|стоимост.*заказ|реклам',text):return ''
@@ -79,7 +87,7 @@ def context(w,job,history=()):
  try: labels=dict(w.catalog())
  except ValueError:labels={}
  try: result=build(sources,today,labels,count)
- except (ValueError,KeyError,TypeError) as e:return 'Трёхдневный расчёт ограничен: '+str(e)+'. Не выдумывай недостающие показатели.'
+ except (ValueError,KeyError,TypeError) as e:return 'Расчёт выбранного периода ограничен: '+str(e)+'. Не выдумывай недостающие показатели.'
  # Keep spend-bearing/problem SKUs; include exact named products even below the threshold.
  result['all_sku_count']=len(result['rows'])
  result['rows']=[r for r in result['rows'] if r['rising_all_days']]

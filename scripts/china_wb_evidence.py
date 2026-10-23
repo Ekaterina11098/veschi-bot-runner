@@ -177,7 +177,32 @@ def own_costs(w,stock,finance_rows,first,last):
   w.save(key,dict(value,raw=raw));evidence.append(value)
  return costs,evidence
 
-def settlement(state,first,last,ids=None,costs=None,fx=12,tax_rate=.05):
+def ad_expenses(w,first,last):
+ """Accrued advertising expense by day, separate from Finance promotion payment dates."""
+ import requests
+ key=ROOT+'ad_expenses:'+last;old=w.get(key)
+ if old and old['period_from']<=first and old.get('complete') and (now()-datetime.fromisoformat(old['observed_at'])).total_seconds()<7200:return old
+ from china_change_observation import Reader
+ ids=Reader(w,4).campaign_ids();daily={};raw=[]
+ for offset in range(0,len(ids),50):
+  r=requests.get('https://advert-api.wildberries.ru/adv/v3/fullstats',headers={'Authorization':os.environ['WB_TOKEN_3']},params={'ids':','.join(map(str,ids[offset:offset+50])),'beginDate':first,'endDate':last},timeout=60,allow_redirects=False)
+  if not r.ok:raise RuntimeError('WB advertising expense HTTP '+str(r.status_code))
+  campaigns=r.json()
+  if not isinstance(campaigns,list):raise ValueError('WB ad expense schema')
+  for campaign in campaigns:
+   if campaign['advertId'] not in ids or str(campaign.get('currency','')).upper()!='CNY':raise ValueError('WB ad expense scope/currency')
+   for day in campaign.get('days',[]):
+    day_key=day['date'][:10]
+    if not first<=day_key<=last:raise ValueError('WB ad expense period')
+    value=daily.setdefault(day_key,{'spend_cny':0,'by_sku':{}});value['spend_cny']+=float(money(day.get('sum')))
+    for app in day.get('apps',[]):
+     for sku in app.get('nms',[]):
+      nm=str(sku['nmId']);value['by_sku'][nm]=value['by_sku'].get(nm,0)+float(money(sku.get('sum')))
+  raw+=campaigns
+ result=dict(period_from=first,period_to=last,daily=daily,complete=True,source='WB fullstats campaign/day totals; SKU/app separately',source_id=key,cabinet='token_3',currency='CNY',observed_at=now().isoformat(),raw=raw)
+ w.save(key,result);return result
+
+def settlement(state,first,last,ids=None,costs=None,fx=12,tax_rate=.05,ads=None):
  """Published settlement contribution, separate from closed cohorts and expected ad-day profit."""
  dates(first,last)
  if money(fx)<=0:raise ValueError('Invalid FX')
@@ -210,8 +235,23 @@ def settlement(state,first,last,ids=None,costs=None,fx=12,tax_rate=.05):
  missing.add('Historical COGS and external return-to-RF/other expenses not fully verified')
  cash=parts['seller_net']+parts['additional']-sum(parts[k] for k in ['delivery','rebill','storage','acceptance','penalty','deduction'])
  contribution=cash-parts['cogs']-parts['tax'];known=not any('Missing own COGS' in x or 'monetary' in x or 'Unclassified' in x for x in missing) and bool(rows) and state.get('complete') is True
+ days=[str(date.fromisoformat(first)+timedelta(days=i)) for i in range((date.fromisoformat(last)-date.fromisoformat(first)).days+1)]
+ ad_values=[]
+ if ads and ads.get('complete') and ads.get('period_from','9999')<=first and ads.get('period_to','0000')>=last:
+  for day in days:
+   source=ads.get('daily',{}).get(day)
+   if source is None:break
+   if selected:
+    if not all(str(nm) in source['by_sku'] for nm in selected):break
+    ad_values.append(sum(source['by_sku'][str(nm)] for nm in selected))
+   else:ad_values.append(source['spend_cny'])
+ ad_spend=sum(ad_values) if len(ad_values)==len(days) else None
+ if ad_spend is None:missing.add('Accrued advertising expense not reconciled; published contribution is not total profit')
+ # Promotion cash charges may concern another period. Replace them with period expense once.
+ calculated=contribution+shared_ad-money(ad_spend) if ad_spend is not None else None
  return dict(period_from=first,period_to=last,basis='published_operation_date',is_closed_order_cohort=False,is_full_net_profit=False,currency='CNY',conversion_rub_per_cny=fx,
-  wb_cash_cny=round(float(cash),2) if rows else None,accounted_contribution_rub=round(float(contribution)*fx,2) if known else None,calculated_profit_rub=round(float(contribution)*fx,2) if known else None,
+  wb_cash_cny=round(float(cash),2) if rows else None,accounted_contribution_rub=round(float(contribution)*fx,2) if known else None,calculated_profit_rub=round(float(calculated)*fx,2) if known and calculated is not None else None,
+  advertising_period_expense_cny=ad_spend,advertising_source_id=ads.get('source_id') if ads else None,promotion_cash_replaced_by_period_expense=ad_spend is not None,
   tax_rate=tax_rate,tax_basis='Seller price after seller discount, before WB discount; signed sales minus returns',tax_source='Owner-approved China5% calculation policy, not tax filing',cogs_source='Own MoySklad stock COGS; current or earlier positive-stock date in cost evidence; converted at stated FX',label='Расчётная прибыль по опубликованным операциям WB; предварительная',
   net_profit_rub=None,parts_cny={k:round(float(v),2) for k,v in parts.items()},wb_promotion_included_cny=float(shared_ad),ad_spend_subtracted_again=False,
   commission_subtracted_again=False,acquiring_subtracted_again=False,operation_count=len(rows),publication_latest=max((r.get('createDate','') for r in rows),default=None),
@@ -233,7 +273,9 @@ def context(w,ids,first,last,costs=None):
    if name=='funnel':out[name]=dict(state,rows=[r for r in state.get('rows',[]) if not ids or r['nm_id'] in ids])
    else:
     if costs is not None and 'stock' in locals():costs,cost_evidence=own_costs(w,stock,state.get('rows',[]),first,last);out['cost_evidence']=cost_evidence
-    out[name]=settlement(state,first,last,ids,costs);out[name]['collection_status']='complete' if state.get('complete') else state.get('status','pagination_pending');out[name]['retry_at']=state.get('retry_at')
+    try:ads=ad_expenses(w,first,last)
+    except Exception:ads=None
+    out[name]=settlement(state,first,last,ids,costs,ads=ads);out[name]['collection_status']='complete' if state.get('complete') else state.get('status','pagination_pending');out[name]['retry_at']=state.get('retry_at')
   except Exception as ex:out[name]=dict(available=False,error=type(ex).__name__,missing=str(ex)[:200] if isinstance(ex,ValueError) else 'WB transport unavailable',value=None)
  return out
 

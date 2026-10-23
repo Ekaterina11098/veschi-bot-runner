@@ -494,6 +494,12 @@ class Worker:
             patch({'status':'done' if outcome=='sent' else ('pending' if outcome in ('waiting','rejected') else 'failed'),'retry_at':(self.now+timedelta(minutes=5)).isoformat(),'error':None if outcome=='sent' else 'delivery_'+outcome,'completed_at':self.now.isoformat() if outcome=='sent' else None,'lease_until':None})
             return outcome
         except Exception as exc:
+            from china_model_transport import ModelResponseError
+            if isinstance(exc,ModelResponseError):
+                self.save('china_agent:model_error:v1:'+str(job_id),dict(at=datetime.now(timezone.utc).isoformat(),status=exc.status,details=exc.details,retryable=exc.retryable,retry_after=exc.retry_after,job_id=job_id))
+                if exc.retryable and job.get('attempts',0)+1<3:
+                    patch({'status':'pending','retry_at':(datetime.now(timezone.utc)+timedelta(seconds=exc.retry_after)).isoformat(),'error':'model_deferred_'+str(exc.status),'lease_until':None})
+                    return 'model_deferred'
             patch({'status':'failed','error':'saved_question_'+type(exc).__name__,'lease_until':None})
             raise
 
@@ -614,10 +620,8 @@ class Worker:
 
 
 def question_request(body):
-    import requests
-    r=requests.post('https://api.openai.com/v1/responses',headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY']},json=body,timeout=150)
-    if not r.ok:raise RuntimeError('Model HTTP '+str(r.status_code))
-    return r.json()
+    from china_model_transport import request
+    return request(body)
 
 
 def saved_network_guard():
@@ -766,6 +770,7 @@ def main():
 
 
 if __name__=='__main__':main()
+
 
 
 

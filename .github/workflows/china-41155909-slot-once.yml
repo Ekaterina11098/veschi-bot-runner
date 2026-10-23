@@ -1,0 +1,62 @@
+name: One delayed China campaign monitoring slot
+on:
+  push:
+    branches: [china-wb-evidence]
+    paths: ['.github/workflows/china-41155909-slot-once.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0
+      - name: One read-only delayed22 slot, no Telegram
+        env:
+          PYTHONPATH: scripts:source
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python - <<'PY'
+          import os,requests
+          from datetime import datetime,timezone,date
+          from conversion_watches import runtime
+          from china_analytic_dialog import Analyst,reading
+          from china_change_observation import network_guard
+          key='china_agent:campaign_monitor:v2:41155909:2026-10-23:22'
+          with network_guard():
+            w=runtime()
+            if w.get(key):
+              print('already_collected')
+              raise SystemExit(0)
+            def get(path,params):
+              r=requests.get('https://advert-api.wildberries.ru'+path,params=params,headers={'Authorization':os.environ['WB_TOKEN_3']},timeout=45,allow_redirects=False)
+              if not r.ok:raise RuntimeError('WB read HTTP '+str(r.status_code))
+              return r.json()
+            campaigns=get('/api/advert/v2/adverts',{'ids':'41155909'})['adverts']
+            campaign=next(c for c in campaigns if c['id']==41155909)
+            members=[n['nm_id'] for n in campaign['nm_settings']]
+            if 1473243898 not in members:raise ValueError('Campaign membership changed')
+            budget=get('/adv/v1/budget',{'id':41155909})
+            stats=get('/adv/v3/fullstats',{'ids':'41155909','beginDate':'2026-10-23','endDate':'2026-10-23'})
+            if any(c.get('currency')!='CNY' for c in stats):raise ValueError('Ad currency mismatch')
+            with reading():orders=Analyst(w,{},[]).collect('orders',[1473243898],date(2026,10,22),date(2026,10,23))
+            w.save(key,dict(status='collected',slot='2026-10-23:22',observed_at=datetime.now(timezone.utc).isoformat(),cabinet='token_3',campaign=campaign,budget=budget,stats=stats,orders=orders,wb_writes=0,telegram_sends=0))
+            print('private_slot_collected')
+          PY

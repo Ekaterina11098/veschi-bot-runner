@@ -1,0 +1,36 @@
+name: Verify China WB evidence reads
+on:
+  push:
+    branches: [china-wb-evidence]
+    paths: ['.github/workflows/china-wb-evidence-verify.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bot-advertising-and-finance
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0
+      - name: Collect bounded WB source evidence privately, no Telegram
+        run: python scripts/probe_wb_evidence.py
+        env:
+          PYTHONPATH: scripts:source
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}

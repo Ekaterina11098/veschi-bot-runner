@@ -1,0 +1,58 @@
+name: Explicit IP PNG approval only
+on:
+  workflow_dispatch:
+    inputs:
+      approval_key:
+        required: true
+        type: string
+  push:
+    branches: [main]
+    paths: ['ip_png_publish_20261023.trigger']
+permissions: {contents: write}
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  exact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: python -m unittest discover -s scripts -p test_ip_png_apply.py -v
+      - name: Publish only, never apply on push
+        if: github.event_name == 'push'
+        run: python scripts/ip_png_apply.py --mode publish
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+      - name: Exact future human reply approval only
+        if: github.event_name == 'workflow_dispatch'
+        run: python scripts/ip_png_apply.py --mode apply --approval-key "$IP_APPROVAL_KEY"
+        env:
+          IP_APPROVAL_KEY: ${{ inputs.approval_key }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+      - name: Preserve encrypted receipt
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          file="$RUNNER_TEMP/stock-deploy-proof/ip-png-plan.aes.json"
+          test -f "$file" || exit 0
+          cp "$file" "recovery-output/advertising/ip-png-plan-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/
+          git diff --cached --quiet || git commit -m "Preserve encrypted IP PNG receipt"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+          done
+          exit 1

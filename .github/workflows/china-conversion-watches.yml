@@ -65,6 +65,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           ACTION: ${{ inputs.action }}
           DIALOG_JOB_ID: ${{ inputs.job_id }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}

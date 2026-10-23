@@ -19,7 +19,9 @@ def allowed_read(method,url,body=None):
  if not _READ:return False
  u=urlparse(url);method=method.upper();path=u.path
  if u.scheme!='https':return False
- if u.hostname=='api.moysklad.ru':return method=='GET' and path in ['/api/remap/1.2/entity/store','/api/remap/1.2/report/stock/all']
+ from china_wb_evidence import allowed_read as wb_report_read
+ if wb_report_read(method,url,body):return True
+ if u.hostname=='api.moysklad.ru':return method=='GET' and path in ['/api/remap/1.2/entity/store','/api/remap/1.2/report/stock/all','/api/remap/1.2/entity/product']
  if u.hostname=='marketplace-api.wildberries.ru':return method=='GET' and path=='/api/v3/orders'
  if u.hostname=='discounts-prices-api.wildberries.ru':return method=='GET' and path=='/api/v2/list/goods/filter'
  if u.hostname=='advert-api.wildberries.ru':return method=='GET' and path in ['/adv/v1/promotion/count','/api/advert/v2/adverts','/adv/v3/fullstats','/api/advert/v1/config','/adv/v1/balance','/adv/v1/budget'] or method=='POST' and path=='/api/advert/v1/bids/min'
@@ -37,6 +39,7 @@ def function(name,description,props):return dict(type='function',name=name,descr
 
 def tools():
  return [function('read_agreements','Договорённости владельца и терминология. Не числовой срез продаж.',{}),
+ function('get_wb_evidence','Самостоятельно читать первичную воронку WB и опубликованные финансовые операции Китая. Клики всех источников не показы. Finance: дата операции и публикации, выплаты/логистика/удержания; фактическая полная прибыль только при подтверждении всех собственных затрат. Пробелы и задержку не заменять нулём.',dict(nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},date_from={'type':'string'},date_to={'type':'string'})),
  function('get_decline_diagnostics','Обязательный полный сбор для падения заказов вчера/сегодня: WB по SKU и одинаковому часу; MPStats отдельно по каждому дню, клики/клик-заказ/цена; МойСклад; реклама; текущие ставки, минимум/шаг; проверенная история. Только чтение.',{}),
  function('list_reports','Все действующие отчёты, их генераторы, расписания и допустимые варианты. Расписания этим инструментом не меняются.',{}),
  function('make_report','Самостоятельно сформировать/повторить существующий отчёт по явной просьбе пользователя. Новый request identity не сбрасывает плановые квитанции. repeat=true повторяет исходный срез с датой; false пересчитывает доступные рецепты. PNG не разрешает изменения.',dict(kind={'type':'string','enum':['advertising','budgets','loss','price_morning','price_control','price_day','growth','ad_trend','actions','outcomes']},days={'type':'integer','minimum':1,'maximum':90},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},repeat={'type':'boolean'},report_day={'type':['string','null']})),
@@ -251,6 +254,10 @@ def answer(w,job,history):
     elif name=='get_decline_diagnostics':
      from china_decline_diagnostics import collect
      result=collect(analyst)
+    elif name=='get_wb_evidence':
+     if any(n not in {int(i) for i,_ in w.catalog()} for n in args['nm_ids']):raise ValueError('Неизвестный nmID Китая')
+     from china_wb_evidence import context
+     with reading():result=context(w,args['nm_ids'],args['date_from'],args['date_to'])
     elif name=='list_reports':
      from china_agent_reports import catalog
      result=catalog()
@@ -294,4 +301,6 @@ def copy_summary(value):
   return v
  result=compact(result)
  return result
+
+
 

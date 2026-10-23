@@ -92,21 +92,11 @@ class Reader:
   ids=sorted({a['advertId'] for group in r.json().get('adverts',[]) for a in group.get('advert_list',[])})
   self.w.save(key,dict(ids=ids,observed_at=stamp(),all_statuses=True));return ids
  def actual_operation_facts(self,nm,first,last):
-  """Read the published Finance-derived ledger; do not relabel operation dates as order dates."""
-  key=ROOT+'finance_facts:'+str(nm)+':'+first+':'+last
-  old=self.w.get(key)
-  if old and old.get('day_msk')==str(self.w.now.astimezone(MSK).date()):return old
-  from china_price_apply import IO
-  path='advertising_sku_economics_daily?cabinet=eq.token_3&nm_id=eq.'+str(nm)+'&as_of_date=gte.'+first+'&and=(as_of_date.lte.'+last+')&select=as_of_date,economics_status,finance_complete,advertising_complete,profit_before_ads_and_shared,advertising_spend,source_run_id,tax_reserve_rate,shared_cost_allocated&limit=40'
-  try:rows=IO().db(path)
-  except Exception as ex:return dict(value=None,basis='operation_date_not_order_cohort',missing='Published Finance ledger unavailable: '+type(ex).__name__)
-  n=(date.fromisoformat(last)-date.fromisoformat(first)).days+1
-  complete=len(rows)==n and len({r['as_of_date'] for r in rows})==n and all(r.get('finance_complete') is True and r.get('advertising_complete') is True and r.get('profit_before_ads_and_shared') is not None and r.get('advertising_spend') is not None and r.get('source_run_id') for r in rows)
-  value=sum(r['profit_before_ads_and_shared']-r['advertising_spend'] for r in rows) if complete else None
-  result=dict(day_msk=str(self.w.now.astimezone(MSK).date()),value=round(value,2) if value is not None else None,
-   basis='operation_date_not_order_cohort',is_full_net_profit=False,currency='RUB',period_from=first,period_to=last,source_ids=sorted({r.get('source_run_id') for r in rows if r.get('source_run_id')}),
-   missing='Tax, historical COGS/all shared expense classification not confirmed; publication/settlement lag may remain. Never use as closed order-cohort profit.')
-  self.w.save(key,result);return result
+  """Published WB operations + owner5% tax + own MoySklad COGS, not closed order cohort."""
+  from china_wb_evidence import context
+  from china_analytic_dialog import reading
+  with reading():result=context(self.w,[nm],first,last).get('finance',{})
+  return dict(result,value=result.get('calculated_profit_rub'),basis='operation_date_not_order_cohort',is_full_net_profit=False)
  def table(self,tool,args,nm=None):
   rows=[];keys=[];offset=0;total=None
   while True:

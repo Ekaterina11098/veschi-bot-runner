@@ -39,6 +39,16 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
         run: PYTHONPATH=../scripts:. python ../scripts/china_advertising_daily.py
 
+      - name: Cache published China Finance and all-source funnel, no marketplace writes
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          PYTHONPATH: scripts:source
+        run: python scripts/china_wb_evidence.py
+
       - name: Observe verified price and advertising changes, no marketplace writes
         env:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}

@@ -137,7 +137,7 @@ def evaluate_saved(w,ids,records=None):
   updated=observe(w,eid,*periods,source_keys=sorted(set(source_keys)))
   b,a=periods[0]['ad_drr'],periods[1]['ad_drr'];trend='inconclusive' if b is None or a is None else 'negative' if a>b else 'positive' if a<b else 'unchanged'
   updated['observations'][-1].update(automatic_saved_ad_evaluation=True,advertising_direction=trend,causality='not_established',note='Только наблюдаемая эффективность рекламы; общая прибыль не подтверждена, причина не доказана')
-  updated['advertising_outcome']=trend;save(w,ROOT+eid,updated)
+  updated['advertising_outcome']='negative' if a is not None and a>5 else 'positive' if trend=='positive' else 'within_target' if a is not None else 'inconclusive';save(w,ROOT+eid,updated)
   if records is not None:records[eid]=updated
 
 def decision_context(w,nm_ids=(),current=None):
@@ -147,7 +147,8 @@ def decision_context(w,nm_ids=(),current=None):
   action=event.get('action') or {};at=event.get('started_at')
   if event.get('record_type')=='verified_action' and at:
    changed=datetime.fromisoformat(at.replace('Z','+00:00')).astimezone(MSK).date()
-   if 0<=(today-changed).days<=3:recent.update(action.get('nm_ids',[]))
+   evaluate_from=event.get('comparison',{}).get('evaluate_from')
+   if (evaluate_from and str(today)<evaluate_from) or not evaluate_from and 0<=(today-changed).days<=3:recent.update(action.get('nm_ids',[]))
   event['current_condition_comparison']=compare_conditions(event.get('context') or {},current or {})
  return dict(result,recent_changed_nm_ids=sorted(recent),rules=['Не повторять недавнее изменение до сопоставимых полных дней','Положительный и отрицательный опыт сохраняются вместе; новый результат может отличаться','Изменения алгоритмов WB — гипотеза, пока нет подтверждения','Рекомендация не разрешает WB-записи; нужен подтверждённый точный план'])
 def summarize_comparison(before,after):

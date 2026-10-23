@@ -2,8 +2,8 @@ import sys,os,json,requests
 from datetime import datetime,timezone
 sys.path[:0]=['scripts','source']
 from china_price_apply import IO
-from wb_bot.mpstats_probe import discover
-from wb_bot.mpstats_gaps import execute_reads
+from analytics.mpstats_probe import discover
+from analytics.mpstats_gaps import execute_reads
 io=IO();saved=[];key='china_agent:loss_preview_source:2026-10-23:v1'
 def reader(call,checks,known):
  def save(cab,o):saved.append(o)

@@ -306,6 +306,9 @@ class Worker:
         from business_agents.data import Data
         cfg=self.config()
         if not question_allowed(job,cfg):raise PermissionError('Question scope mismatch')
+        from china_order_decline import prepared_answer
+        verified=prepared_answer(self,job)
+        if verified is not None:return verified
         from china_break_even import answer as break_even
         computed=break_even(self,job,history)
         if computed is not None:return computed
@@ -359,6 +362,9 @@ class Worker:
                 'Сегодня '+self.now.astimezone(MSK).date().isoformat()+'. Профиль: '+json.dumps(c.profile('china'),ensure_ascii=False))
         from china_loss_control import context as loss_policy_context
         prompt+='\n'+loss_policy_context(self)
+        from china_order_decline import context as order_decline_context
+        decline_context=order_decline_context(self,job,history)
+        if decline_context:prompt+='\n'+decline_context
         if search_context:prompt+='\n'+search_context
         messages=[{'role':'developer','content':prompt}]
         for p in history[-4:]:

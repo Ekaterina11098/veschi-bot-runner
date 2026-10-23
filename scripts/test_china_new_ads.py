@@ -89,6 +89,25 @@ class NewAds(unittest.TestCase):
   job=dict(id=10,update_id=90,sender_id=22,chat_id=CHAT,created_at=W.now.isoformat(),request_text='согласен',tool_trace=[dict(name='china_saved_question',bot_id=BOT,message_id=88,reply_message_id=77)])
   with patch('china_group_permissions.allowed',return_value=True):answer,trace=n.handle(W(),job)
   self.assertEqual(io.get(n.APPROVAL+'10')['plan_sha256'],p['plan_sha256']);self.assertEqual(trace[0]['name'],'new_ad_campaigns_approval');self.assertEqual(t.writes,[])
+  with patch('china_group_permissions.allowed',return_value=True):answer,trace=n.handle(W(),dict(job,id=11))
+  self.assertIsNone(io.get(n.APPROVAL+'11'));self.assertEqual(trace[0]['name'],'new_ad_already_approved')
+ def test_report_request_collects_only_after_dialog_and_cannot_approve(self):
+  p,io,a,t=self.setup()
+  class W:
+   now=datetime.now(timezone.utc)
+   get=io.get
+   def save(self,k,v,insert=False):return io.create(k,v) if insert else io.put(k,v)
+  job=dict(id=12,sender_id=22,chat_id=CHAT,created_at=W.now.isoformat(),request_text='Подбери рекламный тест по всем кандидатам',tool_trace=[dict(name='china_saved_question',bot_id=BOT,message_id=91)])
+  with patch('china_group_permissions.allowed',return_value=True):answer,trace=n.handle(W(),job)
+  self.assertEqual(io.get(n.REQUEST+'12')['status'],'pending');self.assertIsNone(io.get(n.APPROVAL+'12'));self.assertEqual(t.writes,[])
+ def test_candidate_selection_respects_ms_stock_costs_and_ad_history(self):
+  from china_new_ad_reports import choose
+  product=dict(nm_id=1,sa_name='bag',finished_orders=6,is_payed=4,open_card_count=100,funnel_orders_count=10,price_after_spp=1000,price_after_discount=1200,advertisement=0,subject_id=50)
+  s=dict(campaigns={},protected=[],prices=[dict(nmID=1,sizes=[dict(discountedPrice=200)])],stock=[dict(article='bag',stock=50,reserve=2,price=10000)],orders=[dict(nmId=1)],products=[product],policy=dict(logistics_by_nm={'1':dict(delivery_cny=10)},category_minimum_minor={'50':28}))
+  g,missing=choose(s);self.assertEqual(g['orders'][0]['stock'],48)
+  s['stock'][0]['reserve']=50;self.assertEqual(choose(s)[0]['orders'],[])
+  s['stock'][0]['reserve']=0;s['products'][0]['advertisement']=100;self.assertEqual(choose(s)[0]['orders'],[])
+  s['products'][0]['advertisement']=0;s['protected']=[1];self.assertEqual(choose(s)[0]['orders'],[])
 
 if __name__=='__main__':unittest.main()
 

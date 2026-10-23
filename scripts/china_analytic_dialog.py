@@ -157,7 +157,7 @@ class Analyst:
    result=[]
    for r in rows:
     if ids and int(r['nm_id']) not in ids:continue
-    v={k:r.get(k) for k in ['nm_id','sa_name','finished_orders','is_payed','finish_as_return','not_finished_orders','orders_sum','funnel_orders_count','open_card_count','advertisement','price_after_discount','price_after_spp','price_spp','sparkline_prices','sales_sum','returns_sum','logistic_all','total_commission','total_commission_without_spp','rating','commentsvaluation']}
+    v={k:r.get(k) for k in ['nm_id','sa_name','finished_orders','is_payed','finish_as_return','not_finished_orders','orders_sum','orders_count','sparkline_orders','funnel_orders_count','open_card_count','advertisement','price_after_discount','price_after_spp','price_spp','sparkline_prices','sales_sum','returns_sum','logistic_all','total_commission','total_commission_without_spp','rating','commentsvaluation']}
     v.update(buyout_pct=100*r['is_payed']/r['finished_orders'] if r.get('finished_orders') else None,click_order_pct=100*r['funnel_orders_count']/r['open_card_count'] if r.get('open_card_count') else None,drr_pct=100*r['advertisement']/r['orders_sum'] if r.get('orders_sum') and r.get('advertisement') is not None else None);result.append(v)
    return dict(source='MPStats own products',rows=result,all_product_records=len(rows),note='RUB. Выкуп только завершённые; ДРР=реклама/сумма заказов до скидок WB. price_after_spp и price_spp — срез, не история СПП; sparkline_prices — история цены покупателя, сверять длину/даты. Прибыль закрытой когорты здесь не доказана.')
   if topic=='advertising':

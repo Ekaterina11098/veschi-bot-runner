@@ -34,5 +34,16 @@ class Reports(unittest.TestCase):
   c=r.catalog();self.assertTrue(c['schedules_unchanged']);self.assertEqual(c['reports']['price_day']['schedule'],'15:00 МСК')
  def test_no_future_report(self):
   with self.assertRaises(ValueError):r.make(W(),dict(id=1,chat_id=-1004342917488),'loss',repeat=True,report_day='2026-10-24')
+ def test_dynamics_exposes_method_and_missing_counts_not_zero(self):
+  source=dict(products=[dict(nm_id=1,sa_name='bag',finished_orders=10,is_payed=8,price_after_spp=100,price_after_discount=100)],prices=[dict(nmID=1,sizes=[dict(discountedPrice=100)])],stock=[dict(article='bag',price=10000)],policy=dict(fx_rub_cny=12,logistics_by_nm={'1':dict(delivery_cny=1)}))
+  cohort=dict(items=[dict(nm_id=1,article='bag',no_new_ad_change=True)],before_from='2026-10-18',before_to='2026-10-21',after_from='2026-10-23',after_to='2026-10-26')
+  valid=dict(nm_id=1,orders_count=4,funnel_orders_count=4,sparkline_orders=[1,1,1,1],orders_sum=4000,advertisement=40)
+  with patch('china_analytic_dialog.Analyst.live',return_value=dict(rows=[valid])):
+   text=' '.join(r.loss_dynamics(W(),source,cohort))
+   self.assertIn('ожидаемая общая прибыль',text);self.assertIn('без нашего отключения',text);self.assertIn('не закрытая чистая прибыль',text)
+  invalid=dict(valid,funnel_orders_count=5)
+  with patch('china_analytic_dialog.Analyst.live',return_value=dict(rows=[invalid])):
+   text=' '.join(r.loss_dynamics(W(),source,cohort));self.assertIn('нет данных',text)
 
 if __name__=='__main__':unittest.main()
+

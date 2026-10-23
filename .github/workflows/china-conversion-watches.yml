@@ -50,6 +50,7 @@ jobs:
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_search_analytics.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_control.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_ads.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_order_decline.py
           python scripts/china_chat_migration.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
       - name: Install pinned read transport

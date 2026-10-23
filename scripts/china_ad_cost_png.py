@@ -65,31 +65,36 @@ def render(report,recommendations):
  for offset in range(0,len(report['days']),5):
   dates=report['days'][offset:offset+5]
   for begin in range(0,len(rows),10):
-   group=rows[begin:begin+10];widths=[350]+[115]*len(dates)+[150,130,570]
+   group=rows[begin:begin+10];widths=[350]+[115]*len(dates)+[175,130,570]
    w=sum(widths)+40;h=260+len(group)*145+135
    im=Image.new('RGB',(w,h),'#f3f6fa');d=ImageDraw.Draw(im)
    d.rectangle((0,0,w,140),fill='#20374f')
-   d.text((25,20),'Китай · стоимость рекламного заказа',font=f(32,True),fill='white')
-   d.text((25,70),report['days'][0]+' — '+report['days'][-1]+' · '+str(report['requested_days'])+' полных дней · ¥ CNY',font=f(24),fill='white')
+   d.text((25,20),'Китай · динамика ДРР',font=f(32,True),fill='white')
+   d.text((25,70),report['days'][0]+' — '+report['days'][-1]+' · '+str(report['requested_days'])+' полных дней',font=f(24),fill='white')
    d.text((25,163),'Только рост каждый день всего периода. Предложения не применены.',font=f(22,True),fill='#b9252b')
-   heads=['Артикул']+[day[8:]+'.'+day[5:7]+', ¥' for day in dates]+['Δ периода','ДРР','Предложение']
+   heads=['Артикул']+[day[8:]+'.'+day[5:7]+', %' for day in dates]+['Δ ДРР, п.п.','ДРР','Предложение']
    x=20
    for col,head in zip(widths,heads):
     d.rectangle((x,211,x+col,254),fill='#20374f');d.text((x+10,222),head,font=f(18,True),fill='white');x+=col
    for i,r in enumerate(group):
     y=260+i*145;d.rectangle((20,y,w-20,y+140),fill='white' if i%2==0 else '#e6edf6')
-    delta=r['cpa_first_last_percent']
-    values=[r['article']]+[num(v['cpa']) for v in r['daily'][offset:offset+len(dates)]]+[('н/д' if delta is None else f'{delta:+.1f}%'.replace('.',',')),num(r['drr'])+'%',recommendations.get(r['nm'],'Нужна проверка текущей РК')]
+    first_drr,last_drr=r['daily'][0]['drr'],r['daily'][-1]['drr']
+    delta=last_drr-first_drr if first_drr is not None and last_drr is not None else None
+    values=[r['article']]+[num(v['drr'])+'%' for v in r['daily'][offset:offset+len(dates)]]+[('н/д' if delta is None else f'{delta:+.1f}'.replace('.',',')),num(r['drr'])+'%',recommendations.get(r['nm'],'Нужна проверка текущей РК')]
     x=20
     for k,(col,value) in enumerate(zip(widths,values)):
-     color='#b9252b' if 1<=k<=len(dates)+1 else '#24384f'
+     color='#24384f'
+     if 1<=k<=len(dates) and offset+k-1>0:
+      previous=r['daily'][offset+k-2]['drr'];value_drr=r['daily'][offset+k-1]['drr']
+      if previous is not None and value_drr is not None:color='#b9252b' if value_drr>previous else '#197749' if value_drr<previous else '#24384f'
+     if k==len(dates)+1 and delta is not None:color='#b9252b' if delta>0 else '#197749' if delta<0 else '#24384f'
      write(d,value,x+10,y+20,col-20,f(20,k==0),color);x+=col
     x=20+widths[0]
     for v,col in zip(r['daily'][offset:offset+len(dates)],widths[1:]):
      d.text((x+10,y+98),str(v['orders'])+' зак.',font=f(17),fill='#607287');x+=col
    y=265+len(group)*145
-   for line in ['Стоимость = расход / рекламные заказы. Это рекламная атрибуция, не прибыль и не все заказы WB.',
-                'ДРР периода — по суммам. Δ — последний день к первому. Малая выборка не доказывает устойчивость.',
+   for line in ['ДРР = расход / сумма рекламных заказов. Это рекламная атрибуция, не прибыль и не все заказы WB.',
+                'ДРР периода — по суммам. Δ ДРР — последний день к первому, в п.п. Ставки в предложениях — CNY.',
                 'Тренд проверен по всему периоду; в длинном отчёте даты разбиты на читаемые блоки.']:
     write(d,line,25,y,w-50,f(18),'#607287');y+=32
    buf=io.BytesIO();im.save(buf,format='PNG');pages.append(buf.getvalue())
@@ -123,4 +128,5 @@ def photo(w,chat,text):
  if not 0<=i<len(saved['files']):raise ValueError('PNG part outside range')
  part=saved['files'][i];blob=base64.b64decode(part['data'],validate=True)
  if hashlib.sha256(blob).hexdigest()!=part['sha256']:raise ValueError('Frozen PNG hash changed')
- return blob,'Стоимость рекламного заказа · '+saved['days'][0]+' — '+saved['days'][-1]+'. Предложения не применены.'
+ if saved.get('plan_id'):return blob,'План по ДРР. Для применения владелец отвечает «Сделай всё» на эту таблицу. Цены не меняем.'
+ return blob,'Динамика ДРР · '+saved['days'][0]+' — '+saved['days'][-1]+'. Предложения не применены.'

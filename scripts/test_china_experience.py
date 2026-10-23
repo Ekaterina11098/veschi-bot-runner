@@ -48,7 +48,7 @@ class ExperienceTests(unittest.TestCase):
   self.assertEqual(event['business_outcome'],'pending')
  def test_saved_ad_result_does_not_invent_profit_or_causality(self):
   w=W();event=put_event(w,dict(event_id='x',record_type='verified_action',source_key='execution',started_at='2026-10-23T16:00:00Z',action=dict(nm_ids=[10],campaign_id=1),comparison=windows('2026-10-23T16:00:00Z')))
-  for label,spend in [('before',1),('after',2)]:
+  for label,spend in [('before',1),('after',6)]:
    first=date.fromisoformat(event['comparison'][label+'_from'])
    for i in range(3):
     day=first+timedelta(days=i);w.data['china_agent:advertising_source:'+str(day+timedelta(days=1))+':v1']=dict(observations=[dict(tool='wbbidder_campaign',arguments=dict(campaign_id=7),data=dict(campaign=dict(wb_id=1))),dict(tool='wbbidder_campaign_stats',status='received',scope_verified=True,arguments=dict(campaign_id=7,report='products',d1=str(day),d2=str(day)),data=dict(data=[dict(nm_id=10,ac_spending_sum=spend,ac_orders_sum=100,ac_orders=1)]))])

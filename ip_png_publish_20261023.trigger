@@ -1,1 +1,1 @@
-Publish same frozen IP PNG after confirmed pre-send 429; shared bounded cooldown enabled. No WB writes.
+Publish frozen original PNG using verified saved baseline. Prior attempts confirmed pre-send only; no WB writes. v3

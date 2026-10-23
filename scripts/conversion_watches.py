@@ -306,6 +306,9 @@ class Worker:
         from business_agents.data import Data
         cfg=self.config()
         if not question_allowed(job,cfg):raise PermissionError('Question scope mismatch')
+        from china_ad_cost_png import answer as ad_cost_png_answer
+        png_answer=ad_cost_png_answer(self,job,history)
+        if png_answer is not None:return png_answer
         from china_order_decline import prepared_answer
         verified=prepared_answer(self,job)
         if verified is not None:return verified
@@ -456,6 +459,7 @@ class Worker:
                 trace=[marker]+trace
                 patch({'answer':answer,'tool_trace':trace})
             if not question_allowed(job,self.config()):raise PermissionError('Question registration changed')
+            self.active_question_id=job_id
             self.reply_id=marker.get('message_id');outcome='sent'
             for index,part in enumerate(split_message(answer)):
                 outcome=self.send_once('question:'+str(job_id)+':'+str(index),job['chat_id'],part)
@@ -601,7 +605,7 @@ def saved_network_guard():
                            or (method=='POST' and u.path=='/rest/v1/telegram_api_cache')))
             model=(u.scheme=='https' and u.hostname=='api.openai.com' and u.path=='/v1/responses' and method=='POST')
             telegram=(u.scheme=='https' and u.hostname=='api.telegram.org'
-                      and u.path=='/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendMessage' and method=='POST')
+                      and u.path in ('/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendMessage','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendPhoto','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/getMe') and method=='POST')
             from china_search_analytics import allowed_read
             search=allowed_read(method,url,kwargs.get('json'))
             if not (database or model or telegram or search):raise PermissionError('Saved question network scope')
@@ -626,6 +630,13 @@ def runtime():
     bot=os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()
     def send(chat,text):
         # No retries after a timeout: at-most-once delivery takes precedence.
+        from china_ad_cost_png import photo
+        frozen_photo=photo(worker,chat,text)
+        if frozen_photo is not None:
+            me=session.post('https://api.telegram.org/bot'+bot+'/getMe',timeout=20).json()
+            if not me.get('ok') or me['result'].get('id')!=8780468043 or chat!=-1004342917488:raise PermissionError('China photo bot/chat mismatch')
+            blob,caption=frozen_photo
+            return session.post('https://api.telegram.org/bot'+bot+'/sendPhoto',data={'chat_id':chat,'caption':caption,**({'reply_parameters':json.dumps({'message_id':worker.reply_id})} if getattr(worker,'reply_id',None) else {})},files={'photo':('china-ad-cost.png',blob,'image/png')},timeout=35).json()
         from china_break_even import compact_payload
         formatting=compact_payload(text,worker.catalog()) if '\nБезубыточность:' in text and '\nВыкуп:' in text else {}
         if not formatting and 'Показатель |' in text:

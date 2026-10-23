@@ -9,7 +9,7 @@ PLAN='china_agent:loss_plan:v1:'
 APPROVAL='china_agent:loss_plan_approval:v1:'
 EXEC='china_agent:loss_plan_execution:v1:'
 def digest(x):return hashlib.sha256(json.dumps(x,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
-def is_all(t):return bool(re.fullmatch(r'(?:сделай|выполни|примени)\s+вс[её][.!]?',t.strip(),re.I))
+def is_all(t):return bool(re.fullmatch(r'(?:(?:да|хорошо|ок|ладно)[, ]+)?(?:сделай(?:\s+вс[её])?|делай|выполни(?:\s+вс[её])?|выполняй|примени(?:\s+вс[её])?|применяй|подтверждаю|согласен|согласна|запускай|да)[.!]?',t.strip(),re.I))
 def marker(job):return next((x for x in job.get('tool_trace',[]) if x.get('name')=='china_saved_question'),{})
 def context(w):
  from china_loss_policy import POLICY,evaluate

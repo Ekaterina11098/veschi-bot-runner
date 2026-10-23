@@ -59,7 +59,7 @@ for(const mutate of [
  const c=context();const changed=structuredClone(catalog);changed.rows[0].sizes[0].discountedPrice=101;c.setCatalogue(changed);await run(c);assert.equal(c.cache.size,0);
 }
 {
- const c=context();await run(c,message(),'Подтверждаю');assert.equal(c.cache.size,0);
+ const c=context();await run(c,message(),'Подтверждаю');assert.equal(c.cache.size,1);
 }
 {
  const c=context();const response=await run(c,message(),'Покажи продажи');assert.equal(response,null);assert.equal(c.calls.length,0);
@@ -75,3 +75,8 @@ console.log('All-member recommendation decisions: owner/non-owner, exact reply/s
  assert.equal(decision.execution_authorized,true);
 }
 console.log('Authenticated intent can queue without Edge bot token; worker must verify live membership before writes');
+
+for(const phrase of ['Сделай всё','да, делай','применяй','согласна','выполняй','да']){const c=context();await run(c,message(),phrase);assert.equal(c.cache.size,1);}
+for(const phrase of ['не делай','давай позже','сделай всё?','сделай если ставка снизится']){assert.equal(priceApprovalIntent(phrase),null);}
+{const c=context();const m=message();m.reply_to_message.text='Реклама Китая';assert.equal(await run(c,m,'Сделай всё'),null);assert.equal(c.cache.size,0);}
+console.log('Natural affirmative phrases are exact reply scoped; ambiguous/negative text does not approve');

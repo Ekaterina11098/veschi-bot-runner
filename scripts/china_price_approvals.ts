@@ -3,6 +3,7 @@
  */
 export function priceApprovalIntent(text:string):null|{all:boolean,articles:string[]} {
  const s=text.trim();
+ if (/^(?:(?:да|хорошо|ок|ладно)[, ]+)?(?:сделай(?:\s+вс[её])?|делай|выполни(?:\s+вс[её])?|выполняй|примени(?:\s+вс[её])?|применяй|подтверждаю|согласен|согласна|запускай|да)[.!]?$/iu.test(s))return {all:true,articles:[]};
  if (/^\/(?:price_confirm|confirm)(?:@[a-z0-9_]+)?(?:\s+(?:все|all))?[.!]?$/iu.test(s) ||
      /^подтверждаю\s+все\s+(?:изменения|цены)[.!]?$/iu.test(s) ||
      /^да[,]?\s+давай\s+изменим\s+цен[ыуа]\s+как\s+ты\s+предлагаешь[.!]?$/iu.test(s))
@@ -31,6 +32,8 @@ export function reportProposals(answer:string) {
 }
 
 export async function handlePriceApproval(config:any,message:any,text:string,updateId:number,deps:any):Promise<Response|null>{
+ const natural=/^(?:(?:да|хорошо|ок|ладно)[, ]+)?(?:сделай(?:\s+вс[её])?|делай|выполни(?:\s+вс[её])?|выполняй|примени(?:\s+вс[её])?|применяй|подтверждаю|согласен|согласна|запускай|да)[.!]?$/iu.test(text.trim());
+ if(natural && (message?.reply_to_message?.from?.id!==config.bot_id || !/^(?:Повышение|Снижение) · .+ Продавец:/mu.test(message?.reply_to_message?.text??'')))return null;
  const intent=priceApprovalIntent(text);
  if(!intent)return null;
  const answer=(t:string)=>Response.json({method:'sendMessage',chat_id:config.chat_id,text:t});

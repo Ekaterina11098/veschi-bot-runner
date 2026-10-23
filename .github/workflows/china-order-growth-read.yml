@@ -23,4 +23,4 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: unavailable-no-delivery
-        run: python scripts/china_order_growth_read.py
+        run: python scripts/china_growth_candidate_minima.py

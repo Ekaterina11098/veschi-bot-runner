@@ -1,1 +1,1 @@
-Publish registered IP five-SKU PNG once. No WB writes. 2026-10-23
+Publish same frozen IP PNG after confirmed pre-send 429; shared bounded cooldown enabled. No WB writes.

@@ -128,7 +128,7 @@ def photo(w,chat,text):
  if not 0<=i<len(saved['files']):raise ValueError('PNG part outside range')
  part=saved['files'][i];blob=base64.b64decode(part['data'],validate=True)
  if hashlib.sha256(blob).hexdigest()!=part['sha256']:raise ValueError('Frozen PNG hash changed')
- if saved.get('plan_id'):return blob,'План по ДРР. Для применения владелец отвечает «Сделай всё» на эту таблицу. Цены не меняем.'
+ if saved.get('plan_id'):return blob,'План по ДРР. Для применения ответьте «Сделай всё» на эту таблицу. Цены не меняем.'
  return blob,'Динамика ДРР · '+saved['days'][0]+' — '+saved['days'][-1]+'. Предложения не применены.'
 
 def previous_context(w,job,history=()):

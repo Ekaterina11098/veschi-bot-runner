@@ -99,8 +99,11 @@ def make(w,job,kind,days=3,nm_ids=(),repeat=False,report_day=None):
    for row in record.get('rows',[]):
     if nm_ids and row['nm_id'] not in nm_ids:continue
     b,a=row['before'],row['after'];r=row['result'];change=record.get('action',{});before,after=change.get('before'),change.get('after')
-    result='Ожидаемая/предварительная: '+str(b['expected']['value'])+' → '+str(a['expected']['value'])+' ₽\nФактическая закрытая: '+('нет данных' if b['actual'].get('value') is None or a['actual'].get('value') is None else str(b['actual']['value'])+' → '+str(a['actual']['value'])+' ₽')
-    metrics='Заказы '+str(b['orders'])+' → '+str(a['orders'])+'; клик-заказ '+str(b['click_order_pct'])+' → '+str(a['click_order_pct'])+'%; ДРР '+str(b['actual_drr_pct'])+' → '+str(a['actual_drr_pct'])+'%; выкуп '+str(b['outcomes']['buyout_pct'])+' → '+str(a['outcomes']['buyout_pct'])+'%'
+    fmt=lambda v:'нет данных' if v is None else str(round(v,2))
+    result='Ожидаемая/предварительная: '+fmt(b['expected'].get('value'))+' → '+fmt(a['expected'].get('value'))+' ₽\nФактическая закрытая: '+('нет данных' if b['actual'].get('value') is None or a['actual'].get('value') is None else fmt(b['actual']['value'])+' → '+fmt(a['actual']['value'])+' ₽')
+    metrics='Все показы '+fmt(b.get('general_traffic',{}).get('total_impressions'))+' → '+fmt(a.get('general_traffic',{}).get('total_impressions'))+'; все клики '+fmt(b.get('views'))+' → '+fmt(a.get('views'))+'; заказы '+str(b['orders'])+' → '+str(a['orders'])+'; клик-заказ '+fmt(b['click_order_pct'])+' → '+fmt(a['click_order_pct'])+'%; ДРР '+fmt(b['actual_drr_pct'])+' → '+fmt(a['actual_drr_pct'])+'%; выкуп '+fmt(b['outcomes']['buyout_pct'])+' → '+fmt(a['outcomes']['buyout_pct'])+'%'
+    ab,aa=b.get('advertising_funnel',{}),a.get('advertising_funnel',{})
+    metrics+='\nРеклама отдельно: показы '+fmt(ab.get('views'))+' → '+fmt(aa.get('views'))+'; клики '+fmt(ab.get('clicks'))+' → '+fmt(aa.get('clicks'))+'; CTR '+fmt(ab.get('ctr_pct'))+' → '+fmt(aa.get('ctr_pct'))+'%'
     kind_=change.get('kind');label='Цена '+str(before)+' → '+str(after)+' ¥' if kind_=='price_change' else 'Ставка '+str(before/100)+' → '+str(after/100)+' ¥' if kind_=='bid_change' else 'Исключение SKU из РК '+str(change.get('campaign_id')) if kind_=='sku_exclusion' else 'Запуск РК '+str(change.get('campaign_id'))
     at=datetime.fromisoformat(record['started_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m.%Y %H:%M МСК')
     table.append([row['article'],label+'\n'+at+'\n'+b['period_from']+'–'+b['period_to']+' → '+a['period_from']+'–'+a['period_to'],result,metrics,r['recommendation']])

@@ -2,7 +2,6 @@
 import base64,hashlib,io,json,re
 from datetime import timedelta
 from decimal import Decimal
-from PIL import Image,ImageDraw,ImageFont
 from china_three_day_ads import build,load,requested_days,MSK
 PREFIX='CHINA_AD_COST_PNG:'
 def suggestion(row,source,today):
@@ -38,6 +37,7 @@ def suggestion(row,source,today):
   else:actions.append('Проверить ставку SKU в РК '+str(cid))
  return '\n'.join(actions)
 def render(report,recommendations):
+ from PIL import Image,ImageDraw,ImageFont
  def f(n,b=False):
   for path in [('C:/Windows/Fonts/arialbd.ttf' if b else 'C:/Windows/Fonts/arial.ttf'),('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' if b else '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')]:
    try:return ImageFont.truetype(path,n)
@@ -98,6 +98,7 @@ def answer(w,job,history=()):
  text=job.get('request_text','').casefold()
  related=' '.join([text]+[x.get('request_text','').casefold() for x in history[-4:]])
  if not re.search(r'реклам|дрр|ддр|стоимост.*заказ',related):return None
+ if re.search(r'заказ|продаж',text) and not re.search(r'реклам|дрр|ддр|стоимост.*заказ|цен.*заказ',text):return None
  if not re.search(r'стоимост.*заказ|цен.*заказ|(?:за|последни[ех])\s+(?:последние\s+)?\d+\s*(?:полных\s+)?(?:дн|сут|день)',text):return None
  key='china_agent:ad_cost_png:question:'+str(job['id'])+':v1'
  saved=w.get(key)
@@ -118,6 +119,8 @@ def photo(w,chat,text):
  key,index=text[len(PREFIX):].rsplit(':',1)
  saved=w.get(key)
  if not saved or saved.get('status')!='frozen' or saved.get('chat_id')!=chat or saved.get('job_id')!=getattr(w,'active_question_id',None):raise PermissionError('Frozen PNG question scope')
- part=saved['files'][int(index)];blob=base64.b64decode(part['data'],validate=True)
+ i=int(index)
+ if not 0<=i<len(saved['files']):raise ValueError('PNG part outside range')
+ part=saved['files'][i];blob=base64.b64decode(part['data'],validate=True)
  if hashlib.sha256(blob).hexdigest()!=part['sha256']:raise ValueError('Frozen PNG hash changed')
  return blob,'Стоимость рекламного заказа · '+saved['days'][0]+' — '+saved['days'][-1]+'. Предложения не применены.'

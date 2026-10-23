@@ -131,6 +131,31 @@ def normalize_funnel(products,selected,past,source_id):
   result.append(dict(nm_id=nm,article=p['vendorCode'],feedback_rating=p.get('feedbackRating'),product_rating=p.get('productRating'),**periods))
  return result
 
+def own_costs(w,stock,finance_rows,first,last):
+ """Prefer stock cost; zero-stock average may be absent. Resolve exact own product buyPrice."""
+ import requests
+ by_article={r['article'].casefold():r.get('cost_rub') for r in stock.get('rows',[])}
+ catalogue={int(nm):article for nm,article in w.catalog()};costs={nm:by_article.get(article.casefold()) for nm,article in catalogue.items()}
+ required={int(r['nmId']) for r in finance_rows if first<=str(r.get('rrDate',''))[:10]<=last and r.get('sellerOperName') in SALE|RETURN}
+ evidence=[]
+ for nm in sorted(required):
+  if costs.get(nm) is not None or nm not in catalogue:continue
+  key=ROOT+'moysklad_cost:'+str(nm);saved=w.get(key)
+  if saved and (now()-datetime.fromisoformat(saved['observed_at'])).total_seconds()<21600:
+   if saved.get('cost_rub') is not None:costs[nm]=saved['cost_rub']
+   evidence.append(saved);continue
+  article=catalogue[nm];url='https://api.moysklad.ru/api/remap/1.2/entity/product'
+  response=requests.get(url,headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN']},params={'filter':'article='+article,'limit':2,'expand':'buyPrice.currency'},timeout=35,allow_redirects=False)
+  if not response.ok:raise RuntimeError('MoySklad product COGS HTTP '+str(response.status_code))
+  raw=response.json();rows=raw.get('rows',[]);value=dict(nm_id=nm,article=article,observed_at=now().isoformat(),source=url,cost_rub=None)
+  if len(rows)==1 and rows[0].get('article','').casefold()==article.casefold():
+   product=rows[0];buy=product.get('buyPrice') or {};currency=buy.get('currency') or {};amount=buy.get('value')
+   if currency.get('isoCode')=='RUB' and amount is not None and money(amount)>0:
+    value.update(cost_rub=float(money(amount)/100),basis='Own product purchase price; stock average unavailable',product_id=product['id'],currency='RUB')
+    costs[nm]=value['cost_rub']
+  w.save(key,dict(value,raw=raw));evidence.append(value)
+ return costs,evidence
+
 def settlement(state,first,last,ids=None,costs=None,fx=12,tax_rate=.05):
  """Published settlement contribution, separate from closed cohorts and expected ad-day profit."""
  dates(first,last)
@@ -185,7 +210,9 @@ def context(w,ids,first,last,costs=None):
   try:
    state=getattr(reports,name)(first,last)
    if name=='funnel':out[name]=dict(state,rows=[r for r in state.get('rows',[]) if not ids or r['nm_id'] in ids])
-   else:out[name]=settlement(state,first,last,ids,costs);out[name]['collection_status']='complete' if state.get('complete') else state.get('status','pagination_pending');out[name]['retry_at']=state.get('retry_at')
+   else:
+    if costs is not None and 'stock' in locals():costs,cost_evidence=own_costs(w,stock,state.get('rows',[]),first,last);out['cost_evidence']=cost_evidence
+    out[name]=settlement(state,first,last,ids,costs);out[name]['collection_status']='complete' if state.get('complete') else state.get('status','pagination_pending');out[name]['retry_at']=state.get('retry_at')
   except Exception as ex:out[name]=dict(available=False,error=type(ex).__name__,missing=str(ex)[:200] if isinstance(ex,ValueError) else 'WB transport unavailable',value=None)
  return out
 

@@ -92,6 +92,12 @@ def main():
                         from review_approval_inbox import drain
                         report['inbox']=drain(app,bridge,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),app.secret,preserve=preserve,new_notices_enabled=cfg.get('new_notices_enabled') is True,cutover=cfg['cutover'])
                     finally:conn.execute("SELECT pg_advisory_unlock(hashtextextended('review-approval-process-ui-v1',0))")
+                # Library maintenance is independent of WB publication and cannot undo approval.
+                try:
+                    from review_approved_benchmarks import sync_live
+                    report['benchmarks']=sync_live(repo,str(cfg['owner_id']))
+                except Exception as exc:
+                    report['benchmarks']={'error_type':type(exc).__name__}
                 pending=due_intents(repo,cfg)
                 for intent in pending:
                     if intent.get('worker_retry_at',0)>time.time():continue

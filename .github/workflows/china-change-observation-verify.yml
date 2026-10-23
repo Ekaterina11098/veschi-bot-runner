@@ -43,4 +43,4 @@ jobs:
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           PYTHONPATH: scripts:source
-        run: python scripts/china_change_observation.py --verify --budget 90
+        run: python scripts/china_change_observation.py --verify --budget 100

@@ -1,0 +1,32 @@
+import {createHash} from 'node:crypto';
+import {handlePriceApproval} from './china_price_approvals.ts';
+if(process.env.GITHUB_REPOSITORY!=='Ekaterina11098/veschi-bot-runner')throw Error('Public runner only');
+const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_SECRET_KEY,bot=process.env.CHINA_TELEGRAM_BOT_TOKEN;
+const headers={apikey:key,'Content-Type':'application/json',...(!key.startsWith('sb_secret_')?{Authorization:'Bearer '+key}:{})};
+const database=async(path,method='GET',body,prefer)=>{
+ const r=await fetch(url+'/rest/v1/'+path,{method,headers:{...headers,...(prefer?{Prefer:prefer}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(30000)});
+ if(!r.ok)throw Error('State HTTP '+r.status);
+ const text=await r.text();return text?JSON.parse(text):[];
+};
+const telegram=async(method,body)=>{const r=await fetch('https://api.telegram.org/bot'+bot+'/'+method,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(30000)});const j=await r.json();if(!j.ok)throw Error('Telegram '+j.error_code);return j.result;};
+const digest=async s=>createHash('sha256').update(s).digest('hex');
+const cfg=(await database('business_agent_config?agent_id=eq.china&select=active,chat_id,bot_id,owner_user_id'))[0];
+if(!cfg?.active||cfg.chat_id!==-1004342917488||cfg.bot_id!==8780468043)throw Error('China configuration');
+if((await telegram('getMe',{})).id!==cfg.bot_id)throw Error('Bot identity');
+const job=(await database('business_agent_jobs?id=eq.83&agent_id=eq.china&select=*'))[0];
+const marker=job.tool_trace.find(t=>t.name==='china_saved_question');
+if(job.request_text!=='Сделай всё'||marker.message_id!==147||marker.reply_message_id!==142||marker.forwarded)throw Error('Original owner reply changed');
+let dispatched='';
+const deps={database,telegram,digest,same:(a,b)=>JSON.stringify(a)===JSON.stringify(b),launchPrice:async approval_key=>{
+ const r=await fetch('https://api.github.com/repos/Ekaterina11098/veschi-bot-runner/actions/workflows/china-price-apply.yml/dispatches',{method:'POST',headers:{Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{approval_key,mode:'apply'}}),signal:AbortSignal.timeout(20000)});
+ if(!r.ok)throw Error('Price dispatch HTTP '+r.status);dispatched=approval_key;
+}};
+const message={message_id:marker.message_id,chat:{id:job.chat_id,type:'supergroup'},from:{id:job.sender_id,is_bot:false,first_name:'Ekaterina'},reply_to_message:{message_id:142,from:{id:cfg.bot_id},text:marker.reply_text}};
+const response=await handlePriceApproval(cfg,message,job.request_text,job.update_id,deps);
+if(!response)throw Error('Price approval was not recognized');
+const ack=await response.json();if(!dispatched)throw Error('Approval blocked: '+ack.text);
+const noticeKey='china_agent:price_confirmation_recovery:83:v1';
+await database('telegram_api_cache?on_conflict=cache_key','POST',{cache_key:noticeKey,payload:{status:'dispatched',approval_key:dispatched,source_job_id:83,reply_message_id:142,input_message_id:147,wb_writes:0},expires_at:'2036-10-23T00:00:00Z'},'resolution=ignore-duplicates,return=representation');
+await telegram('editMessageText',{chat_id:cfg.chat_id,message_id:153,text:ack.text});
+await database('business_agent_jobs?id=eq.83','PATCH',{answer:ack.text,error:null,tool_trace:[...job.tool_trace,{name:'price_confirmation_recovered',approval_key:dispatched}],completed_at:new Date().toISOString()},'return=minimal');
+console.log(JSON.stringify({status:'dispatched_to_existing_price_worker',source_job:83,ack_edited:153,wb_writes:0}));

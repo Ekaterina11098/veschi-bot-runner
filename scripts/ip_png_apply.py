@@ -16,7 +16,7 @@ def digest(p):return hashlib.sha256(json.dumps(p,sort_keys=True,separators=(',',
 def current(io,ids):
  if ids!=[CID]:raise ValueError('Exact campaign read only')
  from analytics.collect import fetch
- j=fetch('GET','https://advert-api.wildberries.ru/api/advert/v2/adverts',io.token,params={'ids':str(CID)},max_retry_wait=1200)
+ j=fetch('GET','https://advert-api.wildberries.ru/api/advert/v2/adverts',io.token,params={'ids':str(CID)},max_retry_wait=3600)
  if len(j.get('adverts',[]))!=1 or j['adverts'][0]['id']!=CID:raise ValueError('Incomplete configuration')
  return {CID:j['adverts'][0]}
 def http(io,path,method,body):
@@ -97,9 +97,13 @@ def apply(io,key):
   ek+=':resume-20261023'
   previous=io.get(ek)
   if previous:
-   if not (permit.get('continuation_revision')==2 and previous.get('status')=='blocked' and previous.get('wb_writes')==0 and previous.get('reason')=='WB composition/settings changed since PNG; fresh plan required' and not any(k in previous for k in ['request','response'])):return previous
+   if not (permit.get('continuation_revision',0)>=2 and previous.get('status')=='blocked' and previous.get('wb_writes')==0 and previous.get('reason')=='WB composition/settings changed since PNG; fresh plan required' and not any(k in previous for k in ['request','response'])):return previous
    ek+='-v2'
-   if io.get(ek):return io.get(ek)
+   retry=io.get(ek)
+   if retry:
+    if not (permit.get('continuation_revision',0)>=3 and retry.get('status')=='blocked' and retry.get('wb_writes')==0 and str(retry.get('reason','')).startswith('Source HTTP 429; retry after ') and not any(k in retry for k in ['request','response'])):return retry
+    ek+=':after429'
+    if io.get(ek):return io.get(ek)
 
  if not io.create(ek,dict(status='preflight',wb_writes=0,approval=a)):return io.get(ek)
  e=io.get(ek)
@@ -110,6 +114,8 @@ def apply(io,key):
    e['changed_fields']=[k for k in stable(before) if stable(before)[k]!=stable(p['before'])[k]]
    io.put(ek,e)
    raise ValueError('WB composition/settings changed since PNG; fresh plan required')
+  if now()>datetime.fromisoformat(p['expires_at']):raise ValueError('Plan expired while waiting; no write')
+  io.member(a['sender_id'])
   body=dict(nms=[dict(advert_id=CID,nms=dict(add=[],delete=sorted(TARGETS)))])
   e.update(status='submitting',before=before,request=body);io.put(ek,e)
   response=http(io,'/adv/v0/auction/nms','PATCH',body)
@@ -119,6 +125,7 @@ def apply(io,key):
   e.update(status='verified' if verified else 'uncertain',after=after);io.put(ek,e)
  except Exception as ex:
   e.update(status='uncertain' if e['status'] in ['submitting','accepted'] else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__);io.put(ek,e)
+ if e['status']!='verified':return e # Technical failures stay in journal; Telegram gets verified completion only.
  nk=ek+':result'
  if io.create(nk,dict(status='sending')):
   try:

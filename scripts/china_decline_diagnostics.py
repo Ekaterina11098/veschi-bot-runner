@@ -9,7 +9,12 @@ def ad_rows(rows,ids):
   if row.get('level')!='SKU_app' or row.get('nm_id') not in ids:continue
   key=(row['nm_id'],str(row['date'])[:10]);r=out.setdefault(key,dict(spend=0,amount=0,orders=0,clicks=0,views=0))
   for k,field in [('spend','sum'),('amount','sum_price'),('orders','orders'),('clicks','clicks'),('views','views')]:r[k]+=row.get(field) or 0
- for r in out.values():r['drr_pct']=100*r['spend']/r['amount'] if r['amount'] else None
+ for r in out.values():
+  r['drr_pct']=100*r['spend']/r['amount'] if r['amount'] else None
+  r['ctr_pct']=100*r['clicks']/r['views'] if r['views'] else None
+  r['cpc_cny']=r['spend']/r['clicks'] if r['clicks'] else None
+  r['click_order_pct']=100*r['orders']/r['clicks'] if r['clicks'] else None
+  r['scope']='advertising_only'
  return out
 
 def selected(orders,maximum=10):
@@ -21,6 +26,7 @@ def selected(orders,maximum=10):
 def collect(analyst):
  from china_analytic_dialog import reading
  from china_experience import decision_context
+ from china_change_observation import general_traffic
  from china_price_apply import IO
  from china_loss_ads import http
  from china_ad_rule import minimums
@@ -50,12 +56,13 @@ def collect(analyst):
   nm=base['nm_id'];article=labels.get(str(nm),base['article']);funnel=[]
   for day in dates:
    p=daily[day].get(nm);views=p.get('open_card_count') if p else None;count=p.get('funnel_orders_count') if p else None;history_prices=p.get('sparkline_prices') if p else None
-   funnel.append(dict(date=day,clicks=views,funnel_orders=count,click_order_pct=100*count/views if views and count is not None else None,customer_daily_price=history_prices[0] if isinstance(history_prices,list) and len(history_prices)==1 else None,customer_price_snapshot=p.get('price_after_spp') if p else None,spp_snapshot=p.get('price_spp') if p else None,advertising=ads.get((nm,day))))
+   traffic=general_traffic(w,nm,day,day,ads.get((nm,day),{}))
+   funnel.append(dict(date=day,total_traffic=traffic,clicks_scope='all_sources',clicks=views,funnel_orders=count,click_order_pct=100*count/views if views and count is not None else None,customer_daily_price=history_prices[0] if isinstance(history_prices,list) and len(history_prices)==1 else None,customer_price_snapshot=p.get('price_after_spp') if p else None,spp_snapshot=p.get('price_spp') if p else None,advertising=ads.get((nm,day))))
   participation=[]
   for c in campaigns:
    n=next((n for n in c.get('nm_settings',[]) if n['nm_id']==nm),None)
    if n:participation.append(dict(campaign_id=c['id'],status=c['status'],bid_type=c.get('bid_type'),currency=c.get('currency'),payment_type=c.get('settings',{}).get('payment_type'),placements=c.get('settings',{}).get('placements'),current_bid_minor=n.get('bids_kopecks',{}).get('recommendations'),minimum_minor=mins.get((c['id'],nm)),step_minor=config.get('cpcStep'),members=len(c.get('nm_settings',[]))))
   events=[dict(event_id=e['event_id'],source_key=e['source_key'],started_at=e.get('started_at'),action=e.get('action'),comparison=e.get('comparison'),business_outcome=e.get('business_outcome'),advertising_outcome=e.get('advertising_outcome')) for e in history['experiences'] if nm in e.get('action',{}).get('nm_ids',[])]
   result.append(dict(base,article=article,funnel_daily=funnel,stock=stock.get(article.casefold()),seller_price=prices.get(nm),active_campaigns=participation,verified_history=events))
- return dict(status='complete' if not gaps else 'partial',orders={k:v for k,v in orders.items() if k in ['daily','cutoff_msk','yesterday_same_clock','total_orders']},rows=result,gaps=gaps,sources=sources,wb_writes=0,notes=['Заказы WB и заказы воронки/рекламная атрибуция — отдельно','Сегодня сравнивать с вчера до того же часа только там, где получен совпадающий час. Воронка/реклама сегодня — неполный день, не сравнивать с полными сутками','История цены покупателя — только проверенная дневная sparkline. Цена/СПП snapshot не доказывают ретроспективную СПП','Текущие остатки не доказывают наличие вчера. Изменения/совпадения не доказывают причинность','Уже отключённое не отключать повторно. При ДРР>5% — конкретная проверенная рекомендация; без проверенных min/step не выдумывать новую ставку'])
+ return dict(status='complete' if not gaps else 'partial',orders={k:v for k,v in orders.items() if k in ['daily','cutoff_msk','yesterday_same_clock','total_orders']},rows=result,gaps=gaps,sources=sources,wb_writes=0,notes=['Заказы WB и заказы воронки/рекламная атрибуция — отдельно','Для общих заказов нужны общие показы и клики всех источников; рекламные показы/CTR/CPC анализировать отдельно. Общую органику не вычитать/не складывать без доказанных единиц и непересечения. Недоступные общие показы не означают отсутствие охвата','Сегодня сравнивать с вчера до того же часа только там, где получен совпадающий час. Воронка/реклама сегодня — неполный день, не сравнивать с полными сутками','История цены покупателя — только проверенная дневная sparkline. Цена/СПП snapshot не доказывают ретроспективную СПП','Текущие остатки не доказывают наличие вчера. Изменения/совпадения не доказывают причинность','Уже отключённое не отключать повторно. При ДРР>5% — конкретная проверенная рекомендация; без проверенных min/step не выдумывать новую ставку'])
 

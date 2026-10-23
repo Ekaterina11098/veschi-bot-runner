@@ -327,6 +327,9 @@ class Worker:
         from china_ad_cost_png import answer as ad_cost_png_answer
         png_answer=ad_cost_png_answer(self,job,history)
         if png_answer is not None:return png_answer
+        from china_analytic_dialog import answer as analytic_answer
+        analytical=analytic_answer(self,job,history)
+        if analytical is not None:return analytical
         from china_order_decline import prepared_answer
         verified=prepared_answer(self,job)
         if verified is not None:return verified
@@ -464,7 +467,7 @@ class Worker:
             from china_chat_migration import previous_chats
             chats=[cfg['chat_id']]+previous_chats(self.db,cfg)
             history=self.db('GET','business_agent_jobs',params={'agent_id':'eq.china','chat_id':'in.('+','.join(map(str,chats))+')','sender_id':'eq.'+str(job['sender_id']),'status':'eq.done','id':'lt.'+str(job_id),'select':'id,agent_id,chat_id,sender_id,request_text,answer,tool_trace','order':'id.desc','limit':10}) or []
-            history=[x for x in reversed(history) if x.get('answer') and not x['request_text'].startswith('/china_')][-4:]
+            history=[x for x in reversed(history) if x.get('answer') and not x['request_text'].startswith('/china_')][-12:]
             parent=marker.get('parent_job_id')
             if parent:
                 history=self.db('GET','business_agent_jobs',params={'id':'eq.'+str(parent),'agent_id':'eq.china','chat_id':'eq.'+str(job['chat_id']),'sender_id':'eq.'+str(job['sender_id']),'status':'eq.done','select':'id,request_text,answer,tool_trace','limit':1}) or []
@@ -608,7 +611,7 @@ class Worker:
 
 def question_request(body):
     import requests
-    r=requests.post('https://api.openai.com/v1/responses',headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY']},json=body,timeout=90)
+    r=requests.post('https://api.openai.com/v1/responses',headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY']},json=body,timeout=150)
     if not r.ok:raise RuntimeError('Model HTTP '+str(r.status_code))
     return r.json()
 
@@ -624,7 +627,7 @@ def saved_network_guard():
         def bounded(session,method,url,*args,**kwargs):
             u=urlparse(url);method=method.upper()
             database=(u.scheme=='https' and u.hostname==base.hostname and u.path.startswith('/rest/v1/')
-                      and (method=='GET' or (method=='PATCH' and u.path=='/rest/v1/business_agent_jobs')
+                      and (method=='GET' or (method=='PATCH' and u.path in ['/rest/v1/business_agent_jobs','/rest/v1/telegram_api_cache'])
                            or (method=='POST' and u.path=='/rest/v1/telegram_api_cache')))
             model=(u.scheme=='https' and u.hostname=='api.openai.com' and u.path=='/v1/responses' and method=='POST')
             telegram=(u.scheme=='https' and u.hostname=='api.telegram.org'
@@ -635,7 +638,9 @@ def saved_network_guard():
             advertising=ad_cost_read(method,url,kwargs.get('json'))
             from china_ad_rule import allowed_read as ad_rule_read
             rule_read=ad_rule_read(method,url,kwargs.get('json'))
-            if not (database or model or telegram or search or advertising or rule_read):raise PermissionError('Saved question network scope')
+            from china_analytic_dialog import allowed_read as analytic_read
+            analytical=analytic_read(method,url,kwargs.get('json'))
+            if not (database or model or telegram or search or advertising or rule_read or analytical):raise PermissionError('Saved question network scope')
             return original(session,method,url,*args,**kwargs)
         requests.sessions.Session.request=bounded
         try:yield
@@ -659,6 +664,9 @@ def runtime():
         # No retries after a timeout: at-most-once delivery takes precedence.
         from china_ad_cost_png import photo
         frozen_photo=photo(worker,chat,text)
+        if frozen_photo is None:
+            from china_agent_reports import photo as report_photo
+            frozen_photo=report_photo(worker,chat,text)
         if frozen_photo is not None:
             me=session.post('https://api.telegram.org/bot'+bot+'/getMe',timeout=20).json()
             if not me.get('ok') or me['result'].get('id')!=8780468043 or chat!=-1004342917488:raise PermissionError('China photo bot/chat mismatch')
@@ -754,6 +762,7 @@ def main():
 
 
 if __name__=='__main__':main()
+
 
 
 

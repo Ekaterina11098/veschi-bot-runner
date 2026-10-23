@@ -1,0 +1,28 @@
+name: China evidence memory and report recipe tests
+on:
+  push:
+    branches: [main, china-evidence-memory]
+    paths: ['scripts/china_experience.py', 'scripts/china_growth_candidates.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/test_china_experience.py', 'scripts/test_china_growth_candidates.py', 'scripts/test_china_analytic_dialog.py', 'scripts/test_china_agent_reports.py', '.github/workflows/china-evidence-tests.yml']
+  pull_request:
+    paths: ['scripts/china_experience.py', 'scripts/china_growth_candidates.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/test_china_experience.py', 'scripts/test_china_growth_candidates.py', 'scripts/test_china_analytic_dialog.py', 'scripts/test_china_agent_reports.py', '.github/workflows/china-evidence-tests.yml']
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test read tools, experience and report identities without credentials
+        env:
+          PYTHONPATH: scripts
+        run: |
+          python -m unittest discover -s scripts -p test_china_experience.py
+          python -m unittest discover -s scripts -p test_china_analytic_dialog.py
+          python -m unittest discover -s scripts -p test_china_growth_candidates.py
+          python -m unittest discover -s scripts -p test_china_agent_reports.py
+

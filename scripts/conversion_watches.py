@@ -309,6 +309,9 @@ class Worker:
 
     def saved_question(self,job,history):
         history=[x for x in history if not any(t.get('name')=='china_loss_answer_invalid' for t in x.get('tool_trace',[]))]
+        from china_new_ads import handle as new_ad_handle
+        new_ad_answer=new_ad_handle(self,job,history)
+        if new_ad_answer is not None:return new_ad_answer
         from china_ad_rule import handle as ad_rule_handle
         ad_rule_answer=ad_rule_handle(self,job,history)
         if ad_rule_answer is not None:return ad_rule_answer
@@ -488,6 +491,9 @@ class Worker:
             raise
 
     def dialog(self,job,history):
+        from china_new_ads import handle as new_ad_handle
+        new_ad_answer=new_ad_handle(self,job,history)
+        if new_ad_answer is not None:return new_ad_answer
         from china_loss_control import handle as loss_handle
         loss_answer=loss_handle(self,job)
         if loss_answer is not None:return loss_answer
@@ -748,6 +754,8 @@ def main():
 
 
 if __name__=='__main__':main()
+
+
 
 
 

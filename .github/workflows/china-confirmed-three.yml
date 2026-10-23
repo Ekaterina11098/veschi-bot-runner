@@ -33,6 +33,8 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           PYTHONPATH: scripts
-        run: python scripts/inspect_three_limit.py
+        run: python scripts/launch_confirmed_three.py
 
 # Resume the existing journalled draft after JSON state normalization.
+
+# Daily-limit configuration explicitly waived by the owner.

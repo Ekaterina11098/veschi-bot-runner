@@ -16,6 +16,8 @@ jobs:
   exact:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      PYTHONPATH: private-source
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -28,6 +30,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: python -c "import analytics.collect; import analytics.mpstats_probe; import analytics.source_policy"
       - run: python -m unittest discover -s scripts -p test_ip_png_apply.py -v
       - name: Publish only, never apply on push
         if: github.event_name == 'push'

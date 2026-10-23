@@ -6,6 +6,7 @@ MSK=ZoneInfo('Europe/Moscow')
 ROOT='china_agent:change_observation:v2:'
 MANIFEST='china_agent:change_observation_manifest:v2'
 KINDS={'price_change','bid_change','sku_exclusion','new_campaign'}
+SCHEMA_REVISION=3
 
 def stamp():return datetime.now(timezone.utc).isoformat()
 def num(v):
@@ -190,7 +191,7 @@ def ad_funnel(rows,nm,first,last):
 
 def general_traffic(w,nm,first,last,ad):
  """Accept only verified all-channel or disjoint organic/ad observations; never add overlapping totals."""
- source=w.get('china_agent:total_traffic:v1:'+str(nm)+':'+first+':'+last)
+ source=w.get('china_agent:total_traffic:v1:'+str(nm)+':'+first+':'+last) if hasattr(w,'get') else None
  result=dict(total_impressions=None,organic_impressions=None,total_ctr_pct=None,scope='all_sources',status='unavailable',
   missing='Общие показы есть в расширенной воронке WB UI, но отсутствуют в проверенной API/MCP выгрузке. Нужна выгрузка точного SKU/периода.',algorithm_change='not_established')
  if not source:return result
@@ -211,7 +212,13 @@ def verdict(before,after,win,confounders,current_matches):
  expected_b,expected_a=before['expected'],after['expected'];actual_b,actual_a=before['actual'],after['actual']
  actual=actual_b.get('value') is not None and actual_a.get('value') is not None
  b,a=(actual_b,actual_a) if actual else (expected_b,expected_a)
- delta=a['value']-b['value'];orders_delta=after['orders']-before['orders']
+ orders_delta=after['orders']-before['orders']
+ if a.get('value') is None or b.get('value') is None:
+  return dict(status='incomplete',delta_total_profit_rub=None,profit_basis='unconfirmed',delta_orders=orders_delta,
+   conversion_declined=None,rollback_recommended=False,recommendation='Сверить недостающие заказы/расходы; оценка прибыли не завершена',execution_authorized=False,
+   causality='not_established',sample_size=min(expected_b['buyout_sample'],expected_a['buyout_sample']),confounders=confounders,current_parameter_matches=current_matches,
+   missing_costs=sorted(set(expected_b.get('missing_costs',[])+expected_a.get('missing_costs',[]))))
+ delta=a['value']-b['value']
  decline=before.get('click_order_pct') is not None and after.get('click_order_pct') is not None and after['click_order_pct']<before['click_order_pct']
  sample=min(expected_b['buyout_sample'],expected_a['buyout_sample'])
  status='positive' if delta>0 else 'negative' if delta<0 else 'unchanged'
@@ -260,10 +267,13 @@ def observe_event(w,e,events,source,reader):
    wb,key=reader.wb_orders(first,last,list(catalogue));sources.append(key)
    wb_count=sum(o['nmId']==nm for o in wb['orders'])
    # WB is the independent order universe; cancellation exclusions are disclosed.
-   if wb_count!=cohort['orders']:raise ValueError('WB and MPStats cohort counts differ; do not substitute order universes')
-   if counts not in [cohort['orders'],cohort['orders']-cohort['cancelled']] or not isinstance(spark,list) or sum(spark)!=counts:raise ValueError('Product counters do not reconcile')
+   cohort_reconciled=wb_count==cohort['orders']
+   counters_reconciled=counts in [cohort['orders'],cohort['orders']-cohort['cancelled']] and isinstance(spark,list) and sum(spark)==counts
    ad=num(r.get('advertisement'));amount=num(r.get('orders_sum'))
    exp=expected(raw,cohort,dict(own,_period_advertising_rub=ad),stock,source['policy'])
+   if not cohort_reconciled or not counters_reconciled:
+    exp.update(accounted_subset_value=exp['value'],value=None,cohort_coverage=dict(wb_orders=wb_count,mpstats_order_rows=cohort['orders'],product_statistic_orders=counts))
+    exp['missing_costs'].append('Когорты/счётчики не сверены: WB '+str(wb_count)+', MPStats строки '+str(cohort['orders'])+', статистика '+str(counts)+'. Частичная сумма не общая прибыль.')
    bundle=w.get('china_agent:closed_profit_ledger:v1:'+str(nm)+':'+first+':'+last)
    actual=closed_profit(bundle,first,last)
    views=r.get('open_card_count');fo=r.get('funnel_orders_count')
@@ -273,9 +283,9 @@ def observe_event(w,e,events,source,reader):
    except BudgetExceeded:raise
    except Exception as ex:advertising=dict(scope='advertising_only',status='source_unavailable',views=None,clicks=None,missing=type(ex).__name__)
    traffic=general_traffic(w,nm,first,last,advertising)
-   pair.append(dict(period_from=first,period_to=last,days=win['days'],orders=cohort['orders'],outcomes=cohort,
+   pair.append(dict(period_from=first,period_to=last,days=win['days'],orders=wb_count,outcomes=cohort,cohort_reconciled=cohort_reconciled,counters_reconciled=counters_reconciled,
     views=views,funnel_orders=fo,click_order_pct=100*fo/views if views and fo is not None else None,
-    actual_drr_pct=100*ad/amount if amount else None,ad_spend_rub=ad,order_amount_rub=amount,expected=exp,actual=actual,
+    actual_drr_pct=100*ad/amount if amount and cohort_reconciled and counters_reconciled else None,mpstats_drr_pct=100*ad/amount if amount else None,ad_spend_rub=ad,order_amount_rub=amount,expected=exp,actual=actual,
     wb_orders=wb_count,product_statistic_orders=counts,orders_include_cancellations=True,advertising_funnel=advertising,general_traffic=traffic,
     customer_price=r.get('price_after_spp'),spp=r.get('price_spp'),price_note='Current source snapshot, not historical SPP'))
   confounders=[]
@@ -286,10 +296,21 @@ def observe_event(w,e,events,source,reader):
   result=verdict(*pair,win,confounders,parameter_matches(e['action'],nm,source))
   rollback=dict(kind=e['action']['kind'],nm_id=nm,article=article,campaign_id=e['action'].get('campaign_id'),current=e['action'].get('after'),proposed=e['action'].get('before'),requires_fresh_minimum=True if e['action']['kind']=='bid_change' else None,execution_authorized=False)
   if e['action']['kind']=='new_campaign':rollback['proposed']='Предложить исключение только этого SKU из созданной РК; общую РК не останавливать'
+  if result['rollback_recommended'] and e['action']['kind'] in ['bid_change','sku_exclusion']:
+   try:
+    from china_ad_rule import minimums
+    from china_price_apply import IO
+    from china_loss_ads import http
+    io_=IO();minimum=minimums(io_,e['action']['campaign_id'],{nm})[nm];step=http(io_,'/api/advert/v1/config')['cpcStep'];target=e['action']['before']
+    if type(target) is not int or type(step) is not int or step<=0 or target<minimum or target%step:raise ValueError('Previous bid is no longer admissible')
+    rollback.update(minimum_minor=minimum,step_minor=step,preflight_checked_at=stamp())
+   except Exception:
+    result.update(rollback_recommended=False,recommendation='Ухудшение требует разбора; прежняя ставка/минимум не подтверждены')
   results.append(dict(nm_id=nm,article=article,before=pair[0],after=pair[1],result=result,rollback=rollback,
    context=dict(stock_available=stock['stock']-stock['reserve'],seller_price=next((p['sizes'][0]['discountedPrice'] for p in source['prices'] if p['nmID']==nm),None))))
- total_before=sum(r['before']['expected']['value'] for r in results);total_after=sum(r['after']['expected']['value'] for r in results)
- totals=dict(expected_before_rub=round(total_before,2),expected_after_rub=round(total_after,2),delta_expected_rub=round(total_after-total_before,2),
+ total_before=sum(r['before']['expected']['value'] for r in results) if all(r['before']['expected'].get('value') is not None for r in results) else None
+ total_after=sum(r['after']['expected']['value'] for r in results) if all(r['after']['expected'].get('value') is not None for r in results) else None
+ totals=dict(expected_before_rub=round(total_before,2) if total_before is not None else None,expected_after_rub=round(total_after,2) if total_after is not None else None,delta_expected_rub=round(total_after-total_before,2) if total_before is not None and total_after is not None else None,
   actual_before_rub=sum(r['before']['actual']['value'] for r in results) if all(r['before']['actual'].get('value') is not None for r in results) else None,
   actual_after_rub=sum(r['after']['actual']['value'] for r in results) if all(r['after']['actual'].get('value') is not None for r in results) else None,
   expected_is_preliminary=True,profit_per_order_used_for_selection=False)
@@ -302,27 +323,31 @@ def refresh(w,source,budget=40):
  today=str(w.now.astimezone(MSK).date());reader=Reader(w,budget);counts={};records=[]
  for e in sorted(events,key=lambda x:x['started_at']):
   key=ROOT+e['event_id'];old=w.get(key);win=window(e,w.now.astimezone(MSK).date())
-  if old and old.get('checked_day')==today and old.get('status') in ['observed','waiting_full_days']:
+  if old and old.get('checked_day')==today and old.get('schema_revision')==SCHEMA_REVISION and old.get('status') in ['observed','waiting_full_days']:
    records.append(old);continue
   try:record=observe_event(w,e,events,source,reader)
   except BudgetExceeded:
    record=dict(status='pending_read_budget',event_id=e['event_id'],window=win,rows=[],retry_on_existing_backup=True)
   except Exception as ex:
    record=dict(status='incomplete',event_id=e['event_id'],window=win,rows=[],error=type(ex).__name__,missing=str(ex)[:240] if isinstance(ex,(ValueError,RuntimeError)) else 'Источник недоступен')
-  record.update(checked_day=today,action=e['action'],started_at=e['started_at'],source_key=e['source_key']);save(w,key,record);records.append(record)
+  record.update(schema_revision=SCHEMA_REVISION,checked_day=today,action=e['action'],started_at=e['started_at'],source_key=e['source_key']);save(w,key,record);records.append(record)
   if record['status']=='observed':
    save(w,ROOT+'history:'+e['event_id']+':'+today,record)
    prior=w.get(EXPERIENCE+e['event_id']);observations=prior.setdefault('observations',[])
    observations.append(dict(observation_schema='change_outcomes_v2',observed_at=stamp(),window=win,rows=record['rows'],source_keys=record['source_keys']))
    prior['observations']=observations # Preserve positive and negative observations, including revisions.
-   directions={r['result']['status'] for r in record['rows']};delta=record['totals']['delta_expected_rub'];prior['expected_outcome']='negative' if win['final'] and delta<0 else 'positive' if win['final'] and delta>0 and 'mixed' not in directions else 'mixed' if win['final'] else 'pending'
+   directions={r['result']['status'] for r in record['rows']};delta=record['totals']['delta_expected_rub'];prior['expected_outcome']='inconclusive' if delta is None else 'negative' if win['final'] and delta<0 else 'positive' if win['final'] and delta>0 and 'mixed' not in directions else 'mixed' if win['final'] else 'pending'
    prior['business_outcome']=prior['expected_outcome'] if all(r['result']['profit_basis']=='actual' for r in record['rows']) else 'inconclusive' if win['final'] else 'pending'
    prior.update(latest_change_observation=record,last_observed_at=stamp(),outcome_basis='expected_preliminary_or_explicit_closed_actual',causality='not_established')
    save(w,EXPERIENCE+e['event_id'],prior)
  for r in records:counts[r['status']]=counts.get(r['status'],0)+1
- manifest=dict(checked_day=today,observed_at=stamp(),event_count=len(events),counts=counts,event_ids=[e['event_id'] for e in events],
+ compared=[row for record in records for row in record.get('rows',[])]
+ manifest=dict(schema_revision=SCHEMA_REVISION,checked_day=today,observed_at=stamp(),event_count=len(events),counts=counts,event_ids=[e['event_id'] for e in events],
   status='complete_coverage' if all(r['status'] in ['observed','waiting_full_days'] for r in records) else 'partial',source_requests=reader.requests,wb_writes=0,
-  note='Every verified change retained, including incomplete and waiting. No automatic rollback. Existing backup continues cached reads.')
+  comparisons=len(compared),unreconciled_profit=sum(row['result']['status']=='incomplete' for row in compared),
+  closed_actual_profit_available=sum(row['before']['actual'].get('value') is not None and row['after']['actual'].get('value') is not None for row in compared),
+  total_impressions_unavailable=sum(row['before']['general_traffic'].get('total_impressions') is None or row['after']['general_traffic'].get('total_impressions') is None for row in compared),
+  note='Every verified change retained, including incomplete and waiting. Registry coverage is not proof of complete expenses. No automatic rollback. Existing backup continues cached reads.')
  save(w,MANIFEST,manifest);return manifest
 
 def compact(w,include_all=False):
@@ -337,7 +362,8 @@ def compact(w,include_all=False):
    if not include_all and row['nm_id'] not in tracked and r['status'] not in ['negative','mixed']:continue
    seen.add(row['nm_id']);b,a=row['before'],row['after'];basis=r['profit_basis'];field='actual' if basis=='actual' else 'expected'
    money=lambda p:str(round(p[field]['value'])) if p[field].get('value') is not None else 'нет данных'
-   lines.append(row['article']+' | '+money(b)+' → '+money(a)+' ₽ | Δ '+str(round(r['delta_total_profit_rub']))+' ₽ | '+r['recommendation']+(' · предварительная' if basis!='actual' else ' · закрытая когорта')+' · '+b['period_from']+'–'+b['period_to']+' → '+a['period_from']+'–'+a['period_to'])
+   delta=str(round(r['delta_total_profit_rub'])) if r.get('delta_total_profit_rub') is not None else 'нет данных'
+   lines.append(row['article']+' | '+money(b)+' → '+money(a)+' ₽ | Δ '+delta+' ₽ | '+r['recommendation']+(' · предварительная' if basis!='actual' else ' · закрытая когорта')+' · '+b['period_from']+'–'+b['period_to']+' → '+a['period_from']+'–'+a['period_to'])
  return lines
 
 @contextlib.contextmanager
@@ -364,7 +390,7 @@ def daily(budget=60,verify=False):
  w=runtime();day=str(w.now.astimezone(MSK).date());pair=w.get('china_agent:advertising_delivery:'+day+':v1') or {}
  if not verify and (pair.get('status')!='delivered' or {p.get('kind') for p in pair.get('parts',[]) if p.get('status')=='sent' and p.get('message_id')}!={'drr','budgets'}):return dict(status='waiting_advertising_pair',wb_writes=0)
  previous=w.get(MANIFEST) or {}
- if previous.get('checked_day')==day and previous.get('status')=='complete_coverage':return dict(status='already_checked',wb_writes=0)
+ if previous.get('checked_day')==day and previous.get('schema_revision')==SCHEMA_REVISION and previous.get('status')=='complete_coverage':return dict(status='already_checked',wb_writes=0)
  with network_guard():
   registry=refresh(w,None,0)
   if registry['status']=='complete_coverage':return registry

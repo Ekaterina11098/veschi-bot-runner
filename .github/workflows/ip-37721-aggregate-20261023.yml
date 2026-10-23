@@ -1,0 +1,42 @@
+name: IP 37757330 missing day aggregate only
+on:
+  push:
+    branches: [ip-approved-missing-days-20261023]
+    paths: ['.github/workflows/ip-37721-aggregate-20261023.yml']
+permissions: {contents: write}
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  gaps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 2f798a9509b72030d6fb5ec68fb915c5d216c31b
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Existing reader, exact missing scope only
+        run: python scripts/approved37721_day_20261023.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+      - name: Preserve encrypted read receipts
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          cp "$RUNNER_TEMP/stock-deploy-proof/approved37721-day.aes.json" "recovery-output/advertising/approved37721-day-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/approved37721-day-*.aes.json
+          git diff --cached --quiet || git commit -m "Preserve exact IP missing-scope readback proof"
+          git push origin HEAD:ip-approved-missing-days-20261023

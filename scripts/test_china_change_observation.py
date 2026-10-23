@@ -93,13 +93,14 @@ class ObservationTests(unittest.TestCase):
   w=W();source=dict(products=[dict(nm_id=1,sa_name='DEMO',p_id=55,finished_orders=10,is_payed=8)],stock=[dict(article='DEMO',price=1000,stock=100,reserve=0)],prices=[dict(nmID=1,sizes=[dict(discountedPrice=11)])],campaigns={},policy=dict(fx_rub_cny=12,handling_rub=1,tax_pct=0,commission_pct=20,logistics_by_nm={'1':dict(delivery_cny=1)}))
   class Fake:
    negative=False
+   extra_wb=0
    def __init__(self,*args):self.requests=0
    def table(self,tool,args,nm=None):
     first=args['date_from'];after=first=='2026-01-11'
     if tool=='lk_wb_products':return [dict(nm_id=1,orders_count=1,sparkline_orders=[1,0,0,0],advertisement=0,orders_sum=120,open_card_count=10,funnel_orders_count=1)],['synthetic-products']
     value=dict(raw(),order_dt=first+'T12:00:00',billed_times=1,retail_price_withdisc_rub=90 if after and Fake.negative else 132 if after else 120)
     return [value],['synthetic-order']
-   def wb_orders(self,*args):return dict(orders=[dict(nmId=1)]),'synthetic-wb'
+   def wb_orders(self,*args):return dict(orders=[dict(nmId=1)]*(1+Fake.extra_wb)),'synthetic-wb'
    def campaign_ids(self):return []
    def advertising(self,*args):return dict(rows=[]),'synthetic-ads'
   with patch('china_experience.sync'),patch('china_experience.read_rows',return_value=[dict(payload=e)]),patch.object(c,'Reader',Fake):
@@ -108,6 +109,8 @@ class ObservationTests(unittest.TestCase):
    c.refresh(w,source);self.assertEqual(len(w.get('china_agent:experience:v1:demo')['observations']),1)
    Fake.negative=True;w.now=datetime(2026,1,16,12,tzinfo=timezone.utc);c.refresh(w,source)
    p=w.get('china_agent:experience:v1:demo');self.assertEqual(p['expected_outcome'],'negative');self.assertEqual(len(p['observations']),2);self.assertFalse(p['latest_change_observation']['rows'][0]['result']['execution_authorized'])
+   Fake.extra_wb=1;w.now=datetime(2026,1,17,12,tzinfo=timezone.utc);c.refresh(w,source)
+   p=w.get('china_agent:experience:v1:demo');r=p['latest_change_observation']['rows'][0];self.assertEqual(r['before']['orders'],2);self.assertIsNone(r['before']['expected']['value']);self.assertEqual(r['result']['status'],'incomplete');self.assertEqual(len(p['observations']),3)
  def test_zero_full_days_registers_without_reading_sources(self):
   class W:
    now=datetime(2026,1,11,12,tzinfo=timezone.utc)

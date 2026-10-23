@@ -1,0 +1,28 @@
+name: Audit updated report 132 MoySklad documents
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/audit-weekly132-updated.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: weekly-document-read-only
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read and reconcile exact MoySklad documents
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: python scripts/audit_weekly132_updated.py

@@ -608,7 +608,9 @@ def saved_network_guard():
                       and u.path in ('/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendMessage','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendPhoto','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/getMe') and method=='POST')
             from china_search_analytics import allowed_read
             search=allowed_read(method,url,kwargs.get('json'))
-            if not (database or model or telegram or search):raise PermissionError('Saved question network scope')
+            from china_ad_cost_collect import allowed_read as ad_cost_read
+            advertising=ad_cost_read(method,url,kwargs.get('json'))
+            if not (database or model or telegram or search or advertising):raise PermissionError('Saved question network scope')
             return original(session,method,url,*args,**kwargs)
         requests.sessions.Session.request=bounded
         try:yield

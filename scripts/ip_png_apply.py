@@ -87,7 +87,14 @@ def apply(io,key):
  if now()>datetime.fromisoformat(p['expires_at']):raise ValueError('Plan expired; no execution')
  io.member(a['sender_id']);ek=PLAN+':execution'
  e=io.get(ek)
- if e:return e # Never repeat an uncertain or completed write.
+ if e:
+  permit=io.get(PLAN+':resume_authorization:20261023')
+  if not (e.get('status')=='blocked' and e.get('reason')=='ModuleNotFoundError' and e.get('wb_writes')==0 and not any(k in e for k in ['before','request','response']) and permit and permit.get('approval_update_id')==a['update_id'] and permit.get('plan_sha256')==p['plan_sha256'] and permit.get('authorized') is True):
+   return e
+  # Preserve failed attempt. Separate single-use continuation journal, never reset old claims.
+  ek+=':resume-20261023'
+  if io.get(ek):return io.get(ek)
+
  if not io.create(ek,dict(status='preflight',wb_writes=0,approval=a)):return io.get(ek)
  e=io.get(ek)
  try:
@@ -102,7 +109,7 @@ def apply(io,key):
   e.update(status='verified' if verified else 'uncertain',after=after);io.put(ek,e)
  except Exception as ex:
   e.update(status='uncertain' if e['status'] in ['submitting','accepted'] else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__);io.put(ek,e)
- nk=PLAN+':result'
+ nk=ek+':result'
  if io.create(nk,dict(status='sending')):
   try:
    text='Исключены только 534-NoelBag-emerald, 593-KendraBag-coffee, 61-NoelBag-beige, 209-JessicaBag-grey и 600-JessicaBag-blue из РК39410834. Проверено WB. Возврат — только отдельным решением.' if e['status']=='verified' else 'Применение не подтверждено: '+e.get('reason',e['status'])+'. Повторная запись заблокирована.'

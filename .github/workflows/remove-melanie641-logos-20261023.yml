@@ -1,0 +1,79 @@
+name: Remove reviewed Melanie 641 logo photos
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: melanie-641-media
+  cancel-in-progress: false
+jobs:
+  remove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests pillow
+      - name: Guard exact reviewed gallery and backup
+        shell: python
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          import os,json,hashlib
+          from pathlib import Path
+          import requests
+          root=Path('backup');root.mkdir()
+          r=requests.post('https://content-api.wildberries.cn/content/v2/get/cards/list',headers={'Authorization':os.environ['WB_TOKEN_3']},json={'settings':{'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':'641-MelanieBag-grey'}}},timeout=60)
+          r.raise_for_status();b=r.json();cards=b.get('cards',b.get('data',{}).get('cards',[]));selected=[c for c in cards if c.get('nmID')==1473246047 and c.get('vendorCode')=='641-MelanieBag-grey'];assert len(selected)==1
+          c=selected[0];assert len(c.get('photos',[]))==13 and not c.get('video'),'Gallery changed'
+          Path('before.json').write_text(json.dumps(c),encoding='utf-8')
+          expected=["41bf0d02503514222ab7648f54ae61d5ee45cbb95327425f3b1385eb42487f39","06bbf7b1e60f61939bb6a0c40262489f8b3bb40164f00d108e5a4c39b67ced04","e02b251c3752f9f2127c30f4cc702e718bac3f2d67f6b252f682cdc7eea922ec","e8293bea05cd82f030793f0b839b409dfca501134b1fdb3297c9e4e466e4abe6","1af18f5fce37df21715edc2e5b65b1f540f7495cb4f1bd100f98fba3190bbc60","13e7ed5b26ddb0ef2d2a242bb401c226f0c4bcd33251394414ce38c97828e2e8","24f984f4ca54302e7aa3ab5fa58771f7a083e104b662c871e5f6b1587928106e","ebe51656be5cebda027245579812cbf9eee121e2b826fc04863df917809b8721","a891a9aa6a3a324aff16739b6b3f5d9bea2d623a3eb635982c601d96d8a64b74","3cac1fe53560a9bcca9fa1f81b791eebe8c17160c5159ed106944784f6e3691e","ab52b01c589ba318045862248f047a1f61908c0bbbdecb7f49269c27cc212c38","fc76d7061a59737335983c05cc8986ec408d2138ee7d528283a2526f4a1dcada","24dcaaf2bc9f78e4c0a50eba82052a8edccc1a971f427a91cc5d4e822e81cbb0"]
+          for i,p in enumerate(c['photos'],1):
+              u=p['big'];res=requests.get(u,timeout=60);res.raise_for_status();assert hashlib.sha256(res.content).hexdigest()==expected[i-1],f'Photo {i} changed since review'
+              (root/f'photo-{i:02d}.webp').write_bytes(res.content)
+          (root/'media.json').write_text(json.dumps({k:c.get(k) for k in ['nmID','vendorCode','photos','video']}),encoding='utf-8')
+          print('Reviewed gallery verified; removing original slots 1 and 4 only')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: melanie641-original-backup
+          path: backup/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Remove slots 1 and 4 then verify all retained photos
+        shell: python
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          import os,json,time,io
+          from pathlib import Path
+          import requests
+          from PIL import Image,ImageChops,ImageStat
+          base='https://content-api.wildberries.cn';headers={'Authorization':os.environ['WB_TOKEN_3']}
+          def read():
+              r=requests.post(base+'/content/v2/get/cards/list',headers=headers,json={'settings':{'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':'641-MelanieBag-grey'}}},timeout=60);r.raise_for_status();b=r.json();cs=b.get('cards',b.get('data',{}).get('cards',[]));s=[c for c in cs if c.get('nmID')==1473246047 and c.get('vendorCode')=='641-MelanieBag-grey'];assert len(s)==1;return s[0]
+          before=json.loads(Path('before.json').read_text());current=read();assert current['photos']==before['photos'] and not current.get('video'),'Concurrent media change'
+          slots=[i for i in range(1,14) if i not in [1,4]];links=[before['photos'][i-1]['big'] for i in slots]
+          r=requests.post(base+'/content/v3/media/save',headers=headers,json={'nmId':1473246047,'data':links},timeout=90);r.raise_for_status();response=r.json();assert not response.get('error'),str(response)
+          print('WRITE_ACCEPTED',json.dumps(response),flush=True)
+          for attempt in range(12):
+              time.sleep(15);after=read()
+              if len(after.get('photos',[]))!=11:continue
+              ok=True
+              for pos,old in enumerate(slots):
+                  u=after['photos'][pos]['big']+'?verify='+str(int(time.time()));res=requests.get(u,timeout=60);res.raise_for_status()
+                  got=Image.open(io.BytesIO(res.content)).convert('RGB').resize((90,120));expected=Image.open(f'backup/photo-{old:02d}.webp').convert('RGB').resize((90,120))
+                  if sum(ImageStat.Stat(ImageChops.difference(got,expected)).mean)/3>8:ok=False;break
+              if ok:break
+          else:raise RuntimeError('Readback pending; do not resubmit')
+          for k in ['vendorCode','imtID','title','description','brand','dimensions','sizes','characteristics','video']:
+              assert after.get(k)==before.get(k),'Unexpected field difference: '+k
+          summary={'article':'641-MelanieBag-grey','nmID':1473246047,'original_photo_count':13,'removed_original_slots':[1,4],'remaining_photos':11,'retained_order_verified':True,'other_fields_preserved':True}
+          Path('verified.json').write_text(json.dumps(summary),encoding='utf-8');print('VERIFIED',json.dumps(summary),flush=True)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write('## Confirmed\nRemoved original photos **1 and 4** from **641-MelanieBag-grey**. **11 photos remain**; image order and other fields verified. Original gallery backed up as artifact.\n')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: melanie641-removal-result
+          path: verified.json
+          retention-days: 30

@@ -61,6 +61,10 @@ jobs:
           from datetime import datetime,timezone,timedelta
           assert datetime.now(timezone(timedelta(hours=3))).date().isoformat()=='2026-10-23'
           PY
+          python - <<'PY'
+          import time
+          time.sleep(max(0,1792741261-time.time()))
+          PY
           python content_group_destination.py private-source/stock_regular_job.py
       - uses: actions/upload-artifact@v4
         if: always()
@@ -69,3 +73,5 @@ jobs:
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
 
+
+# Owner requested same-journal continuation after technical preparation backoff,10:41MSK.

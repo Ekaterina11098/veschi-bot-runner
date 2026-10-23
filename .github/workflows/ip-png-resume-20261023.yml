@@ -1,4 +1,4 @@
-name: Owner approved IP continuation with canonical readback
+name: IP approved continuation waits RetryAfter quietly
 on:
   push:
     branches: [main]
@@ -10,7 +10,7 @@ concurrency:
 jobs:
   exact:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 75
     env:
       PYTHONPATH: private-source
     steps:

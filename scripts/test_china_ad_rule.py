@@ -78,6 +78,21 @@ class Rules(unittest.TestCase):
   job=dict(id=99,sender_id=42,chat_id=CHAT,request_text='Сделай всё',tool_trace=[dict(name='china_saved_question',reply_message_id=123,bot_id=BOT,message_id=100)],update_id=99,created_at=w.now.isoformat())
   self.assertIn('Принято',rule.handle(w,job)[0])
   self.assertEqual(mem[rule.APPROVAL+'99']['sender_id'],42)
+ def test_trend_keep_recommendations_do_not_write(self):
+  io=IO();p=plan();p['items']=[dict(id='keep',kind='keep_ad_settings',article='one',campaign_id=10,nm_id=1,old_minor=50),dict(id='outside',kind='keep_outside_ads',article='four',campaign_id=0,nm_id=4)];p['plan_sha256']=digest(p['items'])
+  with patch('china_loss_ads.current',io.read):
+   e=rule.execute(io,dict(plan_sha256=p['plan_sha256']),p)
+  self.assertEqual([s['status'] for s in e['items']],['verified','verified']);self.assertEqual(io.writes,[])
+ def test_trend_png_binds_exact_plan(self):
+  import base64,hashlib
+  p=plan();p.update(chat_id=CHAT,bot_id=BOT,report_message_ids=[])
+  key='china_agent:ad_cost_png:question:9:v1'
+  manifest=dict(status='frozen',chat_id=CHAT,job_id=9,plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],files=[])
+  mem={PLAN+p['plan_id']:p,key:manifest}
+  w=SimpleNamespace(get=lambda k:mem.get(k),save=lambda k,p,**kw:mem.update({k:p}))
+  rule.bind(w,'CHINA_AD_COST_PNG:'+key+':0',321)
+  self.assertEqual(mem['china_agent:ad_rule_message:321']['plan_sha256'],p['plan_sha256'])
+  self.assertEqual(mem[PLAN+p['plan_id']]['report_message_ids'],[321])
  def test_read_guard_no_mutations(self):
   with rule.reads() as scope:
    scope[10]={1,2}

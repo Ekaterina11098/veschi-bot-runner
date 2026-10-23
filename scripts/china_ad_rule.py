@@ -31,11 +31,11 @@ def minimums(io,campaign,ids):
   out[int(row['nm_id'])]=v[0]['value']
  if set(out)!=set(ids):raise ValueError('Неполные минимумы ставок SKU')
  return out
-def items_for(rows,current,mins):
+def items_for(rows,current,mins,min_drr=6):
  result=[]
  for r in rows:
   drr=r.get('drr')
-  if drr is None or drr<6:continue
+  if drr is None or drr<min_drr or (min_drr==5 and drr<=5):continue
   nm=int(r['nm']);present=[(cid,c) for cid,c in current.items() if (r.get('campaign_id') is None or r['campaign_id']==cid) and any(n['nm_id']==nm for n in c.get('nm_settings',[]))]
   for cid,c in present:
    base=dict(id=str(cid)+':'+str(nm),nm_id=nm,campaign_id=cid,article=r['article'],drr=drr,orders=r.get('orders'))
@@ -71,6 +71,47 @@ def campaign_rows(sources,labels):
     r['spend']+=row['ac_spending_sum'];r['orders_sum']+=row['ac_orders_sum'];r['orders']+=row['ac_orders']
  for r in grouped.values():r['drr']=100*r['spend']/r['orders_sum'] if r['orders_sum'] else None
  return list(grouped.values())
+def plan_recommendations(items):
+ out={}
+ for i in items:
+  if i['kind']=='ad_set_bid':text=f"Ставка {i['old_minor']/100:g} → {i['target_minor']/100:g} ¥; РК {i['campaign_id']}"
+  elif i['kind']=='ad_exclude_sku':text='Исключить SKU из РК '+str(i['campaign_id'])
+  elif i['kind']=='keep_ad_settings':text=f"Оставить {i['old_minor']/100:g} ¥; РК {i['campaign_id']}"
+  elif i['kind']=='keep_outside_ads':text='Оставить вне РК'
+  else:text=i['question']
+  out.setdefault(str(i['nm_id']),[]).append(text)
+ return {nm:'\n'.join(texts) for nm,texts in out.items()}
+def prepare_trend_plan(w,job,report,sources):
+ from china_loss_ads import current
+ from china_price_apply import IO
+ selected={r['nm']:r for r in report['rows'] if r['rising_all_days']}
+ if not selected:return None,{}
+ pid='ad-trend-'+str(job['id']);prior=w.get(PLAN+pid)
+ if prior:return prior,plan_recommendations(prior['items'])
+ labels={r['nm']:r['article'] for r in selected.values()}
+ scoped=[r for r in campaign_rows(sources,labels) if r['nm'] in selected]
+ with reads() as scope:
+  io=IO();before=current(io);scope.update({cid:{n['nm_id'] for n in c.get('nm_settings',[])} for cid,c in before.items()});mins={}
+  for cid,c in before.items():
+   ids={int(r['nm']) for r in scoped if r['campaign_id']==cid and r['drr'] is not None and 5<r['drr']<=10}&scope[cid]
+   if ids and c.get('currency')=='CNY' and c.get('settings',{}).get('payment_type')=='cpc':
+    mins.update({(cid,nm):value for nm,value in minimums(io,cid,ids).items()})
+  items=items_for(scoped,before,mins,min_drr=5)
+  existing={(i['campaign_id'],i['nm_id']) for i in items}
+  for nm,r in selected.items():
+   present=False
+   for cid,c in before.items():
+    n=next((n for n in c.get('nm_settings',[]) if str(n['nm_id'])==nm),None)
+    if not n:continue
+    present=True
+    if (cid,int(nm)) in existing:continue
+    old=(n.get('bids_kopecks') or {}).get('recommendations')
+    items.append(dict(id=str(cid)+':'+nm,kind='keep_ad_settings',nm_id=int(nm),campaign_id=cid,article=r['article'],old_minor=old,drr=r['drr'],orders=r['orders']))
+   if not present:items.append(dict(id='outside:'+nm,kind='keep_outside_ads',nm_id=int(nm),campaign_id=0,article=r['article'],drr=r['drr'],orders=r['orders']))
+ p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='ad_drr_rule',created_at=w.now.isoformat(),expires_at=(w.now+timedelta(hours=6)).isoformat(),items=items,plan_sha256=digest(items),period_from=report['days'][0],period_to=report['days'][-1],days=report['days'],report_message_ids=[],price_changes=False)
+ w.save(PLAN+pid,p,insert=True);p=w.get(PLAN+pid)
+ if not p or digest(p['items'])!=p['plan_sha256']:raise ValueError('Frozen recommendation plan mismatch')
+ return p,plan_recommendations(p['items'])
 def render_plan(p,results=None):
  from PIL import Image,ImageDraw,ImageFont
   # Separate confirmation/result table: no false claim of a growth-only selection.
@@ -121,7 +162,9 @@ def handle(w,job,history=()):
  text=job.get('request_text','');m=marker(job)
  if is_all(text):
   binding=w.get('china_agent:ad_rule_message:'+str(m.get('reply_message_id')))
-  if not binding:return None
+  if not binding:
+   if w.get('china_agent:ad_cost_message:'+str(m.get('reply_message_id'))):return ('В этой таблице нет изменений для применения.',[])
+   return None
   from china_group_permissions import allowed
   if not allowed(w,job) or m.get('bot_id')!=BOT:return ('Применять план могут действующие участники этой группы.',[])
   p=w.get(PLAN+binding['plan_id'])
@@ -186,9 +229,15 @@ def execute(io,a,p):
   try:
    if item['kind']=='needs_data':state.update(status='blocked',reason=item['question']);io.put(key,e);continue
    if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']):raise ValueError('План устарел')
+   if item['kind']=='keep_outside_ads':
+    if any(item['nm_id'] in nmset(c) for c in current(io).values()):raise ValueError('SKU появился в РК — требуется новый план')
+    state.update(status='verified',already_done=True);io.put(key,e);continue
    before=current(io,[item['campaign_id']])[item['campaign_id']]
    if before.get('currency')!='CNY' or before.get('status')!=9 or before.get('bid_type')!='manual' or before.get('settings',{}).get('payment_type')!='cpc':raise ValueError('Настройки РК изменились')
    selected=next((n for n in before.get('nm_settings',[]) if n['nm_id']==item['nm_id']),None)
+   if item['kind']=='keep_ad_settings':
+    if not selected or selected.get('bids_kopecks',{}).get('recommendations')!=item['old_minor']:raise ValueError('Ставка уже изменилась — без новых изменений')
+    state.update(status='verified',already_done=True);io.put(key,e);continue
    if item['kind']=='ad_exclude_sku':
     if not selected:state.update(status='verified',already_done=True);io.put(key,e);continue
     if not before.get('restrictions',{}).get('can_change_nms') or len(nmset(before))<=1:raise ValueError('Исключение опустошит РК или запрещено WB')

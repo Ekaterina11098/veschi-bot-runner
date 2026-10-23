@@ -18,7 +18,7 @@ def series(fullstats):
      key=str(c['advertId'])+':'+str(n['nmId']);v=result.setdefault(key,{}).setdefault(d['date'][:10],dict(spend=0,amount=0,orders=0,clicks=0,views=0))
      for field,name in [('spend','sum'),('amount','sum_price'),('orders','orders'),('clicks','clicks'),('views','views')]:v[field]+=n.get(name) or 0
  return result
-def economics(row,price,stock,policy):
+def economics(row,price,stock,policy,drr=.05):
  nm=str(row['nm_id']);log=policy.get('logistics_by_nm',{}).get(nm);f=row.get('finished_orders');paid=row.get('is_payed')
  if not f or paid is None or stock.get('price') is None or not log:return None
  ratio=(row.get('price_after_spp') or 0)/(row.get('price_after_discount') or 1)
@@ -27,7 +27,7 @@ def economics(row,price,stock,policy):
  if not 0<=fee<1:return None
  fx=policy.get('fx_rub_cny');tax=policy.get('tax_rate',.05)
  if fx!=12:return None
- return paid/f*(price*fx*(1-fee-tax*ratio)-stock['price']/100)-log['delivery_cny']*fx-policy.get('handling_rub',10)-.05*price*fx
+ return paid/f*(price*fx*(1-fee-tax*ratio)-stock['price']/100)-log['delivery_cny']*fx-policy.get('handling_rub',10)-drr*price*fx
 def excluded_history(w,current):
  prior=set()
  # Membership snapshots, not per-product attributed rows: related orders are not membership.
@@ -43,7 +43,7 @@ def excluded_history(w,current):
 def review(io,nm,mp):
  import requests,time
  key='china_agent:growth_review:v1:'+str(nm);old=io.get(key)
- if old and datetime.now(timezone.utc)-datetime.fromisoformat(old['observed_at'])<timedelta(hours=24):return old
+ if old and 'negative' in old and datetime.now(timezone.utc)-datetime.fromisoformat(old['observed_at'])<timedelta(hours=24):return old
  seen={};complete=True
  for path,params in [('/api/v1/feedbacks',{'isAnswered':'false'}),('/api/v1/feedbacks',{'isAnswered':'true'}),('/api/v1/feedbacks/archive',{})]:
   r=requests.get('https://feedbacks-api.wildberries.ru'+path,headers={'Authorization':io.token},params=dict(nmId=nm,take=5000,skip=0,order='dateDesc',**params),timeout=40);time.sleep(.5)
@@ -52,8 +52,10 @@ def review(io,nm,mp):
   if j.get('error') or len(items)>=5000:complete=False
   for f in items:
    if f.get('productDetails',{}).get('nmId')!=nm:complete=False;continue
-   seen[f['id']]=f.get('productValuation')
- value=dict(observed_at=stamp(),rating=mp.get('commentsvaluation') if mp.get('commentsvaluation') is not None else mp.get('rating'),count=len(seen) if complete else None,complete=complete,count_scope='WB seller API exact SKU; not merged-card total')
+   seen[f['id']]={k:f.get(k) for k in ['productValuation','createdDate','text','cons','pros']}
+ negative=[dict(rating=f['productValuation'],date=f.get('createdDate'),text=f.get('text'),cons=f.get('cons')) for f in seen.values() if f.get('productValuation') is not None and f['productValuation']<=3]
+ negative.sort(key=lambda f:f.get('date') or '',reverse=True)
+ value=dict(observed_at=stamp(),rating=mp.get('commentsvaluation') if mp.get('commentsvaluation') is not None else mp.get('rating'),count=len(seen) if complete else None,complete=complete,count_scope='WB seller API exact SKU; not merged-card total',negative=negative[:20])
  io.put(key,value) if old else io.create(key,value)
  return value
 def score(s,current,daily,mins,config,protected,recent,targets,today,days=3):
@@ -110,8 +112,8 @@ def collect(w,kind='both',days=3):
  from china_loss_ads import current,http
  from china_ad_rule import minimums
  from china_experience import search,decision_context
- io=IO();today=w.now.astimezone(MSK).date();experience=decision_context(w);memory_ids=[e['event_id'] for e in experience['experiences']];cached=w.get('china_agent:growth_scan:'+str(today)+':'+str(days)+':v1')
- if cached and cached.get('experience_ids')==memory_ids and datetime.now(timezone.utc)-datetime.fromisoformat(cached['observed_at'])<timedelta(minutes=30):return dict(cached,rows=[r for r in cached['rows'] if kind=='both' or (r['kind']=='ad_add_sku')==(kind=='add')],cached=True)
+ io=IO();today=w.now.astimezone(MSK).date();experience=decision_context(w);memory_ids=[e['event_id'] for e in experience['experiences']];fingerprint=hashlib.sha256(json.dumps([{k:e.get(k) for k in ['event_id','last_observed_at','business_outcome','advertising_outcome','context']} for e in experience['experiences']],sort_keys=True,default=str).encode()).hexdigest();cached=w.get('china_agent:growth_scan:'+str(today)+':'+str(days)+':v1')
+ if cached and cached.get('experience_fingerprint')==fingerprint and datetime.now(timezone.utc)-datetime.fromisoformat(cached['observed_at'])<timedelta(minutes=30):return dict(cached,rows=[r for r in cached['rows'] if kind=='both' or (r['kind']=='ad_add_sku')==(kind=='add')],cached=True)
  s=source(io);cs=current(io);config=http(io,'/api/advert/v1/config')
  start=today-timedelta(days=days);stats=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,cs))+'&beginDate='+str(start)+'&endDate='+str(today));daily=series(stats)
  protected=set(s.get('protected',[]))|excluded_history(w,cs);recent=set(experience['recent_changed_nm_ids'])
@@ -139,5 +141,6 @@ def collect(w,kind='both',days=3):
   if not rv['complete']:blocked.append(dict(nm_id=row['nm_id'],article=row['article'],reason='Не подтверждено число отзывов'));continue
   row['reviews']=rv;row['experience']=search(w,[row['nm_id']],limit=4)['experiences'];row['before_campaign']=cs[row['campaign_id']];selected.append(row)
  result=dict(status='complete',observed_at=stamp(),period_from=str(start),period_to=str(today-timedelta(days=1)),catalogue_count=len(s['products']),campaign_count=len(cs),rows=selected,blocked=blocked[:50],experience=experience,experience_ids=memory_ids,memory_used=True,requires_confirmation=True,limitations=['Экономика предварительная; неизвестные общие удержания не0','Повышение ставки не гарантирует показов/заказов/ДРР5','Рекламная атрибуция отдельно от WBзаказов','Прежний результат может измениться: проверить текущие условия, не объявлять изменение алгоритмов WB фактом без доказательств'],wb_writes=0)
+ result['experience_fingerprint']=fingerprint
  w.save('china_agent:growth_scan:'+str(today)+':'+str(days)+':v1',result)
  return dict(result,rows=[r for r in selected if kind=='both' or (r['kind']=='ad_add_sku')==(kind=='add')])

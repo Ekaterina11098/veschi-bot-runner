@@ -1,0 +1,62 @@
+name: Verify actual China order-decline question
+on:
+  push:
+    branches: [china-model-rate-recovery]
+    paths: ['.github/workflows/china-decline-verify.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - name: Adapt isolated dialog
+        run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+      - name: Install pinned transport
+        run: pip install requests==2.32.5 Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Offline regressions without credentials
+        env:
+          PYTHONPATH: scripts:source
+        run: |
+          python -m unittest discover -s scripts -p test_china_model_transport.py
+          python -m unittest discover -s scripts -p test_china_checkpoint.py
+          python -m unittest discover -s scripts -p test_china_experience.py
+          python -m unittest discover -s scripts -p test_china_analytic_dialog.py
+          python -m unittest discover -s scripts -p test_china_growth_candidates.py
+          python -m unittest discover -s scripts -p test_china_agent_reports.py
+          python -m unittest discover -s scripts -p test_conversion_watches.py
+          python -m unittest discover -s scripts -p test_china_new_ads.py
+          python -m unittest discover -s scripts -p test_china_ad_rule.py
+      - name: Live read-only verification, private evidence only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PYTHONPATH: scripts:source
+        run: python scripts/verify_actual_decline.py

@@ -7,9 +7,9 @@ def shared(w):
 def allowed(w,job):
  cfg=w.config() if hasattr(w,'config') else dict(chat_id=CHAT,bot_id=BOT,owner_user_id=OWNER)
  actor=job.get('sender_id')
- if type(actor) is not int or actor<=0 or marker(job).get('bot_id') not in (None,BOT):return False
+ if type(actor) is not int or actor<=0:return False
  if not shared(w):return job.get('chat_id')==cfg.get('chat_id') and actor==cfg.get('owner_user_id',OWNER)
- if job.get('chat_id')!=CHAT or cfg.get('chat_id')!=CHAT or cfg.get('bot_id')!=BOT:return False
+ if job.get('chat_id')!=CHAT or cfg.get('chat_id')!=CHAT or cfg.get('bot_id')!=BOT or marker(job).get('bot_id') not in (None,BOT) or marker(job).get('forwarded') is True:return False
  check=getattr(w,'member_check',None)
  if not callable(check):return False
  try:m=check(actor)

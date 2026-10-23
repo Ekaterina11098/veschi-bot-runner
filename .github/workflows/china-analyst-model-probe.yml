@@ -1,0 +1,45 @@
+name: China analytical model capability probe - no Telegram or WB credentials
+on:
+  push:
+    branches: [china-free-analytic-dialog]
+    paths: ['.github/workflows/china-analyst-model-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Verify reasoning model and stateless function-call continuation
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,urllib.request,urllib.error,datetime
+          result={'observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'model':'gpt-6.1-sol','wb_writes':0,'telegram_calls':0}
+          def post(body):
+              req=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY'],'Content-Type':'application/json'})
+              with urllib.request.urlopen(req,timeout=150) as f:return json.load(f)
+          try:
+              messages=[{'role':'developer','content':'Call read_preferences, then answer briefly using only its returned value. Never claim marketplace actions.'},{'role':'user','content':'What preference did we agree?'}]
+              tool={'type':'function','name':'read_preferences','description':'Read agreed preferences; read-only.','strict':True,'parameters':{'type':'object','properties':{},'required':[],'additionalProperties':False}}
+              body={'model':result['model'],'input':messages,'tools':[tool],'tool_choice':'required','parallel_tool_calls':False,'reasoning':{'effort':'medium'},'max_output_tokens':5000,'store':False,'include':['reasoning.encrypted_content']}
+              first=post(body);calls=[x for x in first.get('output',[]) if x.get('type')=='function_call']
+              if len(calls)!=1 or calls[0]['name']!='read_preferences':raise ValueError('Expected function call absent')
+              messages+=first['output'];messages.append({'type':'function_call_output','call_id':calls[0]['call_id'],'output':json.dumps({'preference':'Keep answers short; changes require exact human confirmation.'})})
+              second=post(dict(body,input=messages,tool_choice='none'))
+              text=' '.join(p.get('text','') for x in second.get('output',[]) if x.get('type')=='message' for p in x.get('content',[]) if p.get('type')=='output_text')
+              if not text:raise ValueError('Empty continuation')
+              result.update(status='verified',answer=text,usage=[first.get('usage'),second.get('usage')])
+          except urllib.error.HTTPError as e:
+              result.update(status='blocked',http_status=e.code,error=e.read().decode()[:800].replace(os.environ['OPENAI_API_KEY'],'[REDACTED]'))
+          except Exception as e:result.update(status='blocked',error_type=type(e).__name__,error=str(e)[:200])
+          secret=os.environ['SUPABASE_SECRET_KEY']
+          req=urllib.request.Request(os.environ['SUPABASE_URL']+'/rest/v1/telegram_api_cache?on_conflict=cache_key',method='POST',headers={'apikey':secret,'Authorization':'Bearer '+secret,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},data=json.dumps({'cache_key':'china_agent:analyst_model_probe:v1','payload':result,'expires_at':'2026-11-23T00:00:00Z'}).encode())
+          with urllib.request.urlopen(req,timeout=45) as f:f.read()
+          print(json.dumps({'status':result['status'],'model':result['model'],'wb_writes':0,'telegram_calls':0}))
+          PY

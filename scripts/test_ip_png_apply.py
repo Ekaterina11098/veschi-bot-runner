@@ -22,6 +22,10 @@ def fixture():
  a=dict(chat_id=m.CHAT,bot_id=m.BOT,reply_message_id=100,plan_sha256=p['plan_sha256'],command='Сделай всё',update_id=8,sender_id=777,input_message_id=101)
  return p,a,b
 class Tests(unittest.TestCase):
+ def test_reordering_is_not_a_setting_change(self):
+  p,a,b=fixture();b['nm_settings'].reverse();after=copy.deepcopy(b);after['nm_settings']=[n for n in b['nm_settings'] if n['nm_id'] not in m.TARGETS]
+  with patch.object(m,'current',side_effect=[{m.CID:b},{m.CID:after}]),patch.object(m,'http',return_value={}) as h:
+   self.assertEqual(m.apply(Fake(p,a),m.PLAN+':approval')['status'],'verified');self.assertEqual(h.call_count,1)
  def test_resume_retains_failed_attempt(self):
   p,a,b=fixture();io=Fake(p,a);old={'status':'blocked','reason':'ModuleNotFoundError','wb_writes':0};io.s[m.PLAN+':execution']=old.copy();io.s[m.PLAN+':resume_authorization:20261023']={'authorized':True,'approval_update_id':a['update_id'],'plan_sha256':p['plan_sha256']};after=copy.deepcopy(b);after['nm_settings']=[n for n in b['nm_settings'] if n['nm_id'] not in m.TARGETS]
   with patch.object(m,'current',side_effect=[{m.CID:b},{m.CID:after}]),patch.object(m,'http',return_value={}) as h:

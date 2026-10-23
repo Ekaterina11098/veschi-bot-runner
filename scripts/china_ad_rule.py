@@ -111,7 +111,7 @@ def bind(w,text,message_id):
  key,index=text[len(PREFIX):].rsplit(':',1);saved=w.get(key) or {};pid=saved.get('plan_id')
  if not pid:return
  p=w.get(PLAN+pid)
- if not p or p.get('plan_sha256')!=digest(p['items']):raise ValueError('Plan binding mismatch')
+ if not p or p.get('plan_sha256')!=digest(p['items']) or saved.get('plan_sha256')!=p['plan_sha256']:raise ValueError('Plan binding mismatch')
  p['report_message_ids']=sorted(set(p.get('report_message_ids',[])+[message_id]));w.save(PLAN+pid,p)
  w.save('china_agent:ad_rule_message:'+str(message_id),dict(plan_id=pid,plan_sha256=p['plan_sha256'],chat_id=CHAT))
 def handle(w,job,history=()):
@@ -144,11 +144,13 @@ def handle(w,job,history=()):
   items=items_for(rows,before,mins)
  except (ValueError,RuntimeError,KeyError,TypeError) as e:return ('План не готов: '+str(e)+'. Артикулы заново присылать не нужно; изменения не выполнялись.',[dict(name='ad_drr_rule_blocked',wb_writes=0)])
  if not items:return ('За выбранный период нет новых действий по правилу ДРР6–10%/выше10%: уже выполненные пункты исключены.',[])
- pid='ad-rule-'+str(job['id']);p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='ad_drr_rule',created_at=w.now.isoformat(),expires_at=(w.now+timedelta(hours=6)).isoformat(),items=items,plan_sha256=digest(items),period_from=report['days'][0],period_to=report['days'][-1],report_message_ids=[],price_changes=False)
+ pid='ad-rule-'+str(job['id']);p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='ad_drr_rule',created_at=w.now.isoformat(),expires_at=(w.now+timedelta(hours=6)).isoformat(),items=items,plan_sha256=digest(items),period_from=report['days'][0],period_to=report['days'][-1],report_message_ids=[],price_changes=False,days=report['days'])
  key='china_agent:ad_cost_png:question:'+str(job['id'])+':v1';saved=w.get(key)
  if not saved:
-  w.save(PLAN+pid,p,insert=True);images=render_plan(p)
-  saved=dict(status='frozen',job_id=job['id'],chat_id=job['chat_id'],plan_id=pid,days=report['days'],files=[dict(data=base64.b64encode(b).decode(),sha256=hashlib.sha256(b).hexdigest()) for b in images]);w.save(key,saved,insert=True)
+  w.save(PLAN+pid,p,insert=True);p=w.get(PLAN+pid)
+  if not p or p['plan_sha256']!=digest(p['items']):raise ValueError('Frozen plan mismatch')
+  images=render_plan(p)
+  saved=dict(status='frozen',job_id=job['id'],chat_id=job['chat_id'],plan_id=pid,plan_sha256=p['plan_sha256'],days=p['days'],files=[dict(data=base64.b64encode(b).decode(),sha256=hashlib.sha256(b).hexdigest()) for b in images]);w.save(key,saved,insert=True)
  return '\n[[ПРЕДЛОЖЕНИЯ]]\n'.join(PREFIX+key+':'+str(i) for i in range(len(saved['files']))),[dict(name='ad_drr_rule_plan',plan_id=pid,wb_writes=0)]
 def verified_item(item,before,after):
  if before.get('status')!=after.get('status') or before.get('settings')!=after.get('settings') or before.get('currency')!=after.get('currency'):return False
@@ -169,7 +171,7 @@ def execute(io,a,p):
  for item in p['items']:
   state=next((s for s in e['items'] if s['id']==item['id']),None)
   if state:
-   if state['status'] in ('submitting','accepted'):
+   if state['status'] in ('submitting','accepted','uncertain'):
     try:
      after=current(io,[item['campaign_id']])[item['campaign_id']]
      state.update(status='verified' if verified_item(item,state['before'],after) else 'uncertain',after=after)
@@ -206,17 +208,24 @@ def process_and_deliver(io,a,p):
  e=execute(io,a,p)
  if any(s['status']=='accepted' for s in e['items']):return e
  key='china_agent:ad_rule_result:'+p['plan_id']+':v1'
- if io.get(key):return e
+ existing=io.get(key)
+ if existing and (existing.get('status')=='sent' or any(x.get('status') in ('sending','uncertain') for x in existing.get('parts',[]))):return e
+ info=io.tg('getMe',{})
+ if info.get('id')!=BOT:raise ValueError('Result bot mismatch')
  labels={}
  for s in e['items']:
   item=next(i for i in p['items'] if i['id']==s['id'])
   if s['status']=='verified':labels[s['id']]=('Уже выполнено; без повторных изменений' if s.get('already_done') else ('Ставка изменена; проверено WB' if item['kind']=='ad_set_bid' else 'SKU исключён; проверено WB'))
   else:labels[s['id']]='Не выполнено: '+s.get('reason','результат не подтверждён')
  images=render_plan(p,labels)
- if not io.create(key,dict(status='ready',parts=[dict(status='ready',sha256=hashlib.sha256(b).hexdigest()) for b in images])):return e
+ if not existing:
+  io.create(key,dict(status='ready',files=[base64.b64encode(b).decode() for b in images],parts=[dict(status='ready',sha256=hashlib.sha256(b).hexdigest()) for b in images]))
  state=io.get(key)
+ images=[base64.b64decode(b,validate=True) for b in state['files']]
  import requests
  for idx,b in enumerate(images):
+  if state['parts'][idx]['status']=='sent':continue
+  if hashlib.sha256(b).hexdigest()!=state['parts'][idx]['sha256']:raise ValueError('Result PNG changed')
   state['parts'][idx]['status']='sending';io.put(key,state)
   try:
    r=requests.post('https://api.telegram.org/bot'+io.bot+'/sendPhoto',data=dict(chat_id=CHAT,caption='Результат. Цены не менялись.',reply_parameters=json.dumps(dict(message_id=a['input_message_id']))),files={'photo':('china-ad-result.png',b,'image/png')},timeout=40).json()

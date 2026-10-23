@@ -36,7 +36,7 @@ def items_for(rows,current,mins):
  for r in rows:
   drr=r.get('drr')
   if drr is None or drr<6:continue
-  nm=int(r['nm']);present=[(cid,c) for cid,c in current.items() if any(n['nm_id']==nm for n in c.get('nm_settings',[]))]
+  nm=int(r['nm']);present=[(cid,c) for cid,c in current.items() if (r.get('campaign_id') is None or r['campaign_id']==cid) and any(n['nm_id']==nm for n in c.get('nm_settings',[]))]
   for cid,c in present:
    base=dict(id=str(cid)+':'+str(nm),nm_id=nm,campaign_id=cid,article=r['article'],drr=drr,orders=r.get('orders'))
    n=next(n for n in c['nm_settings'] if n['nm_id']==nm)
@@ -58,10 +58,22 @@ def items_for(rows,current,mins):
   if len(removes)>=len(c.get('nm_settings',[])):
    for i in removes:i.update(kind='needs_data',question='Все товары РК попали под исключение; нужен отдельный план')
  return result
+def campaign_rows(sources,labels):
+ grouped={}
+ for p in sources:
+  catalog=next(o for o in p['observations'] if o.get('tool')=='wbbidder_campaigns' and o['arguments'].get('report')=='state')
+  ids={c['id']:c['wb_id'] for c in catalog['data']['data']}
+  for o in p['observations']:
+   if o.get('tool')!='wbbidder_campaign_stats' or o['arguments'].get('report')!='products':continue
+   cid=ids[o['arguments']['campaign_id']]
+   for row in o['data']['data']:
+    nm=str(row['nm_id']);key=(cid,nm);r=grouped.setdefault(key,dict(nm=nm,campaign_id=cid,article=labels.get(nm,'WB '+nm),spend=0,orders_sum=0,orders=0))
+    r['spend']+=row['ac_spending_sum'];r['orders_sum']+=row['ac_orders_sum'];r['orders']+=row['ac_orders']
+ for r in grouped.values():r['drr']=100*r['spend']/r['orders_sum'] if r['orders_sum'] else None
+ return list(grouped.values())
 def render_plan(p,results=None):
  from PIL import Image,ImageDraw,ImageFont
- from china_ad_cost_png import render
- # Separate confirmation/result table: no false claim of a growth-only selection.
+  # Separate confirmation/result table: no false claim of a growth-only selection.
  def f(n,b=False):
   for path in ['/usr/share/fonts/truetype/dejavu/DejaVuSans'+('-Bold' if b else '')+'.ttf','C:/Windows/Fonts/'+('arialbd.ttf' if b else 'arial.ttf')]:
    try:return ImageFont.truetype(path,n)
@@ -122,11 +134,11 @@ def handle(w,job,history=()):
  try:
   count=requested_days(text,history);sources=load(w,count);today=w.now.astimezone(MSK).date()
   report=build(sources,today,dict(w.catalog()),count)
-  rows=[r for r in report['rows'] if r['drr'] is not None and r['drr']>=6]
+  rows=[r for r in campaign_rows(sources,dict(w.catalog())) if r['drr'] is not None and r['drr']>=6]
   with reads() as scope:
    io=IO();before=current(io);scope.update({cid:{n['nm_id'] for n in c.get('nm_settings',[])} for cid,c in before.items()});mins={}
    for cid,c in before.items():
-    ids={int(r['nm']) for r in rows if 6<=r['drr']<=10}&scope[cid]
+    ids={int(r['nm']) for r in rows if r['campaign_id']==cid and 6<=r['drr']<=10}&scope[cid]
     if ids and c.get('currency')=='CNY' and c.get('settings',{}).get('payment_type')=='cpc':
      mins.update({(cid,nm):value for nm,value in minimums(io,cid,ids).items()})
   items=items_for(rows,before,mins)

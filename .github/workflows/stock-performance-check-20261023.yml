@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-stock
+  group: stock-offline-safety
   cancel-in-progress: false
 jobs:
   stock:
@@ -34,34 +34,6 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
         run: python -m unittest test_order_demand test_owner_low_rule test_stock_approved_warehouses test_stock_automatic_recovery test_stock_batch_plan test_stock_batch_transport test_stock_checkpoint_warehouses test_stock_current_order_reserve test_stock_document_identities test_stock_furcoat_exclusion test_stock_group_execution test_stock_incremental_orders test_stock_inventory_notice test_stock_notice_policy test_stock_ozon test_stock_performance test_stock_presence_two test_stock_read_retries test_stock_reduction_credit test_stock_regular_service test_stock_schedule test_stock_shared_requests test_stock_unposted_orders test_stock_wb_supply_history
-      - name: Read-only saved cooldown diagnosis, zero marketplace calls
-        env:
-          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
-          STOCK_DAILY_ENABLED: 'true'
-          STOCK_OZON_ENABLED: 'true'
-          STOCK_PENDING_RESERVE_ENABLED: 'true'
-          STOCK_RUN_SLOT: ${{ github.event_name == 'workflow_dispatch' && inputs.slot || ((github.event.schedule == '0 4 * * *' || github.event.schedule == '10,20,30,40,50 4 * * *' || github.event.schedule == '*/10 5-8 * * *') && '0700' || '1630') }}
-          STOCK_NOTIFICATIONS_ENABLED: 'true'
-          STOCK_CLOUD_EXECUTION_ENABLED: 'false'
-          STOCK_JOURNAL_IMPORT_ACCEPTED: 'true'
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
-          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-          WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
-          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
-          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
-          WB_STOCK_WAREHOUSE_1: ${{ vars.WB_STOCK_WAREHOUSE_1 }}
-          WB_STOCK_WAREHOUSE_2: ${{ vars.WB_STOCK_WAREHOUSE_2 }}
-          WB_STOCK_WAREHOUSE_3: ${{ vars.WB_STOCK_WAREHOUSE_3 }}
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          MOYSKLAD_STORE_NAME: МСК
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
-          AUTO_STOCK_FAIL_FAST: '1'
-        run: |
-          python private-source/stock_performance_probe.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

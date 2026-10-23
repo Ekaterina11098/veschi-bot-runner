@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   gaps:
+    if: false # Exact source responses retained; no repeated product collection.
     runs-on: ubuntu-latest
     timeout-minutes: 26
     steps:

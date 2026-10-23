@@ -1,0 +1,61 @@
+name: China candidate bids and budget read only 23Oct
+on:
+  push:
+    branches: [china-candidates-ms-read-20261023]
+    paths: ['.github/workflows/china-candidates-ad-preflight.yml']
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read bid minimums and spending configuration only
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,urllib.request,urllib.parse,urllib.error,datetime,time
+          db=os.environ['SUPABASE_URL']+'/rest/v1/telegram_api_cache'
+          key=os.environ['SUPABASE_SECRET_KEY'];token=os.environ['WB_TOKEN_3']
+          dh={'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json'}
+          req=urllib.request.Request(db+'?cache_key=eq.china_agent%3Acandidate_ad_preflight_seed%3A2026-10-23%3Av1&select=payload',headers=dh)
+          with urllib.request.urlopen(req,timeout=45) as f:seed=json.load(f)[0]['payload']
+          result={'observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'wb_writes':0,'telegram_calls':0,'reads':[]}
+          def read(path,body=None):
+              method='POST' if body is not None else 'GET'
+              allowed=(method=='GET' and path.split('?')[0] in ['/api/advert/v1/config','/adv/v0/config','/api/advert/v2/adverts','/api/advert/v0/daily-limits']) or (method=='POST' and path=='/api/advert/v1/bids/min')
+              if not allowed:raise RuntimeError('Read allowlist violation')
+              time.sleep(3.1)
+              req=urllib.request.Request('https://advert-api.wildberries.ru'+path,method=method,data=json.dumps(body).encode() if body is not None else None,headers={'Authorization':token,'Content-Type':'application/json'})
+              row={'path':path,'method':method,'request':body}
+              try:
+                  with urllib.request.urlopen(req,timeout=45) as f:row.update(http=f.status,data=json.load(f))
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode('utf-8','replace').replace(token,'[REDACTED]')
+                  try:raw=json.loads(raw)
+                  except ValueError:raw=raw[:1500]
+                  row.update(http=e.code,data=raw)
+              except Exception as e:row.update(http=None,error_type=type(e).__name__)
+              result['reads'].append(row);return row
+          read('/api/advert/v1/config')
+          read('/adv/v0/config')
+          cid=seed['reference_umbrella_campaign'];bid=seed['reference_bag_campaign']
+          cs=read('/api/advert/v2/adverts?ids='+str(cid)+','+str(bid))
+          read('/api/advert/v0/daily-limits?advertIds='+str(cid)+','+str(bid))
+          umbrellas=[r['nm'] for r in seed['selected'] if 'Zont' in r['article']]
+          adverts=cs.get('data',{}).get('adverts',[])
+          c=next((r for r in adverts if r.get('id')==cid),{})
+          control=[r['nm_id'] for r in c.get('nm_settings',[])][:1]
+          for advert,ids in [(cid,control),(cid,umbrellas),(0,umbrellas)]:
+              if ids:read('/api/advert/v1/bids/min',{'advert_id':advert,'nm_ids':ids,'payment_type':'cpc','placement_types':['recommendation']})
+          result['completed_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+          req=urllib.request.Request(db+'?on_conflict=cache_key',data=json.dumps({'cache_key':'china_agent:candidate_ad_preflight:2026-10-23:v1','payload':result,'expires_at':'2026-11-23T00:00:00Z'}).encode(),method='POST',headers=dict(dh,Prefer='resolution=merge-duplicates'))
+          with urllib.request.urlopen(req,timeout=60) as f:f.read()
+          print(json.dumps({'status':'read_complete','http_statuses':[r.get('http') for r in result['reads']],'wb_writes':0,'telegram_calls':0}))
+          PY

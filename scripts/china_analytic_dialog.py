@@ -21,7 +21,7 @@ def allowed_read(method,url,body=None):
  if u.scheme!='https':return False
  from china_wb_evidence import allowed_read as wb_report_read
  if wb_report_read(method,url,body):return True
- if u.hostname=='api.moysklad.ru':return method=='GET' and path in ['/api/remap/1.2/entity/store','/api/remap/1.2/report/stock/all']
+ if u.hostname=='api.moysklad.ru':return method=='GET' and path in ['/api/remap/1.2/entity/store','/api/remap/1.2/report/stock/all','/api/remap/1.2/entity/product']
  if u.hostname=='marketplace-api.wildberries.ru':return method=='GET' and path=='/api/v3/orders'
  if u.hostname=='discounts-prices-api.wildberries.ru':return method=='GET' and path=='/api/v2/list/goods/filter'
  if u.hostname=='advert-api.wildberries.ru':return method=='GET' and path in ['/adv/v1/promotion/count','/api/advert/v2/adverts','/adv/v3/fullstats','/api/advert/v1/config','/adv/v1/balance','/adv/v1/budget'] or method=='POST' and path=='/api/advert/v1/bids/min'

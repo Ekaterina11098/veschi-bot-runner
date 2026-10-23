@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   gaps:
+    if: false # Remaining aggregate verified; no repeated request.
     runs-on: ubuntu-latest
     timeout-minutes: 26
     steps:

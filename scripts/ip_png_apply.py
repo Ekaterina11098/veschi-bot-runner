@@ -3,6 +3,7 @@ import argparse,base64,copy,hashlib,json,os,re,sys
 from datetime import datetime,timedelta,timezone
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parent))
+sys.path.insert(0,str(Path.cwd()))
 from china_price_apply import IO as BaseIO
 from china_loss_ads import current,http,check
 CHAT=-1004378639510

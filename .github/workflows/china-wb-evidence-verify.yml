@@ -29,8 +29,9 @@ jobs:
       - name: Collect bounded WB source evidence privately, no Telegram
         run: |
           python -m unittest discover -s scripts -p test_china_wb_evidence.py
-          python scripts/china_wb_evidence.py
+          python scripts/verify_wb_evidence.py
         env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           PYTHONPATH: scripts:source
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

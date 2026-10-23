@@ -488,7 +488,8 @@ class Worker:
             if not question_allowed(job,self.config()):raise PermissionError('Question registration changed')
             self.active_question_id=job_id
             self.reply_id=marker.get('message_id');outcome='sent'
-            for index,part in enumerate(split_message(answer)):
+            from china_table_png import delivery_parts
+            for index,part in enumerate(delivery_parts(self,job,answer,split_message)):
                 outcome=self.send_once('question:'+str(job_id)+':'+str(index),job['chat_id'],part)
                 if outcome!='sent':break
             patch({'status':'done' if outcome=='sent' else ('pending' if outcome in ('waiting','rejected') else 'failed'),'retry_at':(self.now+timedelta(minutes=5)).isoformat(),'error':None if outcome=='sent' else 'delivery_'+outcome,'completed_at':self.now.isoformat() if outcome=='sent' else None,'lease_until':None})
@@ -675,6 +676,9 @@ def runtime():
         if frozen_photo is None:
             from china_agent_reports import photo as report_photo
             frozen_photo=report_photo(worker,chat,text)
+        if frozen_photo is None:
+            from china_table_png import photo as table_photo
+            frozen_photo=table_photo(worker,chat,text)
         if frozen_photo is not None:
             me=session.post('https://api.telegram.org/bot'+bot+'/getMe',timeout=20).json()
             if not me.get('ok') or me['result'].get('id')!=8780468043 or chat!=-1004342917488:raise PermissionError('China photo bot/chat mismatch')
@@ -770,6 +774,7 @@ def main():
 
 
 if __name__=='__main__':main()
+
 
 
 

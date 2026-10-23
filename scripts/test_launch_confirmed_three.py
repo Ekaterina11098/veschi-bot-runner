@@ -16,6 +16,7 @@ class I:
    items.append(dict(group=g,name=g,skus=[dict(nm_id=10*i+j+1,article=str(10*i+j+1),bid_minor=28 if i==0 else 23) for j in range(n)],budget_cny=100,daily_limit_minor=10000,auto_topup=False,carry_over_enabled=False,payment_type='cpc',bid_type='manual',placements=['recommendations']))
   p=dict(items=items,plan_sha256=m.digest(items),expires_at=(m.now()+timedelta(hours=1)).isoformat(),price_changes=False)
   self.mem={'china_agent:loss_plan:v1:'+m.PID:p,'china_agent:codex_approval:v1:'+m.PID:dict(source='explicit_human_codex_message',status='approved',quote='Да, запускай 3 РК по 100 юаней, всего 300. Проверь, чтобы всё прошло правильно.',plan_sha256=p['plan_sha256'])}
+  self.mem['china_agent:codex_limit_waiver:v1:'+m.PID]=dict(source='explicit_human_codex_message',daily_limit_required=False)
  def get(self,k):return copy.deepcopy(self.mem.get(k))
  def put(self,k,v):
   saved=json.loads(json.dumps(v))
@@ -31,9 +32,10 @@ class Tests(unittest.TestCase):
   with patch.object(m,'IO',return_value=i),patch.object(m,'Transport',return_value=t):
    m.run();self.assertEqual(i.get(m.KEY)['status'],'done');m.run()
   self.assertEqual(len(t.c),3);self.assertEqual(sum(t.b.values()),300)
-  first=next(j for j,r in enumerate(t.writes) if '/deposit' in r[0]);self.assertEqual(sum(r[0].endswith('daily-limits') for r in t.writes[:first]),3)
+  first=next(j for j,r in enumerate(t.writes) if '/deposit' in r[0]);self.assertEqual(sum(r[0].endswith('save-ad') for r in t.writes[:first]),3)
+  self.assertFalse(any('daily-limits' in r[0] for r in t.writes))
   first=next(j for j,r in enumerate(t.writes) if '/start' in r[0]);self.assertEqual(sum('/deposit' in r[0] for r in t.writes[:first]),3)
-  self.assertEqual(len(t.writes),15)
+  self.assertEqual(len(t.writes),12)
  def test_lost_deposit_receipt_never_repeated(self):
   i=I();t=T();t.fail='deposit'
   with patch.object(m,'IO',return_value=i),patch.object(m,'Transport',return_value=t):m.run();m.run()

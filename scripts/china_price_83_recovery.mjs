@@ -17,7 +17,8 @@ const job=(await database('business_agent_jobs?id=eq.83&agent_id=eq.china&select
 const marker=job.tool_trace.find(t=>t.name==='china_saved_question');
 if(job.request_text!=='Сделай всё'||marker.message_id!==147||marker.reply_message_id!==142||marker.forwarded)throw Error('Original owner reply changed');
 let dispatched='';
-const deps={database,telegram,digest,same:(a,b)=>JSON.stringify(a)===JSON.stringify(b),launchPrice:async approval_key=>{
+const canonical=x=>Array.isArray(x)?x.map(canonical):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,canonical(x[k])])):x;
+const deps={database,telegram,digest,same:(a,b)=>JSON.stringify(canonical(a))===JSON.stringify(canonical(b)),launchPrice:async approval_key=>{
  const r=await fetch('https://api.github.com/repos/Ekaterina11098/veschi-bot-runner/actions/workflows/china-price-apply.yml/dispatches',{method:'POST',headers:{Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{approval_key,mode:'apply'}}),signal:AbortSignal.timeout(20000)});
  if(!r.ok)throw Error('Price dispatch HTTP '+r.status);dispatched=approval_key;
 }};

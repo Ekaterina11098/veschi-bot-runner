@@ -21,7 +21,7 @@ def assess_candidate(experiences,nm,current):
  risks=[];needs_review=False
  for event in relevant:
   comparison=compare_conditions(event.get('context') or {},current)
-  if event.get('business_outcome')=='negative' or event.get('advertising_outcome')=='negative':
+  if event.get('business_outcome')=='negative' or event.get('advertising_outcome')=='negative' or event.get('expected_outcome')=='negative':
    risks.append(dict(event_id=event['event_id'],previous_result='negative',condition_comparison=comparison))
    if not comparison['changes']:needs_review=True
  return dict(event_ids=[e['event_id'] for e in relevant],needs_review=needs_review,risks=risks,requires_confirmation=True,note='Негативный опыт требует проверки причины/изменений; это не вечный запрет. Положительный опыт не гарантия.')
@@ -53,7 +53,7 @@ def sync(w):
  count=0
  prefixes=['china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:loss_ad_execution:','china_agent:price_execution:v1:','china_agent:codex_bid_raise:']
  for prefix in prefixes:
-  for row in read_rows(w,prefix):
+  for row in read_rows(w,prefix,limit=5000):
    key=row['cache_key'];p=row['payload'];actions=[]
    if p.get('status')=='verified' and p.get('plan',{}).get('kind')=='ad_set_bid':
     a=p['plan'];actions.append(dict(item=a['nm_id'],nm_ids=[a['nm_id']],campaign_id=a['campaign_id'],article=a['article'],kind='bid_change',before=a['old_minor'],after=a['target_minor'],started=p.get('submitted_at'),verified=p.get('verified_at')))
@@ -109,7 +109,7 @@ def evaluate_saved(w,ids,records=None):
  cached_sources={}
  for eid in ids:
   e=records.get(eid) if records is not None else w.get(ROOT+eid);window=(e or {}).get('comparison') or {};action=(e or {}).get('action') or {}
-  if not window or str(today)<window['evaluate_from'] or not action.get('campaign_id'):continue
+  if not window or str(today)<window['evaluate_from'] or not action.get('campaign_id') or e.get('latest_change_observation'):continue
   if any(o.get('automatic_saved_ad_evaluation') for o in e.get('observations',[])):continue
   periods=[];source_keys=[]
   for label in ['before','after']:

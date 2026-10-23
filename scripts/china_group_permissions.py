@@ -6,10 +6,10 @@ def shared(w):
  return p.get('policy')=='all_current_human_group_members' and p.get('chat_id')==CHAT and p.get('bot_id')==BOT and p.get('enabled') is True
 def allowed(w,job):
  cfg=w.config() if hasattr(w,'config') else dict(chat_id=CHAT,bot_id=BOT,owner_user_id=OWNER)
- if job.get('chat_id')!=CHAT or cfg.get('chat_id')!=CHAT or cfg.get('bot_id')!=BOT:return False
  actor=job.get('sender_id')
  if type(actor) is not int or actor<=0 or marker(job).get('bot_id') not in (None,BOT):return False
- if not shared(w):return actor==cfg.get('owner_user_id',OWNER)
+ if not shared(w):return job.get('chat_id')==cfg.get('chat_id') and actor==cfg.get('owner_user_id',OWNER)
+ if job.get('chat_id')!=CHAT or cfg.get('chat_id')!=CHAT or cfg.get('bot_id')!=BOT:return False
  check=getattr(w,'member_check',None)
  if not callable(check):return False
  try:m=check(actor)

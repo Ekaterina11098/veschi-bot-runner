@@ -46,7 +46,11 @@ def run():
   p=io.get(PLAN+a['plan_id'])
   if not p:continue
   # Expiration gates new writes; an existing execution may only recover readback.
-  if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']) and not io.get(EXEC+str(a['job_id'])):continue
+  if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']) and not io.get(EXEC+str(a['job_id'])) and not (p.get('execution_kind')=='ad_drr_rule' and io.get('china_agent:ad_rule_execution:'+p['plan_id']+':v1')):continue
+  if p.get('execution_kind')=='ad_drr_rule':
+   from china_ad_rule import process_and_deliver
+   process_and_deliver(io,a,p)
+   continue
   if p.get('execution_kind')=='ad_exclusions':
    from china_loss_ads import process_and_deliver
    process_and_deliver(io,a,p)

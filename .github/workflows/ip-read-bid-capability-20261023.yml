@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
+    if: false # Read-only evidence verified; no repeated source calls.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

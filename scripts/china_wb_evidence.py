@@ -111,6 +111,7 @@ class Reports:
    note='Only HTTP204 closes pagination. Published operation dates are not order cohort dates or proof of no future adjustments.')
   self.w.save(key,state)
   if state['complete']:self.w.save(ROOT+'finance_latest',dict(source_key=key))
+  elif probe:return self.finance(first,last) # Seeded private page did not consume a new API read.
   return state
 
 def normalize_funnel(products,selected,past,source_id):
@@ -173,6 +174,13 @@ def settlement(state,first,last,ids=None,costs=None,fx=12,tax_rate=.05):
 def context(w,ids,first,last,costs=None):
  """Same source cache reused by free analysis and observation; unavailable is never zero."""
  reports=Reports(w);out=dict(cabinet='token_3',wb_writes=0)
+ if costs is None:
+  try:
+   from china_analytic_dialog import Analyst
+   stock=Analyst(w,{},[]).live('stock',ids,first,last);by_article={r['article'].casefold():r.get('cost_rub') for r in stock.get('rows',[])}
+   costs={int(nm):by_article.get(article.casefold()) for nm,article in w.catalog()}
+   out['cogs_source']={k:stock.get(k) for k in ['source','source_key','observed_at']}
+  except Exception as ex:out['cogs_missing']=type(ex).__name__
  for name in ['funnel','finance']:
   try:
    state=getattr(reports,name)(first,last)

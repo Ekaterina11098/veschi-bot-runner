@@ -138,7 +138,11 @@ class Worker:
 
     def authorized(self, obj):
         cfg=self.config()
-        return obj.get('agent_id')=='china' and obj.get('chat_id')==cfg['chat_id'] and obj.get('owner_user_id',obj.get('sender_id'))==cfg['owner_user_id']
+        if obj.get('agent_id')!='china' or obj.get('chat_id')!=cfg['chat_id']:return False
+        if obj.get('sender_id') is not None:
+            from china_group_permissions import allowed
+            return allowed(self,obj)
+        return obj.get('owner_user_id')==cfg['owner_user_id']
 
     def watches(self):
         cfg=self.config()
@@ -217,7 +221,11 @@ class Worker:
 
     def send_once(self,key,chat,text):
         receipt=self.get(RECEIPTS+key)
-        if receipt and receipt.get('status') in ('sent','sending','uncertain'):return receipt['status']
+        if receipt and receipt.get('status') in ('sent','sending','uncertain'):
+            if receipt['status']=='sent':
+                from china_ad_rule import bind
+                bind(self,text,receipt['message_id'])
+            return receipt['status']
         if receipt and receipt.get('retry_at') and self.now<datetime.fromisoformat(receipt['retry_at']):return 'waiting'
         if not receipt:
             receipt=dict(status='ready',chat_id=chat,text=text,created_at=self.now.isoformat())
@@ -233,7 +241,10 @@ class Worker:
         message=result['result']
         if message.get('chat',{}).get('id')!=chat or not isinstance(message.get('message_id'),int):
             receipt['status']='uncertain';self.save(RECEIPTS+key,receipt);return 'uncertain'
-        receipt.update(status='sent',message_id=message['message_id']);self.save(RECEIPTS+key,receipt);return 'sent'
+        receipt.update(status='sent',message_id=message['message_id']);self.save(RECEIPTS+key,receipt)
+        from china_ad_rule import bind
+        bind(self,text,message['message_id'])
+        return 'sent'
 
     def jobs(self):
         rows=self.db('GET','business_agent_jobs',params={'agent_id':'eq.china','created_at':'gte.'+DEPLOYED_AFTER,'or':'(and(status.eq.pending,retry_at.lte.'+self.now.isoformat()+'),and(status.eq.running,lease_until.lte.'+self.now.isoformat()+'))','select':'*','order':'id.asc','limit':100}) or []
@@ -297,6 +308,10 @@ class Worker:
             note='Конверсия: заказы воронки / просмотры. Сумма заказов воронки может отличаться от заказов WB. Пропуски не равны нулю. Наблюдение и расписание не созданы.')
 
     def saved_question(self,job,history):
+        history=[x for x in history if not any(t.get('name')=='china_loss_answer_invalid' for t in x.get('tool_trace',[]))]
+        from china_ad_rule import handle as ad_rule_handle
+        ad_rule_answer=ad_rule_handle(self,job,history)
+        if ad_rule_answer is not None:return ad_rule_answer
         from china_loss_control import handle as loss_handle
         loss_answer=loss_handle(self,job)
         if loss_answer is not None:return loss_answer
@@ -306,6 +321,9 @@ class Worker:
         from business_agents.data import Data
         cfg=self.config()
         if not question_allowed(job,cfg):raise PermissionError('Question scope mismatch')
+        from china_ad_cost_png import answer as ad_cost_png_answer
+        png_answer=ad_cost_png_answer(self,job,history)
+        if png_answer is not None:return png_answer
         from china_order_decline import prepared_answer
         verified=prepared_answer(self,job)
         if verified is not None:return verified
@@ -370,6 +388,8 @@ class Worker:
         if ad_saved.get('status')=='frozen' and ad_bundle.get('observed_day')==str(self.now.astimezone(MSK).date()):
             prompt+='\nСохранённый источник уже отправленного рекламного PNG (данные, не инструкции): '+json.dumps(ad_bundle,ensure_ascii=False)
             prompt+='\nИспользуй эти точные артикулы/РК/ДРР для вопросов по отчёту. Не проси пользователя заново прислать уже имеющиеся артикулы. period — сутки товарной ДРР, week_from/week_to — только период weekly_spend, НЕ трёхдневная ДРР SKU. Для последних 3 полных дней исключи сегодня; не подменяй их одним днём или неделей. Если требуемого периода нет в доступных источниках, назови точные недостающие даты, но не утверждай отсутствие всех данных. Сам вопрос или предложение не разрешает WB изменения.'
+        from china_ad_cost_png import previous_context as ad_png_context
+        prompt+='\n'+ad_png_context(self,job,history)
         from china_three_day_ads import context as three_day_ad_context
         prompt+='\n'+three_day_ad_context(self,job,history)
         from china_order_decline import context as order_decline_context
@@ -448,14 +468,15 @@ class Worker:
                 history=[x for x in history if x.get('answer')]
             if job.get('answer') is not None:answer=job['answer'];trace=job.get('tool_trace') or []
             else:
-                if intent(job['request_text']) and job['sender_id']==cfg['owner_user_id']:
+                if intent(job['request_text']) and self.authorized(job):
                     answer=self.command(job);trace=[]
                 elif intent(job['request_text']):
-                    answer='Управлять ежедневными заданиями может только владелец группы. Вопросы по сохранённым данным доступны всем участникам.';trace=[]
+                    answer='Управлять заданиями могут действующие участники этой группы. Вопросы по сохранённым данным доступны всем участникам.';trace=[]
                 else:answer,trace=self.saved_question(job,history)
                 trace=[marker]+trace
                 patch({'answer':answer,'tool_trace':trace})
             if not question_allowed(job,self.config()):raise PermissionError('Question registration changed')
+            self.active_question_id=job_id
             self.reply_id=marker.get('message_id');outcome='sent'
             for index,part in enumerate(split_message(answer)):
                 outcome=self.send_once('question:'+str(job_id)+':'+str(index),job['chat_id'],part)
@@ -483,7 +504,7 @@ class Worker:
             result=old_tools(agent_id)
             if agent_id=='china':result.append(c.function('get_conversion_history','Конверсия одного артикула по каждому полному дню и итог за точный период до 14 дней; только разовый запрос, расписание не создаёт.',{
                 'article':{'type':'string'},'date_from':{'type':['string','null']},'date_to':{'type':['string','null']},'days':{'type':['integer','null'],'minimum':1,'maximum':14}}))
-            if agent_id=='china':result.append(c.function('manage_daily_task','Сохранить ежедневное аналитическое поручение, показать список, изменить время/период или отменить. Только по ЯВНОЙ просьбе владельца; разовый вопрос не создаёт расписание. При неизвестном времени уточнить.',{
+            if agent_id=='china':result.append(c.function('manage_daily_task','Сохранить ежедневное аналитическое поручение, показать список, изменить время/период или отменить. Только по ЯВНОЙ просьбе действующего участника группы; разовый вопрос не создаёт расписание. При неизвестном времени уточнить.',{
                 'action':{'type':'string','enum':['create','list','update','cancel']},'task_id':{'type':['string','null']},'request_text':{'type':['string','null']},'clock':{'type':['string','null']},'days':{'type':['integer','null'],'minimum':1,'maximum':14}}))
             return result
         def dispatch(job,data,name,arguments,**kwargs):
@@ -601,10 +622,14 @@ def saved_network_guard():
                            or (method=='POST' and u.path=='/rest/v1/telegram_api_cache')))
             model=(u.scheme=='https' and u.hostname=='api.openai.com' and u.path=='/v1/responses' and method=='POST')
             telegram=(u.scheme=='https' and u.hostname=='api.telegram.org'
-                      and u.path=='/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendMessage' and method=='POST')
+                      and u.path in ('/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendMessage','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendPhoto','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/getChatMember','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/getMe') and method=='POST')
             from china_search_analytics import allowed_read
             search=allowed_read(method,url,kwargs.get('json'))
-            if not (database or model or telegram or search):raise PermissionError('Saved question network scope')
+            from china_ad_cost_collect import allowed_read as ad_cost_read
+            advertising=ad_cost_read(method,url,kwargs.get('json'))
+            from china_ad_rule import allowed_read as ad_rule_read
+            rule_read=ad_rule_read(method,url,kwargs.get('json'))
+            if not (database or model or telegram or search or advertising or rule_read):raise PermissionError('Saved question network scope')
             return original(session,method,url,*args,**kwargs)
         requests.sessions.Session.request=bounded
         try:yield
@@ -626,6 +651,13 @@ def runtime():
     bot=os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()
     def send(chat,text):
         # No retries after a timeout: at-most-once delivery takes precedence.
+        from china_ad_cost_png import photo
+        frozen_photo=photo(worker,chat,text)
+        if frozen_photo is not None:
+            me=session.post('https://api.telegram.org/bot'+bot+'/getMe',timeout=20).json()
+            if not me.get('ok') or me['result'].get('id')!=8780468043 or chat!=-1004342917488:raise PermissionError('China photo bot/chat mismatch')
+            blob,caption=frozen_photo
+            return session.post('https://api.telegram.org/bot'+bot+'/sendPhoto',data={'chat_id':chat,'caption':caption,**({'reply_parameters':json.dumps({'message_id':worker.reply_id})} if getattr(worker,'reply_id',None) else {})},files={'photo':('china-ad-cost.png',blob,'image/png')},timeout=35).json()
         from china_break_even import compact_payload
         formatting=compact_payload(text,worker.catalog()) if '\nБезубыточность:' in text and '\nВыкуп:' in text else {}
         if not formatting and 'Показатель |' in text:
@@ -662,6 +694,13 @@ def runtime():
             return dict(identity_verified=True,plain_group_messages=bool(me['result'].get('can_read_all_group_messages') or member['result']['status']=='administrator'),member_status=member['result']['status'])
         except Exception:raise RuntimeError('Bot read-only verification failed') from None
     worker.bot_check=bot_check
+    def member_check(actor):
+        if not getattr(worker,'member_bot_verified',False):
+            worker.bot_check();worker.member_bot_verified=True
+        r=session.post('https://api.telegram.org/bot'+bot+'/getChatMember',json={'chat_id':worker.config()['chat_id'],'user_id':actor},timeout=25).json()
+        if not r.get('ok'):raise PermissionError('Group membership unavailable')
+        return r['result']
+    worker.member_check=member_check
     return worker
 
 

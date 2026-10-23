@@ -26,16 +26,18 @@ def context(w):
 def handle(w,job):
  """DB-only hook; explicit execution queued for isolated post-dialog phase."""
  m=marker(job);latest=w.get(LATEST)
+ from china_group_permissions import allowed
  if not is_all(job.get('request_text','')):
-  if latest and job.get('sender_id')==OWNER and m.get('reply_message_id') in latest.get('reply_ids',[]):
+  if latest and allowed(w,job) and m.get('reply_message_id') in latest.get('reply_ids',[]):
    text=job.get('request_text','')
    if re.search(r'см|замер|фото|материал|рем[её]н|подклад|размер|натуральн|горловин',text,re.I):
     key='china_agent:loss_plan_clarification:v1:'+str(job['id'])
-    w.save(key,dict(plan_id=latest['plan_id'],sender_id=OWNER,input_text=text,message_id=m.get('message_id'),received_at=w.now.isoformat()),insert=True)
+    w.save(key,dict(plan_id=latest['plan_id'],sender_id=job['sender_id'],input_text=text,message_id=m.get('message_id'),received_at=w.now.isoformat()),insert=True)
     return ('Уточнение сохранено для плана '+latest['plan_id']+'. Проверю его применимость к указанному артикулу. Неполные замеры и фотографии не подменяю предположениями; несвязанные пункты не меняю.',[{'name':'loss_plan_clarification','key':key}])
   return None
- if job.get('sender_id')!=OWNER or job.get('chat_id')!=CHAT or m.get('bot_id')!=BOT:
-  return ('Запускать этот план может только владелец группы.',[])
+ from china_group_permissions import allowed
+ if not allowed(w,job) or m.get('bot_id')!=BOT:
+  return ('Запускать план могут действующие участники этой группы.',[])
  if not latest or latest.get('status')=='retired':return ('Нет сохранённого плана. Ответьте на новую таблицу рекомендаций.',[])
  p=w.get(PLAN+latest['plan_id'])
  if not p or p.get('chat_id')!=CHAT or p.get('bot_id')!=BOT or p.get('plan_sha256')!=digest(p['items']):raise ValueError('План изменился')
@@ -43,7 +45,7 @@ def handle(w,job):
  created=datetime.fromisoformat(p['created_at']);at=datetime.fromisoformat(job['created_at'].replace('Z','+00:00'))
  if not created<=at<=datetime.fromisoformat(p['expires_at']):return ('Этот план устарел; сначала обновлю рекомендации, затем потребуется подтверждение нового плана.',[])
  k=APPROVAL+str(job['id'])
- a=dict(status='approved',plan_id=latest['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=OWNER,chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)
+ a=dict(status='approved',plan_id=latest['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)
  w.save(k,a,insert=True)
  return ('Команда принята по таблице '+latest['plan_id']+'. Выполню готовые пункты. По остальным пришлю конкретный список недостающих данных. Цены не меняю.',[{'name':'loss_plan_approval','key':k,'plan_id':latest['plan_id']}])
 
@@ -71,7 +73,7 @@ def build_card_update(card,item):
 def process(io,a):
  p=io.get(PLAN+a['plan_id']);key=EXEC+str(a['job_id']);e=io.get(key)
  if not p or a['plan_sha256']!=p['plan_sha256'] or digest(p['items'])!=p['plan_sha256']:raise ValueError('Plan scope')
- if a.get('sender_id')!=OWNER or a.get('chat_id')!=CHAT or a.get('bot_id')!=BOT or a.get('price_changes') is not False:raise ValueError('Owner scope')
+ if type(a.get('sender_id')) is not int or a['sender_id']<=0 or a.get('chat_id')!=CHAT or a.get('bot_id')!=BOT or a.get('price_changes') is not False:raise ValueError('Owner scope')
  if e and e.get('status')=='done':return e
  if not e:
   e=dict(status='running',plan_id=a['plan_id'],approval_job=a['job_id'],items=[])

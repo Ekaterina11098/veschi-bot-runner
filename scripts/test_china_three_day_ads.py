@@ -1,5 +1,5 @@
 import unittest,copy
-from china_three_day_ads import build,periods
+from china_three_day_ads import build,periods,requested_days
 def source(day,rows):
  obs=[dict(tool='wbbidder_campaigns',status='received',scope_verified=True,arguments=dict(report='state',tokens=[939742]),data=dict(total=1,returned=1,data=[dict(id=1,wb_id=100)])),
  dict(tool='wbbidder_campaign_stats',status='received',scope_verified=True,arguments=dict(campaign_id=1,report='products',d1=day,d2=day),data=dict(period=dict(from_=day),returned=len(rows),data=rows))]
@@ -36,13 +36,31 @@ class ThreeDays(unittest.TestCase):
   self.assertEqual(build(s,'2026-10-23')['rows'][0]['orders'],6)
  def test_consecutive_growth_required(self):
   r=build(fixture(),'2026-10-23')['rows'][0]
-  self.assertFalse(r['rising_three_days'])
+  self.assertFalse(r['rising_all_days'])
   s=[source(d,[row(v,1,100)]) for d,v in zip(periods('2026-10-23'),[5,10,20])]
-  self.assertTrue(build(s,'2026-10-23')['rows'][0]['rising_three_days'])
+  self.assertTrue(build(s,'2026-10-23')['rows'][0]['rising_all_days'])
  def test_flat_or_missing_point_not_trend(self):
   for costs in ([5,5,20],[5,10,10]):
    s=[source(d,[row(v,1,100)]) for d,v in zip(periods('2026-10-23'),costs)]
-   self.assertFalse(build(s,'2026-10-23')['rows'][0]['rising_three_days'])
+   self.assertFalse(build(s,'2026-10-23')['rows'][0]['rising_all_days'])
   s=fixture();s[1]=source('2026-10-21',[row(10,0,0)])
-  self.assertFalse(build(s,'2026-10-23')['rows'][0]['rising_three_days'])
+  self.assertFalse(build(s,'2026-10-23')['rows'][0]['rising_all_days'])
+class SelectedPeriods(unittest.TestCase):
+ def test_requested_count_precedence(self):
+  self.assertEqual(requested_days('За 5 полных дней',[{'request_text':'За 3 дня'}]),5)
+  self.assertEqual(requested_days('Давай',[{'request_text':'За 7 дней'}]),7)
+  self.assertEqual(requested_days('За неделю'),7)
+ def test_variable_dates_and_strict_growth(self):
+  for n in (2,5,7):
+   days=periods('2026-10-23',n)
+   self.assertEqual(len(days),n);self.assertEqual(days[-1],'2026-10-22')
+   sources=[source(d,[row(i+1,1,100)]) for i,d in enumerate(days)]
+   r=build(sources,'2026-10-23',count=n)['rows'][0]
+   self.assertTrue(r['rising_all_days']);self.assertEqual(r['orders'],n)
+   if n>2:
+    sources[1]=source(days[1],[row(1,1,100)])
+    self.assertFalse(build(sources,'2026-10-23',count=n)['rows'][0]['rising_all_days'])
+ def test_invalid_count(self):
+  for n in (0,1,-3,91,True):
+   with self.assertRaises(ValueError):periods('2026-10-23',n)
 if __name__=='__main__':unittest.main()

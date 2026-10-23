@@ -20,14 +20,14 @@ class IO(BaseIO):
   return cs[0]
  def update_card(self,c):return self.request('/content/v2/cards/update',[c])
  def validate_owner(self,a):
-  if a['sender_id']!=OWNER or a['chat_id']!=CHAT or a['bot_id']!=BOT:raise ValueError('Owner mismatch')
+  if type(a.get('sender_id')) is not int or a['sender_id']<=0 or a['chat_id']!=CHAT or a['bot_id']!=BOT:raise ValueError('Owner mismatch')
   cfg=self.db('business_agent_config?agent_id=eq.china&select=active,chat_id,bot_id,owner_user_id')
   if len(cfg)!=1 or cfg[0]!=dict(active=True,chat_id=CHAT,bot_id=BOT,owner_user_id=OWNER):raise ValueError('Registration changed')
   j=self.db('business_agent_jobs?id=eq.'+str(a['job_id'])+'&agent_id=eq.china&select=id,request_text,sender_id,chat_id,tool_trace')
-  if len(j)!=1 or j[0]['sender_id']!=OWNER or j[0]['chat_id']!=CHAT or not is_all(j[0]['request_text']):raise ValueError('Original command missing')
+  if len(j)!=1 or j[0]['sender_id']!=a['sender_id'] or j[0]['chat_id']!=CHAT or not is_all(j[0]['request_text']):raise ValueError('Original command missing')
   if marker(j[0]).get('reply_message_id')!=a['reply_message_id']:raise ValueError('Reply changed')
-  member=self.tg('getChatMember',dict(chat_id=CHAT,user_id=OWNER))
-  if member.get('user',{}).get('id')!=OWNER or member.get('status') not in ['creator','administrator','member']:raise ValueError('Owner left')
+  member=self.tg('getChatMember',dict(chat_id=CHAT,user_id=a['sender_id']))
+  if member.get('user',{}).get('id')!=a['sender_id'] or member.get('user',{}).get('is_bot') is not False or not (member.get('status') in ['creator','administrator','member'] or member.get('status')=='restricted' and member.get('is_member') is True):raise ValueError('Approving member left')
   try:
    token=self.token.split('.')[1];claims=json.loads(base64.urlsafe_b64decode(token+'='*(-len(token)%4)))
   except Exception:raise ValueError('WB token not verified')
@@ -46,7 +46,11 @@ def run():
   p=io.get(PLAN+a['plan_id'])
   if not p:continue
   # Expiration gates new writes; an existing execution may only recover readback.
-  if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']) and not io.get(EXEC+str(a['job_id'])):continue
+  if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']) and not io.get(EXEC+str(a['job_id'])) and not (p.get('execution_kind')=='ad_drr_rule' and io.get('china_agent:ad_rule_execution:'+p['plan_id']+':v1')):continue
+  if p.get('execution_kind')=='ad_drr_rule':
+   from china_ad_rule import process_and_deliver
+   process_and_deliver(io,a,p)
+   continue
   if p.get('execution_kind')=='ad_exclusions':
    from china_loss_ads import process_and_deliver
    process_and_deliver(io,a,p)

@@ -1,0 +1,37 @@
+name: China new campaign confirmation regression
+on:
+  push:
+    branches: [main, china-confirm-new-campaign-tests]
+    paths: ['scripts/china_new_ads.py', 'scripts/china_new_ad_reports.py', 'scripts/test_china_new_ads.py', 'scripts/conversion_watches.py', 'scripts/china_loss_execute.py', 'scripts/china_loss_control.py', '.github/workflows/china-new-ad-tests.yml']
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 simplejson==4.2.0 python-dotenv Pillow==12.3.0 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: No WB or Telegram credentials - state machine and dialog regression
+        env:
+          PYTHONPATH: scripts:source
+        run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+          python -m compileall -q scripts/china_new_ads.py scripts/china_new_ad_reports.py scripts/china_loss_execute.py scripts/conversion_watches.py
+          python -m unittest discover -s scripts -p test_china_new_ads.py
+          python -m unittest discover -s scripts -p test_china_loss_control.py
+          python -m unittest discover -s scripts -p test_china_loss_ads.py
+          python -m unittest discover -s scripts -p test_china_ad_rule.py
+          python -m unittest discover -s scripts -p test_china_group_permissions.py
+          python -m unittest discover -s scripts -p test_conversion_watches.py

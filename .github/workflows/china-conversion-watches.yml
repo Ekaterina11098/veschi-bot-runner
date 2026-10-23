@@ -51,6 +51,7 @@ jobs:
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_control.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_ads.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_order_decline.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_new_ads.py
           python scripts/china_chat_migration.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
       - name: Install pinned read transport
@@ -92,4 +93,8 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           PYTHONPATH: scripts:source
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
         run: python scripts/china_loss_execute.py
+
+

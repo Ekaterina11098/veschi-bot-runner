@@ -325,7 +325,11 @@ class Worker:
         cfg=self.config()
         if not question_allowed(job,cfg):raise PermissionError('Question scope mismatch')
         from china_ad_cost_png import answer as ad_cost_png_answer
-        png_answer=ad_cost_png_answer(self,job,history)
+        # Generic report requests belong to the shared recipe library. The old
+        # growth-only PNG is used only for explicit cost-per-order trend questions.
+        use_legacy_png=(re.search(r'стоимост.*заказ|цен.*заказ|последовательн.*рост',job['request_text'],re.I)
+                        or (self.get('china_agent:analyst_policy:v1') or {}).get('enabled') is not True)
+        png_answer=ad_cost_png_answer(self,job,history) if use_legacy_png else None
         if png_answer is not None:return png_answer
         from china_analytic_dialog import answer as analytic_answer
         analytical=analytic_answer(self,job,history)

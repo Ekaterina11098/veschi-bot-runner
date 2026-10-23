@@ -22,6 +22,13 @@ def fixture():
  a=dict(chat_id=m.CHAT,bot_id=m.BOT,reply_message_id=100,plan_sha256=p['plan_sha256'],command='Сделай всё',update_id=8,sender_id=777,input_message_id=101)
  return p,a,b
 class Tests(unittest.TestCase):
+ def test_resume_retains_failed_attempt(self):
+  p,a,b=fixture();io=Fake(p,a);old={'status':'blocked','reason':'ModuleNotFoundError','wb_writes':0};io.s[m.PLAN+':execution']=old.copy();io.s[m.PLAN+':resume_authorization:20261023']={'authorized':True,'approval_update_id':a['update_id'],'plan_sha256':p['plan_sha256']};after=copy.deepcopy(b);after['nm_settings']=[n for n in b['nm_settings'] if n['nm_id'] not in m.TARGETS]
+  with patch.object(m,'current',side_effect=[{m.CID:b},{m.CID:after}]),patch.object(m,'http',return_value={}) as h:
+   self.assertEqual(m.apply(io,m.PLAN+':approval')['status'],'verified');m.apply(io,m.PLAN+':approval');self.assertEqual(h.call_count,1);self.assertEqual(io.s[m.PLAN+':execution'],old)
+ def test_resume_cannot_replay_unknown(self):
+  p,a,b=fixture();io=Fake(p,a);io.s[m.PLAN+':execution']={'status':'uncertain','wb_writes':0};io.s[m.PLAN+':resume_authorization:20261023']={'authorized':True,'approval_update_id':a['update_id'],'plan_sha256':p['plan_sha256']}
+  with patch.object(m,'current') as read:self.assertEqual(m.apply(io,m.PLAN+':approval')['status'],'uncertain');read.assert_not_called()
  def test_publish_preparation_uses_saved_baseline(self):
   p,a,b=fixture();p['baseline']=b;io=Fake(p,a)
   with patch.object(m,'current') as read:

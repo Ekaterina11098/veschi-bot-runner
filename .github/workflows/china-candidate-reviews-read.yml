@@ -1,0 +1,57 @@
+name: Read-only candidate review evidence
+on:
+  push:
+    branches: [china-free-analytic-dialog]
+    paths: ['.github/workflows/china-candidate-reviews-read.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 > /dev/null
+      - name: Read review and rating evidence without modifying feedback
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import requests,time
+          from china_price_apply import IO,now
+          io=IO();req=io.get('china_agent:candidate_review_request:2026-10-23:v1')
+          s=io.get('china_agent:new_ad_source:v1:2026-10-23')
+          products={int(r['nm_id']):r for r in s['products']}
+          out=dict(observed_at=now().isoformat(),items=[],wb_writes=0,telegram_sends=0)
+          for nm in req['nm_ids']:
+              assert nm in products
+              seen={};reads=[];complete=True
+              for path,extra in [('/api/v1/feedbacks',{'isAnswered':'false'}),('/api/v1/feedbacks',{'isAnswered':'true'}),('/api/v1/feedbacks/archive',{})]:
+                  r=requests.get('https://feedbacks-api.wildberries.ru'+path,headers={'Authorization':io.token},params=dict(nmId=nm,take=5000,skip=0,order='dateDesc',**extra),timeout=45)
+                  time.sleep(.6)
+                  if not r.ok:
+                      reads.append(dict(path=path,http=r.status_code));complete=False;continue
+                  j=r.json();rows=j.get('data',{}).get('feedbacks',[])
+                  if len(rows)>=5000 or j.get('error'):complete=False
+                  for f in rows:
+                      if f.get('productDetails',{}).get('nmId')!=nm:complete=False;continue
+                      seen[f['id']]=f.get('productValuation')
+                  reads.append(dict(path=path,http=r.status_code,received=len(rows)))
+              p=products[nm];vals=[v for v in seen.values() if type(v) in [int,float]]
+              out['items'].append(dict(nm_id=nm,article=p['sa_name'],mpstats_rating=p.get('rating'),mpstats_commentsvaluation=p.get('commentsvaluation'),seller_reviews_count=len(seen) if complete else None,seller_reviews_count_complete=complete,seller_review_mean=sum(vals)/len(vals) if vals else None,reads=reads,public_merged_card_count_confirmed=False))
+          key='china_agent:candidate_reviews:2026-10-23:v1'
+          io.put(key,out) if io.get(key) else io.create(key,out)
+          print('Private review evidence saved. No WB writes or Telegram sends')
+          PY

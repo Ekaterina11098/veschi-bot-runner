@@ -9,39 +9,28 @@ concurrency:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install requests pillow
-      - name: Read exact China card and save gallery
+      - name: Read current characteristics only
         shell: python
         env:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
         run: |
-          import os,json,hashlib,io
-          from pathlib import Path
-          import requests
-          from PIL import Image,ImageDraw
-          root=Path('melanie641');root.mkdir()
-          token=os.environ['WB_TOKEN_3'];assert token
-          r=requests.post('https://content-api.wildberries.cn/content/v2/get/cards/list',headers={'Authorization':token},json={'settings':{'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':'641-MelanieBag-grey'}}},timeout=60)
-          r.raise_for_status();body=r.json();cards=body.get('cards',body.get('data',{}).get('cards',[]))
-          selected=[c for c in cards if c.get('nmID')==1473246047 and c.get('vendorCode')=='641-MelanieBag-grey'];assert len(selected)==1,'Exact card missing'
-          card=selected[0];(root/'media.json').write_text(json.dumps({k:card.get(k) for k in ['nmID','vendorCode','photos','video']},ensure_ascii=False),encoding='utf-8')
-          photos=card.get('photos') or [];assert photos
-          sheet=Image.new('RGB',(1000,((len(photos)+3)//4)*365),'white');d=ImageDraw.Draw(sheet)
-          for i,p in enumerate(photos,1):
-              u=p.get('big') or p.get('c516x688');res=requests.get(u,timeout=60);res.raise_for_status();raw=res.content
-              (root/f'photo-{i:02d}.webp').write_bytes(raw)
-              im=Image.open(io.BytesIO(raw)).convert('RGB');im.thumbnail((240,335));x=((i-1)%4)*250;y=((i-1)//4)*365
-              sheet.paste(im,(x,y+25));d.text((x+8,y+5),f'PHOTO {i}',fill='black')
-          sheet.save(root/'overview.jpg',quality=95)
-          print(json.dumps({'article':card['vendorCode'],'nmID':card['nmID'],'count':len(photos),'video':bool(card.get('video')),'photos':photos},ensure_ascii=False))
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: melanie641-gallery
-          path: melanie641/
-          retention-days: 14
+          import os,json,urllib.request
+          payload={'settings':{'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':'641-MelanieBag-grey'}}}
+          req=urllib.request.Request('https://content-api.wildberries.cn/content/v2/get/cards/list',data=json.dumps(payload).encode(),headers={'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'})
+          with urllib.request.urlopen(req,timeout=60) as r:b=json.load(r)
+          cs=b.get('cards',b.get('data',{}).get('cards',[]));selected=[c for c in cs if c.get('nmID')==1473246047 and c.get('vendorCode')=='641-MelanieBag-grey'];assert len(selected)==1
+          c=selected[0];out={k:c.get(k) for k in ['nmID','vendorCode','title','brand','characteristics','dimensions','updatedAt']};out['photoCount']=len(c.get('photos',[]))
+          print('CURRENT_CHARACTERISTICS',json.dumps(out,ensure_ascii=False))
+          mentions=[]
+          for k in ['title','description','brand','characteristics']:
+              if 'veschi' in json.dumps(c.get(k),ensure_ascii=False).lower():mentions.append(k)
+          print('VESCHI_FIELDS',json.dumps(mentions))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write('## Current characteristics: 641-MelanieBag-grey\n\n')
+              f.write('Read-only API inspection; no product writes. Photo count: '+str(len(c.get('photos',[])))+'\n\n')
+              f.write('\n'.join('- '+str(x.get('name'))+': '+str(x.get('value')) for x in c.get('characteristics',[])))

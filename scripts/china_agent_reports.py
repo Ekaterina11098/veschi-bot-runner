@@ -16,6 +16,7 @@ RECIPES={
  'price_day':dict(title='Дневные предложения по ценам',schedule='15:00 МСК',generator='china_coverage_worker',formats=['text','png'],period='3 полных дня + неполный сегодня'),
  'growth':dict(title='Кандидаты в РК / повышение ставок',schedule='по запросу; без автоматического применения',generator='china_growth_candidates',formats=['png'],period='2–14 полных дней'),
  'ad_trend':dict(title='Последовательный рост стоимости заказа',schedule='по запросу',generator='china_ad_cost_png',formats=['png'],period='2–90 полных дней')}
+RECIPES['actions']=dict(title='Выполненные изменения',schedule='по запросу',generator='china_experience',formats=['png'],period='фактические даты проверенного исполнения')
 
 def catalog():return dict(reports=RECIPES,timezone='Europe/Moscow',schedules_unchanged=True,repeat='Явная просьба создаёт отдельный request identity; плановые квитанции не сбрасываются',changes='Только подтверждённый конкретный план, не сам отчёт')
 
@@ -94,6 +95,22 @@ def make(w,job,kind,days=3,nm_ids=(),repeat=False,report_day=None):
  if datetime.fromisoformat(day).date()>today:raise ValueError('Будущего отчёта нет')
  if repeat:
   images,meta=archive(w,kind,day);return freeze(w,job,kind,images,meta)
+ if kind=='actions':
+  from china_experience import decision_context
+  events=decision_context(w,nm_ids)['experiences'];labels=dict(w.catalog());lines=[]
+  for e in events:
+   a=e.get('action') or {}
+   if e.get('record_type')!='verified_action':continue
+   at=datetime.fromisoformat(e['started_at'].replace('Z','+00:00')).astimezone(MSK)
+   if (today-at.date()).days>=days:continue
+   names=', '.join(a.get('article') or labels.get(str(n),str(n)) for n in a.get('nm_ids',[]))
+   if a['kind']=='bid_change':action=str(a['before']/100)+' → '+str(a['after']/100)+' ¥'
+   elif a['kind']=='sku_exclusion':action='отключено от рекламы'
+   elif a['kind']=='new_campaign':action='создана и запущена РК'
+   else:action=str(a.get('before'))+' → '+str(a.get('after'))+' · цена'
+   lines.append(names+' · '+action+' · '+at.strftime('%d.%m %H:%M МСК')+(' · РК '+str(a['campaign_id']) if a.get('campaign_id') else ''))
+  meta=dict(period=str(today-timedelta(days=days-1))+' — '+str(today),repeat=False,memory_used=True)
+  return freeze(w,job,kind,pages('Китай · выполненные изменения',meta['period'],lines,'Только проверенные квитанции. Исполнение не означает улучшение прибыли.'),meta)
  if kind=='growth':
   from china_growth_candidates import collect
   scan=collect(w,days=days);rows=[r for r in scan['rows'] if not nm_ids or r['nm_id'] in nm_ids]
@@ -107,11 +124,26 @@ def make(w,job,kind,days=3,nm_ids=(),repeat=False,report_day=None):
   return dict(status='ready',marker=value[0],wb_writes=0,repeat=False)
  if kind=='advertising':
   from china_three_day_ads import load,build
+  from china_ad_rule import campaign_rows,minimums
+  from china_price_apply import IO
+  from china_loss_ads import current
   sources=load(w,days);report=build(sources,today,dict(w.catalog()),days);rows=[r for r in report['rows'] if not nm_ids or int(r['nm']) in nm_ids]
-  lines=[]
+  lines=[];io_=IO();live=current(io_);scoped=campaign_rows(sources,dict(w.catalog()))
   for r in rows:
    if r['drr'] is None or r['drr']>5 or r['rising_all_days']:
-    values=' → '.join('н/д' if x['drr'] is None else ('%.2f%%'%x['drr']).replace('.',',') for x in r['daily']);lines.append(r['article']+' · ДРР по дням: '+values+' · заказов '+str(sum(x['orders'] for x in r['daily'])))
+    actions=[]
+    for cid,c in live.items():
+     member=next((n for n in c.get('nm_settings',[]) if str(n['nm_id'])==r['nm']),None)
+     stat=next((v for v in scoped if v['campaign_id']==cid and v['nm']==r['nm']),None)
+     if not member or not stat or stat['drr'] is None or stat['drr']<=5:continue
+     if cid==41155909:actions.append('РК '+str(cid)+': отдельная оценка безубыточности119');continue
+     old=member.get('bids_kopecks',{}).get('recommendations');minimum=minimums(io_,cid,{int(r['nm'])})[int(r['nm'])]
+     if stat['drr']>10 or old is not None and old<=minimum:action='исключить только этот SKU' if len(c['nm_settings'])>1 else 'согласовать отдельное решение для РК из одного SKU'
+     elif old is not None:action='ставка '+str(old/100)+' → '+str(minimum/100)+' ¥'
+     else:action='не подтверждена текущая ставка; требуется проверка'
+     actions.append('РК '+str(cid)+': '+action)
+    if not actions:continue # Already disconnected/no action is not an attention item.
+    values=' → '.join('н/д' if x['drr'] is None else ('%.2f%%'%x['drr']).replace('.',',') for x in r['daily']);lines.append(r['article']+' · ДРР по дням: '+values+' · заказов '+str(sum(x['orders'] for x in r['daily']))+' · '+'; '.join(actions))
   meta=dict(period=report['days'][0]+' — '+report['days'][-1],repeat=False)
   return freeze(w,job,kind,pages('Китай · ДРР по дням',meta['period']+' · только требует внимания',lines,'Рекламная атрибуция, не все WBзаказы; без заказов ДРР неопределена'),meta)
  if kind=='loss':
@@ -191,3 +223,4 @@ if __name__=='__main__':
  if sys.argv[1:]!=['--daily-loss']:raise SystemExit('Expected --daily-loss')
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise SystemExit('Public main only')
  print(json.dumps(dict(status=daily_loss(),wb_writes=0)))
+

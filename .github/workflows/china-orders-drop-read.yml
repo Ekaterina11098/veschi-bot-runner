@@ -25,4 +25,4 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: disabled
           PYTHONPATH: scripts
-        run: python scripts/china_orders_today_wb.py
+        run: python scripts/china_orders_checks_wb.py

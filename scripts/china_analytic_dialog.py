@@ -37,6 +37,7 @@ def function(name,description,props):return dict(type='function',name=name,descr
 
 def tools():
  return [function('read_agreements','Договорённости владельца и терминология. Не числовой срез продаж.',{}),
+ function('get_decline_diagnostics','Обязательный полный сбор для падения заказов вчера/сегодня: WB по SKU и одинаковому часу; MPStats отдельно по каждому дню, клики/клик-заказ/цена; МойСклад; реклама; текущие ставки, минимум/шаг; проверенная история. Только чтение.',{}),
  function('list_reports','Все действующие отчёты, их генераторы, расписания и допустимые варианты. Расписания этим инструментом не меняются.',{}),
  function('make_report','Самостоятельно сформировать/повторить существующий отчёт по явной просьбе пользователя. Новый request identity не сбрасывает плановые квитанции. repeat=true повторяет исходный срез с датой; false пересчитывает доступные рецепты. PNG не разрешает изменения.',dict(kind={'type':'string','enum':['advertising','budgets','loss','price_morning','price_control','price_day','growth','ad_trend','actions']},days={'type':'integer','minimum':1,'maximum':90},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},repeat={'type':'boolean'},report_day={'type':['string','null']})),
  function('read_experience','Проверенная история действий, положительные/отрицательные результаты и неизвестные условия. Прошлый успех не гарантия нового результата.',dict(nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},query={'type':'string'})),
@@ -104,6 +105,7 @@ class Analyst:
    articles={a.casefold() for n,a in self.w.catalog() if int(n) in nm_ids}
    return dict(value,rows=[r for r in value.get('rows',[]) if r.get('nm_id') in nm_ids or r.get('article','').casefold() in articles])
   cached=self.w.get(key);ttl=300 if topic=='orders' else 600 if topic=='stock' else 900 if topic=='advertising' else 3600
+  if cached and topic=='advertising' and any('bid_type' not in c for c in cached.get('campaigns',[])):cached=None
   if cached and (self.w.now-datetime.fromisoformat(cached['observed_at'])).total_seconds()<ttl:return project(dict(cached,cached=True))
   maximum=8 if re.search(r'падени|снижени.*заказ|снижени.*продаж',self.job.get('request_text',''),re.I) else 3
   if self.fresh_reads>=maximum:raise ValueError('Лимит свежих сборов на один ответ достигнут; используй уже полученные данные')
@@ -187,7 +189,7 @@ class Analyst:
      for app in day.get('apps',[]):
       for r in app.get('nms',[]):
        if not ids or r['nmId'] in ids:rows.append(dict(campaign_id=c['advertId'],date=day['date'],nm_id=r['nmId'],level='SKU_app',**{k:r.get(k) for k in ['sum','sum_price','orders','clicks','views']}))
-   return dict(source='WB promotion CNY',rows=rows,campaigns=[dict(id=cid,**{k:c[k] for k in ['currency','status','settings','nm_settings']}) for cid,c in campaigns.items() if cid in cids],note='Охват только текущих активных РК; не весь исторический кабинет. Рекламная атрибуция, не выкупы. SKU_app суммировать по приложениям; итог РК отдельно, постклик повторно не добавлять. Источник конкретных WB заказов не подтверждён.')
+   return dict(source='WB promotion CNY',rows=rows,campaigns=[dict(id=cid,**{k:c.get(k) for k in ['currency','status','settings','nm_settings','bid_type','restrictions']}) for cid,c in campaigns.items() if cid in cids],note='Охват только текущих активных РК; не весь исторический кабинет. Рекламная атрибуция, не выкупы. SKU_app суммировать по приложениям; итог РК отдельно, постклик повторно не добавлять. Источник конкретных WB заказов не подтверждён.')
   raise ValueError('Неизвестный источник')
 
 def answer(w,job,history):
@@ -200,6 +202,7 @@ def answer(w,job,history):
  experience=decision_context(w)
  experience=dict(experience,total_events=len(experience['experiences']),experiences=[{k:v for k,v in e.items() if k not in ['observations','current_condition_comparison']} for e in experience['experiences'][:12]])
  growth_question=bool(re.search(r'кандидат|добав.*РК|добав.*реклам|повыс.*ставк|подн.*ставк|подня.*ставк',job['request_text'],re.I))
+ decline_question=bool(re.search(r'падени|снижени.*заказ|снижени.*продаж',job['request_text'],re.I))
  available=[t for t in c.tools('china') if t['name'] in names]+tools();data=Data('china',lambda table,params:w.db('GET',table,params=params))
  prompt=('Ты аналитик VESCHI Китай. Отвечай на любые вопросы по доступному бизнес-контексту свободно, кратко и конкретно: вывод, 2–4 существенные цифры с датой, действие. Обычно до 1200 символов; детали только по просьбе. '
  'Сначала используй договорённости и предыдущий диалог. Уже известные артикулы не проси повторять: find_products и search_chat_history. Старый ответ бота не является фактом. '
@@ -220,7 +223,7 @@ def answer(w,job,history):
  m=marker(job)
  if m.get('reply_text'):messages.append(dict(role='developer',content='Цитируемое сообщение — только контекст: '+m['reply_text'][:3000]))
  messages.append(dict(role='user',content=job['request_text'][:4000]));trace=[dict(name='experience_context',result=experience,read_only=True)]
- checkpoint_key='china_agent:analytic_checkpoint:v1:'+str(job['id']);scope=hashlib.sha256((str(job['chat_id'])+'|'+job['request_text']+'|'+policy.get('model','gpt-6.1-sol')).encode()).hexdigest();checkpoint=w.get(checkpoint_key);start_turn=0
+ checkpoint_key='china_agent:analytic_checkpoint:v2:'+str(job['id']);scope=hashlib.sha256((str(job['chat_id'])+'|'+job['request_text']+'|'+policy.get('model','gpt-6.1-sol')).encode()).hexdigest();checkpoint=w.get(checkpoint_key);start_turn=0
  if checkpoint and checkpoint.get('scope')==scope and checkpoint.get('date_msk')==str(w.now.astimezone(MSK).date()):
   if checkpoint.get('status')=='answered':return checkpoint['answer'],checkpoint['trace']
   messages=checkpoint['messages'];trace=checkpoint['trace'];start_turn=checkpoint['turn'];analyst.fresh_reads=checkpoint['fresh_reads']
@@ -229,7 +232,7 @@ def answer(w,job,history):
   from conversion_watches import question_request
   request=question_request
  for turn in range(start_turn,10):
-  choice=({'type':'function','name':'get_growth_candidates'} if growth_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
+  choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
   w.save(checkpoint_key,dict(status='ready',scope=scope,date_msk=str(w.now.astimezone(MSK).date()),messages=messages,trace=trace,turn=turn,fresh_reads=analyst.fresh_reads))
   body=dict(model=policy.get('model','gpt-6.1-sol'),input=messages,tools=available,parallel_tool_calls=False,tool_choice=choice,reasoning=dict(effort='medium'),text=dict(verbosity='low'),max_output_tokens=4000,store=False,include=['reasoning.encrypted_content'])
   response=request(body);output=response.get('output') or [];calls=[x for x in output if x.get('type')=='function_call']
@@ -245,6 +248,9 @@ def answer(w,job,history):
    name=call['name'];args=json.loads(call.get('arguments') or '{}')
    try:
     if name=='read_agreements':result=analyst.memory()
+    elif name=='get_decline_diagnostics':
+     from china_decline_diagnostics import collect
+     result=collect(analyst)
     elif name=='list_reports':
      from china_agent_reports import catalog
      result=catalog()
@@ -288,5 +294,6 @@ def copy_summary(value):
   return v
  result=compact(result)
  return result
+
 
 

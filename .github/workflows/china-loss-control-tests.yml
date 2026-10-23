@@ -1,9 +1,9 @@
 name: China loss control regression tests
 on:
   push:
-    branches: [china-loss-control-20261022, china-loss-107-binding-20261022]
+    branches: [china-loss-control-20261022, china-loss-107-binding-20261022, china-order-decline-logic-20261023]
   pull_request:
-    paths: ['scripts/china_loss*', 'scripts/conversion_watches.py']
+    paths: ['scripts/china_loss*', 'scripts/china_order_decline.py', 'scripts/test_china_order_decline.py', 'scripts/conversion_watches.py']
 permissions:
   contents: read
 jobs:
@@ -26,5 +26,6 @@ jobs:
           python scripts/install_china_buyout.py --root source
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_control.py -v
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_ads.py -v
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_order_decline.py -v
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py -v
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_search_analytics.py -v

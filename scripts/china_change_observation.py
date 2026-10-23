@@ -198,6 +198,7 @@ def general_traffic(w,nm,first,last,ad):
  total=source.get('total_impressions');organic=source.get('organic_impressions');paid=source.get('advertising_impressions')
  if total is not None:total=num(total)
  if organic is not None:organic=num(organic)
+ if any(v is not None and num(v)<0 for v in [total,organic,paid,source.get('total_clicks')]):raise ValueError('Negative traffic counter')
  comparable=source.get('components_disjoint') is True and source.get('same_unit_and_period') is True
  if total is None and organic is not None and paid is not None and comparable:total=organic+num(paid)
  if organic is None and total is not None and paid is not None and comparable and total>=num(paid):organic=total-paid
@@ -367,7 +368,15 @@ def daily(budget=60,verify=False):
  with network_guard():
   registry=refresh(w,None,0)
   if registry['status']=='complete_coverage':return registry
-  try:s=source(IO())
+  class SourceIO(IO):
+   # JSON object keys are strings in durable storage. Normalize only this read-source
+   # cache; marketplace execution state machines and their readback checks stay intact.
+   def put(self,key,value):return super().put(key,json.loads(json.dumps(value)))
+   def create(self,key,value):return super().create(key,json.loads(json.dumps(value)))
+   def wb(self,path,method='GET',body=None):
+    if method!='GET':raise PermissionError('Observation source WB writes forbidden')
+    return super().wb(path,method,body)
+  try:s=source(SourceIO())
   except Exception as ex:
    w.save(ROOT+'source_error:'+day,dict(status='blocked',error=type(ex).__name__,detail=str(ex)[:500],observed_at=stamp(),registry=registry,wb_writes=0))
    return dict(registry,status='source_blocked')

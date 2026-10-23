@@ -1,4 +1,4 @@
-name: China memory read-only verification v3
+name: China memory read-only verification v4
 on:
   push:
     branches: [china-evidence-memory]
@@ -43,6 +43,7 @@ jobs:
           python -m unittest discover -s scripts -p test_china_experience.py
           python -m unittest discover -s scripts -p test_china_analytic_dialog.py
           python -m unittest discover -s scripts -p test_china_growth_candidates.py
+          python -m unittest discover -s scripts -p test_china_agent_reports.py
           python -m unittest discover -s scripts -p test_conversion_watches.py
           python -m unittest discover -s scripts -p test_china_new_ads.py
           python -m unittest discover -s scripts -p test_china_ad_rule.py

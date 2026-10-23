@@ -22,6 +22,10 @@ def fixture():
  a=dict(chat_id=m.CHAT,bot_id=m.BOT,reply_message_id=100,plan_sha256=p['plan_sha256'],command='Сделай всё',update_id=8,sender_id=777,input_message_id=101)
  return p,a,b
 class Tests(unittest.TestCase):
+ def test_publish_preparation_uses_saved_baseline(self):
+  p,a,b=fixture();p['baseline']=b;io=Fake(p,a)
+  with patch.object(m,'current') as read:
+   self.assertEqual(m.prepare(io,p),m.stable(b));read.assert_not_called()
  def test_delivered_png_not_sent_twice(self):
   p,a,b=fixture();p['delivery_status']='sent';io=Fake(p,a)
   self.assertEqual(m.publish(io)['message_id'],100)

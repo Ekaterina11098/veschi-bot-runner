@@ -29,6 +29,18 @@ class Tests(unittest.TestCase):
   c['new2']=dict(c['new'],version=c['new']['version']+'-edit-'+sha('edit:e2')[:8],hashes=[sha('edited again')])
   i['i2']=dict(i['i'],id='i2',card_token='new2',version=c['new2']['version'],answer='edited again',answer_sha256=sha('edited again'),created_at=2)
   out=candidates(c,e,i,'owner');self.assertEqual(len(out),1);self.assertEqual(out[0]['intent_id'],'i2')
+ def test_generation_retrieves_new_examples_without_mixing_questions(self):
+  import importlib.util,types
+  from unittest.mock import patch
+  spec=importlib.util.spec_from_file_location('example_library_under_test',Path(__file__).parent/'review_benchmarks.py')
+  mod=importlib.util.module_from_spec(spec)
+  with patch.dict(sys.modules,{'review_queue':types.SimpleNamespace(_request=lambda *a,**k:[])}):spec.loader.exec_module(mod)
+  review=dict(productValuation=5,text='ремень',productDetails={'supplierArticle':'Bag-test'})
+  question=dict(text='ремень',productDetails={'supplierArticle':'Bag-test'})
+  rows=[dict(feedback_id='veschi-review:token_3:questions:q',rating=0,review_text='ремень',supplier_article='Bag-test',edited_answer='Здравствуйте! Ответ про ремень.'),
+        dict(feedback_id='veschi-review:token_2:feedbacks:r',rating=5,review_text='ремень',supplier_article='Bag-test',edited_answer='Добрый день! Спасибо за отзыв.')]
+  self.assertEqual(mod.relevant_benchmarks(review,rows)[0]['feedback_id'],rows[1]['feedback_id'])
+  self.assertEqual(mod.relevant_benchmarks(question,rows)[0]['feedback_id'],rows[0]['feedback_id'])
  def test_idempotence_readback_and_retry(self):
   repo=Repository(sqlite3.connect(':memory:'));repo.setup()
   c,e,i=self.case()

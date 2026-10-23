@@ -1,6 +1,6 @@
 """China-only daily read/PNG/send with frozen daily artifacts and durable receipts."""
 import os,json,base64,hashlib,tempfile
-from datetime import datetime
+from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from china_price_apply import IO
 from china_advertising_collect import collect
@@ -18,7 +18,9 @@ def run():
   prices=io.get('china_agent:prices:v1') or {}
   if prices.get('cabinet')!='token_3':raise ValueError('China article catalogue unavailable')
   articles={str(x['nmID']):x['vendorCode'] for x in prices.get('rows',[])}
-  bundle=normalize(source,day,articles)
+  # Reuse complete archived daily campaign summaries; no extra MPStats calls.
+  history=[io.get('china_agent:advertising_source:'+(datetime.fromisoformat(day).date()-timedelta(days=i)).isoformat()+':v1') or {} for i in (1,2)]
+  bundle=normalize(source,day,articles,history)
   with tempfile.TemporaryDirectory() as out:
    paths=render(bundle,out)
    images=[dict(kind=k,b64=base64.b64encode(p.read_bytes()).decode()) for k,p in zip(('drr','budgets'),paths)]

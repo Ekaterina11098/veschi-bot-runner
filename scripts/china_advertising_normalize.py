@@ -4,7 +4,27 @@ from datetime import date,timedelta
 def number(v):
  if isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) or v<0:raise ValueError('Missing or invalid advertising amount')
  return v
-def normalize(p,day,articles):
+def arithmetic_drr(rows,end,fallback_rows=()):
+ """Mean of available daily ratios in the final three calendar days."""
+ dates=[str(date.fromisoformat(end)-timedelta(days=i)) for i in (2,1,0)]
+ series=[];no_orders=[]
+ for day in dates:
+  found=[r for r in rows if r.get('date')==day]
+  fallback=[r for r in fallback_rows if r.get('date')==day]
+  if len(fallback)>1:raise ValueError('Duplicate campaign daily summaries')
+  if fallback:found=fallback
+  if len(found)>1:raise ValueError('Duplicate daily DRR rows')
+  ratio=None
+  if found:
+   spend=found[0].get('ac_spending_sum');revenue=found[0].get('ac_orders_sum')
+   if spend is not None and revenue is not None:
+    spend=number(spend);revenue=number(revenue)
+    if revenue>0:ratio=100*spend/revenue
+    elif spend>0:no_orders.append(dict(date=day,spend=spend))
+  series.append(dict(date=day,drr=ratio))
+ values=[x['drr'] for x in series if x['drr'] is not None]
+ return dict(drr_mean_3d=sum(values)/len(values) if values else None,drr_mean_3d_count=len(values),drr_mean_3d_daily=series,drr_3d_no_orders_days=len(no_orders),drr_3d_no_orders_spend=sum(x['spend'] for x in no_orders))
+def normalize(p,day,articles,history=()):
  if p.get('status')!='complete' or p.get('cabinet')!='token_3' or p.get('identity',{}).get('id')!=939742 or p['identity'].get('info',{}).get('currency')!='CNY':
   raise ValueError('China source identity or currency unverified')
  end=str(date.fromisoformat(day)-timedelta(days=1));start=str(date.fromisoformat(end)-timedelta(days=6));obs=p['observations']
@@ -49,8 +69,18 @@ def normalize(p,day,articles):
   day_row_spend=number(day_rows[0]['ac_spending_sum']) if len(day_rows)==1 else None
   summary_product_spend=(prod['data'].get('totals') or {}).get('ac_spending_sum')
   if spend>0 and summary_product_spend!=spend:raise ValueError('Campaign product totals do not reconcile')
+  fallback=[]
+  for source in (p,*history):
+   if source.get('status')!='complete' or source.get('cabinet')!='token_3' or source.get('identity',{}).get('id')!=939742 or source.get('identity',{}).get('info',{}).get('currency')!='CNY':continue
+   for o in source.get('observations',[]):
+    a=o.get('arguments',{});history_data=o.get('data',{})
+    if o.get('tool')!='wbbidder_campaigns' or a.get('report')!='stats' or a.get('d1')!=a.get('d2') or a.get('tokens')!=[939742] or o.get('status')!='received' or o.get('scope_verified') is not True:continue
+    rows=history_data.get('data',[])
+    if history_data.get('period')!={'from':a.get('d1'),'to':a.get('d2')} or history_data.get('returned')!=len(rows) or history_data.get('total')!=len(rows):continue
+    match=[x for x in rows if x.get('wb_id')==c['wb_id']]
+    if len(match)==1:fallback.append(dict(match[0],date=a['d1']))
   result['campaigns'].append(dict(id=cid,wb_id=c['wb_id'],name=c['campaign_name'],status=c['status_id'],is_new=new,created=c['create_date'],
-   spend=spend,weekly_spend=week,orders_sum=revenue,orders=number(d.get('ac_orders')),drr=100*spend/revenue if revenue>0 else None,
+   spend=spend,weekly_spend=week,orders_sum=revenue,orders=number(d.get('ac_orders')),drr=100*spend/revenue if revenue>0 else None,**arithmetic_drr(days['data']['data'],end,fallback),
    source_drr=d.get('ac_share_of_advert_spend'),postclick_orders=d.get('ac_orders_associated'),postclick_orders_sum=d.get('ac_orders_sum_associated'),
    above5=sorted(risk,key=lambda x:x['drr'],reverse=True),no_orders=sorted(no_orders,key=lambda x:x['spend'],reverse=True),
    balance=balance,balance_observed=conf['observed_at'],balance_hours=balance/spend*24 if balance is not None and not new and c['status_id']==9 and spend>0 else None,

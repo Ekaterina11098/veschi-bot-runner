@@ -1,0 +1,17 @@
+name: China three-day advertising math tests
+on:
+  pull_request:
+    paths: ['scripts/china_three_day_ads.py', 'scripts/test_china_three_day_ads.py', '.github/workflows/china-three-day-ad-cost-tests.yml']
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_three_day_ads.py

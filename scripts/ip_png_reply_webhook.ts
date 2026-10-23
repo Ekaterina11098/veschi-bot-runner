@@ -82,16 +82,27 @@ async function queueSavedDialog(update: any, message: any, text: string) {
 
 
 async function exactPngApproval(update: any, message: any, config: any) {
-  if (!/^сделай\s+вс[её][.!]?$/iu.test(String(message.text ?? "").trim())) return null;
+  const command=String(message.text ?? "").trim();
+  if (!/^(?:(?:да|хорошо|ок)[, ]+)?(?:сдел(?:а)?й(?:\s+вс[её])?|примени(?:\s+вс[её])?|поменяй(?:\s+вс[её])?|согласен|согласна|подтверждаю|выполни(?:\s+вс[её])?|да|хорошо|ок)[.!]?$/iu.test(command)) return null;
+  if (!message.reply_to_message?.photo || message.reply_to_message?.from?.id!==8987327588) return null;
   const planKey="advertising:ip:png_plan:20261023:five:v1";
   const rows=await database("telegram_api_cache?cache_key=eq."+encodeURIComponent(planKey)+"&select=payload&limit=1");
   const p=rows?.[0]?.payload, r=message.reply_to_message;
   if (!p || p.delivery_status!=="sent" || message.chat.id!==-1004378639510 || config.bot_id!==8987327588 ||
       !r || r.from?.id!==8987327588 || r.from?.is_bot!==true || r.message_id!==p.message_id ||
       r.forward_origin || message.forward_origin || message.sender_chat ||
-      (message.message_thread_id ?? null)!==(p.message_thread_id ?? null) ||
+      (message.chat.is_forum === true && (message.message_thread_id ?? null)!==(p.message_thread_id ?? null)) ||
       !r.photo?.some((x:any)=>x.file_unique_id===p.file_unique_id))
-    return reply(message.chat.id,"Ответьте «Сделай всё» именно на PNG с пятью рекомендациями ИП. Ничего не изменено.");
+    {
+      const diagnostic={observed_at:new Date().toISOString(),update_id:update.update_id,chat_id:message.chat.id,
+        input_message_id:message.message_id,reply_message_id:r?.message_id ?? null,reply_bot_id:r?.from?.id ?? null,
+        reply_is_bot:r?.from?.is_bot ?? null,is_forum:message.chat.is_forum ?? false,
+        thread:message.message_thread_id ?? null,plan_thread:p?.message_thread_id ?? null,
+        photo_ids:r?.photo?.map((x:any)=>x.file_unique_id) ?? [],expected_photo:p?.file_unique_id ?? null,
+        forwarded:!!(r?.forward_origin || message.forward_origin),sender_chat:!!message.sender_chat};
+      await database("telegram_api_cache?on_conflict=cache_key","POST",{cache_key:"advertising:ip:png_reply_rejected:"+update.update_id,payload:diagnostic,expires_at:new Date(Date.now()+7*86400000).toISOString()},"resolution=ignore-duplicates");
+      return reply(message.chat.id,"Не удалось подтвердить привязку к PNG. Диагностика сохранена; ничего не изменено.");
+    }
   if (new Date(p.expires_at)<=new Date())return reply(message.chat.id,"Срок подтверждения PNG истёк. Нужен обновлённый план; изменений нет.");
   if (!Number.isSafeInteger(update.update_id) || update.update_id<0 || !Number.isSafeInteger(message.message_id))return new Response("Invalid update",{status:400});
   if (!GITHUB)return reply(message.chat.id,"Исполнитель недоступен. Изменений нет.");
@@ -220,3 +231,5 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return callback ? ack(callback.id,"Запрос сохранён. Исполнение выключено; команда сохранена отдельно.") : reply(message.chat.id,"Поручение сохранено. Команда сохранена отдельно; автоматическое исполнение выключено.");
   } catch { return new Response("Queue unavailable",{status:503}); }
 });
+
+

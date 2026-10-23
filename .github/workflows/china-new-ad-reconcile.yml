@@ -1,0 +1,52 @@
+name: Read-only new advertising launch reconciliation
+on:
+  push:
+    branches: [china-free-analytic-dialog]
+    paths: ['.github/workflows/china-new-ad-reconcile.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 > /dev/null
+      - name: Read campaign state only and save private evidence
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import requests,time
+          from china_price_apply import IO,now
+          io=IO();out=dict(at=now().isoformat(),wb_writes=0,telegram_sends=0,responses=[])
+          def get(path,method='GET',body=None):
+              assert method=='GET' or path in ['/adv/v2/supplier/nms','/api/advert/v2/budget']
+              r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':io.token},json=body,timeout=45)
+              try:j=r.json()
+              except ValueError:j=r.text[:1500]
+              out['responses'].append(dict(path=path,status=r.status_code,data=j));time.sleep(1.5)
+              return j
+          listing=get('/adv/v1/promotion/count')
+          ids=sorted({x['advertId'] for g in listing.get('adverts',[]) for x in g.get('advert_list',[])})
+          assert len(ids)<=500
+          for start in range(0,len(ids),50):
+              get('/api/advert/v2/adverts?ids='+','.join(map(str,ids[start:start+50])))
+          get('/adv/v1/supplier/subjects?payment_type=cpc')
+          get('/adv/v2/supplier/nms','POST',[50,61])
+          key='china_agent:new_ad_reconcile:2026-10-23:v1'
+          io.put(key,out) if io.get(key) else io.create(key,out)
+          print('Read-only reconciliation saved privately; WB writes=0; Telegram sends=0')
+          PY

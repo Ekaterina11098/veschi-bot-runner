@@ -56,6 +56,16 @@ class PolicyTests(unittest.TestCase):
    for value in complaints:
     with self.subTest(key=key,value=value):self.assertFalse(classify(self.review(**{key:value}))['eligible'])
   self.assertFalse(classify(self.review(text='Отличная сумка',cons='Молния заедает'))['eligible'])
+ def test_positive_customer_phrases_and_complaint_suffix(self):
+  examples=["Прекрасная сумочка , очень нравится как сшита , кожа прелестного качества , внутри органайзер .","Зонт понравился, расцветка приятная. Дожди закончились. Буду ждать, чтобы испытать","Зонт красивый. Большой. Закрывает меня всю. Дизайн зонта интересный. Всё работает. Открывается и закрывается быстро. Я довольна. Всем спасибо.","Просто супер. Дешево и сердито. Это ❤️","Сумка красивая. Такая должна быть в ассортименте. Цвет красивый."]
+  for key in ('text','pros','cons'):
+   for text in examples:
+    with self.subTest(key=key,text=text):
+     self.assertTrue(classify(self.review(**{key:text}))['eligible'])
+     self.assertFalse(classify(self.review(**{key:text+' Но молния заедает.'}))['eligible'])
+     self.assertFalse(classify(self.review(**{key:'Не '+text}))['eligible'])
+  for text in ('Большой, но тяжёлый','Хорошая, но не мой размер','Дешево и сердито?','Прекрасная, внутри органайзер порвался','Все работает, но закрывается с трудом'):
+   self.assertFalse(classify(self.review(text))['eligible'])
  def test_purchase_status_neutral(self):
   for status in ('buyout','rejected','returned',None):
    answer=answer_for(self.review(orderStatus=status))

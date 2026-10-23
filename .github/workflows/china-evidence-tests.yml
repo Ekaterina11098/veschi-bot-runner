@@ -2,9 +2,9 @@ name: China evidence memory and report recipe tests
 on:
   push:
     branches: [main, china-evidence-memory]
-    paths: ['scripts/china_experience.py', 'scripts/china_growth_candidates.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/test_china_experience.py', 'scripts/test_china_growth_candidates.py', 'scripts/test_china_analytic_dialog.py', 'scripts/test_china_agent_reports.py', 'scripts/test_china_report_routing.py', 'scripts/conversion_watches.py', 'scripts/china_model_transport.py', 'scripts/china_decline_diagnostics.py', 'scripts/test_china_model_transport.py', 'scripts/test_china_checkpoint.py', 'scripts/test_china_decline_diagnostics.py', '.github/workflows/china-evidence-tests.yml']
+    paths: ['scripts/china_table_png.py', 'scripts/test_china_table_png.py', 'scripts/china_experience.py', 'scripts/china_growth_candidates.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/test_china_experience.py', 'scripts/test_china_growth_candidates.py', 'scripts/test_china_analytic_dialog.py', 'scripts/test_china_agent_reports.py', 'scripts/test_china_report_routing.py', 'scripts/conversion_watches.py', 'scripts/china_model_transport.py', 'scripts/china_decline_diagnostics.py', 'scripts/test_china_model_transport.py', 'scripts/test_china_checkpoint.py', 'scripts/test_china_decline_diagnostics.py', '.github/workflows/china-evidence-tests.yml']
   pull_request:
-    paths: ['scripts/china_experience.py', 'scripts/china_growth_candidates.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/test_china_experience.py', 'scripts/test_china_growth_candidates.py', 'scripts/test_china_analytic_dialog.py', 'scripts/test_china_agent_reports.py', 'scripts/test_china_report_routing.py', 'scripts/conversion_watches.py', 'scripts/china_model_transport.py', 'scripts/china_decline_diagnostics.py', 'scripts/test_china_model_transport.py', 'scripts/test_china_checkpoint.py', 'scripts/test_china_decline_diagnostics.py', '.github/workflows/china-evidence-tests.yml']
+    paths: ['scripts/china_table_png.py', 'scripts/test_china_table_png.py', 'scripts/china_experience.py', 'scripts/china_growth_candidates.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/test_china_experience.py', 'scripts/test_china_growth_candidates.py', 'scripts/test_china_analytic_dialog.py', 'scripts/test_china_agent_reports.py', 'scripts/test_china_report_routing.py', 'scripts/conversion_watches.py', 'scripts/china_model_transport.py', 'scripts/china_decline_diagnostics.py', 'scripts/test_china_model_transport.py', 'scripts/test_china_checkpoint.py', 'scripts/test_china_decline_diagnostics.py', '.github/workflows/china-evidence-tests.yml']
 permissions:
   contents: read
 jobs:
@@ -17,10 +17,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - run: pip install Pillow==12.3.0
       - name: Test read tools, experience and report identities without credentials
         env:
           PYTHONPATH: scripts
         run: |
+          python -m unittest discover -s scripts -p test_china_table_png.py
           python -m unittest discover -s scripts -p test_china_experience.py
           python -m unittest discover -s scripts -p test_china_analytic_dialog.py
           python -m unittest discover -s scripts -p test_china_growth_candidates.py

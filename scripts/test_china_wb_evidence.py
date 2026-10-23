@@ -43,8 +43,15 @@ class Tests(unittest.TestCase):
  def test_sku_shared_not_silently_allocated(self):
   r=settlement(state(row()),'2026-10-21','2026-10-21',[10],{10:120});self.assertTrue(any('shared' in m for m in r['missing']))
  def test_owner_tax5_and_own_cogs_calculated(self):
-  r=settlement(state(row()),'2026-10-21','2026-10-21',costs={10:120})
+  ads=dict(complete=True,period_from='2026-10-21',period_to='2026-10-21',daily={'2026-10-21':{'spend_cny':0,'by_sku':{}}})
+  r=settlement(state(row()),'2026-10-21','2026-10-21',costs={10:120},ads=ads)
   self.assertEqual(r['parts_cny']['tax'],5);self.assertEqual(r['parts_cny']['cogs'],10);self.assertEqual(r['calculated_profit_rub'],780)
+ def test_promotion_payment_replaced_with_same_period_expense(self):
+  ads=dict(complete=True,period_from='2026-10-21',period_to='2026-10-21',daily={'2026-10-21':{'spend_cny':7,'by_sku':{}}})
+  r=settlement(state(row(),row(2,op='扣款',doc='',nm=0,forPay='0',deduction='10',bonusTypeName='WB Promotion')),'2026-10-21','2026-10-21',costs={10:120},ads=ads)
+  self.assertEqual(r['calculated_profit_rub'],696);self.assertTrue(r['promotion_cash_replaced_by_period_expense'])
+ def test_missing_period_ads_not_zero_profit(self):
+  r=settlement(state(row()),'2026-10-21','2026-10-21',costs={10:120});self.assertIsNone(r['calculated_profit_rub']);self.assertEqual(r['accounted_contribution_rub'],780)
  def test_historical_positive_stock_cost_when_current_missing(self):
   w=Worker();w.catalog=lambda:[('10','synthetic')]
   href='https://api.moysklad.ru/api/remap/1.2/entity/product/synthetic-id'

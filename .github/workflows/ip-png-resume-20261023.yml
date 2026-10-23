@@ -1,4 +1,4 @@
-name: Owner approved IP continuation once
+name: Owner approved IP continuation with canonical readback
 on:
   push:
     branches: [main]

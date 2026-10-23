@@ -34,4 +34,4 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
           PYTHONPATH: .
-        run: python ../scripts/china119_two_day_read.py
+        run: python ../scripts/china119_complete_read.py

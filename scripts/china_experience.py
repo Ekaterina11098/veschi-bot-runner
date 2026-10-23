@@ -75,7 +75,7 @@ def sync(w):
    if p.get('status')=='verified' and isinstance(p.get('before'),dict) and isinstance(p.get('after'),dict):
     for cid,c in p['before'].items():
      after=p['after'].get(str(cid)) or p['after'].get(cid)
-     if not after:continue
+     if not isinstance(c,dict) or not isinstance(after,dict) or not str(cid).isdigit():continue
      removed={n['nm_id'] for n in c.get('nm_settings',[])}-{n['nm_id'] for n in after.get('nm_settings',[])}
      for nm in removed:actions.append(dict(item=str(cid)+':'+str(nm),nm_ids=[nm],campaign_id=int(cid),kind='sku_exclusion',started=p.get('submitted_at'),verified=p.get('verified_at')))
    for a in actions:
@@ -91,9 +91,10 @@ def age_context(event,now=None):
  return dict(age_days=round(age,1) if age is not None else None,transferability='recheck_current_conditions',weight='historical_only' if age is not None and age>30 else 'recent_context',note='Возраст снижает переносимость, но сам не доказывает изменение алгоритмов WB. Успех/неудача похожего теста не предопределяет новый результат.')
 def search(w,nm_ids=(),query='',limit=12):
  sync(w);ids=(w.get(INDEX) or {}).get('event_ids',[]);output=[]
- evaluate_saved(w,ids)
+ records={r['payload']['event_id']:r['payload'] for r in read_rows(w,ROOT,limit=500) if r.get('payload',{}).get('event_id')}
+ evaluate_saved(w,ids,records)
  for eid in reversed(ids):
-  e=w.get(ROOT+eid)
+  e=records.get(eid)
   if not e:continue
   selected=set(e.get('action',{}).get('nm_ids',[]))
   if nm_ids and not selected.intersection(nm_ids):continue
@@ -102,18 +103,21 @@ def search(w,nm_ids=(),query='',limit=12):
   if len(output)>=limit:break
  return dict(experiences=output,total_matching_returned=len(output),principle='Проверенные действия, наблюдаемые результаты и гипотезы раздельно. Опыт не даёт разрешения повторять или отменять действие.')
 
-def evaluate_saved(w,ids):
+def evaluate_saved(w,ids,records=None):
  """Evaluate only due, equally complete saved advertising periods. No fresh WB calls."""
  today=getattr(w,'now',datetime.now(timezone.utc)).astimezone(MSK).date()
+ cached_sources={}
  for eid in ids:
-  e=w.get(ROOT+eid);window=(e or {}).get('comparison') or {};action=(e or {}).get('action') or {}
+  e=records.get(eid) if records is not None else w.get(ROOT+eid);window=(e or {}).get('comparison') or {};action=(e or {}).get('action') or {}
   if not window or str(today)<window['evaluate_from'] or not action.get('campaign_id'):continue
   if any(o.get('automatic_saved_ad_evaluation') for o in e.get('observations',[])):continue
   periods=[];source_keys=[]
   for label in ['before','after']:
    first=datetime.fromisoformat(window[label+'_from']).date();days=window['days'];daily=[]
    for i in range(days):
-    day=first+timedelta(days=i);key='china_agent:advertising_source:'+str(day+timedelta(days=1))+':v1';p=w.get(key)
+    day=first+timedelta(days=i);key='china_agent:advertising_source:'+str(day+timedelta(days=1))+':v1'
+    if key not in cached_sources:cached_sources[key]=w.get(key)
+    p=cached_sources[key]
     if not p:continue
     observations=p.get('observations',[]);mapping={}
     for o in observations:
@@ -134,6 +138,7 @@ def evaluate_saved(w,ids):
   b,a=periods[0]['ad_drr'],periods[1]['ad_drr'];trend='inconclusive' if b is None or a is None else 'negative' if a>b else 'positive' if a<b else 'unchanged'
   updated['observations'][-1].update(automatic_saved_ad_evaluation=True,advertising_direction=trend,causality='not_established',note='Только наблюдаемая эффективность рекламы; общая прибыль не подтверждена, причина не доказана')
   updated['advertising_outcome']=trend;save(w,ROOT+eid,updated)
+  if records is not None:records[eid]=updated
 
 def decision_context(w,nm_ids=(),current=None):
  """Mandatory input to recommendations; no model-authored outcomes or permissions."""
@@ -163,3 +168,4 @@ def observe(w,eid,before,after,source_keys,context=None):
  result=summarize_comparison(before,after);conditions=compare_conditions(before.get('conditions') or {},after.get('conditions') or {});record=dict(observed_at=stamp(),before=before,after=after,result=result,source_keys=source_keys,context=context or {},condition_comparison=conditions)
  e.setdefault('observations',[]).append(record);e.update(business_outcome=result['outcome'],last_observed_at=record['observed_at'],context=context or e.get('context',{}));save(w,ROOT+eid,e)
  return e
+

@@ -67,10 +67,17 @@ class Rules(unittest.TestCase):
   mem={PLAN+p['plan_id']:p,'china_agent:ad_rule_message:123':dict(plan_id=p['plan_id'],plan_sha256=p['plan_sha256'])}
   w=SimpleNamespace(now=datetime.now(timezone.utc),get=lambda k:mem.get(k),save=lambda k,p,**kw:mem.update({k:p}))
   job=dict(id=9,sender_id=1,chat_id=CHAT,request_text='Сделай всё',tool_trace=[dict(name='china_saved_question',reply_message_id=123,bot_id=BOT,message_id=100)],update_id=1,created_at=w.now.isoformat())
-  self.assertIn('только владелец',rule.handle(w,job)[0])
+  self.assertIn('действующие участники',rule.handle(w,job)[0])
   self.assertFalse(any(k.startswith(rule.APPROVAL) for k in mem))
   job['sender_id']=OWNER;self.assertIn('Принято',rule.handle(w,job)[0])
   self.assertTrue(any(k.startswith(rule.APPROVAL) for k in mem))
+ def test_other_member_can_confirm_when_delegated(self):
+  p=plan();p['chat_id']=CHAT;p['bot_id']=BOT
+  mem={PLAN+p['plan_id']:p,'china_agent:ad_rule_message:123':dict(plan_id=p['plan_id'],plan_sha256=p['plan_sha256']),'china_agent:command_permissions:v2':dict(enabled=True,policy='all_current_human_group_members',chat_id=CHAT,bot_id=BOT)}
+  w=SimpleNamespace(now=datetime.now(timezone.utc),get=lambda k:mem.get(k),save=lambda k,p,**kw:mem.update({k:p}),member_check=lambda actor:dict(status='member',user=dict(id=actor,is_bot=False)))
+  job=dict(id=99,sender_id=42,chat_id=CHAT,request_text='Сделай всё',tool_trace=[dict(name='china_saved_question',reply_message_id=123,bot_id=BOT,message_id=100)],update_id=99,created_at=w.now.isoformat())
+  self.assertIn('Принято',rule.handle(w,job)[0])
+  self.assertEqual(mem[rule.APPROVAL+'99']['sender_id'],42)
  def test_read_guard_no_mutations(self):
   with rule.reads() as scope:
    scope[10]={1,2}

@@ -21,3 +21,5 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: node --experimental-strip-types scripts/china_price_83_recovery.mjs
+
+# Retry pre-dispatch validation with canonical JSONB comparison.

@@ -30,9 +30,16 @@ def save(w,key,value):
  if hasattr(w,'save'):return w.save(key,value)
  return w.put(key,value) if w.get(key) else w.create(key,value)
 def read_rows(w,prefix,limit=80):
- if hasattr(w,'save'):return w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':limit}) or []
  from urllib.parse import quote
- return w.db('telegram_api_cache?cache_key=like.'+quote(prefix+'*',safe='')+'&select=cache_key,payload,updated_at&order=updated_at.desc&limit='+str(limit))
+ result=[]
+ while len(result)<limit:
+  size=min(200,limit-len(result));offset=len(result)
+  if hasattr(w,'save'):part=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc,cache_key.asc','limit':size,'offset':offset}) or []
+  else:part=w.db('telegram_api_cache?cache_key=like.'+quote(prefix+'*',safe='')+'&select=cache_key,payload,updated_at&order=updated_at.desc,cache_key.asc&limit='+str(size)+'&offset='+str(offset))
+  result+=part
+  if len(part)<size:break
+ if len(result)>=5000:raise ValueError('History exceeds bounded scan; extend pagination before claiming all changes')
+ return result
 def identifier(source,item):return hashlib.sha256((source+'#'+str(item)).encode()).hexdigest()[:24]
 def put_event(w,event):
  assert event.get('source_key') and event.get('record_type') in ['verified_action','reported_observation','operational_lesson']
@@ -91,7 +98,7 @@ def age_context(event,now=None):
  return dict(age_days=round(age,1) if age is not None else None,transferability='recheck_current_conditions',weight='historical_only' if age is not None and age>30 else 'recent_context',note='Возраст снижает переносимость, но сам не доказывает изменение алгоритмов WB. Успех/неудача похожего теста не предопределяет новый результат.')
 def search(w,nm_ids=(),query='',limit=12):
  sync(w);ids=(w.get(INDEX) or {}).get('event_ids',[]);output=[]
- records={r['payload']['event_id']:r['payload'] for r in read_rows(w,ROOT,limit=500) if r.get('payload',{}).get('event_id')}
+ records={r['payload']['event_id']:r['payload'] for r in read_rows(w,ROOT,limit=5000) if r.get('payload',{}).get('event_id')}
  evaluate_saved(w,ids,records)
  for eid in reversed(ids):
   e=records.get(eid)

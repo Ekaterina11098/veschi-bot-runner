@@ -217,7 +217,11 @@ class Worker:
 
     def send_once(self,key,chat,text):
         receipt=self.get(RECEIPTS+key)
-        if receipt and receipt.get('status') in ('sent','sending','uncertain'):return receipt['status']
+        if receipt and receipt.get('status') in ('sent','sending','uncertain'):
+            if receipt['status']=='sent':
+                from china_ad_rule import bind
+                bind(self,text,receipt['message_id'])
+            return receipt['status']
         if receipt and receipt.get('retry_at') and self.now<datetime.fromisoformat(receipt['retry_at']):return 'waiting'
         if not receipt:
             receipt=dict(status='ready',chat_id=chat,text=text,created_at=self.now.isoformat())
@@ -233,7 +237,10 @@ class Worker:
         message=result['result']
         if message.get('chat',{}).get('id')!=chat or not isinstance(message.get('message_id'),int):
             receipt['status']='uncertain';self.save(RECEIPTS+key,receipt);return 'uncertain'
-        receipt.update(status='sent',message_id=message['message_id']);self.save(RECEIPTS+key,receipt);return 'sent'
+        receipt.update(status='sent',message_id=message['message_id']);self.save(RECEIPTS+key,receipt)
+        from china_ad_rule import bind
+        bind(self,text,message['message_id'])
+        return 'sent'
 
     def jobs(self):
         rows=self.db('GET','business_agent_jobs',params={'agent_id':'eq.china','created_at':'gte.'+DEPLOYED_AFTER,'or':'(and(status.eq.pending,retry_at.lte.'+self.now.isoformat()+'),and(status.eq.running,lease_until.lte.'+self.now.isoformat()+'))','select':'*','order':'id.asc','limit':100}) or []
@@ -297,6 +304,10 @@ class Worker:
             note='Конверсия: заказы воронки / просмотры. Сумма заказов воронки может отличаться от заказов WB. Пропуски не равны нулю. Наблюдение и расписание не созданы.')
 
     def saved_question(self,job,history):
+        history=[x for x in history if not any(t.get('name')=='china_loss_answer_invalid' for t in x.get('tool_trace',[]))]
+        from china_ad_rule import handle as ad_rule_handle
+        ad_rule_answer=ad_rule_handle(self,job,history)
+        if ad_rule_answer is not None:return ad_rule_answer
         from china_loss_control import handle as loss_handle
         loss_answer=loss_handle(self,job)
         if loss_answer is not None:return loss_answer
@@ -610,7 +621,9 @@ def saved_network_guard():
             search=allowed_read(method,url,kwargs.get('json'))
             from china_ad_cost_collect import allowed_read as ad_cost_read
             advertising=ad_cost_read(method,url,kwargs.get('json'))
-            if not (database or model or telegram or search or advertising):raise PermissionError('Saved question network scope')
+            from china_ad_rule import allowed_read as ad_rule_read
+            rule_read=ad_rule_read(method,url,kwargs.get('json'))
+            if not (database or model or telegram or search or advertising or rule_read):raise PermissionError('Saved question network scope')
             return original(session,method,url,*args,**kwargs)
         requests.sessions.Session.request=bounded
         try:yield

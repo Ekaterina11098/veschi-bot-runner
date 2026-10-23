@@ -108,7 +108,10 @@ def render_plan(p,results=None):
 def bind(w,text,message_id):
  from china_ad_cost_png import PREFIX
  if not text.startswith(PREFIX):return
- key,index=text[len(PREFIX):].rsplit(':',1);saved=w.get(key) or {};pid=saved.get('plan_id')
+ key,index=text[len(PREFIX):].rsplit(':',1);saved=w.get(key) or {}
+ if not saved or saved.get('chat_id')!=CHAT:return
+ w.save('china_agent:ad_cost_message:'+str(message_id),dict(key=key,job_id=saved['job_id'],chat_id=CHAT))
+ pid=saved.get('plan_id')
  if not pid:return
  p=w.get(PLAN+pid)
  if not p or p.get('plan_sha256')!=digest(p['items']) or saved.get('plan_sha256')!=p['plan_sha256']:raise ValueError('Plan binding mismatch')

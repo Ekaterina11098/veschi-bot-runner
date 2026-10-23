@@ -132,7 +132,7 @@ def normalize_funnel(products,selected,past,source_id):
  return result
 
 def own_costs(w,stock,finance_rows,first,last):
- """Prefer stock cost; zero-stock average may be absent. Resolve exact own product buyPrice."""
+ """Zero-stock COGS: nearest earlier positive-stock average, never product buyPrice."""
  import requests
  by_article={r['article'].casefold():r.get('cost_rub') for r in stock.get('rows',[])}
  catalogue={int(nm):article for nm,article in w.catalog()};costs={nm:by_article.get(article.casefold()) for nm,article in catalogue.items()}
@@ -140,19 +140,40 @@ def own_costs(w,stock,finance_rows,first,last):
  evidence=[]
  for nm in sorted(required):
   if costs.get(nm) is not None or nm not in catalogue:continue
-  key=ROOT+'moysklad_cost:'+str(nm);saved=w.get(key)
+  key=ROOT+'moysklad_historical_cost:v2:'+str(nm)+':'+first;saved=w.get(key)
   if saved and (now()-datetime.fromisoformat(saved['observed_at'])).total_seconds()<21600:
    if saved.get('cost_rub') is not None:costs[nm]=saved['cost_rub']
    evidence.append(saved);continue
   article=catalogue[nm];url='https://api.moysklad.ru/api/remap/1.2/entity/product'
-  response=requests.get(url,headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN']},params={'filter':'article='+article,'limit':2,'expand':'buyPrice.currency'},timeout=35,allow_redirects=False)
-  if not response.ok:raise RuntimeError('MoySklad product COGS HTTP '+str(response.status_code))
-  raw=response.json();rows=raw.get('rows',[]);value=dict(nm_id=nm,article=article,observed_at=now().isoformat(),source=url,cost_rub=None)
+  headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN']}
+  prior=w.get(ROOT+'moysklad_cost:'+str(nm));raw=(prior or {}).get('raw')
+  if raw is None:
+   response=requests.get(url,headers=headers,params={'filter':'article='+article,'limit':2},timeout=35,allow_redirects=False)
+   if not response.ok:raise RuntimeError('MoySklad product identity HTTP '+str(response.status_code))
+   raw=response.json()
+  rows=raw.get('rows',[]);value=dict(nm_id=nm,article=article,observed_at=now().isoformat(),source='MoySklad historical stock average / МСК',cost_rub=None,history=[])
   if len(rows)==1 and rows[0].get('article','').casefold()==article.casefold():
-   product=rows[0];buy=product.get('buyPrice') or {};currency=buy.get('currency') or {};amount=buy.get('value')
-   if currency.get('isoCode')=='RUB' and amount is not None and money(amount)>0:
-    value.update(cost_rub=float(money(amount)/100),basis='Own product purchase price; stock average unavailable',product_id=product['id'],currency='RUB')
-    costs[nm]=value['cost_rub']
+   product=rows[0];meta=urlparse(product['meta']['href']);product_href=meta._replace(query='',fragment='').geturl()
+   if meta.hostname!='api.moysklad.ru' or not meta.path.startswith('/api/remap/1.2/entity/product/'):raise ValueError('MoySklad product identity URL')
+   stores=w.get(ROOT+'moysklad_store')
+   if stores is None:
+    response=requests.get('https://api.moysklad.ru/api/remap/1.2/entity/store',headers=headers,params={'limit':1000},timeout=35,allow_redirects=False)
+    if not response.ok:raise RuntimeError('MoySklad stores unavailable')
+    matches=[s for s in response.json().get('rows',[]) if s.get('name')=='МСК' and not s.get('archived')]
+    if len(matches)!=1:raise ValueError('MoySklad МСК store not unique')
+    stores=matches[0];w.save(ROOT+'moysklad_store',stores)
+   for days_back in [1,3,7,14,30,60,90,180,365]:
+    moment=str(date.fromisoformat(first)-timedelta(days=days_back))+' 23:59:59'
+    params={'filter':'store='+stores['meta']['href']+';product='+product_href+';moment='+moment+';stockMode=all;quantityMode=all','limit':1000}
+    response=requests.get('https://api.moysklad.ru/api/remap/1.2/report/stock/all',headers=headers,params=params,timeout=35,allow_redirects=False)
+    if not response.ok:raise RuntimeError('MoySklad historical COGS HTTP '+str(response.status_code))
+    report=response.json();history_rows=report.get('rows',[]);value['history'].append(dict(moment=moment,request=params,response=report))
+    if report.get('meta',{}).get('size',len(history_rows))!=len(history_rows):raise ValueError('Historical cost report incomplete')
+    matches=[r for r in history_rows if r.get('article','').casefold()==article.casefold() and r.get('meta',{}).get('href','').split('?')[0]==product_href]
+    if len(matches)>1:raise ValueError('Historical cost identity ambiguous')
+    if matches and money(matches[0].get('stock'))>0 and money(matches[0].get('price'))>0:
+     value.update(cost_rub=float(money(matches[0]['price'])/100),basis='Historical positive-stock average',cost_date_msk=moment,stock_at_cost_date=matches[0]['stock'],product_id=product['id'],currency='RUB')
+     costs[nm]=value['cost_rub'];break
   w.save(key,dict(value,raw=raw));evidence.append(value)
  return costs,evidence
 

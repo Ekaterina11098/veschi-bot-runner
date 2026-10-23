@@ -8,12 +8,12 @@ def ad_rows(rows,ids):
  for row in rows:
   if row.get('level')!='SKU_app' or row.get('nm_id') not in ids:continue
   key=(row['nm_id'],str(row['date'])[:10]);r=out.setdefault(key,dict(spend=0,amount=0,orders=0,clicks=0,views=0))
-  for k,field in [('spend','sum'),('amount','sum_price'),('orders','orders'),('clicks','clicks'),('views','views')]:r[k]+=row.get(field) or 0
+  for k,field in [('spend','sum'),('amount','sum_price'),('orders','orders'),('clicks','clicks'),('views','views')]:r[k]=None if r[k] is None or row.get(field) is None else r[k]+row[field]
  for r in out.values():
-  r['drr_pct']=100*r['spend']/r['amount'] if r['amount'] else None
-  r['ctr_pct']=100*r['clicks']/r['views'] if r['views'] else None
-  r['cpc_cny']=r['spend']/r['clicks'] if r['clicks'] else None
-  r['click_order_pct']=100*r['orders']/r['clicks'] if r['clicks'] else None
+  r['drr_pct']=100*r['spend']/r['amount'] if r['amount'] and r['spend'] is not None else None
+  r['ctr_pct']=100*r['clicks']/r['views'] if r['views'] and r['clicks'] is not None else None
+  r['cpc_cny']=r['spend']/r['clicks'] if r['clicks'] and r['spend'] is not None else None
+  r['click_order_pct']=100*r['orders']/r['clicks'] if r['clicks'] and r['orders'] is not None else None
   r['scope']='advertising_only'
  return out
 

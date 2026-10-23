@@ -39,8 +39,8 @@ def tools():
  return [function('read_agreements','Договорённости владельца и терминология. Не числовой срез продаж.',{}),
  function('get_decline_diagnostics','Обязательный полный сбор для падения заказов вчера/сегодня: WB по SKU и одинаковому часу; MPStats отдельно по каждому дню, клики/клик-заказ/цена; МойСклад; реклама; текущие ставки, минимум/шаг; проверенная история. Только чтение.',{}),
  function('list_reports','Все действующие отчёты, их генераторы, расписания и допустимые варианты. Расписания этим инструментом не меняются.',{}),
- function('make_report','Самостоятельно сформировать/повторить существующий отчёт по явной просьбе пользователя. Новый request identity не сбрасывает плановые квитанции. repeat=true повторяет исходный срез с датой; false пересчитывает доступные рецепты. PNG не разрешает изменения.',dict(kind={'type':'string','enum':['advertising','budgets','loss','price_morning','price_control','price_day','growth','ad_trend','actions']},days={'type':'integer','minimum':1,'maximum':90},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},repeat={'type':'boolean'},report_day={'type':['string','null']})),
- function('read_experience','Проверенная история действий, положительные/отрицательные результаты и неизвестные условия. Прошлый успех не гарантия нового результата.',dict(nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},query={'type':'string'})),
+ function('make_report','Самостоятельно сформировать/повторить существующий отчёт по явной просьбе пользователя. Новый request identity не сбрасывает плановые квитанции. repeat=true повторяет исходный срез с датой; false пересчитывает доступные рецепты. PNG не разрешает изменения.',dict(kind={'type':'string','enum':['advertising','budgets','loss','price_morning','price_control','price_day','growth','ad_trend','actions','outcomes']},days={'type':'integer','minimum':1,'maximum':90},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},repeat={'type':'boolean'},report_day={'type':['string','null']})),
+ function('read_experience','Проверенная история действий и наблюдения до/после: заказы, клик-заказ, завершённый выкуп, ДРР, общая ожидаемая/закрытая прибыль и пробелы. Прогнозные положительные/отрицательные исходы отдельно от доказанного факта. Откат только рекомендация. Прошлый успех не гарантия.',dict(nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},query={'type':'string'})),
  function('get_growth_candidates','Проверить кандидатов для добавления в текущие РК/повышения ставок. Обязательно читает память до отбора, актуальные WB минимумы/шаг, экономику, МойСклад и отзывы. Только рекомендации; не создаёт подтверждение или WB-запись.',dict(kind={'type':'string','enum':['both','add','raise']},days={'type':'integer','minimum':2,'maximum':14})),
  function('search_chat_history','Найти предыдущие вопросы/ответы в этом чате, не просить повторять известное.',dict(query={'type':'string'})),
  function('read_recent_actions','Фактические квитанции изменений цен/РК и доставленных планов. План и исполнение различать.',{}),
@@ -200,7 +200,7 @@ def answer(w,job,history):
  analyst=Analyst(w,job,history);names={'get_status','find_products','get_product','get_mpstats_data','get_wb_sources','get_stock_context','get_sales_report'}
  from china_experience import decision_context,search as experience_search
  experience=decision_context(w)
- experience=dict(experience,total_events=len(experience['experiences']),experiences=[{k:v for k,v in e.items() if k not in ['observations','current_condition_comparison']} for e in experience['experiences'][:12]])
+ experience=dict(experience,total_events=len(experience['experiences']),experiences=[{k:v for k,v in e.items() if k not in ['observations','current_condition_comparison','latest_change_observation']} for e in experience['experiences'][:12]])
  growth_question=bool(re.search(r'кандидат|добав.*РК|добав.*реклам|повыс.*ставк|подн.*ставк|подня.*ставк',job['request_text'],re.I))
  decline_question=bool(re.search(r'падени|снижени.*заказ|снижени.*продаж',job['request_text'],re.I))
  available=[t for t in c.tools('china') if t['name'] in names]+tools();data=Data('china',lambda table,params:w.db('GET',table,params=params))
@@ -294,6 +294,4 @@ def copy_summary(value):
   return v
  result=compact(result)
  return result
-
-
 

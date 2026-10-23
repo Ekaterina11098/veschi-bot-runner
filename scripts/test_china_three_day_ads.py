@@ -15,6 +15,7 @@ class ThreeDays(unittest.TestCase):
   self.assertEqual([v['cpa'] for v in r['daily']],[5,20,10])
   self.assertEqual(r['cpa'],10);self.assertAlmostEqual(r['drr'],100*60/450)
   self.assertEqual(r['cpa_first_last_percent'],100)
+  self.assertEqual(r['cpa_latest_percent'],-50)
  def test_zero_orders_undefined(self):
   s=[source(d,[row(10,0,0)]) for d in periods('2026-10-23')]
   r=build(s,'2026-10-23')['rows'][0];self.assertIsNone(r['cpa']);self.assertIsNone(r['drr']);self.assertIsNone(r['cpa_first_last_percent'])

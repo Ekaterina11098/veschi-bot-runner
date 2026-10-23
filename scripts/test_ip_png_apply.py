@@ -22,6 +22,12 @@ def fixture():
  a=dict(chat_id=m.CHAT,bot_id=m.BOT,reply_message_id=100,plan_sha256=p['plan_sha256'],command='Сделай всё',update_id=8,sender_id=777,input_message_id=101)
  return p,a,b
 class Tests(unittest.TestCase):
+ def test_delivered_png_not_sent_twice(self):
+  p,a,b=fixture();p['delivery_status']='sent';io=Fake(p,a)
+  self.assertEqual(m.publish(io)['message_id'],100)
+ def test_unknown_png_not_repeated(self):
+  p,a,b=fixture();p.pop('message_id');p['delivery_status']='uncertain';io=Fake(p,a)
+  self.assertEqual(m.publish(io)['status'],'uncertain')
  def test_exact_single_write_and_duplicate(self):
   p,a,b=fixture();io=Fake(p,a);after=copy.deepcopy(b);after['nm_settings']=[n for n in b['nm_settings'] if n['nm_id'] not in m.TARGETS]
   with patch.object(m,'current',side_effect=[{m.CID:b},{m.CID:after}]),patch.object(m,'http',return_value={}) as h:

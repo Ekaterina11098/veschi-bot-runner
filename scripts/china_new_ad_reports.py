@@ -13,7 +13,9 @@ def source(io):
  from analytics.mpstats_gaps import execute_reads
  now=datetime.now(timezone.utc);today=now.astimezone(MSK).date();end=today-timedelta(days=1);start=end-timedelta(days=29)
  cache='china_agent:new_ad_source:v1:'+str(today);old=io.get(cache)
- if old and now-datetime.fromisoformat(old['observed_at'])<timedelta(hours=2):return old
+ from china_experience import decision_context
+ experience=decision_context(io)
+ if old and now-datetime.fromisoformat(old['observed_at'])<timedelta(hours=2):return dict(old,experience=experience,memory_used=True)
  policy=io.get('china_agent:new_ad_economics_policy:v1')
  if not policy or policy.get('fx_rub_cny')!=12 or not policy.get('logistics_by_nm'):raise ValueError('Нет проверенной собственной модели COGS/логистики. Нужен сбор расходов, не нулевая подстановка.')
  def get(url,token,params=None):
@@ -71,12 +73,13 @@ def source(io):
     for cid,b in e['before'].items():
      a=e['after'].get(str(cid)) or e['after'].get(cid)
      if a:protected.update({n['nm_id'] for n in b.get('nm_settings',[])}-{n['nm_id'] for n in a.get('nm_settings',[])})
- result=dict(observed_at=now.isoformat(),period_from=str(start),period_to=str(end),cutoff_msk=cutoff.astimezone(MSK).isoformat(),stock=stock,prices=prices,campaigns=campaigns,orders=orders,products=rows,protected=sorted(protected),policy=policy,config=Transport(io).config(),wb_writes=0)
+ result=dict(observed_at=now.isoformat(),period_from=str(start),period_to=str(end),cutoff_msk=cutoff.astimezone(MSK).isoformat(),stock=stock,prices=prices,campaigns=campaigns,orders=orders,products=rows,protected=sorted(protected),policy=policy,config=Transport(io).config(),experience=experience,memory_used=True,wb_writes=0)
  io.put(cache,result) if old else io.create(cache,result)
  return result
 
 def choose(s,maximum=12):
- active={n['nm_id'] for c in s['campaigns'].values() for n in c.get('nm_settings',[])};protected=set(s['protected'])
+ if s.get('memory_used') is not True:raise ValueError('Память действий не проверена; подбор заблокирован')
+ active={n['nm_id'] for c in s['campaigns'].values() for n in c.get('nm_settings',[])};protected=set(s['protected']);recent=set(s['experience'].get('recent_changed_nm_ids',[]))
  prices={p['nmID']:p for p in s['prices']};stocks={};counts={}
  for st in s['stock']:
   if st.get('article'):stocks.setdefault(st['article'].casefold(),[]).append(st)
@@ -84,10 +87,13 @@ def choose(s,maximum=12):
  policy=s['policy'];groups={'orders':[],'demand':[]};rejected=0
  for row in s['products']:
   nm=int(row['nm_id']);article=row['sa_name'];p=prices.get(nm);st=stocks.get(article.casefold(),[]);log=policy['logistics_by_nm'].get(str(nm))
-  if nm in active or nm in protected or not p or len(st)!=1 or not log:continue
+  if nm in active or nm in protected or nm in recent or not p or len(st)!=1 or not log:continue
   st=st[0];f=row.get('finished_orders');paid=row.get('is_payed');views=row.get('open_card_count');orders=row.get('funnel_orders_count')
   if not f or f<3 or paid is None or not views or orders is None or st.get('stock') is None or st.get('reserve') is None or st.get('price') is None:rejected+=1;continue
   free=max(0,st['stock']-st['reserve']);price=p['sizes'][0]['discountedPrice'];buyout=paid/f;cr=orders/views*100
+  from china_experience import assess_candidate
+  experience_check=assess_candidate(s['experience'].get('experiences',[]),nm,dict(seller_price=price,stock_available=free,rating=row.get('commentsvaluation')))
+  if experience_check['needs_review']:rejected+=1;continue
   ratio=(row.get('price_after_spp') or 0)/(row.get('price_after_discount') or 1)
   if free<5 or ratio<=0:continue
   expected=buyout*(price*12*(1-.20-.05*ratio)-st['price']/100)-log['delivery_cny']*12-10-.05*price*12
@@ -98,7 +104,8 @@ def choose(s,maximum=12):
   if group=='demand' and cr<.5:continue
   bid=policy.get('category_minimum_minor',{}).get(str(row.get('subject_id')))
   if type(bid) is not int:continue
-  groups[group].append(dict(nm_id=nm,article=article,bid_minor=bid,stock=free,paid=paid,finished=f,conversion=round(cr,2),recent_orders=counts.get(nm,0),expected_rub_per_order=round(expected,2),price_cny=price,history_advertisement=row['advertisement']))
+  evidence=[e['event_id'] for e in s['experience'].get('experiences',[]) if nm in e.get('action',{}).get('nm_ids',[])]
+  groups[group].append(dict(nm_id=nm,article=article,bid_minor=bid,stock=free,paid=paid,finished=f,conversion=round(cr,2),recent_orders=counts.get(nm,0),expected_rub_per_order=round(expected,2),price_cny=price,history_advertisement=row['advertisement'],memory_event_ids=evidence,memory_used=True))
  groups['orders'].sort(key=lambda r:(r['recent_orders'],r['finished'],r['stock']),reverse=True)
  groups['demand'].sort(key=lambda r:(r['finished'],r['stock']),reverse=True)
  # Reserve at most half the requested total for speculative demand tests; no profit/order ranking.
@@ -161,4 +168,5 @@ def process_requests(io):
    if io.create(delivery,dict(status='sending')):
     try:r=io.tg('sendMessage',dict(chat_id=CHAT,text=notice,reply_parameters=dict(message_id=req['reply_message_id'],allow_sending_without_reply=True)));io.put(delivery,dict(status='sent',message_id=r['message_id']))
     except Exception:io.put(delivery,dict(status='uncertain'))
+
 

@@ -181,6 +181,8 @@ def ad_expenses(w,first,last):
  """Accrued advertising expense by day, separate from Finance promotion payment dates."""
  import requests
  key=ROOT+'ad_expenses:'+last;old=w.get(key)
+ pointer=w.get(ROOT+'ad_expenses_latest') or {};cover=w.get(pointer['source_key']) if pointer.get('source_key') else None
+ if cover and cover['period_from']<=first<=last<=cover['period_to'] and cover.get('complete') and (now()-datetime.fromisoformat(cover['observed_at'])).total_seconds()<7200:return cover
  if old and old['period_from']<=first and old.get('complete') and (now()-datetime.fromisoformat(old['observed_at'])).total_seconds()<7200:return old
  from china_change_observation import Reader
  ids=Reader(w,4).campaign_ids();daily={};raw=[]
@@ -200,7 +202,7 @@ def ad_expenses(w,first,last):
       nm=str(sku['nmId']);value['by_sku'][nm]=value['by_sku'].get(nm,0)+float(money(sku.get('sum')))
   raw+=campaigns
  result=dict(period_from=first,period_to=last,daily=daily,complete=True,source='WB fullstats campaign/day totals; SKU/app separately',source_id=key,cabinet='token_3',currency='CNY',observed_at=now().isoformat(),raw=raw)
- w.save(key,result);return result
+ w.save(key,result);w.save(ROOT+'ad_expenses_latest',{'source_key':key});return result
 
 def settlement(state,first,last,ids=None,costs=None,fx=12,tax_rate=.05,ads=None):
  """Published settlement contribution, separate from closed cohorts and expected ad-day profit."""
@@ -284,7 +286,9 @@ def daily(w):
  today=now().astimezone(timezone(timedelta(hours=3))).date();last=today-timedelta(days=1);first=last-timedelta(days=29)
  with __import__('china_analytic_dialog').reading():
   reports=Reports(w);finance=reports.finance(str(first),str(last));funnel=reports.funnel(str(last),str(last))
- summary=dict(observed_at=now().isoformat(),finance_complete=finance.get('complete',False),finance_status=finance.get('status'),finance_rows=len(finance.get('rows',[])),funnel_complete=funnel.get('complete',False),funnel_products=len(funnel.get('rows',[])),total_impressions_available=False,wb_writes=0,telegram_sends=0)
+  try:expense=ad_expenses(w,str(first),str(last));expense_ready=True
+  except Exception:expense_ready=False
+ summary=dict(observed_at=now().isoformat(),finance_complete=finance.get('complete',False),finance_status=finance.get('status'),finance_rows=len(finance.get('rows',[])),funnel_complete=funnel.get('complete',False),funnel_products=len(funnel.get('rows',[])),ad_expense_available=expense_ready,total_impressions_available=False,wb_writes=0,telegram_sends=0)
  w.save(ROOT+'latest_collection',summary);return summary
 
 if __name__=='__main__':

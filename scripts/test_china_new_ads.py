@@ -110,6 +110,10 @@ class NewAds(unittest.TestCase):
   s['stock'][0]['reserve']=50;self.assertEqual(choose(s)[0]['orders'],[])
   s['stock'][0]['reserve']=0;s['products'][0]['advertisement']=100;self.assertEqual(choose(s)[0]['orders'],[])
   s['products'][0]['advertisement']=0;s['protected']=[1];self.assertEqual(choose(s)[0]['orders'],[])
+  s['protected']=[]
+  extra=dict(s['products'][0],nm_id=2,sa_name='umbrella',subject_id=61)
+  s['products'].append(extra);s['prices'].append(dict(nmID=2,sizes=[dict(discountedPrice=200)]));s['stock'].append(dict(article='umbrella',stock=50,reserve=0,price=10000));s['policy']['logistics_by_nm']['2']=dict(delivery_cny=10);s['policy']['category_minimum_minor']['61']=23;s['orders'].append(dict(nmId=2))
+  groups,omitted=choose(s);self.assertLessEqual(len({r['subject_id'] for r in groups['orders']}),1);self.assertGreaterEqual(omitted,1)
 
 if __name__=='__main__':unittest.main()
 

@@ -178,12 +178,40 @@ def fresh_loss(w,nm_ids=()):
  # Do not print the non-informative waiting block before the actual evaluation date.
  from china_experience import decision_context
  due=[e for e in decision_context(w)['experiences'] if 'loss-20261022-107' in e.get('source_key','') and e.get('comparison',{}).get('evaluate_from','9999')<=str(w.now.astimezone(MSK).date())]
+ cohort=w.get('china_agent:loss_cohort:v1') or {}
+ if cohort.get('evaluate_from','9999')<=str(w.now.astimezone(MSK).date()):
+  rows+=loss_dynamics(w,s,cohort,nm_ids);due=[]
  for event in due:
   observations=event.get('observations') or [];result=observations[-1] if observations else {};before=result.get('before') or {};after=result.get('after') or {};b,a=before.get('total_profit'),after.get('total_profit');nm=event.get('action',{}).get('nm_ids',[None])[0];article=event.get('action',{}).get('article') or next((r['sa_name'] for r in s['products'] if int(r['nm_id'])==nm),'Артикул не определён')
   if b is None or a is None:rows.append(article+' · общая прибыль: нет данных. Нужны сопоставимые закрытые расходы и результат за '+event['comparison']['before_from']+' — '+event['comparison']['before_to']+' и '+event['comparison']['after_from']+' — '+event['comparison']['after_to']+'. Нулём не заменяем.')
   else:rows.append(article+' · общая прибыль '+str(b)+' → '+str(a)+' '+str(after.get('currency'))+'; Δ '+str(a-b)+'. Метод: '+str(after.get('profit_method'))+'.')
  footer='Экономика предварительная; источник МойСклад/WB/MPStats. Не оценено: '+str(unassessed)+'. Динамика — с даты оценки.'
  return pages('Китай · что ещё требует внимания',period+' · только новые необходимые действия',rows,footer),meta
+
+def loss_dynamics(w,source,cohort,nm_ids=()):
+ """Approved constant-DRR expected method, never a claimed closed-cohort profit."""
+ from china_analytic_dialog import Analyst
+ from china_growth_candidates import economics
+ ids=[int(x['nm_id']) for x in cohort['items'] if not nm_ids or int(x['nm_id']) in nm_ids];reader=Analyst(w,{},[]);periods=[]
+ for a,b in [(cohort['before_from'],cohort['before_to']),(cohort['after_from'],cohort['after_to'])]:
+  try:periods.append({int(r['nm_id']):r for r in reader.live('products',ids,a,b)['rows']})
+  except Exception:periods.append({})
+ products={int(r['nm_id']):r for r in source['products']};prices={p['nmID']:p for p in source['prices']};stocks={r.get('article','').casefold():r for r in source['stock']};lines=[]
+ for item in cohort['items']:
+  nm=int(item['nm_id']);article=item['article']
+  if nm not in ids:continue
+  values=[]
+  for period in periods:
+   row=period.get(nm);own=products.get(nm);p=prices.get(nm);stock=stocks.get(article.casefold())
+   if not row or not own or not p or not stock:values.append(None);continue
+   counts=[row.get('orders_count'),row.get('funnel_orders_count')];spark=row.get('sparkline_orders')
+   if not isinstance(spark,list) or counts[0] is None or counts[0]!=counts[1] or counts[0]!=sum(spark) or not row.get('orders_sum') or row.get('advertisement') is None:values.append(None);continue
+   expected=economics(own,p['sizes'][0]['discountedPrice'],stock,source['policy'],drr=row['advertisement']/row['orders_sum'])
+   values.append(expected*counts[0] if expected is not None else None)
+  if any(v is None for v in values):lines.append(article+' · общая прибыль: нет данных · нужны сопоставимые счётчики заказов и расходы; не0.');continue
+  b,a=values;lines.append(article+' · ожидаемая общая прибыль '+str(round(b))+' → '+str(round(a))+' ₽ · Δ '+str(round(a-b))+' ₽ · проверить итог после закрытия расходов'+(' (без нашего отключения)' if item.get('no_new_ad_change') else '')+'.')
+ lines.append('Динамика '+cohort['before_from']+'–'+cohort['before_to']+' → '+cohort['after_from']+'–'+cohort['after_to']+'. Предварительная ожидаемая оценка: общий объём × экономика при текущей цене, собственном завершённом выкупе и ДРР каждого периода. Курс12₽/¥; неизвестные общие удержания исключены, не0. Это не закрытая чистая прибыль и не доказательство эффекта рекламы.')
+ return lines
 
 def daily_loss():
  """Run after actual advertising pair delivery; share the existing daily receipt."""

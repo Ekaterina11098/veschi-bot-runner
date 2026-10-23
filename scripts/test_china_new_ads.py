@@ -103,7 +103,9 @@ class NewAds(unittest.TestCase):
  def test_candidate_selection_respects_ms_stock_costs_and_ad_history(self):
   from china_new_ad_reports import choose
   product=dict(nm_id=1,sa_name='bag',finished_orders=6,is_payed=4,open_card_count=100,funnel_orders_count=10,price_after_spp=1000,price_after_discount=1200,advertisement=0,subject_id=50)
-  s=dict(campaigns={},protected=[],prices=[dict(nmID=1,sizes=[dict(discountedPrice=200)])],stock=[dict(article='bag',stock=50,reserve=2,price=10000)],orders=[dict(nmId=1)],products=[product],policy=dict(logistics_by_nm={'1':dict(delivery_cny=10)},category_minimum_minor={'50':28}))
+  s=dict(memory_used=True,experience=dict(experiences=[],recent_changed_nm_ids=[]),campaigns={},protected=[],prices=[dict(nmID=1,sizes=[dict(discountedPrice=200)])],stock=[dict(article='bag',stock=50,reserve=2,price=10000)],orders=[dict(nmId=1)],products=[product],policy=dict(logistics_by_nm={'1':dict(delivery_cny=10)},category_minimum_minor={'50':28}))
+  without_memory=dict(s,memory_used=False)
+  with self.assertRaises(ValueError):choose(without_memory)
   g,missing=choose(s);self.assertEqual(g['orders'][0]['stock'],48)
   s['stock'][0]['reserve']=50;self.assertEqual(choose(s)[0]['orders'],[])
   s['stock'][0]['reserve']=0;s['products'][0]['advertisement']=100;self.assertEqual(choose(s)[0]['orders'],[])

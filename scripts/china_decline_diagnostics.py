@@ -42,7 +42,7 @@ def collect(analyst):
  stock={r['article'].casefold():r for r in live('stock',[],dates[0],dates[2]).get('rows',[])}
  prices={r['nm_id']:r for r in live('prices',ids,dates[0],dates[2]).get('rows',[])}
  # WB is primary for identical metrics; MPStats stays as separately labelled evidence.
- from china_wb_evidence import Reports,settlement,own_costs
+ from china_wb_evidence import Reports,settlement,own_costs,ad_expenses
  wb_funnel={};wb_finance={}
  with reading():
   reports=Reports(w)
@@ -56,7 +56,9 @@ def collect(analyst):
   except Exception as ex:gaps.append(dict(topic='WB funnel',error=type(ex).__name__))
   try:
    finance=reports.finance(dates[0],dates[1]);costs,cost_evidence=own_costs(w,{'rows':list(stock.values())},finance.get('rows',[]),dates[0],dates[1])
-   wb_finance=dict(cabinet=settlement(finance,dates[0],dates[1],None,costs),daily=[settlement(finance,day,day,None,costs) for day in dates[:2]],by_sku=[dict(nm_id=nm,**settlement(finance,dates[0],dates[1],[nm],costs)) for nm in ids])
+   try:expense=ad_expenses(w,dates[0],dates[1])
+   except Exception:expense=None
+   wb_finance=dict(cabinet=settlement(finance,dates[0],dates[1],None,costs,ads=expense),daily=[settlement(finance,day,day,None,costs,ads=expense) for day in dates[:2]],by_sku=[dict(nm_id=nm,**settlement(finance,dates[0],dates[1],[nm],costs,ads=expense)) for nm in ids])
    if not finance.get('complete'):gaps.append(dict(topic='WB Finance',status=finance.get('status','pagination_pending'),retry_at=finance.get('retry_at')))
   except Exception as ex:gaps.append(dict(topic='WB Finance',error=type(ex).__name__))
  advertising=live('advertising',[],dates[0],dates[2]);ads=ad_rows(advertising.get('rows',[]),ids);campaigns=advertising.get('campaigns',[])

@@ -1,4 +1,4 @@
-name: Verify actual China order-decline question
+name: Verify complete China order-decline diagnosis
 on:
   push:
     branches: [china-model-rate-recovery]
@@ -42,6 +42,7 @@ jobs:
         run: |
           python -m unittest discover -s scripts -p test_china_model_transport.py
           python -m unittest discover -s scripts -p test_china_checkpoint.py
+          python -m unittest discover -s scripts -p test_china_decline_diagnostics.py
           python -m unittest discover -s scripts -p test_china_experience.py
           python -m unittest discover -s scripts -p test_china_analytic_dialog.py
           python -m unittest discover -s scripts -p test_china_growth_candidates.py

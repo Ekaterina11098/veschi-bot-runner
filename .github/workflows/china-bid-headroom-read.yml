@@ -1,0 +1,53 @@
+name: Read-only active campaign bid headroom
+on:
+  push:
+    branches: [china-free-analytic-dialog]
+    paths: ['.github/workflows/china-bid-headroom-read.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-business-agent
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 > /dev/null
+      - name: Read current bids, actual minima and statistics only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import time,requests
+          from china_price_apply import IO,now
+          from china_loss_ads import current
+          from china_new_ads import Transport
+          from china_ad_rule import minimums
+          io=IO();t=Transport(io);cs=current(io)
+          out=dict(observed_at=now().isoformat(),campaigns=cs,config=t.config(),minimums={},wb_writes=0,telegram_sends=0)
+          for cid,c in cs.items():
+              if c.get('settings',{}).get('payment_type')=='cpc':
+                  out['minimums'][str(cid)]={str(k):v for k,v in minimums(io,cid,{n['nm_id'] for n in c['nm_settings']}).items()}
+                  time.sleep(3)
+          ids=','.join(map(str,cs))
+          path='/adv/v3/fullstats'
+          r=requests.get('https://advert-api.wildberries.ru'+path,headers={'Authorization':io.token},params=dict(ids=ids,beginDate='2026-10-20',endDate='2026-10-23'),timeout=60)
+          try:body=r.json()
+          except ValueError:body=r.text[:1000]
+          out['wb_fullstats']=dict(http=r.status_code,data=body,period_from='2026-10-20',period_to='2026-10-23',today_partial=True)
+          out['completed_at']=now().isoformat()
+          key='china_agent:bid_headroom:2026-10-23:v1'
+          io.put(key,out) if io.get(key) else io.create(key,out)
+          print('Private active bids/minima/statistics saved. WB writes=0; Telegram sends=0')
+          PY

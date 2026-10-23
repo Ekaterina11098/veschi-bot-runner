@@ -1,4 +1,4 @@
-name: China memory read-only verification
+name: China memory read-only verification v2
 on:
   push:
     branches: [china-evidence-memory]

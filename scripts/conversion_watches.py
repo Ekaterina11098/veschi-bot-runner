@@ -664,6 +664,9 @@ def runtime():
         # No retries after a timeout: at-most-once delivery takes precedence.
         from china_ad_cost_png import photo
         frozen_photo=photo(worker,chat,text)
+        if frozen_photo is None:
+            from china_agent_reports import photo as report_photo
+            frozen_photo=report_photo(worker,chat,text)
         if frozen_photo is not None:
             me=session.post('https://api.telegram.org/bot'+bot+'/getMe',timeout=20).json()
             if not me.get('ok') or me['result'].get('id')!=8780468043 or chat!=-1004342917488:raise PermissionError('China photo bot/chat mismatch')

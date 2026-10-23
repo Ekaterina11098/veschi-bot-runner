@@ -100,7 +100,7 @@ def render_plan(p,results=None):
    elif item['kind']=='ad_exclude_sku':text='Исключить только SKU из РК '+str(item['campaign_id'])
    else:text=item['question']+'; РК '+str(item['campaign_id'])
    wrap(d,text.replace('.',',') if False else text,560,y+20,1080)
-  note='Цены не менялись. Только проверенный результат WB.' if results is not None else 'Для применения владелец отвечает «Сделай всё» на эту таблицу. До подтверждения — без изменений.'
+  note='Цены не менялись. Только проверенный результат WB.' if results is not None else 'Для применения ответьте «Сделай всё» на эту таблицу. До подтверждения — без изменений.'
   wrap(d,note,25,im.height-75,1640)
   import io
   b=io.BytesIO();im.save(b,format='PNG');pages.append(b.getvalue())
@@ -122,11 +122,12 @@ def handle(w,job,history=()):
  if is_all(text):
   binding=w.get('china_agent:ad_rule_message:'+str(m.get('reply_message_id')))
   if not binding:return None
-  if job.get('sender_id')!=OWNER or job.get('chat_id')!=CHAT or m.get('bot_id')!=BOT:return ('Применять план может только владелец группы.',[])
+  from china_group_permissions import allowed
+  if not allowed(w,job) or m.get('bot_id')!=BOT:return ('Применять план могут действующие участники этой группы.',[])
   p=w.get(PLAN+binding['plan_id'])
   if not p or p.get('plan_sha256')!=digest(p['items']) or p['plan_sha256']!=binding['plan_sha256']:raise ValueError('Plan changed')
   if w.now>datetime.fromisoformat(p['expires_at']):return ('План устарел. Нужна новая проверка ставок и подтверждение обновлённой таблицы.',[])
-  a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=OWNER,chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m.get('reply_message_id'),created_at=job['created_at'],price_changes=False)
+  a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m.get('reply_message_id'),created_at=job['created_at'],price_changes=False)
   w.save(APPROVAL+str(job['id']),a,insert=True)
   return ('Принято. Выполню пункты таблицы и проверю результат WB. Цены не меняю.',[dict(name='ad_drr_rule_approval',plan_id=p['plan_id'])])
  if not (re.search(r'д[рдж]р|ддр',text,re.I) and '6' in text and '10' in text and re.search(r'став|миним|убер|исключ',text,re.I)):return None

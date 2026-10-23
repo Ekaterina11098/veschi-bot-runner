@@ -22,6 +22,10 @@ def fixture():
  a=dict(chat_id=m.CHAT,bot_id=m.BOT,reply_message_id=100,plan_sha256=p['plan_sha256'],command='Сделай всё',update_id=8,sender_id=777,input_message_id=101)
  return p,a,b
 class Tests(unittest.TestCase):
+ def test_technical_failure_does_not_notify(self):
+  p,a,b=fixture();io=Fake(p,a)
+  with patch.object(m,'current',side_effect=RuntimeError('Source HTTP 429; retry after 3459 seconds')),patch.object(io,'tg') as tg:
+   self.assertEqual(m.apply(io,m.PLAN+':approval')['status'],'blocked');tg.assert_not_called()
  def test_reordering_is_not_a_setting_change(self):
   p,a,b=fixture();b['nm_settings'].reverse();after=copy.deepcopy(b);after['nm_settings']=[n for n in b['nm_settings'] if n['nm_id'] not in m.TARGETS]
   with patch.object(m,'current',side_effect=[{m.CID:b},{m.CID:after}]),patch.object(m,'http',return_value={}) as h:

@@ -38,7 +38,7 @@ def function(name,description,props):return dict(type='function',name=name,descr
 def tools():
  return [function('read_agreements','Договорённости владельца и терминология. Не числовой срез продаж.',{}),
  function('list_reports','Все действующие отчёты, их генераторы, расписания и допустимые варианты. Расписания этим инструментом не меняются.',{}),
- function('make_report','Самостоятельно сформировать/повторить существующий отчёт по явной просьбе пользователя. Новый request identity не сбрасывает плановые квитанции. repeat=true повторяет исходный срез с датой; false пересчитывает доступные рецепты. PNG не разрешает изменения.',dict(kind={'type':'string','enum':['advertising','budgets','loss','price_morning','price_control','price_day','growth','ad_trend']},days={'type':'integer','minimum':1,'maximum':90},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},repeat={'type':'boolean'},report_day={'type':['string','null']})),
+ function('make_report','Самостоятельно сформировать/повторить существующий отчёт по явной просьбе пользователя. Новый request identity не сбрасывает плановые квитанции. repeat=true повторяет исходный срез с датой; false пересчитывает доступные рецепты. PNG не разрешает изменения.',dict(kind={'type':'string','enum':['advertising','budgets','loss','price_morning','price_control','price_day','growth','ad_trend','actions']},days={'type':'integer','minimum':1,'maximum':90},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},repeat={'type':'boolean'},report_day={'type':['string','null']})),
  function('read_experience','Проверенная история действий, положительные/отрицательные результаты и неизвестные условия. Прошлый успех не гарантия нового результата.',dict(nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},query={'type':'string'})),
  function('get_growth_candidates','Проверить кандидатов для добавления в текущие РК/повышения ставок. Обязательно читает память до отбора, актуальные WB минимумы/шаг, экономику, МойСклад и отзывы. Только рекомендации; не создаёт подтверждение или WB-запись.',dict(kind={'type':'string','enum':['both','add','raise']},days={'type':'integer','minimum':2,'maximum':14})),
  function('search_chat_history','Найти предыдущие вопросы/ответы в этом чате, не просить повторять известное.',dict(query={'type':'string'})),
@@ -261,3 +261,4 @@ def copy_summary(value):
  for key,v in list(result.items()):
   if isinstance(v,list) and len(v)>20:result[key]=v[:20];result[key+'_total']=len(v)
  return result
+

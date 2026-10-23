@@ -16,7 +16,7 @@ def digest(p):return hashlib.sha256(json.dumps(p,sort_keys=True,separators=(',',
 def current(io,ids):
  if ids!=[CID]:raise ValueError('Exact campaign read only')
  from analytics.collect import fetch
- j=fetch('GET','https://advert-api.wildberries.ru/api/advert/v2/adverts',io.token,params={'ids':str(CID)},max_retry_wait=180)
+ j=fetch('GET','https://advert-api.wildberries.ru/api/advert/v2/adverts',io.token,params={'ids':str(CID)},max_retry_wait=1200)
  if len(j.get('adverts',[]))!=1 or j['adverts'][0]['id']!=CID:raise ValueError('Incomplete configuration')
  return {CID:j['adverts'][0]}
 def http(io,path,method,body):
@@ -55,7 +55,8 @@ def stable(c):
  return {k:copy.deepcopy(c.get(k)) for k in ['id','currency','status','bid_type','settings','nm_settings','restrictions']}
 def prepare(io,p):
  validate(p);io.identity()
- b=current(io,[CID])[CID]
+ # Publishing a saved proposal needs no additional WB collection. Fresh read is mandatory only on execution.
+ b=p['baseline']
  if b.get('currency')!='RUB' or b.get('status')!=9 or b.get('settings',{}).get('payment_type')!='cpm' or b.get('bid_type')!='manual' or not b.get('restrictions',{}).get('can_change_nms'):raise ValueError('Unexpected campaign settings')
  ids={n['nm_id'] for n in b['nm_settings']}
  if not TARGETS<ids:raise ValueError('Five targets not present or campaign would be emptied')

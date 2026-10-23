@@ -52,7 +52,9 @@ def validate(p):
  if len(p['items'])!=5 or {x['nm_id'] for x in p['items']}!=TARGETS or any(x['kind']!='ad_exclude_sku' or x['campaign_id']!=CID for x in p['items']):raise ValueError('Only exact five exclusions allowed')
  if p['plan_sha256']!=digest(p['items']):raise ValueError('Plan changed')
 def stable(c):
- return {k:copy.deepcopy(c.get(k)) for k in ['id','currency','status','bid_type','settings','nm_settings','restrictions']}
+ out={k:copy.deepcopy(c.get(k)) for k in ['id','currency','status','bid_type','settings','nm_settings','restrictions']}
+ if isinstance(out['nm_settings'],list):out['nm_settings']=sorted(out['nm_settings'],key=lambda n:n['nm_id'])
+ return out
 def prepare(io,p):
  validate(p);io.identity()
  # Publishing a saved proposal needs no additional WB collection. Fresh read is mandatory only on execution.
@@ -93,13 +95,21 @@ def apply(io,key):
    return e
   # Preserve failed attempt. Separate single-use continuation journal, never reset old claims.
   ek+=':resume-20261023'
-  if io.get(ek):return io.get(ek)
+  previous=io.get(ek)
+  if previous:
+   if not (permit.get('continuation_revision')==2 and previous.get('status')=='blocked' and previous.get('wb_writes')==0 and previous.get('reason')=='WB composition/settings changed since PNG; fresh plan required' and not any(k in previous for k in ['request','response'])):return previous
+   ek+='-v2'
+   if io.get(ek):return io.get(ek)
 
  if not io.create(ek,dict(status='preflight',wb_writes=0,approval=a)):return io.get(ek)
  e=io.get(ek)
  try:
   before=current(io,[CID])[CID]
-  if stable(before)!=p['before']:raise ValueError('WB composition/settings changed since PNG; fresh plan required')
+  e['fresh_readback']=before;io.put(ek,e)
+  if stable(before)!=stable(p['before']):
+   e['changed_fields']=[k for k in stable(before) if stable(before)[k]!=stable(p['before'])[k]]
+   io.put(ek,e)
+   raise ValueError('WB composition/settings changed since PNG; fresh plan required')
   body=dict(nms=[dict(advert_id=CID,nms=dict(add=[],delete=sorted(TARGETS)))])
   e.update(status='submitting',before=before,request=body);io.put(ek,e)
   response=http(io,'/adv/v0/auction/nms','PATCH',body)

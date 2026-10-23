@@ -1,0 +1,46 @@
+name: Verify China change observations without marketplace writes or Telegram
+on:
+  push:
+    branches: [china-change-outcomes]
+    paths: ['.github/workflows/china-change-observation-verify.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Verify deterministic outcomes and memory
+        env:
+          PYTHONPATH: scripts:source
+        run: |
+          python -m unittest discover -s scripts -p test_china_change_observation.py
+          python -m unittest discover -s scripts -p test_china_experience.py
+          python -m unittest discover -s scripts -p test_china_agent_reports.py
+          python -m unittest discover -s scripts -p test_china_analytic_dialog.py
+      - name: Live read-only coverage and outcome verification
+        env:
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          PYTHONPATH: scripts:source
+        run: python scripts/china_change_observation.py --verify --budget 30

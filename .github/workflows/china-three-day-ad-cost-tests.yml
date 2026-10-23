@@ -1,7 +1,7 @@
 name: China three-day advertising math tests
 on:
   pull_request:
-    paths: ['scripts/china_three_day_ads.py', 'scripts/test_china_three_day_ads.py', 'scripts/china_ad_cost_png.py', 'scripts/china_ad_cost_collect.py', 'scripts/test_china_ad_cost_read_png.py', '.github/workflows/china-three-day-ad-cost-tests.yml']
+    paths: ['scripts/china_three_day_ads.py', 'scripts/test_china_three_day_ads.py', 'scripts/china_ad_cost_png.py', 'scripts/china_ad_cost_collect.py', 'scripts/test_china_ad_cost_read_png.py', 'scripts/china_ad_rule.py', 'scripts/test_china_ad_rule.py', 'scripts/china_loss_execute.py', '.github/workflows/china-three-day-ad-cost-tests.yml']
 permissions:
   contents: read
 jobs:
@@ -17,3 +17,4 @@ jobs:
       - run: pip install Pillow==12.3.0
       - run: PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_three_day_ads.py
       - run: PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_ad_cost_read_png.py
+      - run: PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_ad_rule.py

@@ -1,4 +1,4 @@
-import unittest,os,json,base64
+import unittest,os,json,base64,sys,types
 from unittest.mock import patch
 from datetime import datetime,timezone
 from china_wb_evidence import *
@@ -45,6 +45,20 @@ class Tests(unittest.TestCase):
  def test_owner_tax5_and_own_cogs_calculated(self):
   r=settlement(state(row()),'2026-10-21','2026-10-21',costs={10:120})
   self.assertEqual(r['parts_cny']['tax'],5);self.assertEqual(r['parts_cny']['cogs'],10);self.assertEqual(r['calculated_profit_rub'],780)
+ def test_exact_own_purchase_cost_when_stock_average_missing(self):
+  w=Worker();w.catalog=lambda:[('10','synthetic')]
+  raw={'rows':[{'id':'own-product','article':'synthetic','buyPrice':{'value':24000,'currency':{'isoCode':'RUB'}}}]}
+  transport=types.SimpleNamespace(get=lambda *a,**kw:types.SimpleNamespace(ok=True,json=lambda:raw))
+  with patch.dict(sys.modules,{'requests':transport}),patch.dict(os.environ,{'MOYSKLAD_API_TOKEN':'synthetic'}):
+   costs,evidence=own_costs(w,{'rows':[]},[row()],'2026-10-21','2026-10-21')
+  self.assertEqual(costs[10],240);self.assertEqual(evidence[0]['basis'],'Own product purchase price; stock average unavailable')
+ def test_ambiguous_moysklad_product_not_guessed(self):
+  w=Worker();w.catalog=lambda:[('10','synthetic')]
+  raw={'rows':[{'article':'synthetic'},{'article':'synthetic'}]}
+  transport=types.SimpleNamespace(get=lambda *a,**kw:types.SimpleNamespace(ok=True,json=lambda:raw))
+  with patch.dict(sys.modules,{'requests':transport}),patch.dict(os.environ,{'MOYSKLAD_API_TOKEN':'synthetic'}):
+   costs,_=own_costs(w,{'rows':[]},[row()],'2026-10-21','2026-10-21')
+  self.assertIsNone(costs[10])
  def test_short_page_needs_204_and_cursor(self):
   w=Worker();responses=iter([Response(200,[row()]),Response(204,[])]);calls=[]
   def send(url,**kw):calls.append(kw['json']);return next(responses)

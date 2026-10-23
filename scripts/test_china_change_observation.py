@@ -83,6 +83,36 @@ class ObservationTests(unittest.TestCase):
   r=dict(nm_id=1,date='2026-01-01',views=100,clicks=10,orders=2,spend_cny=1)
   v=c.ad_funnel([r],1,'2026-01-01','2026-01-01');self.assertEqual(v['ctr_pct'],10);self.assertEqual(v['click_order_pct'],20)
   self.assertIsNone(c.ad_funnel([],1,'a','b')['views'])
+ def test_refresh_preserves_positive_and_negative_revisions_without_execution(self):
+  e=event();e['comparison']=dict(days=4)
+  class W:
+   now=datetime(2026,1,15,12,tzinfo=timezone.utc)
+   def __init__(self):self.mem={'china_agent:experience:v1:demo':copy.deepcopy(e)}
+   def get(self,k):return copy.deepcopy(self.mem.get(k))
+   def save(self,k,v,**kw):self.mem[k]=copy.deepcopy(v);return True
+  w=W();source=dict(products=[dict(nm_id=1,sa_name='DEMO',p_id=55,finished_orders=10,is_payed=8)],stock=[dict(article='DEMO',price=1000,stock=100,reserve=0)],prices=[dict(nmID=1,sizes=[dict(discountedPrice=11)])],campaigns={},policy=dict(fx_rub_cny=12,handling_rub=1,tax_pct=0,commission_pct=20,logistics_by_nm={'1':dict(delivery_cny=1)}))
+  class Fake:
+   negative=False
+   def __init__(self,*args):self.requests=0
+   def table(self,tool,args,nm=None):
+    first=args['date_from'];after=first=='2026-01-11'
+    if tool=='lk_wb_products':return [dict(nm_id=1,orders_count=1,sparkline_orders=[1,0,0,0],advertisement=0,orders_sum=120,open_card_count=10,funnel_orders_count=1)],['synthetic-products']
+    value=dict(raw(),order_dt=first+'T12:00:00',billed_times=1,retail_price_withdisc_rub=90 if after and Fake.negative else 132 if after else 120)
+    return [value],['synthetic-order']
+   def wb_orders(self,*args):return dict(orders=[dict(nmId=1)]),'synthetic-wb'
+   def campaign_ids(self):return []
+   def advertising(self,*args):return dict(rows=[]),'synthetic-ads'
+  with patch('china_experience.sync'),patch('china_experience.read_rows',return_value=[dict(payload=e)]),patch.object(c,'Reader',Fake):
+   manifest=c.refresh(w,source);self.assertEqual(manifest['event_count'],1)
+   prior=w.get('china_agent:experience:v1:demo');self.assertEqual(prior['expected_outcome'],'positive');self.assertEqual(prior['business_outcome'],'inconclusive');self.assertEqual(len(prior['observations']),1)
+   c.refresh(w,source);self.assertEqual(len(w.get('china_agent:experience:v1:demo')['observations']),1)
+   Fake.negative=True;w.now=datetime(2026,1,16,12,tzinfo=timezone.utc);c.refresh(w,source)
+   p=w.get('china_agent:experience:v1:demo');self.assertEqual(p['expected_outcome'],'negative');self.assertEqual(len(p['observations']),2);self.assertFalse(p['latest_change_observation']['rows'][0]['result']['execution_authorized'])
+ def test_zero_full_days_registers_without_reading_sources(self):
+  class W:
+   now=datetime(2026,1,11,12,tzinfo=timezone.utc)
+  value=c.observe_event(W(),event(),[event()],None,None)
+  self.assertEqual(value['status'],'waiting_full_days');self.assertEqual(value['rows'],[])
 
 if __name__=='__main__':unittest.main()
 

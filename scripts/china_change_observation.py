@@ -6,7 +6,7 @@ MSK=ZoneInfo('Europe/Moscow')
 ROOT='china_agent:change_observation:v2:'
 MANIFEST='china_agent:change_observation_manifest:v2'
 KINDS={'price_change','bid_change','sku_exclusion','new_campaign'}
-SCHEMA_REVISION=3
+SCHEMA_REVISION=4
 
 def stamp():return datetime.now(timezone.utc).isoformat()
 def num(v):
@@ -91,6 +91,22 @@ class Reader:
   if not r.ok:raise ValueError('Campaign catalogue HTTP '+str(r.status_code))
   ids=sorted({a['advertId'] for group in r.json().get('adverts',[]) for a in group.get('advert_list',[])})
   self.w.save(key,dict(ids=ids,observed_at=stamp(),all_statuses=True));return ids
+ def actual_operation_facts(self,nm,first,last):
+  """Read the published Finance-derived ledger; do not relabel operation dates as order dates."""
+  key=ROOT+'finance_facts:'+str(nm)+':'+first+':'+last
+  old=self.w.get(key)
+  if old and old.get('day_msk')==str(self.w.now.astimezone(MSK).date()):return old
+  from china_price_apply import IO
+  path='advertising_sku_economics_daily?cabinet=eq.token_3&nm_id=eq.'+str(nm)+'&as_of_date=gte.'+first+'&and=(as_of_date.lte.'+last+')&select=as_of_date,economics_status,finance_complete,advertising_complete,profit_before_ads_and_shared,advertising_spend,source_run_id,tax_reserve_rate,shared_cost_allocated&limit=40'
+  try:rows=IO().db(path)
+  except Exception as ex:return dict(value=None,basis='operation_date_not_order_cohort',missing='Published Finance ledger unavailable: '+type(ex).__name__)
+  n=(date.fromisoformat(last)-date.fromisoformat(first)).days+1
+  complete=len(rows)==n and len({r['as_of_date'] for r in rows})==n and all(r.get('finance_complete') is True and r.get('advertising_complete') is True and r.get('profit_before_ads_and_shared') is not None and r.get('advertising_spend') is not None and r.get('source_run_id') for r in rows)
+  value=sum(r['profit_before_ads_and_shared']-r['advertising_spend'] for r in rows) if complete else None
+  result=dict(day_msk=str(self.w.now.astimezone(MSK).date()),value=round(value,2) if value is not None else None,
+   basis='operation_date_not_order_cohort',is_full_net_profit=False,currency='RUB',period_from=first,period_to=last,source_ids=sorted({r.get('source_run_id') for r in rows if r.get('source_run_id')}),
+   missing='Tax, historical COGS/all shared expense classification not confirmed; publication/settlement lag may remain. Never use as closed order-cohort profit.')
+  self.w.save(key,result);return result
  def table(self,tool,args,nm=None):
   rows=[];keys=[];offset=0;total=None
   while True:
@@ -276,6 +292,8 @@ def observe_event(w,e,events,source,reader):
     exp['missing_costs'].append('Когорты/счётчики не сверены: WB '+str(wb_count)+', MPStats строки '+str(cohort['orders'])+', статистика '+str(counts)+'. Частичная сумма не общая прибыль.')
    bundle=w.get('china_agent:closed_profit_ledger:v1:'+str(nm)+':'+first+':'+last)
    actual=closed_profit(bundle,first,last)
+   try:operation_facts=reader.actual_operation_facts(nm,first,last)
+   except (AttributeError,RuntimeError):operation_facts=dict(value=None,basis='operation_date_not_order_cohort',missing='Finance data incomplete')
    views=r.get('open_card_count');fo=r.get('funnel_orders_count')
    try:
     campaign_ids=reader.campaign_ids();ad_source,ad_key=reader.advertising(first,last,campaign_ids);sources.append(ad_key)
@@ -286,7 +304,7 @@ def observe_event(w,e,events,source,reader):
    pair.append(dict(period_from=first,period_to=last,days=win['days'],orders=wb_count,outcomes=cohort,cohort_reconciled=cohort_reconciled,counters_reconciled=counters_reconciled,
     views=views,funnel_orders=fo,click_order_pct=100*fo/views if views and fo is not None else None,
     actual_drr_pct=100*ad/amount if amount and cohort_reconciled and counters_reconciled else None,mpstats_drr_pct=100*ad/amount if amount else None,ad_spend_rub=ad,order_amount_rub=amount,expected=exp,actual=actual,
-    wb_orders=wb_count,product_statistic_orders=counts,orders_include_cancellations=True,advertising_funnel=advertising,general_traffic=traffic,
+    wb_orders=wb_count,product_statistic_orders=counts,orders_include_cancellations=True,advertising_funnel=advertising,general_traffic=traffic,actual_operation_facts=operation_facts,
     customer_price=r.get('price_after_spp'),spp=r.get('price_spp'),price_note='Current source snapshot, not historical SPP'))
   confounders=[]
   for other in events:
@@ -322,6 +340,10 @@ def refresh(w,source,budget=40):
  if len(events)>=5000:raise ValueError('History pagination required; coverage cannot be claimed')
  today=str(w.now.astimezone(MSK).date());reader=Reader(w,budget);counts={};records=[]
  for e in sorted(events,key=lambda x:x['started_at']):
+  if e['action']['kind']=='price_change' and e.get('comparison',{}).get('days')!=4:
+   started=datetime.fromisoformat(e['started_at'].replace('Z','+00:00')).astimezone(MSK).date()
+   full=window(e,started+timedelta(days=5));comparison={k:full[k] for k in ['days','before_from','before_to','after_from','after_to','evaluate_from','excluded_change_day']}
+   prior=w.get(EXPERIENCE+e['event_id']);prior.setdefault('legacy_comparison',prior.get('comparison'));prior['comparison']=comparison;prior['comparison_note']='Четыре полных дня для решения по цене; прежняя трёхдневная дата только промежуточная.';save(w,EXPERIENCE+e['event_id'],prior);e=dict(e,comparison=comparison)
   key=ROOT+e['event_id'];old=w.get(key);win=window(e,w.now.astimezone(MSK).date())
   if old and old.get('checked_day')==today and old.get('schema_revision')==SCHEMA_REVISION and old.get('status') in ['observed','waiting_full_days']:
    records.append(old);continue

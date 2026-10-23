@@ -138,7 +138,11 @@ class Worker:
 
     def authorized(self, obj):
         cfg=self.config()
-        return obj.get('agent_id')=='china' and obj.get('chat_id')==cfg['chat_id'] and obj.get('owner_user_id',obj.get('sender_id'))==cfg['owner_user_id']
+        if obj.get('agent_id')!='china' or obj.get('chat_id')!=cfg['chat_id']:return False
+        if obj.get('sender_id') is not None:
+            from china_group_permissions import allowed
+            return allowed(self,obj)
+        return obj.get('owner_user_id')==cfg['owner_user_id']
 
     def watches(self):
         cfg=self.config()
@@ -464,10 +468,10 @@ class Worker:
                 history=[x for x in history if x.get('answer')]
             if job.get('answer') is not None:answer=job['answer'];trace=job.get('tool_trace') or []
             else:
-                if intent(job['request_text']) and job['sender_id']==cfg['owner_user_id']:
+                if intent(job['request_text']) and self.authorized(job):
                     answer=self.command(job);trace=[]
                 elif intent(job['request_text']):
-                    answer='Управлять ежедневными заданиями может только владелец группы. Вопросы по сохранённым данным доступны всем участникам.';trace=[]
+                    answer='Управлять заданиями могут действующие участники этой группы. Вопросы по сохранённым данным доступны всем участникам.';trace=[]
                 else:answer,trace=self.saved_question(job,history)
                 trace=[marker]+trace
                 patch({'answer':answer,'tool_trace':trace})
@@ -500,7 +504,7 @@ class Worker:
             result=old_tools(agent_id)
             if agent_id=='china':result.append(c.function('get_conversion_history','Конверсия одного артикула по каждому полному дню и итог за точный период до 14 дней; только разовый запрос, расписание не создаёт.',{
                 'article':{'type':'string'},'date_from':{'type':['string','null']},'date_to':{'type':['string','null']},'days':{'type':['integer','null'],'minimum':1,'maximum':14}}))
-            if agent_id=='china':result.append(c.function('manage_daily_task','Сохранить ежедневное аналитическое поручение, показать список, изменить время/период или отменить. Только по ЯВНОЙ просьбе владельца; разовый вопрос не создаёт расписание. При неизвестном времени уточнить.',{
+            if agent_id=='china':result.append(c.function('manage_daily_task','Сохранить ежедневное аналитическое поручение, показать список, изменить время/период или отменить. Только по ЯВНОЙ просьбе действующего участника группы; разовый вопрос не создаёт расписание. При неизвестном времени уточнить.',{
                 'action':{'type':'string','enum':['create','list','update','cancel']},'task_id':{'type':['string','null']},'request_text':{'type':['string','null']},'clock':{'type':['string','null']},'days':{'type':['integer','null'],'minimum':1,'maximum':14}}))
             return result
         def dispatch(job,data,name,arguments,**kwargs):
@@ -618,7 +622,7 @@ def saved_network_guard():
                            or (method=='POST' and u.path=='/rest/v1/telegram_api_cache')))
             model=(u.scheme=='https' and u.hostname=='api.openai.com' and u.path=='/v1/responses' and method=='POST')
             telegram=(u.scheme=='https' and u.hostname=='api.telegram.org'
-                      and u.path in ('/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendMessage','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendPhoto','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/getMe') and method=='POST')
+                      and u.path in ('/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendMessage','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendPhoto','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/getChatMember','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/getMe') and method=='POST')
             from china_search_analytics import allowed_read
             search=allowed_read(method,url,kwargs.get('json'))
             from china_ad_cost_collect import allowed_read as ad_cost_read
@@ -690,6 +694,13 @@ def runtime():
             return dict(identity_verified=True,plain_group_messages=bool(me['result'].get('can_read_all_group_messages') or member['result']['status']=='administrator'),member_status=member['result']['status'])
         except Exception:raise RuntimeError('Bot read-only verification failed') from None
     worker.bot_check=bot_check
+    def member_check(actor):
+        if not getattr(worker,'member_bot_verified',False):
+            worker.bot_check();worker.member_bot_verified=True
+        r=session.post('https://api.telegram.org/bot'+bot+'/getChatMember',json={'chat_id':worker.config()['chat_id'],'user_id':actor},timeout=25).json()
+        if not r.get('ok'):raise PermissionError('Group membership unavailable')
+        return r['result']
+    worker.member_check=member_check
     return worker
 
 

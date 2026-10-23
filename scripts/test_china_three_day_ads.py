@@ -34,4 +34,15 @@ class ThreeDays(unittest.TestCase):
   s=fixture()
   for p in s:p['observations'][1]['data']['data'][0]['ac_orders_associated']=100
   self.assertEqual(build(s,'2026-10-23')['rows'][0]['orders'],6)
+ def test_consecutive_growth_required(self):
+  r=build(fixture(),'2026-10-23')['rows'][0]
+  self.assertFalse(r['rising_three_days'])
+  s=[source(d,[row(v,1,100)]) for d,v in zip(periods('2026-10-23'),[5,10,20])]
+  self.assertTrue(build(s,'2026-10-23')['rows'][0]['rising_three_days'])
+ def test_flat_or_missing_point_not_trend(self):
+  for costs in ([5,5,20],[5,10,10]):
+   s=[source(d,[row(v,1,100)]) for d,v in zip(periods('2026-10-23'),costs)]
+   self.assertFalse(build(s,'2026-10-23')['rows'][0]['rising_three_days'])
+  s=fixture();s[1]=source('2026-10-21',[row(10,0,0)])
+  self.assertFalse(build(s,'2026-10-23')['rows'][0]['rising_three_days'])
 if __name__=='__main__':unittest.main()

@@ -105,7 +105,15 @@ def choose(s,maximum=12):
   bid=policy.get('category_minimum_minor',{}).get(str(row.get('subject_id')))
   if type(bid) is not int:continue
   evidence=[e['event_id'] for e in s['experience'].get('experiences',[]) if nm in e.get('action',{}).get('nm_ids',[])]
-  groups[group].append(dict(nm_id=nm,article=article,bid_minor=bid,stock=free,paid=paid,finished=f,conversion=round(cr,2),recent_orders=counts.get(nm,0),expected_rub_per_order=round(expected,2),price_cny=price,history_advertisement=row['advertisement'],memory_event_ids=evidence,memory_used=True))
+  groups[group].append(dict(nm_id=nm,article=article,subject_id=row.get('subject_id'),bid_minor=bid,stock=free,paid=paid,finished=f,conversion=round(cr,2),recent_orders=counts.get(nm,0),expected_rub_per_order=round(expected,2),price_cny=price,history_advertisement=row['advertisement'],memory_event_ids=evidence,memory_used=True))
+ # Verified operational lesson: WB rejects a draft mixing different categories.
+ # This existing recipe proposes exactly two purposes/budgets, so keep one
+ # evidenced category per purpose and disclose omitted candidates, never fund extras.
+ for group,candidates in groups.items():
+  categories={r['subject_id'] for r in candidates if r['subject_id'] is not None}
+  if not categories:groups[group]=[];continue
+  category=max(categories,key=lambda cat:(sum(r['recent_orders'] for r in candidates if r['subject_id']==cat),sum(r['finished'] for r in candidates if r['subject_id']==cat),-int(cat)))
+  rejected+=sum(r['subject_id']!=category for r in candidates);groups[group]=[r for r in candidates if r['subject_id']==category]
  groups['orders'].sort(key=lambda r:(r['recent_orders'],r['finished'],r['stock']),reverse=True)
  groups['demand'].sort(key=lambda r:(r['finished'],r['stock']),reverse=True)
  # Reserve at most half the requested total for speculative demand tests; no profit/order ranking.
@@ -168,5 +176,6 @@ def process_requests(io):
    if io.create(delivery,dict(status='sending')):
     try:r=io.tg('sendMessage',dict(chat_id=CHAT,text=notice,reply_parameters=dict(message_id=req['reply_message_id'],allow_sending_without_reply=True)));io.put(delivery,dict(status='sent',message_id=r['message_id']))
     except Exception:io.put(delivery,dict(status='uncertain'))
+
 
 

@@ -106,6 +106,9 @@ def prepare_trend_plan(w,job,report,sources):
     present=True
     if (cid,int(nm)) in existing:continue
     old=(n.get('bids_kopecks') or {}).get('recommendations')
+    if not isinstance(old,int) or c.get('currency')!='CNY':
+     items.append(dict(id=str(cid)+':'+nm,kind='needs_data',nm_id=int(nm),campaign_id=cid,article=r['article'],question='Нужно проверить текущую ставку и валюту РК'))
+     continue
     items.append(dict(id=str(cid)+':'+nm,kind='keep_ad_settings',nm_id=int(nm),campaign_id=cid,article=r['article'],old_minor=old,drr=r['drr'],orders=r['orders']))
    if not present:items.append(dict(id='outside:'+nm,kind='keep_outside_ads',nm_id=int(nm),campaign_id=0,article=r['article'],drr=r['drr'],orders=r['orders']))
  p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='ad_drr_rule',created_at=w.now.isoformat(),expires_at=(w.now+timedelta(hours=6)).isoformat(),items=items,plan_sha256=digest(items),period_from=report['days'][0],period_to=report['days'][-1],days=report['days'],report_message_ids=[],price_changes=False)

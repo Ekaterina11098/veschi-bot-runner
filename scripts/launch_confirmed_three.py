@@ -23,8 +23,15 @@ def run():
  # Original Telegram membership/token checks remain intact; the increased budget
  # is authorized separately by the explicit Codex approval above, never forged as TG.
  io.validate_owner(io.get('china_agent:loss_plan_approval:v1:86'))
+ waiver=io.get('china_agent:codex_limit_waiver:v1:'+PID)
+ assert waiver and waiver['source']=='explicit_human_codex_message' and waiver['daily_limit_required'] is False
  e=io.get(KEY)
- if e and e['status'] in ['done','uncertain']:return
+ if e and e['status']=='done':return
+ if e and e['status']=='uncertain':
+  unresolved=[(s,k,v) for s in e['campaigns'] for k,v in s['steps'].items() if v['status']!='verified']
+  if not unresolved or any(k!='limit' for s,k,v in unresolved):return
+  for s,k,v in unresolved:v.update(status='waived',waiver_source=waiver['source'])
+  e['recovery_reason']=e.pop('reason',None);e['status']='running';e['daily_limit_required']=False
  if not e:
   e=dict(status='running',plan_id=PID,plan_sha256=p['plan_sha256'],campaigns=[],wb_writes=0,approval_source=a['source'],created_at=now().isoformat())
   assert io.create(KEY,e)
@@ -53,7 +60,7 @@ def run():
  def limited(cid,s):
   r=t.limit(cid);check_limit(r,s);return r
  try:
-  cfg=t.config();assert cfg['currency']=='CNY' and cfg['minTopUp']<=10000 and cfg['minDailyLimit']<=10000 and cfg['cpcStep']==1
+  cfg=t.config();assert cfg['currency']=='CNY' and cfg['minTopUp']<=10000 and cfg['cpcStep']==1
   listing=read('/adv/v1/promotion/count');ids=sorted({r['advertId'] for g in listing.get('adverts',[]) for r in g.get('advert_list',[])})
   assert len(ids)<=500
   allc=[]
@@ -75,8 +82,7 @@ def run():
    assert all(mins[x['nm_id']]<=x['bid_minor'] for x in s['skus'])
    write(st,'bids','/api/advert/v1/bids','PATCH',dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=x['nm_id'],bid_kopecks=x['bid_minor'],placement='recommendations') for x in s['skus']])]))
    wait(lambda:checked(cid,s,bids=True),'bids')
-   write(st,'limit','/api/advert/v0/daily-limits','PUT',dict(advertIds=[cid],enabled=True,dailyLimit=10000,carryOverEnabled=False))
-   st['limit_readback']=wait(lambda:limited(cid,s),'limits');st['status']='draft_verified';save()
+   st['daily_limit_required']=False;st['status']='draft_verified';save()
   for s in specs:
    st=next(x for x in e['campaigns'] if x['group']==s['group']);cid=st['campaign_id']
    if st.get('status')=='launched':continue
@@ -90,7 +96,7 @@ def run():
    st=next(x for x in e['campaigns'] if x['group']==s['group']);cid=st['campaign_id']
    if st.get('status')=='launched':continue
    if not st['steps'].get('start'):
-    checked(cid,s,bids=True);limited(cid,s);assert t.budget(cid)==100
+    checked(cid,s,bids=True);assert t.budget(cid)==100
     write(st,'start','/adv/v0/start?id='+str(cid),'GET')
    def active():
     c=checked(cid,s,ready=False,bids=True);assert c['status']==9;return c

@@ -28,9 +28,19 @@ def run():
  e=io.get(KEY)
  if e and e['status']=='done':return
  if e and e['status']=='uncertain':
-  unresolved=[(s,k,v) for s in e['campaigns'] for k,v in s['steps'].items() if v['status']!='verified']
-  if not unresolved or any(k!='limit' for s,k,v in unresolved):return
-  for s,k,v in unresolved:v.update(status='waived',waiver_source=waiver['source'])
+  unresolved=[(s,k,v) for s in e['campaigns'] for k,v in s['steps'].items() if v['status'] in ['submitting','uncertain']]
+  if not unresolved:return
+  for s,k,v in unresolved:
+   if k=='limit':v.update(status='waived',waiver_source=waiver['source']);continue
+   if k!='deposit' or e.get('reason')!='WB advertising HTTP 400':return
+   rec=io.get('china_agent:new_ad_funding_reconcile:v1:'+PID)
+   assert rec and (now()-__import__('datetime').datetime.fromisoformat(rec['at'])).total_seconds()<1200
+   balances=next(r['data'] for r in rec['responses'] if r['path']=='/api/advert/v2/budget')['adverts']
+   assert next(b['total'] for b in balances if b['advertId']==s['campaign_id'])==0
+   account=next(r['data'] for r in rec['responses'] if r['path']=='/adv/v1/balance')
+   assert account['currency']=='CNY' and account['net']>=100
+   s.setdefault('rejected_attempts',[]).append(dict(**v,reconciled_campaign_budget=0,reconciled_at=rec['at']))
+   del s['steps']['deposit'];s['deposit_source']=1
   e['recovery_reason']=e.pop('reason',None);e['status']='running';e['daily_limit_required']=False
  if not e:
   e=dict(status='running',plan_id=PID,plan_sha256=p['plan_sha256'],campaigns=[],wb_writes=0,approval_source=a['source'],created_at=now().isoformat())
@@ -88,7 +98,7 @@ def run():
    if st.get('status')=='launched':continue
    if not st['steps'].get('deposit'):
     assert t.budget(cid)==0,'Draft already funded; reconcile first'
-    write(st,'deposit','/adv/v1/budget/deposit?id='+str(cid),'POST',dict(sum=100,type=0))
+    write(st,'deposit','/adv/v1/budget/deposit?id='+str(cid),'POST',dict(sum=100,type=st.get('deposit_source',0)))
    def budget_check():
     b=t.budget(cid);assert b==100;return b
    st['budget_readback']=wait(budget_check,'budget');st['status']='funded_verified';save()

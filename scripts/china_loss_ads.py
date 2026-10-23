@@ -45,7 +45,7 @@ def current(io,ids=None):
  return {c['id']:c for c in cs}
 def execute(io,approval,p):
  key='china_agent:loss_ad_execution:v1:'+p['plan_id'];e=io.get(key)
- if e and e.get('status') in ['verified','blocked','uncertain']:return e
+ if e and e.get('status') in ['verified','blocked','uncertain']:return json.loads(json.dumps(e))
  io.validate_owner(approval)
  if p.get('plan_sha256')!=digest(p['items']) or approval['plan_sha256']!=p['plan_sha256']:raise ValueError('Plan hash changed')
  if e:
@@ -56,7 +56,7 @@ def execute(io,approval,p):
     e.update(status='verified' if check(p,b,a) else 'accepted',after=a,verified_at=stamp())
    except Exception as ex:e.update(status='uncertain',reason=type(ex).__name__)
    io.put(key,json.loads(json.dumps(e)))
-  return e
+  return json.loads(json.dumps(e))
  e=dict(status='preflight',plan_id=p['plan_id'],approval_job=approval['job_id'],created_at=stamp(),wb_writes=0)
  if not io.create(key,e):return io.get(key)
  try:
@@ -65,14 +65,14 @@ def execute(io,approval,p):
    if item['kind']=='ad_exclude_sku' and item['campaign_id'] not in before:raise ValueError('Согласованная РК уже не активна')
    if item['kind']=='keep_outside_ads' and any(item['nm_id'] in nmset(c) for c in before.values()):raise ValueError('Товар внеРК появился в рекламе — нужен новый план')
   body=operation(p,before);e.update(before=before,request=body,status='submitting' if body['nms'] else 'verified');io.put(key,json.loads(json.dumps(e)))
-  if not body['nms']:return e
+  if not body['nms']:return json.loads(json.dumps(e))
   response=http(io,'/adv/v0/auction/nms','PATCH',body)
   e.update(status='accepted',response=response,submitted_at=stamp(),wb_writes=1);io.put(key,json.loads(json.dumps(e)))
   after=current(io,list(before))
   e.update(after=after,status='verified' if check(p,before,after) else 'accepted',verified_at=stamp());io.put(key,json.loads(json.dumps(e)))
  except Exception as ex:
   e.update(status='uncertain' if e['status']=='submitting' else ('accepted' if e['status']=='accepted' else 'blocked'),reason=str(ex) if isinstance(ex,(RuntimeError,ValueError)) else type(ex).__name__);io.put(key,json.loads(json.dumps(e)))
- return e
+ return json.loads(json.dumps(e))
 def results(plan,e):
  out=[]
  for i in plan['items']:
@@ -97,10 +97,10 @@ def render(plan,e,path):
  im.save(path)
 def process_and_deliver(io,a,p):
  e=execute(io,a,p)
- if e['status']=='accepted':return e # Delayed API synchronization: send only verified final or concrete failure.
+ if e['status']=='accepted':return json.loads(json.dumps(e)) # Delayed API synchronization: send only verified final or concrete failure.
  delivery='china_agent:loss_ad_result_png:v1:'+p['plan_id']
- if io.get(delivery):return e
- if not io.create(delivery,dict(status='rendering',plan_id=p['plan_id'])):return e
+ if io.get(delivery):return json.loads(json.dumps(e))
+ if not io.create(delivery,dict(status='rendering',plan_id=p['plan_id'])):return json.loads(json.dumps(e))
  try:
   import requests
   with tempfile.TemporaryDirectory() as tmp:
@@ -113,4 +113,4 @@ def process_and_deliver(io,a,p):
   if 'r' in locals() and r.get('ok'):
    io.put(delivery,dict(status='sent',plan_id=p['plan_id'],message_id=r['result']['message_id'],chat_id=CHAT,results=results(p,e)))
   else:io.put(delivery,dict(status='uncertain',plan_id=p['plan_id']))
- return e
+ return json.loads(json.dumps(e))

@@ -1,0 +1,40 @@
+name: China selected-period read-only verification
+on:
+  push:
+    branches: [china-ad-period-readonly-smoke-20261023]
+    paths: [.github/workflows/china-ad-period-readonly-smoke.yml]
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+          pip install requests==2.32.5 Pillow==12.3.0
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: unavailable-no-delivery-allowed
+          PYTHONPATH: scripts:source
+        run: python scripts/china_ad_period_readonly_smoke.py

@@ -21,7 +21,7 @@ def assess_candidate(experiences,nm,current):
  risks=[];needs_review=False
  for event in relevant:
   comparison=compare_conditions(event.get('context') or {},current)
-  if event.get('business_outcome')=='negative' or event.get('advertising_outcome')=='negative':
+  if event.get('business_outcome')=='negative' or event.get('advertising_outcome')=='negative' or event.get('expected_outcome')=='negative':
    risks.append(dict(event_id=event['event_id'],previous_result='negative',condition_comparison=comparison))
    if not comparison['changes']:needs_review=True
  return dict(event_ids=[e['event_id'] for e in relevant],needs_review=needs_review,risks=risks,requires_confirmation=True,note='Негативный опыт требует проверки причины/изменений; это не вечный запрет. Положительный опыт не гарантия.')
@@ -30,9 +30,16 @@ def save(w,key,value):
  if hasattr(w,'save'):return w.save(key,value)
  return w.put(key,value) if w.get(key) else w.create(key,value)
 def read_rows(w,prefix,limit=80):
- if hasattr(w,'save'):return w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':limit}) or []
  from urllib.parse import quote
- return w.db('telegram_api_cache?cache_key=like.'+quote(prefix+'*',safe='')+'&select=cache_key,payload,updated_at&order=updated_at.desc&limit='+str(limit))
+ result=[]
+ while len(result)<limit:
+  size=min(200,limit-len(result));offset=len(result)
+  if hasattr(w,'save'):part=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc,cache_key.asc','limit':size,'offset':offset}) or []
+  else:part=w.db('telegram_api_cache?cache_key=like.'+quote(prefix+'*',safe='')+'&select=cache_key,payload,updated_at&order=updated_at.desc,cache_key.asc&limit='+str(size)+'&offset='+str(offset))
+  result+=part
+  if len(part)<size:break
+ if len(result)>=5000:raise ValueError('History exceeds bounded scan; extend pagination before claiming all changes')
+ return result
 def identifier(source,item):return hashlib.sha256((source+'#'+str(item)).encode()).hexdigest()[:24]
 def put_event(w,event):
  assert event.get('source_key') and event.get('record_type') in ['verified_action','reported_observation','operational_lesson']
@@ -53,7 +60,7 @@ def sync(w):
  count=0
  prefixes=['china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:loss_ad_execution:','china_agent:price_execution:v1:','china_agent:codex_bid_raise:']
  for prefix in prefixes:
-  for row in read_rows(w,prefix):
+  for row in read_rows(w,prefix,limit=5000):
    key=row['cache_key'];p=row['payload'];actions=[]
    if p.get('status')=='verified' and p.get('plan',{}).get('kind')=='ad_set_bid':
     a=p['plan'];actions.append(dict(item=a['nm_id'],nm_ids=[a['nm_id']],campaign_id=a['campaign_id'],article=a['article'],kind='bid_change',before=a['old_minor'],after=a['target_minor'],started=p.get('submitted_at'),verified=p.get('verified_at')))
@@ -91,7 +98,7 @@ def age_context(event,now=None):
  return dict(age_days=round(age,1) if age is not None else None,transferability='recheck_current_conditions',weight='historical_only' if age is not None and age>30 else 'recent_context',note='Возраст снижает переносимость, но сам не доказывает изменение алгоритмов WB. Успех/неудача похожего теста не предопределяет новый результат.')
 def search(w,nm_ids=(),query='',limit=12):
  sync(w);ids=(w.get(INDEX) or {}).get('event_ids',[]);output=[]
- records={r['payload']['event_id']:r['payload'] for r in read_rows(w,ROOT,limit=500) if r.get('payload',{}).get('event_id')}
+ records={r['payload']['event_id']:r['payload'] for r in read_rows(w,ROOT,limit=5000) if r.get('payload',{}).get('event_id')}
  evaluate_saved(w,ids,records)
  for eid in reversed(ids):
   e=records.get(eid)
@@ -109,7 +116,7 @@ def evaluate_saved(w,ids,records=None):
  cached_sources={}
  for eid in ids:
   e=records.get(eid) if records is not None else w.get(ROOT+eid);window=(e or {}).get('comparison') or {};action=(e or {}).get('action') or {}
-  if not window or str(today)<window['evaluate_from'] or not action.get('campaign_id'):continue
+  if not window or str(today)<window['evaluate_from'] or not action.get('campaign_id') or e.get('latest_change_observation'):continue
   if any(o.get('automatic_saved_ad_evaluation') for o in e.get('observations',[])):continue
   periods=[];source_keys=[]
   for label in ['before','after']:

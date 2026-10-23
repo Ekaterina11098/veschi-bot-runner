@@ -17,6 +17,7 @@ RECIPES={
  'growth':dict(title='Кандидаты в РК / повышение ставок',schedule='по запросу; без автоматического применения',generator='china_growth_candidates',formats=['png'],period='2–14 полных дней'),
  'ad_trend':dict(title='Последовательный рост стоимости заказа',schedule='по запросу',generator='china_ad_cost_png',formats=['png'],period='2–90 полных дней')}
 RECIPES['actions']=dict(title='Выполненные изменения',schedule='по запросу',generator='china_experience',formats=['png'],period='фактические даты проверенного исполнения')
+RECIPES['outcomes']=dict(title='Результаты изменений цен и рекламы',schedule='в существующем ежедневном отчёте; отдельно по запросу',generator='china_change_observation',formats=['png'],period='равные полные периоды; прогноз и закрытая прибыль раздельно')
 
 def catalog():return dict(reports=RECIPES,timezone='Europe/Moscow',schedules_unchanged=True,repeat='Явная просьба создаёт отдельный request identity; плановые квитанции не сбрасываются',changes='Только подтверждённый конкретный план, не сам отчёт')
 
@@ -89,6 +90,26 @@ def archive(w,kind,day):
  raise ValueError('Этот вид отчёта пересчитывается по запросу, а не копируется')
 
 def make(w,job,kind,days=3,nm_ids=(),repeat=False,report_day=None):
+ if kind=='outcomes':
+  from china_change_observation import MANIFEST,ROOT as OUTCOME
+  from china_table_png import render
+  manifest=w.get(MANIFEST) or {};table=[]
+  for eid in reversed(manifest.get('event_ids',[])):
+   record=w.get(OUTCOME+eid) or {}
+   for row in record.get('rows',[]):
+    if nm_ids and row['nm_id'] not in nm_ids:continue
+    b,a=row['before'],row['after'];r=row['result'];change=record.get('action',{});before,after=change.get('before'),change.get('after')
+    fmt=lambda v:'нет данных' if v is None else str(round(v,2))
+    result='Ожидаемая/предварительная: '+fmt(b['expected'].get('value'))+' → '+fmt(a['expected'].get('value'))+' ₽\nФактическая закрытая: '+('нет данных' if b['actual'].get('value') is None or a['actual'].get('value') is None else fmt(b['actual']['value'])+' → '+fmt(a['actual']['value'])+' ₽')
+    metrics='Все показы '+fmt(b.get('general_traffic',{}).get('total_impressions'))+' → '+fmt(a.get('general_traffic',{}).get('total_impressions'))+'; все клики '+fmt(b.get('views'))+' → '+fmt(a.get('views'))+'; заказы '+str(b['orders'])+' → '+str(a['orders'])+'; клик-заказ '+fmt(b['click_order_pct'])+' → '+fmt(a['click_order_pct'])+'%; ДРР '+fmt(b['actual_drr_pct'])+' → '+fmt(a['actual_drr_pct'])+'%; выкуп '+fmt(b['outcomes']['buyout_pct'])+' → '+fmt(a['outcomes']['buyout_pct'])+'%'
+    ab,aa=b.get('advertising_funnel',{}),a.get('advertising_funnel',{})
+    metrics+='\nРеклама отдельно: показы '+fmt(ab.get('views'))+' → '+fmt(aa.get('views'))+'; клики '+fmt(ab.get('clicks'))+' → '+fmt(aa.get('clicks'))+'; CTR '+fmt(ab.get('ctr_pct'))+' → '+fmt(aa.get('ctr_pct'))+'%'
+    kind_=change.get('kind');label='Цена '+str(before)+' → '+str(after)+' ¥' if kind_=='price_change' else 'Ставка '+str(before/100)+' → '+str(after/100)+' ¥' if kind_=='bid_change' else 'Исключение SKU из РК '+str(change.get('campaign_id')) if kind_=='sku_exclusion' else 'Запуск РК '+str(change.get('campaign_id'))
+    at=datetime.fromisoformat(record['started_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m.%Y %H:%M МСК')
+    table.append([row['article'],label+'\n'+at+'\n'+b['period_from']+'–'+b['period_to']+' → '+a['period_from']+'–'+a['period_to'],result,metrics,r['recommendation']])
+  if not table:table=[['Все зарегистрированные изменения','До даты оценки блок не публикуется','Нет завершённого сравнения','Нет данных ≠ 0','Сроки и пробелы сохранены; автоматических изменений нет']]
+  images=render(['Артикул','Изменение / периоды','Общая прибыль','Показатели','Рекомендация'],table,'Китай · результаты изменений')
+  return freeze(w,job,kind,images,dict(period=manifest.get('checked_day','нет свежего среза'),repeat=False,source_key=MANIFEST))
  if kind not in RECIPES:raise ValueError('Неизвестный отчёт; сначала list_reports')
  if type(days) is not int or not 1<=days<=90:raise ValueError('Период1–90дней')
  today=w.now.astimezone(MSK).date();day=report_day or str(today)
@@ -179,7 +200,19 @@ def fresh_loss(w,nm_ids=()):
  from china_experience import decision_context
  due=[e for e in decision_context(w)['experiences'] if 'loss-20261022-107' in e.get('source_key','') and e.get('comparison',{}).get('evaluate_from','9999')<=str(w.now.astimezone(MSK).date())]
  cohort=w.get('china_agent:loss_cohort:v1') or {}
- if cohort.get('evaluate_from','9999')<=str(w.now.astimezone(MSK).date()):
+ from china_change_observation import compact,MANIFEST,ROOT as OUTCOME
+ observation_manifest=w.get(MANIFEST)
+ if observation_manifest:
+  rows+=compact(w)
+  if observation_manifest.get('status')!='complete_coverage':rows.append('Контроль изменений неполон: '+str(observation_manifest.get('counts',{}))+'. Недостающие расходы/когорты не заменены нулём; вывод об отсутствии проблем не сформирован.')
+  covered=set()
+  for eid in observation_manifest.get('event_ids',[]):
+   observed=w.get(OUTCOME+eid) or {}
+   if observed.get('window',{}).get('final'):covered.update(r['nm_id'] for r in observed.get('rows',[]))
+  remaining=[int(i['nm_id']) for i in cohort.get('items',[]) if int(i['nm_id']) not in covered and (not nm_ids or int(i['nm_id']) in nm_ids)]
+  if remaining and cohort.get('evaluate_from','9999')<=str(w.now.astimezone(MSK).date()):rows+=loss_dynamics(w,s,cohort,remaining)
+  due=[]
+ elif cohort.get('evaluate_from','9999')<=str(w.now.astimezone(MSK).date()):
   rows+=loss_dynamics(w,s,cohort,nm_ids);due=[]
  for event in due:
   observations=event.get('observations') or [];result=observations[-1] if observations else {};before=result.get('before') or {};after=result.get('after') or {};b,a=before.get('total_profit'),after.get('total_profit');nm=event.get('action',{}).get('nm_ids',[None])[0];article=event.get('action',{}).get('article') or next((r['sa_name'] for r in s['products'] if int(r['nm_id'])==nm),'Артикул не определён')

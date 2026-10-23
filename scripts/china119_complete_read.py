@@ -2,6 +2,8 @@ import requests,os,json,time
 from datetime import datetime,timezone
 from advertising_agent.notify import cache_get,cache_set
 KEY='china_agent:119_two_day:2026-10-23:v1'
+done=cache_get(KEY+':completion')
+if done and done.get('completed_at'):print('Read already complete; no duplicate requests');raise SystemExit(0)
 p=cache_get(KEY);assert p and p.get('completed_at')
 out=dict(observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0,telegram_calls=0)
 token=os.environ['WB_TOKEN_3'];orders=p['reads']['orders']['data']['orders'];cursor=p['reads']['orders']['data']['next'];allcount=p['orders_page_count']

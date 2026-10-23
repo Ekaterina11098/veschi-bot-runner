@@ -37,6 +37,8 @@ def function(name,description,props):return dict(type='function',name=name,descr
 
 def tools():
  return [function('read_agreements','Договорённости владельца и терминология. Не числовой срез продаж.',{}),
+ function('list_reports','Все действующие отчёты, их генераторы, расписания и допустимые варианты. Расписания этим инструментом не меняются.',{}),
+ function('make_report','Самостоятельно сформировать/повторить существующий отчёт по явной просьбе пользователя. Новый request identity не сбрасывает плановые квитанции. repeat=true повторяет исходный срез с датой; false пересчитывает доступные рецепты. PNG не разрешает изменения.',dict(kind={'type':'string','enum':['advertising','budgets','loss','price_morning','price_control','price_day','growth','ad_trend']},days={'type':'integer','minimum':1,'maximum':90},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},repeat={'type':'boolean'},report_day={'type':['string','null']})),
  function('read_experience','Проверенная история действий, положительные/отрицательные результаты и неизвестные условия. Прошлый успех не гарантия нового результата.',dict(nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},query={'type':'string'})),
  function('get_growth_candidates','Проверить кандидатов для добавления в текущие РК/повышения ставок. Обязательно читает память до отбора, актуальные WB минимумы/шаг, экономику, МойСклад и отзывы. Только рекомендации; не создаёт подтверждение или WB-запись.',dict(kind={'type':'string','enum':['both','add','raise']},days={'type':'integer','minimum':2,'maximum':14})),
  function('search_chat_history','Найти предыдущие вопросы/ответы в этом чате, не просить повторять известное.',dict(query={'type':'string'})),
@@ -222,7 +224,17 @@ def answer(w,job,history):
    name=call['name'];args=json.loads(call.get('arguments') or '{}')
    try:
     if name=='read_agreements':result=analyst.memory()
-    elif name=='read_experience':result=experience_search(w,**args)
+    elif name=='list_reports':
+     from china_agent_reports import catalog
+     result=catalog()
+    elif name=='make_report':
+     if not re.search(r'отч[её]т|пришли|покаж|PNG|ПНГ|повтор|таблиц|формат',job['request_text'],re.I):raise ValueError('Нет явной просьбы сформировать или повторить отчёт')
+     if any(n not in {int(i) for i,_ in w.catalog()} for n in args['nm_ids']):raise ValueError('Неизвестный nmID Китая')
+     from china_agent_reports import make
+     with reading():result=make(w,job,**args)
+    elif name=='read_experience':
+     if any(n not in {int(i) for i,_ in w.catalog()} for n in args['nm_ids']):raise ValueError('Неизвестный nmID Китая')
+     result=experience_search(w,**args)
     elif name=='get_growth_candidates':
      from china_growth_candidates import collect
      with reading():result=collect(w,**args)
@@ -232,13 +244,16 @@ def answer(w,job,history):
     elif name=='get_live_data':result=analyst.live(args['topic'],args['nm_ids'],args['date_from'],args['date_to'])
     elif name=='calculate':result=calculate(**args)
     elif name=='remember_preference':result=analyst.remember(**args)
-    elif name in names:result=c.dispatch(job,data,name,args)
+    elif name in names:
+     if args.get('nm_id') is not None and str(args['nm_id']) not in {str(n) for n,_ in w.catalog()}:raise ValueError('Сначала подтвердить точный артикул Китая')
+     result=c.dispatch(job,data,name,args)
     else:raise PermissionError('Инструмент не разрешён')
    except Exception as ex:result=dict(available=False,error=type(ex).__name__,note=str(ex)[:300] if isinstance(ex,(ValueError,KeyError,TypeError,RuntimeError,PermissionError)) else 'Ошибка транспорта выбранного источника; детали запроса скрыты',instruction='Это конкретный пробел, не отсутствие всех данных. Попробуй другой read-only источник или точный артикул; не выдумывай цифры.')
    rendered=json.dumps(result,ensure_ascii=False,default=str)
    if len(rendered)>24000 and isinstance(result,dict):
     result=copy_summary(result);rendered=json.dumps(result,ensure_ascii=False,default=str)
    trace.append(dict(name=name,arguments=args,result=result));messages.append(dict(type='function_call_output',call_id=call['call_id'],output=rendered))
+   if name=='make_report' and result.get('status')=='ready':return result['marker'],[dict(name='free_analytic_dialog',model=body['model'],read_only=True)]+trace
  raise RuntimeError('Не удалось завершить анализ в пределах бюджета запросов')
 
 def copy_summary(value):

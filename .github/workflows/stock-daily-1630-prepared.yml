@@ -1,6 +1,12 @@
 name: Stock daily 07:00 and 16:30 MSK
 on:
   workflow_dispatch:
+    inputs:
+      slot:
+        description: Approved Moscow stock slot
+        type: choice
+        options: ['0700', '1630']
+        default: '0700'
   schedule:
     - cron: '0 4 * * *'
     - cron: '30 13 * * 0-6'
@@ -41,7 +47,7 @@ jobs:
           STOCK_DAILY_ENABLED: 'true'
           STOCK_OZON_ENABLED: 'true'
           STOCK_PENDING_RESERVE_ENABLED: 'true'
-          STOCK_RUN_SLOT: ${{ (github.event.schedule == '0 4 * * *' || github.event.schedule == '10,20,30,40,50 4 * * *' || github.event.schedule == '*/10 5-8 * * *') && '0700' || '1630' }}
+          STOCK_RUN_SLOT: ${{ github.event_name == 'workflow_dispatch' && inputs.slot || ((github.event.schedule == '0 4 * * *' || github.event.schedule == '10,20,30,40,50 4 * * *' || github.event.schedule == '*/10 5-8 * * *') && '0700' || '1630') }}
           STOCK_NOTIFICATIONS_ENABLED: 'true'
           STOCK_CLOUD_EXECUTION_ENABLED: 'true'
           STOCK_JOURNAL_IMPORT_ACCEPTED: 'true'

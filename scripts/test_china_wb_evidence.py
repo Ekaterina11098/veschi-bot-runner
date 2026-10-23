@@ -45,13 +45,18 @@ class Tests(unittest.TestCase):
  def test_owner_tax5_and_own_cogs_calculated(self):
   r=settlement(state(row()),'2026-10-21','2026-10-21',costs={10:120})
   self.assertEqual(r['parts_cny']['tax'],5);self.assertEqual(r['parts_cny']['cogs'],10);self.assertEqual(r['calculated_profit_rub'],780)
- def test_exact_own_purchase_cost_when_stock_average_missing(self):
+ def test_historical_positive_stock_cost_when_current_missing(self):
   w=Worker();w.catalog=lambda:[('10','synthetic')]
-  raw={'rows':[{'id':'own-product','article':'synthetic','buyPrice':{'value':24000,'currency':{'isoCode':'RUB'}}}]}
-  transport=types.SimpleNamespace(get=lambda *a,**kw:types.SimpleNamespace(ok=True,json=lambda:raw))
+  href='https://api.moysklad.ru/api/remap/1.2/entity/product/synthetic-id'
+  raw={'rows':[{'id':'own-product','meta':{'href':href},'article':'synthetic','buyPrice':{'value':999999,'currency':{'isoCode':'RUB'}}}]};calls=[]
+  def get(url,**kw):
+   calls.append(kw.get('params',{}))
+   data=raw if url.endswith('/product') else {'rows':[{'name':'МСК','meta':{'href':'https://api.moysklad.ru/api/remap/1.2/entity/store/synthetic'}}]} if url.endswith('/store') else {'meta':{'size':1},'rows':[{'article':'synthetic','meta':{'href':href},'stock':2,'price':24000}]}
+   return types.SimpleNamespace(ok=True,json=lambda:data)
+  transport=types.SimpleNamespace(get=get)
   with patch.dict(sys.modules,{'requests':transport}),patch.dict(os.environ,{'MOYSKLAD_API_TOKEN':'synthetic'}):
    costs,evidence=own_costs(w,{'rows':[]},[row()],'2026-10-21','2026-10-21')
-  self.assertEqual(costs[10],240);self.assertEqual(evidence[0]['basis'],'Own product purchase price; stock average unavailable')
+  self.assertEqual(costs[10],240);self.assertEqual(evidence[0]['basis'],'Historical positive-stock average');self.assertIn('moment=2026-10-20 23:59:59',calls[-1]['filter'])
  def test_ambiguous_moysklad_product_not_guessed(self):
   w=Worker();w.catalog=lambda:[('10','synthetic')]
   raw={'rows':[{'article':'synthetic'},{'article':'synthetic'}]}

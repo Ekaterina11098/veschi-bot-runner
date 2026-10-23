@@ -3,7 +3,7 @@ import io
 import unittest
 from china_table_png import blocks, delivery_parts, photo, render, PREFIX
 
-TABLE='Вчера −13,9%.\n\n| Артикул | Факты | Рекомендация |\n|---|---|---|\n| 449-AngelaBag-chocolate | Клик-заказ 2,45→0,54% | Сохранить уже сниженную ставку |\n\nНичего не менял.'
+TABLE='Учебный пример.\n\n| Артикул | Факты | Рекомендация |\n|---|---|---|\n| DEMO-001 | Условный показатель 3→2% | Сохранить уже сниженную ставку |\n\nНичего не менял.'
 class Store:
     active_question_id=99
     def __init__(self): self.data={}
@@ -15,7 +15,7 @@ class Tables(unittest.TestCase):
     def test_mixed_text_png_frozen_scope(self):
         w=Store();job=dict(id=99,chat_id=-1004342917488)
         parts=delivery_parts(w,job,TABLE,lambda t:[t])
-        self.assertEqual(parts[0],'Вчера −13,9%.');self.assertTrue(parts[1].startswith(PREFIX));self.assertEqual(parts[2],'Ничего не менял.')
+        self.assertEqual(parts[0],'Учебный пример.');self.assertTrue(parts[1].startswith(PREFIX));self.assertEqual(parts[2],'Ничего не менял.')
         self.assertEqual(delivery_parts(w,job,TABLE,lambda t:[t]),parts)
         blob,_=photo(w,job['chat_id'],parts[1]);self.assertTrue(blob.startswith(b'\x89PNG'))
         with self.assertRaises(PermissionError):photo(w,1,parts[1])

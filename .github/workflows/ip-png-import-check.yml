@@ -1,0 +1,29 @@
+name: Verify IP worker imports only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-png-import-check.yml']
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PYTHONPATH: private-source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 2f798a9509b72030d6fb5ec68fb915c5d216c31b
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: pip install requests==2.32.5 cryptography==46.0.2
+      - run: python -c "import analytics.collect; import analytics.mpstats_probe; import analytics.source_policy; print('Execution transport imports verified')"
+      - run: python -m unittest discover -s scripts -p test_ip_png_apply.py -v
+      - run: node scripts/test_ip_png_reply_webhook.cjs

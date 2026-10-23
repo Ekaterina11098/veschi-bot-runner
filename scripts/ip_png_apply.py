@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 sys.path.insert(0,str(Path.cwd()))
 from china_price_apply import IO as BaseIO
-from china_loss_ads import current,http,check
+from china_loss_ads import check
 CHAT=-1004378639510
 BOT=8987327588
 PLAN='advertising:ip:png_plan:20261023:five:v1'
@@ -13,6 +13,27 @@ TARGETS={506186804,255477781,1007948812,347406432,776196396}
 CID=39410834
 def now():return datetime.now(timezone.utc)
 def digest(p):return hashlib.sha256(json.dumps(p,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+def current(io,ids):
+ if ids!=[CID]:raise ValueError('Exact campaign read only')
+ from analytics.collect import fetch
+ j=fetch('GET','https://advert-api.wildberries.ru/api/advert/v2/adverts',io.token,params={'ids':str(CID)},max_retry_wait=180)
+ if len(j.get('adverts',[]))!=1 or j['adverts'][0]['id']!=CID:raise ValueError('Incomplete configuration')
+ return {CID:j['adverts'][0]}
+def http(io,path,method,body):
+ # Single non-retriable write; share endpoint cooldown, never reuse retrying read transport.
+ if method!='PATCH' or path!='/adv/v0/auction/nms' or body!={'nms':[{'advert_id':CID,'nms':{'add':[],'delete':sorted(TARGETS)}}]}:raise ValueError('Write outside exact plan')
+ import requests,time
+ from analytics.collect import database
+ pause='wb-pause:'+hashlib.sha256((io.token+'advert-api.wildberries.ru'+path).encode()).hexdigest()
+ existing=io.get(pause)
+ if existing and existing.get('until',0)>time.time():raise RuntimeError('Shared write cooldown; no write attempted')
+ r=requests.patch('https://advert-api.wildberries.ru'+path,headers={'Authorization':io.token},json=body,timeout=45)
+ if r.status_code==429:
+  from analytics.mpstats_probe import retry_delay
+  seconds=retry_delay(r.headers.get('Retry-After') or r.headers.get('X-Ratelimit-Retry') or '65')
+  database('POST','telegram_api_cache',body={'cache_key':pause,'payload':{'until':time.time()+seconds+1},'expires_at':(now()+timedelta(seconds=seconds+61)).isoformat()},params={'on_conflict':'cache_key'})
+ if not r.ok:raise RuntimeError('WB advertising HTTP '+str(r.status_code)+'; no write replay')
+ return r.json() if r.content else {}
 class IO(BaseIO):
  def __init__(self):
   self.url=os.environ['SUPABASE_URL'].rstrip('/');key=os.environ['SUPABASE_SECRET_KEY']

@@ -1,0 +1,40 @@
+name: Deliver exact approved new-ad proposal PNG
+on:
+  push:
+    branches: [china-ad-test-png-delivery-20261023]
+    paths: ['.github/workflows/china-ad-test-png-delivery.yml']
+permissions:
+  contents: read
+jobs:
+  delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Deliver frozen proposal only - WB credentials deliberately absent
+        env:
+          PYTHONPATH: scripts
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_3: NOT_PROVIDED_FOR_DELIVERY
+        run: |
+          python - <<'PY'
+          import base64,json,hashlib
+          from china_price_apply import IO
+          from china_loss_control import PLAN
+          from china_new_ads import LATEST,deliver
+          io=IO();latest=io.get(LATEST)
+          if not latest:raise RuntimeError('Frozen proposal missing')
+          p=io.get(PLAN+latest['plan_id']);file=io.get('china_agent:new_ad_png:v1:'+p['plan_id'])
+          blob=base64.b64decode(file['data'],validate=True)
+          if hashlib.sha256(blob).hexdigest()!=file['sha256']:raise RuntimeError('Frozen file changed')
+          receipt=deliver(io,p,blob)
+          print(json.dumps({'status':receipt['status'],'message_id':receipt.get('message_id'),'wb_writes':0}))
+          PY

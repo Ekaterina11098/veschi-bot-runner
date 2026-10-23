@@ -29,7 +29,7 @@ def run():
   e=dict(status='running',plan_id=PID,plan_sha256=p['plan_sha256'],campaigns=[],wb_writes=0,approval_source=a['source'],created_at=now().isoformat())
   assert io.create(KEY,e)
  t=Transport(io)
- def save():io.put(KEY,e)
+ def save():io.put(KEY,json.loads(json.dumps(e)))
  def read(path,method='GET',body=None):return t.request(path,method,body)
  def write(st,name,path,method,body=None):
   old=st['steps'].get(name)

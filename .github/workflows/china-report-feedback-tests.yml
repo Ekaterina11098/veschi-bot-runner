@@ -1,0 +1,36 @@
+name: China report feedback and forecast tests
+on:
+  push:
+    branches: [china-report-ack]
+    paths: ['scripts/china_question_feedback.py', 'scripts/china_order_profit_forecast.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/conversion_watches.py', 'scripts/test_china_question_feedback.py', 'scripts/test_china_order_profit_forecast.py', '.github/workflows/china-report-feedback-tests.yml']
+  pull_request:
+    paths: ['scripts/china_question_feedback.py', 'scripts/china_order_profit_forecast.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/conversion_watches.py', 'scripts/test_china_question_feedback.py', 'scripts/test_china_order_profit_forecast.py', '.github/workflows/china-report-feedback-tests.yml']
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 simplejson==4.2.0 pillow==11.3.0 python-dotenv
+      - name: Test runtime without marketplace or Telegram credentials
+        run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_question_feedback.py -v
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_order_profit_forecast.py -v
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py -v
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_analytic_dialog.py -v
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_agent_reports.py -v
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_wb_evidence.py -v
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_decline_diagnostics.py -v

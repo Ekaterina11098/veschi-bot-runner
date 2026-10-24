@@ -178,7 +178,22 @@ def collect(w,job,date_from,date_to,nm_ids=()):
     if cached and (clock-datetime.fromisoformat(cached['observed_at'])).total_seconds()<1200:
         return summary(cached,nm_ids)
     analyst=Analyst(w,job,[]);end=today-timedelta(days=1);start=end-timedelta(days=29)
-    own=analyst.live('products',[],str(start),str(end))
+    try:
+        own=analyst.live('products',[],str(start),str(end))
+        if not own.get('rows'):raise ValueError('Own completed sample source empty')
+    except (ValueError,RuntimeError):
+        # If the newest day is not published yet, a complete dated snapshot is
+        # useful evidence. Do not ask the person to resend data already stored.
+        from analytics.mpstats_primary import products as saved_products
+        own=None
+        for lag in (0,1,2):
+            b=end-timedelta(days=lag);a=b-timedelta(days=29)
+            saved,marker=saved_products(lambda t,p:w.db('GET',t,params=p),'token_3',a,b,w.now)
+            if marker and saved:
+                own=dict(rows=saved,observed_at=marker['collected_at'],source_key='analytics_snapshots:'+str(marker['id']),
+                    period_from=str(a),period_to=str(b),source='Complete stored own buyout snapshot',freshness_note='Newest period unavailable; exact earlier30full days disclosed')
+                start,end=a,b;break
+        if own is None:raise ValueError('Нет завершённой собственной30дневной выборки и полного сохранённого среза')
     stock=analyst.live('stock',[],date_from,date_to)
     prices=analyst.live('prices',[],date_from,date_to)
     products=[dict(nm_id=int(r['nm_id']),article=r['sa_name'],finished=r.get('finished_orders'),

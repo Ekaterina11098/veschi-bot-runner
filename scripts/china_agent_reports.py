@@ -18,6 +18,7 @@ RECIPES={
  'ad_trend':dict(title='Последовательный рост стоимости заказа',schedule='по запросу',generator='china_ad_cost_png',formats=['png'],period='2–90 полных дней')}
 RECIPES['actions']=dict(title='Выполненные изменения',schedule='по запросу',generator='china_experience',formats=['png'],period='фактические даты проверенного исполнения')
 RECIPES['outcomes']=dict(title='Результаты изменений цен и рекламы',schedule='в существующем ежедневном отчёте; отдельно по запросу',generator='china_change_observation',formats=['png'],period='равные полные периоды; прогноз и закрытая прибыль раздельно')
+RECIPES['sales_profit']=dict(title='Продажи и прибыль: начисления и прогноз',schedule='по запросу',generator='china_order_profit_forecast',formats=['png'],period='1–31 день; сегодня отдельно с временем среза')
 
 def catalog():return dict(reports=RECIPES,timezone='Europe/Moscow',schedules_unchanged=True,repeat='Явная просьба создаёт отдельный request identity; плановые квитанции не сбрасываются',changes='Только подтверждённый конкретный план, не сам отчёт')
 
@@ -90,6 +91,16 @@ def archive(w,kind,day):
  raise ValueError('Этот вид отчёта пересчитывается по запросу, а не копируется')
 
 def make(w,job,kind,days=3,nm_ids=(),repeat=False,report_day=None):
+ if kind=='sales_profit':
+  end=datetime.fromisoformat(report_day).date() if report_day else w.now.astimezone(MSK).date()-timedelta(days=1)
+  if not 1<=days<=31:raise ValueError('Прогноз прибыли поддерживает1–31день за запрос')
+  first=end-timedelta(days=days-1)
+  if repeat:
+   raise ValueError('Для точного повтора укажи исходный ответ/PNG; нельзя выдавать новый расчёт за повтор сохранённого среза')
+  from china_order_profit_forecast import collect
+  result=collect(w,job,str(first),str(end),nm_ids)
+  return dict(status='data_ready',data=result,wb_writes=0,execution_authorized=False,
+   next_step='Оформи финальный ответ Markdown-таблицами: дата/заказы/начисления WB/прогноз, затем проблемные артикулы/наши изменения с датой/прогноз/рекомендация. Доставка автоматически создаст PNG. Перед конкретной ставкой проверь текущую РК/минимум/шаг. Подтверждение WB-изменений не создаётся.')
  if kind=='outcomes':
   from china_change_observation import MANIFEST,ROOT as OUTCOME
   from china_table_png import render
@@ -284,4 +295,6 @@ if __name__=='__main__':
  if sys.argv[1:]!=['--daily-loss']:raise SystemExit('Expected --daily-loss')
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise SystemExit('Public main only')
  print(json.dumps(dict(status=daily_loss(),wb_writes=0)))
+
+
 

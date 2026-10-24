@@ -4,7 +4,7 @@ from datetime import datetime,timezone,timedelta
 from urllib.parse import urlparse
 import requests
 from conversion_watches import runtime
-from china_wb_evidence import ad_expenses
+from china_wb_evidence import ad_expenses,own_costs
 KEY='china_agent:profit_preview_inputs:v1:2026-10-21:2026-10-23'
 def main():
  original=requests.sessions.Session.request
@@ -17,7 +17,12 @@ def main():
  requests.sessions.Session.request=guard
  try:
   w=runtime();old=w.get(KEY)
-  if old and old.get('complete'):print('already_collected');return
+  if old and old.get('complete'):
+   stock=w.get('china_agent:analytic_read:v1:9e4056e823a5bfde339abb603e79046fcc37a63eecea08a6ee4eda999ad871d2')
+   costs,evidence=own_costs(w,stock,[dict(nmId=1473245503,rrDate='2026-10-21',sellerOperName='销售')],'2026-10-21','2026-10-23')
+   w.save(KEY+':cost_recovery',dict(cost_rub=costs.get(1473245503),evidence=evidence,wb_writes=0,telegram_sends=0))
+   print(json.dumps(dict(status='cost_recovery',resolved=costs.get(1473245503) is not None)))
+   return
   token=os.environ['WB_TOKEN_3'];first='2026-10-21';last='2026-10-23';msk=timezone(timedelta(hours=3))
   a=datetime(2026,10,21,tzinfo=msk);b=datetime(2026,10,24,tzinfo=msk)
   rows={};cursor=0;pages=0

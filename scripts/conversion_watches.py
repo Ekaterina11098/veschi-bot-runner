@@ -478,11 +478,19 @@ class Worker:
                 history=[x for x in history if x.get('answer')]
             if job.get('answer') is not None:answer=job['answer'];trace=job.get('tool_trace') or []
             else:
-                if intent(job['request_text']) and self.authorized(job):
+                from china_question_feedback import clarification,resolved_job,acknowledge
+                query=resolved_job(job,history)
+                ask=clarification(query,history,self.now)
+                self.reply_id=marker.get('message_id')
+                if ask:
+                    answer=ask;trace=[dict(name='report_type_clarification',collection_skipped=True)]
+                elif intent(job['request_text']) and self.authorized(job):
                     answer=self.command(job);trace=[]
                 elif intent(job['request_text']):
                     answer='Управлять заданиями могут действующие участники этой группы. Вопросы по сохранённым данным доступны всем участникам.';trace=[]
-                else:answer,trace=self.saved_question(job,history)
+                else:
+                    acknowledge(self,query)
+                    answer,trace=self.saved_question(query,history)
                 trace=[marker]+trace
                 patch({'answer':answer,'tool_trace':trace})
             if not question_allowed(job,self.config()):raise PermissionError('Question registration changed')
@@ -502,6 +510,9 @@ class Worker:
                     patch({'status':'pending','retry_at':(datetime.now(timezone.utc)+timedelta(seconds=exc.retry_after)).isoformat(),'error':'model_deferred_'+str(exc.status),'lease_until':None})
                     return 'model_deferred'
             patch({'status':'failed','error':'saved_question_'+type(exc).__name__,'lease_until':None})
+            from china_question_feedback import failure_notice
+            self.reply_id=marker.get('message_id')
+            failure_notice(self,job)
             raise
 
     def dialog(self,job,history):
@@ -774,6 +785,8 @@ def main():
 
 
 if __name__=='__main__':main()
+
+
 
 
 

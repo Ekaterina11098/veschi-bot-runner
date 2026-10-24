@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-mpstats-data
+  group: approved-553-png-delivery
   cancel-in-progress: false
 jobs:
   preview:

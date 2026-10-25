@@ -31,7 +31,9 @@ jobs:
       - run: python scripts/evaluate_real_china_dialog25.py
         env:
           PYTHONPATH: scripts:source
-          EVAL_PHASE: final
+          EVAL_PHASE: release
+          EVAL_NOW: '2026-10-25T17:40:00+00:00'
+          EVAL_CASE_IDS: price_again,already_excluded,profit
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

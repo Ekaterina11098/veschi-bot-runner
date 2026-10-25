@@ -163,7 +163,7 @@ def recommend(c,n,ds,days,changes,minimum,price):
    decision=f'Сохранить {old/100:g} ¥; оценка {date.fromisoformat(days[-1])+timedelta(days=2):%d.%m}.';reason=f'Единичное превышение; ДРР периода {drr:.2f}%.'
  if not decision:return None
  if action:action['id']=str(c['id'])+':'+str(nm);action['article']=''
- return dict(nm=nm,daily=rows,period=period,period_drr=drr,decision=decision,reason=reason,action=action,changed=changed,comparison=comparison,pending_first_day=pending_first_day)
+ return dict(nm=nm,daily=rows,period=period,period_drr=ratio(period),decision=decision,reason=reason,action=action,changed=changed,comparison=comparison,pending_first_day=pending_first_day)
 
 def build(s,minima=None):
  minima=minima or {};end=date.fromisoformat(s['period_to']);days=[str(end-timedelta(days=i)) for i in [2,1,0]];labels=price_map(s['catalogue']);changes=history(s['executions']);cs=[];budgets={};raw=[]

@@ -84,6 +84,7 @@ def execute(io,a,p):
    cid=item['campaign_id'];before=campaign(cid);state['before']=before;save()
    if before['status']!=9:raise ValueError('Campaign no longer active')
    kind=item['kind'];method='PATCH'
+   if kind in ['topup_campaign','pause_campaign'] and sorted(n['nm_id'] for n in before['nm_settings'])!=item['nm_ids']:raise ValueError('Campaign composition changed since PNG')
    if kind in ['ad_set_bid','ad_exclude_sku']:
     selected=next((n for n in before['nm_settings'] if n['nm_id']==item['nm_id']),None)
     if kind=='ad_exclude_sku' and selected is None:state.update(status='verified',already_done=True);save();continue

@@ -101,6 +101,10 @@ class Analyst:
   valid={int(nm) for nm,_ in self.w.catalog()}
   if len(nm_ids)>30 or any(type(n) is not int or n not in valid for n in nm_ids):raise ValueError('Сначала разреши артикул через find_products в точный nmID Китая')
   first,last=period(self.w,start,end,topic)
+  if topic=='advertising':
+   from china_shared_advertising import shared as shared_ads
+   saved=shared_ads(self.w,first,last,nm_ids)
+   if saved is not None:return saved
   shared=topic in ['products','stock','prices']
   args=dict(topic=topic,nm_ids=[] if shared else sorted(nm_ids),date_from=str(first),date_to=str(last));key='china_agent:analytic_read:v1:'+hashlib.sha256(json.dumps(args,sort_keys=True).encode()).hexdigest()
   def project(value):

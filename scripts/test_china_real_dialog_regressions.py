@@ -81,4 +81,10 @@ class ReplayRegressions(unittest.TestCase):
   result=ground_answer('Предварительная оценка',trace)
   self.assertIn('one-bag',result);self.assertIn('12 ₽/¥',result);self.assertIn('допущения',result)
 
+ def test_saved_profit_answer_does_not_trigger_fresh_orders(self):
+  a=Analyst(SimpleNamespace(),{},[])
+  a.cached_profit_context_supplied=True
+  r=a.live('orders',[],'2026-10-24','2026-10-25')
+  self.assertEqual(r['wb_reads'],0);self.assertTrue(r['cached_context_available']);self.assertFalse(r['available'])
+
 if __name__=='__main__':unittest.main()

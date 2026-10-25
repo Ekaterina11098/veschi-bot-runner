@@ -220,13 +220,13 @@ def build(s,minima=None):
   elif cp and len(c['nm_settings'])==1 and period['orders']==0 and period['spend']>0:
    nm=c['nm_settings'][0]['nm_id'];price=labels.get(nm,{}).get('price')
    if isinstance(price,(int,float)) and period['spend']>=price*.05 and not incomplete_composition:
-    action=dict(id='pause:'+str(c['id']),kind='pause_campaign',campaign_id=c['id'],status_before=9);recommendation='Приостановить РК. За 3 дня '+f'{period["spend"]:.2f} ¥; 0 рекламных заказов.'
+    action=dict(id='pause:'+str(c['id']),kind='pause_campaign',campaign_id=c['id'],status_before=9,nm_ids=sorted(n['nm_id'] for n in c['nm_settings']));recommendation='Приостановить РК. За 3 дня '+f'{period["spend"]:.2f} ¥; 0 рекламных заказов.'
   econ=s.get('economics',{});econrows=econ.get('rows',{});econ_ok=econ.get('status')=='available' and all(econrows.get(str(n['nm_id']),{}).get('expected_total_profit_rub',-1)>=0 for n in c['nm_settings'])
   if not action and c['status']==9 and forecast is not None and bdrr is not None and bdrr<=5 and period['orders']>=3 and forecast>balance['total'] and not econ_ok:
    missing=sum(str(n['nm_id']) not in econrows for n in c['nm_settings']);recommendation='Пополнение не готово: '+str(missing)+' SKU без свежей подтверждённой модели прибыли.' if missing else 'Не пополнять: модель прибыли содержит отрицательный или устаревший результат.'
   if not action and c['status']==9 and forecast is not None and bdrr is not None and bdrr<=5 and period['orders']>=3 and forecast>balance['total'] and econ_ok:
    amount=max(math.ceil(s['config']['minTopUp']/100),math.ceil((forecast-balance['total'])/50)*50)
-   action=dict(id='topup:'+str(c['id']),kind='topup_campaign',campaign_id=c['id'],amount_cny=amount,balance_before=balance['total'],target_balance=balance['total']+amount,status_before=9);recommendation=f'Пополнить на {amount} ¥. Расчёт на 3 дня: {forecast:.2f} ¥.'
+   action=dict(id='topup:'+str(c['id']),kind='topup_campaign',campaign_id=c['id'],amount_cny=amount,balance_before=balance['total'],target_balance=balance['total']+amount,status_before=9,nm_ids=sorted(n['nm_id'] for n in c['nm_settings']));recommendation=f'Пополнить на {amount} ¥. Расчёт на 3 дня: {forecast:.2f} ¥.'
   elif not action and bdrr is not None and bdrr>5 and not incomplete_composition:recommendation='Не пополнять: ДРР '+f'{bdrr:.2f}%. '+('Сначала изменения SKU из рекламного отчёта.' if any(r['action'] for r in focus) else 'Сохранить бюджет до следующей оценки.')
   funds=[]
   for rec in s['executions']:

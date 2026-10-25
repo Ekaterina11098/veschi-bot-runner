@@ -51,3 +51,5 @@ jobs:
 # Include displayed period regression test.
 
 # Completed-launch questions must read receipts before candidate selection.
+
+# Preserve exact SKU totals across context truncation.

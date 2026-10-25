@@ -27,4 +27,16 @@ class Recovery(unittest.TestCase):
   exec(compile(ast.Module(body=[node],type_ignores=[]),'normalize','exec'),ns)
   self.assertEqual(ns['result'],json.loads(json.dumps(ns['result'])))
   self.assertIn('41298169',ns['result']['campaigns'])
+
+ def test_shared_advertising_answers_without_live_transport(self):
+  from china_shared_advertising import shared
+  dayrow=dict(date='2026-10-25T00:00:00Z',sum=20,sum_price=400,orders=2,clicks=80,views=1000,apps=[])
+  base=dict(status='complete',period_from='2026-10-19',period_to='2026-10-24',observed_at='2026-10-25T10:00:00+00:00',batches={'0':dict(campaigns={'adverts':[dict(id=42,status=9,settings={},nm_settings=[dict(nm_id=1)])]},stats=[])})
+  current=dict(observed_at='2026-10-25T17:00:00+00:00',ad_batches=[dict(data=[dict(advertId=42,days=[dayrow])])])
+  w=SimpleNamespace(now=datetime(2026,10,25,17,tzinfo=timezone.utc),get=lambda k:base if k=='china_agent:advertising_source:2026-10-25:v2' else current if k=='china_agent:advertising_intraday:2026-10-25:v1' else None)
+  from datetime import date
+  result=shared(w,date(2026,10,25),date(2026,10,25),[])
+  self.assertEqual(result['totals_by_day']['2026-10-25']['drr_pct'],5)
+  self.assertEqual(result['wb_reads'],0);self.assertEqual(result['campaigns'][0]['sku_count'],1)
+
 if __name__=='__main__':unittest.main()

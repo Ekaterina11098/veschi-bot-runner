@@ -142,7 +142,13 @@ def recommend(c,n,ds,days,changes,minimum,price):
   rising=len(ratios)==3 and all(x is not None for x in ratios) and ratios[0]<ratios[1]<ratios[2] and ratios[2]>5
   threshold=price*.05 if isinstance(price,(int,float)) and price>0 else None
   no_orders=decision_period['orders']==0 and threshold is not None and decision_period['spend']>=threshold
-  if no_orders or ((drr is not None and drr>10) and sustained and latest and old<=minimum):
+  if no_orders and minimum and old>minimum:
+   recent_bid=next((x for x in reversed(changes) if x['cid']==c['id'] and x['nm']==nm and x['kind']=='bid' and x.get('target')==old and x.get('old',old)<old),None)
+   target=max(minimum,recent_bid['old'] if recent_bid else int(old*.8))
+   action=dict(id=str(c['id'])+':'+str(nm),article='',kind='ad_set_bid',campaign_id=c['id'],nm_id=nm,placement=zone,old_minor=old,target_minor=target);decision=f'Снизить {old/100:g} → {target/100:g} ¥.';reason=f'После изменения: {decision_period["spend"]:.2f} ¥ без рекламных заказов.'
+  elif no_orders and latest and period['orders']>0 and len(postdays if 'postdays' in locals() else [])<2 and decision_period['spend']<price*.10:
+   decision=f'Сохранить {old/100:g} ¥ до {date.fromisoformat(days[-1])+timedelta(days=1):%d.%m}; при повторении отсутствия заказов — исключение.';reason=f'Первый полный день без заказов: {decision_period["spend"]:.2f} ¥; ранее за 3 дня {period["orders"]:g} заказов.'
+  elif no_orders or ((drr is not None and drr>10) and sustained and latest and old<=minimum):
    if len(c['nm_settings'])>1 and c.get('restrictions',{}).get('can_change_nms'):
     action=dict(kind='ad_exclude_sku',campaign_id=c['id'],nm_id=nm,placement=zone,old_minor=old);decision='Исключить SKU из этой РК.'
    else:decision='Предложение паузы всей РК — в отчёте бюджетов.'
@@ -192,6 +198,7 @@ def build(s,minima=None):
   if not balance or balance.get('currency')!='CNY':raise ValueError('Campaign balance missing')
   focus=[]
   for n in c.get('nm_settings',[]):
+   if new:continue
    nm=n['nm_id'];ds=byproduct.get(nm,{})
    if not ds:continue
    minimum=minima.get(str(c['id'])+':'+str(nm),0)

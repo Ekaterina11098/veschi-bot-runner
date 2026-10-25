@@ -59,6 +59,7 @@ def run():
   c=None
   for attempt in range(7):
    c=current(io,[cid])[cid]
+   e.setdefault('last_readbacks',{})[str(cid)]=c;save()
    if predicate(c):return c
    if attempt<6:time.sleep(5)
   raise ValueError('WB readback not yet confirmed for '+str(cid))

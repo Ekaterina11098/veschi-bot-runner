@@ -55,7 +55,7 @@ def run():
   assert {r['advertId'] for r in rows}==set(ids) and all(r['currency']=='CNY' for r in rows)
   return {r['advertId']:r['total'] for r in rows}
  ids=[41270309,41270471,41270474,41296359,41296363];cs=current(io,ids);bb=budgets(ids)
- e['preflight_campaigns']=cs;e['preflight_budgets']=bb;save()
+ e['preflight_campaigns']=cs;e['preflight_budgets']=bb;e['balance_readback']=req('/adv/v1/balance');save()
  # Verify all approved additions and existing product settings before money moves.
  for cid,c in cs.items():
   old=ce['groups'].get(str(cid))
@@ -68,11 +68,19 @@ def run():
    old.update(status='verified_active',after=c,verified_at=datetime.now(timezone.utc).isoformat());old.pop('reason',None)
  io.put('china_agent:codex_add_candidates:2026-10-25:v1:execution',ce)
  cfg=req('/api/advert/v1/config');assert cfg['currency']=='CNY' and cfg['minTopUp']<=25000
+ bal=e['balance_readback'];assert bal['currency']=='CNY'
+ source=0 if bal.get('balance',0)>=950 else 1 if bal.get('net',0)>=950 else None
+ if source is None:raise ValueError('Insufficient available account funds for approved950')
+ # Prior400 is rejected, not accepted: confirm unchanged budget before corrected source request.
+ rejected=e['steps'].get('41270309:deposit')
+ if rejected and rejected['status']=='uncertain':
+  assert rejected.get('reason')=='RuntimeError' and bb[41270309]<=e['items']['41270309']['before_budget']
+  rejected.update(status='rejected_http400_budget_unchanged',verified_at=datetime.now(timezone.utc).isoformat());save()
  for x in p['items']:
-  cid=x['campaign_id'];label=str(cid)+':deposit';st=e['items'].setdefault(str(cid),dict(campaign_id=cid,amount_cny=x['amount_cny'],before_budget=bb[cid]));save()
+  cid=x['campaign_id'];label=str(cid)+':deposit_source'+str(source);st=e['items'].setdefault(str(cid),dict(campaign_id=cid,amount_cny=x['amount_cny'],before_budget=bb[cid]));save()
   if label not in e['steps']:
    if x['start'] and bb[cid]!=0:raise ValueError('New campaign already funded; no duplicate deposit')
-   write(label,'/adv/v1/budget/deposit?id='+str(cid),'POST',dict(sum=x['amount_cny'],type=0))
+   write(label,'/adv/v1/budget/deposit?id='+str(cid),'POST',dict(sum=x['amount_cny'],type=source))
   after=None
   for _ in range(8):
    after=budgets([cid])[cid]
@@ -97,6 +105,7 @@ def run():
  tracking=dict(status='active',campaign_ids=ids,source_execution=EXE,baseline_at=e['completed_at'],baseline_budgets=budgets(ids),baseline_campaigns=final,approved_funding_cny=950,auto_topup=False,auto_changes=False,notify_chat_only=True)
  try:tracking['baseline_fullstats']=req('/adv/v3/fullstats?ids='+','.join(map(str,ids))+'&beginDate=2026-10-25&endDate=2026-10-25')
  except Exception as ex:tracking['baseline_stats_error']=type(ex).__name__
- io.put('china_agent:expanded_tests:2026-10-25:tracking:v1',tracking)
+ key='china_agent:expanded_tests:2026-10-25:tracking:v1'
+ io.put(key,tracking) if io.get(key) else io.create(key,tracking)
  print(json.dumps(dict(status=e['status'],funded_cny=950,active_campaigns=5,wb_writes=e['wb_writes'])))
 if __name__=='__main__':run()

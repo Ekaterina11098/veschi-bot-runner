@@ -1,0 +1,45 @@
+name: China hourly cloud cost control
+on:
+  schedule:
+    - cron: '10 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [china-cloud-cost-control25, main]
+    paths:
+      - 'scripts/china_cloud_cost_control.py'
+      - 'scripts/test_china_cloud_cost_control.py'
+      - '.github/workflows/china-cloud-cost-control.yml'
+permissions:
+  contents: read
+concurrency:
+  group: china-cost-control-single-writer
+  cancel-in-progress: false
+jobs:
+  hourly:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - name: Test authorization, arithmetic, expiry and uncertain writes offline
+        run: python -m unittest discover -s scripts -p test_china_cloud_cost_control.py
+        env:
+          WB_TOKEN_3: disabled
+      - name: Check cloud state access without WB requests or delivery
+        if: github.event_name == 'push'
+        run: python scripts/china_cloud_cost_control.py --preflight
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      - name: Scheduled collection and policy-bound cost reductions
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: python scripts/china_cloud_cost_control.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}

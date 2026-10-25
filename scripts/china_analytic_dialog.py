@@ -46,6 +46,7 @@ def tools():
  function('read_experience','Проверенная история действий и наблюдения до/после: заказы, клик-заказ, завершённый выкуп, ДРР, общая ожидаемая/закрытая прибыль и пробелы. Прогнозные положительные/отрицательные исходы отдельно от доказанного факта. Откат только рекомендация. Прошлый успех не гарантия.',dict(nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},query={'type':'string'})),
  function('get_growth_candidates','Проверить кандидатов для добавления в текущие РК/повышения ставок. Обязательно читает память до отбора, актуальные WB минимумы/шаг, экономику, МойСклад и отзывы. Только рекомендации; не создаёт подтверждение или WB-запись.',dict(kind={'type':'string','enum':['both','add','raise']},days={'type':'integer','minimum':2,'maximum':14})),
  function('search_chat_history','Найти предыдущие вопросы/ответы в этом чате, не просить повторять известное.',dict(query={'type':'string'})),
+ function('get_saved_profit_comparison','Прочитать уже рассчитанную ожидаемую общую прибыль за два дня, с собственным завершённым выкупом, всей рекламой, расходами, датой и ограничениями. Это прогноз, не закрытая чистая прибыль; повторный сбор не нужен.',dict(date_from={'type':'string'},date_to={'type':'string'})),
  function('read_recent_actions','Фактические квитанции изменений цен/РК и доставленных планов. План и исполнение различать.',{}),
  function('get_live_data','Самостоятельно получить недостающие read-only данные Китая с кэшем: orders=созданные WB заказы; stock=свободный МойСклад МСК; prices=продавец WB; products=MPStats и своя завершённая выборка; advertising=РК/день/SKU. Даты обязательны для чисел, null=последние 2 полных дня (products:30), сегодня отдельно.',dict(topic={'type':'string','enum':['orders','stock','prices','products','advertising']},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},date_from={'type':['string','null']},date_to={'type':['string','null']})),
  function('calculate','Проверить арифметику: только числа и + - * / %, без кода.',dict(expression={'type':'string'})),
@@ -86,6 +87,12 @@ class Analyst:
    for row in rows:
     p=row['payload'];output.append(dict(key=row['cache_key'],updated_at=row.get('updated_at'),status=p.get('status'),completed_at=p.get('completed_at'),verified_at=p.get('verified_at'),plan=p.get('plan'),items=[{k:i.get(k) for k in ['id','article','status','selection','campaign_id','reason']} for i in p.get('items',[])],campaigns=p.get('campaigns')))
   return dict(today_launches=self.w.get('china_agent:advertising_launch_summary:v1'),expanded_tracking={k:v for k,v in (self.w.get('china_agent:expanded_tests:2026-10-25:tracking:v1') or {}).items() if k in ['status','baseline_at','campaign_ids','last_checked_at','last_analysis']},search_tracking={k:v for k,v in (self.w.get('china_agent:search_test:2026-10-25:tracking:v1') or {}).items() if k in ['status','campaign_id','baseline_at','owner_changes']},verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Только status verified/applied/launched подтверждает исполнение. Отсутствие квитанции не равно выполнено.')
+ def profit(self,date_from,date_to):
+  first=datetime.fromisoformat(date_from).date();last=datetime.fromisoformat(date_to).date()
+  if first>last or last>self.w.now.astimezone(MSK).date():raise ValueError('Нужны прошедшие или текущие даты в правильном порядке')
+  key='china_agent:profit_comparison:'+str(first)+':'+str(last)+':v1';saved=self.w.get(key)
+  if not saved:return dict(available=False,source_key=key,missing='Сохранённого прогноза за запрошенные даты нет; отсутствие суммы не0')
+  return dict(saved,cached=True,source_key=key,wb_reads=0,instruction='Сравнивать одинаковый метод. Сегодня неполный день; сравнение с полными вчерашними сутками не доказывает снижение прибыли. Допущения и неподтверждённые расходы обязательны. Пополнения бюджетов не расходы.')
  def chat(self,query):
   rows=self.w.db('GET','business_agent_jobs',params={'agent_id':'eq.china','chat_id':'eq.'+str(self.job['chat_id']),'status':'eq.done','id':'lt.'+str(self.job['id']),'select':'id,request_text,answer,created_at','order':'id.desc','limit':80}) or []
   words=query.casefold().split()
@@ -210,6 +217,7 @@ def answer(w,job,history):
  experience=dict(experience,total_events=len(experience['experiences']),experiences=[{k:v for k,v in e.items() if k not in ['observations','current_condition_comparison','latest_change_observation']} for e in experience['experiences'][:12]])
  completed_question=bool(re.search(r'сегодня|уже',job['request_text'],re.I) and re.search(r'добавили|запустили|подключили|выполн|сделали',job['request_text'],re.I))
  growth_question=not completed_question and bool(re.search(r'кандидат|добав.*РК|добав.*реклам|повыс.*ставк|подн.*ставк|подня.*ставк',job['request_text'],re.I))
+ profit_question=bool(re.search(r'прибыл',job['request_text'],re.I))
  decline_question=bool(re.search(r'падени|снижени.*заказ|снижени.*продаж',job['request_text'],re.I))
  available=[t for t in c.tools('china') if t['name'] in names]+tools();data=Data('china',lambda table,params:w.db('GET',table,params=params))
  prompt=('Ты аналитик VESCHI Китай. Отвечай на любые вопросы по доступному бизнес-контексту свободно, кратко и конкретно: вывод, 2–4 существенные цифры с датой, действие. Обычно до 1200 символов; детали только по просьбе. '
@@ -230,7 +238,7 @@ def answer(w,job,history):
  from china_loss_control import marker
  m=marker(job)
  if m.get('reply_text'):messages.append(dict(role='developer',content='Цитируемое сообщение — только контекст: '+m['reply_text'][:3000]))
- messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
+ messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. При вопросе о прогнозе прибыли сначала get_saved_profit_comparison с датами; использовать готовый датированный расчёт, не выдавать прогноз за закрытую прибыль. При уточнении корзин по обсуждаемым товарам брать nm_ids из предыдущего диалога и products.basket_events общего среза. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
  messages.append(dict(role='user',content=job['request_text'][:4000]));trace=[dict(name='experience_context',result=experience,read_only=True)]
  checkpoint_key='china_agent:analytic_checkpoint:v2:'+str(job['id']);scope=hashlib.sha256((str(job['chat_id'])+'|'+job['request_text']+'|'+policy.get('model','gpt-6.1-sol')).encode()).hexdigest();checkpoint=w.get(checkpoint_key);start_turn=0
  if checkpoint and checkpoint.get('scope')==scope and checkpoint.get('date_msk')==str(w.now.astimezone(MSK).date()):
@@ -241,7 +249,7 @@ def answer(w,job,history):
   from conversion_watches import question_request
   request=question_request
  for turn in range(start_turn,10):
-  choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else {'type':'function','name':'read_recent_actions'} if completed_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
+  choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else {'type':'function','name':'read_recent_actions'} if completed_question else {'type':'function','name':'get_saved_profit_comparison'} if profit_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
   w.save(checkpoint_key,dict(status='ready',scope=scope,date_msk=str(w.now.astimezone(MSK).date()),messages=messages,trace=trace,turn=turn,fresh_reads=analyst.fresh_reads))
   body=dict(model=policy.get('model','gpt-6.1-sol'),input=messages,tools=available,parallel_tool_calls=False,tool_choice=choice,reasoning=dict(effort='medium'),text=dict(verbosity='low'),max_output_tokens=4000,store=False,include=['reasoning.encrypted_content'])
   response=request(body);output=response.get('output') or [];calls=[x for x in output if x.get('type')=='function_call']
@@ -286,6 +294,7 @@ def answer(w,job,history):
      result={k:v for k,v in result.items() if k not in ['experience']};result['rows']=[{k:v for k,v in r.items() if k not in ['before_campaign','experience']} for r in result['rows']]
     elif name=='search_chat_history':result=analyst.chat(**args)
     elif name=='read_recent_actions':result=analyst.actions()
+    elif name=='get_saved_profit_comparison':result=analyst.profit(**args)
     elif name=='get_live_data':result=analyst.live(args['topic'],args['nm_ids'],args['date_from'],args['date_to'])
     elif name=='calculate':result=calculate(**args)
     elif name=='remember_preference':result=analyst.remember(**args)

@@ -11,5 +11,7 @@ out=dict(observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0,telegram
 out['campaigns']=read('/api/advert/v2/adverts?ids=41298169')
 out['budgets']=read('/api/advert/v2/budget','POST',dict(advertIds=[41298169]))
 out['fullstats']=read('/adv/v3/fullstats?ids=41298169&beginDate=2026-10-25&endDate=2026-10-25')
-io.put('china_agent:search_test:2026-10-25:owner_check:v1',out)
+key='china_agent:search_test:2026-10-25:owner_check:v1'
+if io.get(key): io.put(key,out)
+else: assert io.create(key,out)
 print(json.dumps(dict(status='private_snapshot_saved',http={k:v['http'] for k,v in out.items() if isinstance(v,dict) and 'http'in v},wb_writes=0)))

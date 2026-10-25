@@ -1,4 +1,4 @@
-name: Verify approved China daily grouped format
+name: Verify final approved China daily grouped format
 on:
   push:
     branches: [china-daily-grouped-v2]

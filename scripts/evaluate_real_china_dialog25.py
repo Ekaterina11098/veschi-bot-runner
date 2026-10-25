@@ -13,6 +13,8 @@ def main():
  io=IO();suite=io.get(ROOT+'cases:v1');assert suite['no_telegram'] and suite['no_wb']
  phase=os.environ.get('EVAL_PHASE','before');key=ROOT+'results:'+phase
  results=io.get(key) or dict(status='running',phase=phase,model='gpt-6.1-sol',cases=[],telegram_sends=0,wb_requests=0)
+ for case in suite['cases']:
+  for pattern in case.get('required',[])+case.get('forbidden',[]):re.compile(pattern)
  frozen=datetime.fromisoformat(suite['fixed_now'])
  class FrozenDateTime(datetime):
   @classmethod
@@ -63,6 +65,7 @@ def main():
     value=answer(w,job,case.get('history',[]))
    text,trace=value;status='answered'
   except Exception as exc:text='';trace=[];status='error:'+type(exc).__name__
+  results.setdefault('raw_answers',[]).append(dict(id=case['id'],answer=text,status=status));persist()
   failures=[]
   for pattern in case.get('required',[]):
    if not re.search(pattern,text,re.I|re.S):failures.append('missing:'+pattern)

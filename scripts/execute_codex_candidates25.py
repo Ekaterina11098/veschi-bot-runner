@@ -113,8 +113,8 @@ def run():
    base_ids=nmset(group['before']);wanted={s['nm_id'] for s in selected}
    if len(base_ids|wanted)>50:raise ValueError('Campaign capacity would exceed50 products')
    if before['status']==9:write(str(cid)+':pause','/adv/v0/pause?id='+str(cid),'GET')
-   elif before['status']!=4 or str(cid)+':pause' not in e['steps']:raise ValueError('Campaign paused outside this execution')
-   read_campaign(cid,lambda c:c['status']==4);verified(str(cid)+':pause')
+   elif before['status']!=11 or str(cid)+':pause' not in e['steps']:raise ValueError('Campaign paused outside this execution')
+   read_campaign(cid,lambda c:c['status']==11);verified(str(cid)+':pause')
    if not wanted<=nmset(current(io,[cid])[cid]):
     write(str(cid)+':add','/adv/v0/auction/nms','PATCH',dict(nms=[dict(advert_id=cid,nms=dict(add=sorted(wanted),delete=[]))]))
    got=read_campaign(cid,lambda c:nmset(c)==base_ids|wanted);verified(str(cid)+':add')
@@ -141,9 +141,10 @@ def run():
   except Exception as ex:
    group.update(status='attention',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__);save()
  # New demand-bag campaigns remain unfunded drafts pending exact larger budgets.
- new=[s for s in eligible if s['campaign_id'] is None]
+ new=[s for s in p['items'] if s['campaign_id'] is None]
  for index,start in enumerate(range(0,len(new),31),1):
   selected=new[start:start+31];label='new_demand_bags_'+str(index);group=e['groups'].setdefault(label,dict(kind='new_demand_bags',status='preflight',nm_ids=[s['nm_id'] for s in selected]));save()
+  if group.get('status')=='verified_draft':continue
   try:
    name='Китай спрос сумки 25.10 · '+str(index)
    if 'campaign_id' not in group:
@@ -152,7 +153,7 @@ def run():
     if type(cid) is not int or cid<=0:raise ValueError('No creation ID; no blind recreation')
     group['campaign_id']=cid;save()
    cid=group['campaign_id'];wanted={s['nm_id'] for s in selected}
-   before=read_campaign(cid,lambda c:c['status']==4 and nmset(c)==wanted);exact(before,50);verified(label+':create')
+   before=read_campaign(cid,lambda c:c['status']==4 and nmset(c)==wanted and c.get('currency')=='CNY' and c.get('settings',{}).get('payment_type')=='cpc' and c.get('settings',{}).get('placements')==dict(search=False,recommendations=True));exact(before,50);verified(label+':create')
    mins=minimums(io,cid,wanted)
    if any(mins.get(s['nm_id'],10**9)>s['bid_minor'] for s in selected):raise ValueError('New draft minimum exceeds approved bid')
    write(label+':bids','/api/advert/v1/bids','PATCH',dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=s['nm_id'],bid_kopecks=s['bid_minor'],placement='recommendations') for s in selected])]))

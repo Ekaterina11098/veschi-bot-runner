@@ -1,0 +1,78 @@
+name: Audit all cabinets and recover missing positive reviews
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-positive-recover-all-20261025.yml']
+permissions: {contents: read}
+concurrency:
+  group: review-positive-recover-all-20261025
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 18649db15489c3dc77edc22bec5a4ddc5ed6a410
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' requests==2.32.5 python-dotenv==1.1.1
+      - run: python -m unittest test_review_auto_five_star.py test_review_morning.py
+      - name: Enqueue only exact saved eligible reviews; no WB or Telegram calls
+        env:
+          PYTHONPATH: private-source:review-approval-preparation
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python - <<'PY'
+          import os,json,time,hmac,hashlib,psycopg
+          from review_telegram_approval import Approval,Repository,sha,identity
+          from review_approval_bridge import SQLSource,DurableBridge,reply_key
+          from review_auto_five_star import CONFIG_KEY,enqueue,classify
+          from review_durable_workflow import DurableReviews
+          from review_queue import _request
+          root=os.environ['SUPABASE_SECRET_KEY'].encode()
+          pw=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
+          with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=pw,sslmode='require',autocommit=True,connect_timeout=15) as conn:
+              repo=Repository(conn,postgres=True);source=SQLSource(conn)
+              cfg=source.read('reviews:telegram-approval:config:v1')
+              app=Approval(repo,'automatic-policy-only',str(cfg['owner_id']),str(cfg['chat_id']),str(cfg['bot_id']),enabled=True)
+              app.chat=app.delivery_chat();bridge=DurableBridge(app,source);store=DurableReviews(_request)
+              policy=source.read(CONFIG_KEY);report=[]
+              deadline=time.monotonic()+240
+              while time.monotonic()<deadline:
+                  health=repo.get('events','approved-worker:health:v1') or {}
+                  if health.get('auto_policy_code_version')=='positive-praise-normalization-20261025':break
+                  time.sleep(5)
+              else:raise RuntimeError('Fixed publisher not yet active; no intents created')
+              for cabinet in ('token_1','token_2','token_3'):
+                  saved=repo.get('events','positive-all-audit:20261025:'+cabinet) or {}
+                  if not saved.get('complete') or time.time()-saved.get('checked_at',0)>3600:raise RuntimeError('Fresh complete audit required')
+                  items=saved['items']
+                  observed_at=time.time();results=[]
+                  for item in items:
+                      ident=str(item.get('id') or '')
+                      classification=classify(item)
+                      existing=repo.get('items',identity(cabinet,'feedbacks',ident))
+                      entry=dict(item_id=ident,article=(item.get('productDetails') or {}).get('supplierArticle'),rating=item.get('productValuation'),classification=classification,existing=existing)
+                      if classification['eligible']:
+                          if (existing and ident!='GTLWSMb4Z3rzpS4CTYJ4') or source.journal(reply_key(cabinet,'feedbacks',ident)) or (source.was_notified(cabinet,'feedbacks',ident) and ident!='GTLWSMb4Z3rzpS4CTYJ4'):
+                              entry['result']={'status':'existing_workflow'}
+                          else:
+                              entry['result']=enqueue(app,bridge,store,item,cabinet,'audit-extra-20261025-'+sha([cabinet,ident])[:12],observed_at,policy,adopt_existing=ident=='GTLWSMb4Z3rzpS4CTYJ4')
+                      results.append(entry)
+                  with repo.transaction():repo.put('events','positive-extra-recovery:20261025:'+cabinet,dict(items=items,results=results,checked_at=observed_at,run_id=os.getenv('GITHUB_RUN_ID'),complete=len(items)<1000))
+                  report.append(dict(cabinet=cabinet,total=len(items),eligible=sum(x['classification']['eligible'] for x in results),queued=sum(x.get('result',{}).get('status')=='queued' for x in results),complete=len(items)<1000))
+              with repo.transaction():repo.put('events','positive-extra-recovery:20261025:v1',dict(results=report,checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),wb_writes=0))
+              print(json.dumps(report))
+          PY

@@ -74,6 +74,22 @@ class PolicyTests(unittest.TestCase):
     self.assertFalse(classify(self.review(**{key:value+' Но шнурок порвался'}))['eligible'])
   for value in ('Не симпатичная','Объемная, но тяжёлая','Шнурок неудобный','Небольшая, но не подошла','Цена не устроила на 💯 %'):
    self.assertFalse(classify(self.review(value))['eligible'])
+ def test_more_verified_praise_preserves_complaints(self):
+  for value in ('На мой 58 подошло четко, миленькая 👍','🩷\\nБез запаха\\nПриятная малютка\\nЗамша\\nНе ожидала за эти деньги такое качество'):
+   self.assertTrue(classify(self.review(value))['eligible'])
+   self.assertFalse(classify(self.review(value+' Но ремень порвался'))['eligible'])
+  for value in ('Не подошло четко','Без запаха, но молния заедает','На мой 58 не подошло четко'):
+   self.assertFalse(classify(self.review(value))['eligible'])
+ def test_explicit_adoption_only_untouched_open_card(self):
+  item=self.review('Отличная сумка')
+  source=dict(buyer=item['userName'],rating=5,text=item['text'],pros='',cons='',article='test')
+  token,_=self.app.create('token_3','feedbacks',item['id'],'old',source,['manual one','manual two'],123)
+  self.assertEqual(enqueue(self.app,self.bridge,self.source,item,'token_3','new',150,self.policy)['status'],'existing')
+  result=enqueue(self.app,self.bridge,self.source,item,'token_3','new',150,self.policy,adopt_existing=True)
+  self.assertEqual(result['status'],'queued')
+  self.assertEqual(self.repo.get('cards',token)['status'],'superseded')
+  self.assertEqual(self.repo.count('intents'),1)
+  self.assertEqual(enqueue(self.app,self.bridge,self.source,item,'token_3','new',150,self.policy,adopt_existing=True)['status'],'existing')
  def test_purchase_status_neutral(self):
   for status in ('buyout','rejected','returned',None):
    answer=answer_for(self.review(orderStatus=status))

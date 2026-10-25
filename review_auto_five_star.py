@@ -5,10 +5,13 @@ CONFIG_KEY='reviews:auto-five-star:config:v1'
 POLICY_VERSION='five-star-positive-v1'
 CABINETS=('token_1','token_2','token_3')
 # A closed vocabulary is deliberate. Unknown words/sarcasm/questions go to a person.
-WORDS=set(('панама тактильно визуально внутри есть шнурок чтобы отрегулировать своей головы небольшая такая нужна была большой зонт меня всю маленькая маленький маленькое маленькие а аж ах в во всем всех все всё вы выбор внешний вид вещь вещи для да даже доставка доставку день добрый заказ за и из изделие изделия как кожи кожа к покупке купила купил качество качества легкая легкий лёгкая лёгкий мне моя мой мы на нам она он они от очень по покупка покупки покупку приятно просто размер размера размеру с со спасибо сумка сумки сумку сумочка сумочки сумочку товар товара то только удобство упаковка упаковку у фурнитура фурнитуры цвет цвета швы швов это я рекомендую рекомендовать всем').split())
-STEMS=('симпатичн','пушист','объемн','потрясающ','отменн','красив','качествен','отличн','прекрасн','великолепн','замечательн','удобн','вместител','хорош','классн','шикарн','супер','довол','понрав','восторг','аккуратн','ровн','мягк','стильн','приятн','лучш','идеальн','быстр','любим','рекоменд','соответств','спасиб')
-EMOJI=set('👍❤♥🥰😍🔥✨💯😊🙂🙏🤗👏👌💖💕💗💙💚👜🌂💋🌟⭐✅')
+WORDS=set(('малютка замша панама тактильно визуально внутри есть шнурок чтобы отрегулировать своей головы небольшая такая нужна была большой зонт меня всю маленькая маленький маленькое маленькие а аж ах в во всем всех все всё вы выбор внешний вид вещь вещи для да даже доставка доставку день добрый заказ за и из изделие изделия как кожи кожа к покупке купила купил качество качества легкая легкий лёгкая лёгкий мне моя мой мы на нам она он они от очень по покупка покупки покупку приятно просто размер размера размеру с со спасибо сумка сумки сумку сумочка сумочки сумочку товар товара то только удобство упаковка упаковку у фурнитура фурнитуры цвет цвета швы швов это я рекомендую рекомендовать всем').split())
+STEMS=('миленьк','симпатичн','пушист','объемн','потрясающ','отменн','красив','качествен','отличн','прекрасн','великолепн','замечательн','удобн','вместител','хорош','классн','шикарн','супер','довол','понрав','восторг','аккуратн','ровн','мягк','стильн','приятн','лучш','идеальн','быстр','любим','рекоменд','соответств','спасиб')
+EMOJI=set('🩷👍❤♥🥰😍🔥✨💯😊🙂🙏🤗👏👌💖💕💗💙💚👜🌂💋🌟⭐✅')
 POSITIVE_PHRASES=(
+ ('на мой 58 подошло четко','отлично'),
+ ('без запаха',''),
+ ('не ожидала за эти деньги такое качество','качество отличное'),
  ('цена устроила на 💯 %','отлично'),
  ('дешево и сердито','отлично'),
  ('нравится как сшита','понравилась'),
@@ -39,7 +42,7 @@ def classify(item,kind='feedbacks'):
  cons='' if cons.strip().lower() in NO_CONS else cons
  # Normalize phrases within each field so separate fields cannot cancel a negation.
  def normalize(value):
-  value=value.lower().replace('ё','е')
+  value=value.lower().replace('ё','е').replace('\\n',' ')
   value=re.sub(r'\b(?:без нареканий|без недостатков|нет недостатков|недостатков нет)\b',' ',value)
   for phrase,replacement in POSITIVE_PHRASES:
    value=re.sub(r'(?<!\w)'+re.escape(phrase)+r'(?!\w)',replacement,value)
@@ -66,13 +69,13 @@ def answer_for(item):
  greeting=(name+', добрый день!' if name and name.lower() not in generic and len(name)<=50 and re.fullmatch(r'[А-Яа-яЁёA-Za-z -]+',name) else 'Добрый день!')
  # Neutral for buyout, refusal, return and unknown purchase status.
  return greeting+' Спасибо за отзыв и высокую оценку! Благодарим за внимание к бренду VESCHI.\nС уважением, команда VESCHI 👜✨'
-def enqueue(app,bridge,store,item,cabinet,version,observed_at,policy):
+def enqueue(app,bridge,store,item,cabinet,version,observed_at,policy,adopt_existing=False):
  if not policy_allows(policy,app,cabinet,observed_at) or not classify(item)['eligible']:raise Rejected('Automatic policy does not authorize this review')
  item_id=str(item.get('id') or '')
  if not item_id:raise Rejected('Exact review id required')
  ref=identity(cabinet,'feedbacks',item_id)
  existing=app.repo.get('items',ref)
- if existing:return {'status':'existing'}
+ if existing and not adopt_existing:return {'status':'existing'}
  answer=answer_for(item)
  source=dict(buyer=item.get('userName',''),rating=item['productValuation'],text=item.get('text',''),pros=item.get('pros',''),cons=item.get('cons',''),article=(item.get('productDetails') or {}).get('supplierArticle',''))
  source_key='reviews:source:'+sha([cabinet,'feedbacks',item_id,version])
@@ -87,7 +90,18 @@ def enqueue(app,bridge,store,item,cabinet,version,observed_at,policy):
  intent=dict(id=intent_id,ref=ref,cabinet=cabinet,kind='feedbacks',item_id=item_id,version=version,card_token=token,answer=answer,answer_sha256=sha(answer),source_sha256=sha(source),owner_id=app.owner,chat_id=app.chat,created_at=app.clock(),status='awaiting_preflight',authorization_channel='automatic_policy',authorization_ref=policy['authorization_ref'],policy_version=POLICY_VERSION)
  with app.repo.transaction():
   if app.repo.pg:app.repo.execute('SELECT pg_advisory_xact_lock(hashtextextended(?,0))',('auto-five-star:'+ref,))
-  if app.repo.get('items',ref):return {'status':'existing'}
+  current=app.repo.get('items',ref,lock=True)
+  if current:
+   if not adopt_existing or current!=existing or current.get('status')!='open':return {'status':'existing'}
+   old=app.repo.get('cards',current.get('token',''))
+   if not old or old.get('status')!='awaiting' or old.get('source')!=source or '-edit-' in old.get('version',''):return {'status':'existing'}
+   import json
+   intents=[json.loads(row[0]) for row in app.repo.execute('SELECT payload FROM {p}intents').fetchall()]
+   edits=[json.loads(row[0]) for row in app.repo.execute('SELECT payload FROM {p}events').fetchall()]
+   if any(x.get('ref')==ref for x in intents) or any(x.get('token')==current.get('token') and x.get('decision')=='revision_requested' for x in edits):return {'status':'existing'}
+   app.repo.put('events','automatic-policy-adoption:'+intent_id,dict(old_card=old,old_item=current,authorization_ref=policy['authorization_ref'],created_at=app.clock()))
+   old.update(status='superseded',superseded_by=token)
+   app.repo.put('cards',current['token'],old)
   app.repo.put('cards',token,card)
   app.repo.put('items',ref,dict(status='approved',token=token,version=version))
   app.repo.put('intents',intent_id,intent)

@@ -1,4 +1,4 @@
-name: Verify accepted candidate launch 25Oct
+name: Fund approved expanded advertising tests 25Oct
 on:
   push:
     branches: [china-owner-candidates25-execute]
@@ -30,7 +30,7 @@ jobs:
           python scripts/install_china_dialog.py
           python scripts/install_china_buyout.py --root source
       - run: pip install requests==2.32.5 Pillow==12.3.0 > /tmp/dependencies.log 2>&1
-      - run: python scripts/execute_codex_candidates25.py
+      - run: python scripts/execute_codex_funding25.py
         env:
           PYTHONPATH: scripts:source
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

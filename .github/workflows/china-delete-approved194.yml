@@ -1,0 +1,27 @@
+name: Delete owner approved report 194
+on:
+  push:
+    branches: [china-delete-approved-194]
+    paths: ['.github/workflows/china-delete-approved194.yml']
+permissions:
+  contents: read
+concurrency:
+  group: delete-owner-approved194
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 > /tmp/deps.log 2>&1
+      - run: python scripts/delete_owner_approved_194.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}

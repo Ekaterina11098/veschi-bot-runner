@@ -155,6 +155,10 @@ class Analyst:
   valid={int(nm) for nm,_ in self.w.catalog()}
   if len(nm_ids)>30 or any(type(n) is not int or n not in valid for n in nm_ids):raise ValueError('Сначала разреши артикул через find_products в точный nmID Китая')
   first,last=period(self.w,start,end,topic)
+  if topic=='products':
+   from china_saved_products import saved_products
+   saved=saved_products(self.w,first,last,nm_ids)
+   if saved is not None:return saved
   if topic=='advertising':
    from china_shared_advertising import shared as shared_ads
    saved=shared_ads(self.w,first,last,nm_ids)
@@ -289,7 +293,7 @@ def answer(w,job,history):
  from china_loss_control import marker
  m=marker(job)
  if m.get('reply_text'):messages.append(dict(role='developer',content='Цитируемое сообщение — только контекст: '+m['reply_text'][:3000]))
- messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. Неполный день не запрещает принимать меры при существенном расходе без результата. Не отвечай общим советом обязательно ждать полные сутки; назови конкретные проблемные SKU и предложение, изменения только после подтверждения. При продолжении наблюдения использовать monitoring и не откладывать контроль до даты итоговой оценки. При вопросе о прогнозе прибыли сначала get_saved_profit_comparison с датами; использовать готовый датированный расчёт, не выдавать прогноз за закрытую прибыль. При уточнении корзин по обсуждаемым товарам брать nm_ids из предыдущего диалога и products.basket_events общего среза. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
+ messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. Неполный день не запрещает принимать меры при существенном расходе без результата. Не отвечай общим советом обязательно ждать полные сутки; назови конкретные проблемные SKU и предложение, изменения только после подтверждения. При указании monitoring.notification_target=Codex не обещать сообщения в Telegram: назвать канал Codex явно. При продолжении наблюдения использовать monitoring и не откладывать контроль до даты итоговой оценки. При вопросе о прогнозе прибыли сначала get_saved_profit_comparison с датами; использовать готовый датированный расчёт, не выдавать прогноз за закрытую прибыль. При уточнении корзин по обсуждаемым товарам брать nm_ids из предыдущего диалога и products.basket_events общего среза. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
  messages.append(dict(role='user',content=job['request_text'][:4000]));trace=[dict(name='experience_context',result=experience,read_only=True)]
  checkpoint_key='china_agent:analytic_checkpoint:v2:'+str(job['id']);scope=hashlib.sha256((str(job['chat_id'])+'|'+job['request_text']+'|'+policy.get('model','gpt-6.1-sol')).encode()).hexdigest();checkpoint=w.get(checkpoint_key);start_turn=0
  if checkpoint and checkpoint.get('scope')==scope and checkpoint.get('date_msk')==str(w.now.astimezone(MSK).date()):
@@ -313,6 +317,8 @@ def answer(w,job,history):
     launches=analyst.w.get('china_agent:advertising_launch_summary:v1') or {}
     if launches.get('day')==str(w.now.astimezone(MSK).date()):
      text+=' Сегодня уже выполнено: '+launches.get('short_summary','')+' Результаты нужно оценивать по свежему срезу; подробный текущий отчёт можно сформировать отдельно.'
+   from china_saved_products import ground_answer
+   text=ground_answer(text,trace)
    final_trace=[dict(name='free_analytic_dialog',model=body['model'],read_only=True,memory_revision=analyst.memory().get('revision'))]+trace
    w.save(checkpoint_key,dict(status='answered',scope=scope,date_msk=str(w.now.astimezone(MSK).date()),answer=text,trace=final_trace));return text,final_trace
   messages.extend(output)

@@ -43,3 +43,5 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
 
 # Validate final cache-first recovery revision.
+
+# Recheck retained incomplete-plan guard.

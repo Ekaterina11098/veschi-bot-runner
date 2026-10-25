@@ -1,15 +1,30 @@
 """Owner-requested current report from verified shared snapshots; no network collection."""
 import copy,json
-from datetime import datetime,timedelta
+from datetime import datetime,timedelta,date,timezone
 from china_advertising_v2 import build,ratio,price_map,MSK
 def prepare(io,day):
  base=io.get('china_agent:advertising_source:'+day+':v2')
- fresh=io.get('china_agent:owner_profit_compare:2026-10-24:2026-10-25:v1')
- if not base or not fresh:raise ValueError('Нет общего текущего рекламного среза; нужен только недостающий сбор')
+ fresh=io.get('china_agent:advertising_intraday:'+day+':v1')
+ if not fresh:
+  previous=str(date.fromisoformat(day)-timedelta(days=1))
+  fresh=io.get('china_agent:owner_profit_compare:'+previous+':'+day+':v1')
+ if not base:raise ValueError('Нет общего каталога РК и датированной базы цен; нужен адресный сбор')
+ # Reuse an existing same-day snapshot before any WB call.
+ if not fresh or (datetime.now(timezone.utc)-datetime.fromisoformat(fresh['observed_at'].replace('Z','+00:00'))).total_seconds()>3600:
+  from china_advertising_v2 import http,save,stamp
+  ids=base['ids'];batches=[];fresh_settings=[];fresh_budgets=[]
+  for pos in range(0,len(ids),50):
+   batch=ids[pos:pos+50];joined=','.join(map(str,batch))
+   fresh_settings+=http(io,'/api/advert/v2/adverts?ids='+joined)['adverts']
+   fresh_budgets+=http(io,'/api/advert/v2/budget','POST',dict(advertIds=batch))['adverts']
+   batches.append(dict(data=http(io,'/adv/v3/fullstats?ids='+joined+'&beginDate='+str(date.fromisoformat(day)-timedelta(days=2))+'&endDate='+day)))
+  fresh=dict(observed_at=stamp(),ad_batches=batches,campaigns=fresh_settings,budgets=fresh_budgets)
+  save(io,'china_agent:advertising_intraday:'+day+':v1',fresh)
  observed=datetime.fromisoformat(fresh['observed_at'].replace('Z','+00:00'))
  if observed.astimezone(MSK).date().isoformat()!=day:raise ValueError('Сохранённый срез относится к другому дню')
  s=copy.deepcopy(base);s['period_to']=day;s['observed_at']=fresh['observed_at']
  campaigns={c['id']:c for b in s['batches'].values() for c in b['campaigns']['adverts']}
+ if fresh.get('campaigns'):campaigns={c['id']:c for c in fresh['campaigns']}
  raw={c['advertId']:copy.deepcopy(c) for b in s['batches'].values() for c in b['stats']}
  for b in fresh['ad_batches']:
   for c in b['data']:
@@ -17,11 +32,11 @@ def prepare(io,day):
    ds.update({d['date'][:10]:d for d in c['days']});prev['days']=[ds[d] for d in sorted(ds)]
  ex=io.get('china_agent:codex_search_exclude553:2026-10-25:v1:execution') or {}
  if ex.get('status')=='verified' and ex.get('after'):campaigns[41298169]=ex['after']
- budgets=[x for b in s['batches'].values() for x in b['budgets']['adverts']]
+ budgets=fresh.get('budgets') or [x for b in s['batches'].values() for x in b['budgets']['adverts']]
  s['batches']={'0':dict(campaigns=dict(adverts=list(campaigns.values())),stats=list(raw.values()),budgets=dict(adverts=budgets))}
  b=build(s);b['day']=day;b['intraday']=True
  cut=observed.astimezone(MSK).strftime('%d.%m %H:%M МСК')
- budget_at=datetime.fromisoformat(base['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M МСК')
+ budget_at=datetime.fromisoformat((fresh if fresh.get('budgets') else base)['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M МСК')
  b['period_label']='Текущий срез '+cut+'; последний день неполный'
  b['budget_label']='Расходы: '+cut+'; остатки: '+budget_at
  b['view_only']=True

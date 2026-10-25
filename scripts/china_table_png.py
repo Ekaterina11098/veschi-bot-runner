@@ -99,6 +99,14 @@ def delivery_parts(w, job, answer, split):
     # A deployment must not change identities for an already partially delivered answer.
     if w.get('china_agent:conversion_watch_delivery:v1:question:'+str(job['id'])+':0'): return split(answer)
     files = []; parts = []
+    combined = None
+    if re.search(r'прибыл|прогноз',answer,re.I):
+        from china_profit_png import render as combined_report
+        combined = combined_report(answer)
+    if combined:
+        files.append(dict(sha256=hashlib.sha256(combined).hexdigest(),data=base64.b64encode(combined).decode()))
+        parts.append(PREFIX+key+':0')
+        parsed = []
     for kind, data in parsed:
         if kind == 'text': parts.extend(split(data))
         else:

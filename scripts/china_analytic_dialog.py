@@ -41,8 +41,9 @@ def tools():
  return [function('read_agreements','Договорённости владельца и терминология. Не числовой срез продаж.',{}),
  function('get_wb_evidence','Самостоятельно читать первичную воронку WB и опубликованные финансовые операции Китая. Клики всех источников не показы. Finance: дата операции и публикации, выплаты/логистика/удержания; фактическая полная прибыль только при подтверждении всех собственных затрат. Пробелы и задержку не заменять нулём.',dict(nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},date_from={'type':'string'},date_to={'type':'string'})),
  function('get_decline_diagnostics','Обязательный полный сбор для падения заказов вчера/сегодня: WB по SKU и одинаковому часу; MPStats отдельно по каждому дню, клики/клик-заказ/цена; МойСклад; реклама; текущие ставки, минимум/шаг; проверенная история. Только чтение.',{}),
+ function('get_order_profit_forecast','Посчитать прогноз общей прибыли заказов за заданный период1–31день: собственный завершённый выкуп30полных дней, COGS МойСклад с историей при нулевом остатке, комиссия, налог5%, доставка, реклама всего кабинета один раз. По дням и проблемным SKU; опубликованные начисления отдельно, допущения и пробелы явно. Не фактическая чистая прибыль. Только чтение.',dict(date_from={'type':'string'},date_to={'type':'string'},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30})),
  function('list_reports','Все действующие отчёты, их генераторы, расписания и допустимые варианты. Расписания этим инструментом не меняются.',{}),
- function('make_report','Самостоятельно сформировать/повторить существующий отчёт по явной просьбе пользователя. Новый request identity не сбрасывает плановые квитанции. repeat=true повторяет исходный срез с датой; false пересчитывает доступные рецепты. PNG не разрешает изменения.',dict(kind={'type':'string','enum':['advertising','budgets','loss','price_morning','price_control','price_day','growth','ad_trend','actions','outcomes']},days={'type':'integer','minimum':1,'maximum':90},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},repeat={'type':'boolean'},report_day={'type':['string','null']})),
+ function('make_report','Самостоятельно сформировать/повторить существующий отчёт по явной просьбе пользователя. Новый request identity не сбрасывает плановые квитанции. repeat=true повторяет исходный срез с датой; false пересчитывает доступные рецепты. sales_profit возвращает данные для финальных PNG-таблиц с выводами. PNG не разрешает изменения.',dict(kind={'type':'string','enum':['advertising','budgets','loss','price_morning','price_control','price_day','growth','ad_trend','actions','outcomes','sales_profit']},days={'type':'integer','minimum':1,'maximum':90},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},repeat={'type':'boolean'},report_day={'type':['string','null']})),
  function('read_experience','Проверенная история действий и наблюдения до/после: заказы, клик-заказ, завершённый выкуп, ДРР, общая ожидаемая/закрытая прибыль и пробелы. Прогнозные положительные/отрицательные исходы отдельно от доказанного факта. Откат только рекомендация. Прошлый успех не гарантия.',dict(nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},query={'type':'string'})),
  function('get_growth_candidates','Проверить кандидатов для добавления в текущие РК/повышения ставок. Обязательно читает память до отбора, актуальные WB минимумы/шаг, экономику, МойСклад и отзывы. Только рекомендации; не создаёт подтверждение или WB-запись.',dict(kind={'type':'string','enum':['both','add','raise']},days={'type':'integer','minimum':2,'maximum':14})),
  function('search_chat_history','Найти предыдущие вопросы/ответы в этом чате, не просить повторять известное.',dict(query={'type':'string'})),
@@ -206,6 +207,7 @@ def answer(w,job,history):
  experience=dict(experience,total_events=len(experience['experiences']),experiences=[{k:v for k,v in e.items() if k not in ['observations','current_condition_comparison','latest_change_observation']} for e in experience['experiences'][:12]])
  growth_question=bool(re.search(r'кандидат|добав.*РК|добав.*реклам|повыс.*ставк|подн.*ставк|подня.*ставк',job['request_text'],re.I))
  decline_question=bool(re.search(r'падени|снижени.*заказ|снижени.*продаж',job['request_text'],re.I))
+ forecast_question=bool(re.search(r'прибыл|прогноз',job['request_text'],re.I) and re.search(r'отч[её]т|сводк|посчитай|рассчитай|покажи|разбери|прогноз',job['request_text'],re.I) and not re.search(r'что такое|объясни|как считать|что означает|формул',job['request_text'],re.I))
  available=[t for t in c.tools('china') if t['name'] in names]+tools();data=Data('china',lambda table,params:w.db('GET',table,params=params))
  prompt=('Ты аналитик VESCHI Китай. Отвечай на любые вопросы по доступному бизнес-контексту свободно, кратко и конкретно: вывод, 2–4 существенные цифры с датой, действие. Обычно до 1200 символов; детали только по просьбе. '
  'Сначала используй договорённости и предыдущий диалог. Уже известные артикулы не проси повторять: find_products и search_chat_history. Старый ответ бота не является фактом. '
@@ -214,6 +216,10 @@ def answer(w,job,history):
  'Заказы WB, заказы воронки, рекламная атрибуция, выкупы — разные величины. Клик-заказ = заказы воронки/открытия страницы товара из всех источников. '
  'ДРР от суммы заказов до скидок WB; при нуле заказов неопределена. Выкуп по завершённым, незавершённые исключить; 0% не менять на 50%. '
  'Прибыль: собственные COGS, комиссия, налог, прямая/обратная логистика без дублей, реклама и прочие подтверждённые удержания. Неизвестное не ноль; неполный расчёт предварительный. Не смешивай валюты без курса. '
+ 'В отчётах о продажах показывай отдельно прибыль по опубликованным операциям WB и прогноз прибыли заказов, не складывай их. Для численного прогноза обязательно get_order_profit_forecast с точными датами; не заменяй расчёт пересказом старой суммы и не отказывайся после первого пробела. Прогноз по учтённым расходам допустим с ясным перечнем неподтверждённых расходов. '
+ 'Сохраняй согласованный PNG-формат: сводка по дням, проблемные артикулы, наши подтверждённые изменения цены/рекламы с датой МСК (либо отсутствие в полном журнале периода), отдельный прогноз общей прибыли и конкретная рекомендация. Полный исторический день не называй сегодняшним срезом. Даты не доказывают причинность. '
+ 'Таблицы оформляй Markdown-таблицами в финальном ответе: доставка сама преобразует их в PNG. Генерация изображения не равна отправке и не даёт разрешения менять WB. Не утверждай, что PNG-предпросмотр невозможен из-за отсутствия разрешения Telegram. '
+ 'Если неясно, какой из разных отчётов нужен, сначала уточни тип; дата сама не определяет тип. Короткий ответ на выбор типа относится к первоначальному запросу и сохраняет его период. '
  'Причину отделяй от гипотезы. История клиентской цены не доказывает изменение СПП. Связь конкретного WB заказа с РК агрегатами не доказывается. '
  'Выполненные действия сверяй read_recent_actions; не предлагай повторять. Рекомендации: точный артикул/РК и действие; ставку только с подтверждённым минимумом/шагом. Для подбора кандидатов и повышения ставок обязательно get_growth_candidates; нельзя заменить его старой таблицей или воспоминанием. '
  'Память действий и результатов обязательна. Operational verified означает только исполнение, не рост прибыли. Условия WB/рынка меняются: учитывай даты, цену покупателя/СПП, наличие, отзывы, ставки и трафик; неизвестное не считай неизменным. Положительный/отрицательный опыт не вечное правило; новая проверка и подтверждение нужны для повторного теста. Алгоритмы WB могли поменяться, но без доказательств это гипотеза. '
@@ -236,6 +242,8 @@ def answer(w,job,history):
   request=question_request
  for turn in range(start_turn,10):
   choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
+  if forecast_question and not any(t.get('name')=='get_order_profit_forecast' for t in trace) and (turn>0 or not (decline_question or growth_question)):
+   choice={'type':'function','name':'get_order_profit_forecast'}
   w.save(checkpoint_key,dict(status='ready',scope=scope,date_msk=str(w.now.astimezone(MSK).date()),messages=messages,trace=trace,turn=turn,fresh_reads=analyst.fresh_reads))
   body=dict(model=policy.get('model','gpt-6.1-sol'),input=messages,tools=available,parallel_tool_calls=False,tool_choice=choice,reasoning=dict(effort='medium'),text=dict(verbosity='low'),max_output_tokens=4000,store=False,include=['reasoning.encrypted_content'])
   response=request(body);output=response.get('output') or [];calls=[x for x in output if x.get('type')=='function_call']
@@ -251,6 +259,9 @@ def answer(w,job,history):
    name=call['name'];args=json.loads(call.get('arguments') or '{}')
    try:
     if name=='read_agreements':result=analyst.memory()
+    elif name=='get_order_profit_forecast':
+     from china_order_profit_forecast import collect as collect_forecast
+     with reading():result=collect_forecast(w,job,**args)
     elif name=='get_decline_diagnostics':
      from china_decline_diagnostics import collect
      result=collect(analyst)
@@ -301,6 +312,8 @@ def copy_summary(value):
   return v
  result=compact(result)
  return result
+
+
 
 
 

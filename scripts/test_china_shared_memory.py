@@ -72,4 +72,36 @@ class SharedMemory(unittest.TestCase):
   w=W();w.rows[ROOT+'note:codex']=dict(kind='codex_handoff',visibility='work',topic='pending',status='active',quote='План обсуждён в Codex, не исполнен')
   self.assertIn('не исполнен',context(w,job())['notes'][0]['quote'])
 
+class DialogIntegration(unittest.TestCase):
+ def test_general_question_answers_without_marketplace_tools(self):
+  import sys
+  import test_china_analytic_dialog as base
+  import china_analytic_dialog as dialog
+  from unittest.mock import patch
+  w=base.W();bodies=[]
+  def model(body):
+   bodies.append(body)
+   return dict(output=[dict(type='message',content=[dict(type='output_text',text='С днём рождения! Желаю радости и здоровья.')])])
+  w.model_request=model
+  with patch.dict(sys.modules,base.Rules().modules()),patch('china_experience.decision_context',side_effect=AssertionError('Unneeded business scan')):
+   answer,_=dialog.answer(w,dict(id=99,chat_id=-77,request_text='Напиши короткое поздравление маме',tool_trace=[]),[])
+  self.assertIn('рождения',answer);self.assertEqual(bodies[0]['tool_choice'],'auto')
+  self.assertFalse(any(t['name'] in ['get_live_data','get_wb_evidence'] for t in bodies[0]['tools']))
+ def test_codex_work_note_enters_telegram_model_context(self):
+  import sys,json
+  import test_china_analytic_dialog as base
+  import china_analytic_dialog as dialog
+  from unittest.mock import patch
+  w=base.W();w.mem[POLICY]=dict(enabled=True,work_chat_ids=[-77],owner_user_id=5)
+  note=dict(kind='codex_handoff',visibility='work',topic='pending',status='active',quote='Решение из Codex: новый план ещё не выполнен.')
+  w.db=lambda method,table,params:([dict(payload=note)] if params.get('cache_key','').startswith('like.'+ROOT+'note:') else [])
+  bodies=[]
+  def model(body):
+   bodies.append(body)
+   return dict(output=[dict(type='message',content=[dict(type='output_text',text='Новый план обсуждён, но ещё не выполнен.')])])
+  w.model_request=model
+  with patch.dict(sys.modules,base.Rules().modules()),patch('china_experience.decision_context',return_value=dict(experiences=[],recent_changed_nm_ids=[])):
+   answer,_=dialog.answer(w,dict(id=99,chat_id=-77,request_text='Что решили по рекламе?',tool_trace=[]),[])
+  self.assertIn('Решение из Codex',json.dumps(bodies[0]['input'],ensure_ascii=False));self.assertIn('не выполнен',answer)
+
 if __name__=='__main__':unittest.main()

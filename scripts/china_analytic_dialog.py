@@ -249,7 +249,7 @@ def answer(w,job,history):
    if not text:raise RuntimeError('Аналитическая модель не завершила ответ')
    if growth_question and not any(t.get('name')=='get_growth_candidates' and t.get('result',{}).get('status')=='complete' for t in trace):
     failures=[t.get('result',{}).get('note','') for t in trace if t.get('name')=='get_growth_candidates' and t.get('result',{}).get('available') is False]
-    text='Новый подбор пока не завершён: '+('; '.join(dict.fromkeys(failures)) or 'не получен полный проверенный расчёт')+'. Новые изменения не применены.'
+    text='Подбор не завершён: '+('; '.join(dict.fromkeys(failures)) or 'не получен полный проверенный расчёт')+'. Новые изменения не применены.'
     launches=analyst.w.get('china_agent:advertising_launch_summary:v1') or {}
     if launches.get('day')==str(w.now.astimezone(MSK).date()):
      text+=' Сегодня уже выполнено: '+launches.get('short_summary','')+' Результаты нужно оценивать по свежему срезу; подробный текущий отчёт можно сформировать отдельно.'

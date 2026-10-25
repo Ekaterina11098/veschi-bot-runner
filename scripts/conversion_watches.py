@@ -485,6 +485,11 @@ class Worker:
                 else:answer,trace=self.saved_question(job,history)
                 trace=[marker]+trace
                 patch({'answer':answer,'tool_trace':trace})
+            from china_shared_memory import record_turn
+            try:record_turn(self,job,answer,trace)
+            except Exception:
+                # Memory availability must not restart or duplicate an already prepared reply.
+                trace.append(dict(name='shared_memory_record',available=False,note='Рабочая история не сохранена; повторная доставка не запускается.'))
             if not question_allowed(job,self.config()):raise PermissionError('Question registration changed')
             self.active_question_id=job_id
             self.reply_id=marker.get('message_id');outcome='sent'

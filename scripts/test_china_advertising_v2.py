@@ -29,8 +29,8 @@ class DailyFormatTests(unittest.TestCase):
  def test_improving_post_change_above5_keeps_test(self):
   c=campaign();ds={'2026-10-21':row(20,100),'2026-10-22':row(20,100),'2026-10-23':row(40,100),'2026-10-24':row(10,100),'2026-10-25':row(10,100)}
   r=recommend(c,c['nm_settings'][0],ds,self.days,[dict(cid=12,nm=1,kind='bid',at='2026-10-23T10:00:00+03:00')],28,100);self.assertIsNone(r['action']);self.assertIn('50%',r['reason'])
- def test_no_order_spend_recommends_exact_exclusion(self):
-  r=self.recommendation([row(2,0)]*3);self.assertEqual(r['action']['kind'],'ad_exclude_sku');self.assertEqual(r['action']['campaign_id'],12)
+ def test_no_order_spend_first_reduces_when_possible(self):
+  r=self.recommendation([row(2,0)]*3);self.assertEqual(r['action']['kind'],'ad_set_bid');self.assertEqual(r['action']['campaign_id'],12)
  def test_unknown_price_not_zero_or_imagined_threshold(self):self.assertIsNone(self.recommendation([row(2,0)]*3,price=None))
  def test_price_change_gets_its_own_full_day(self):
   r=self.recommendation([row(20,100)]*3,[dict(cid=12,nm=1,kind='price',at='2026-10-25T10:00:00+03:00')]);self.assertIsNone(r['action'])

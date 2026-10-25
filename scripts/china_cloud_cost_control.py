@@ -160,7 +160,7 @@ def execute(c,w,slot,before,items,snap):
    e.update(status='verified',after=got,verified_at=stamp());c.put(key,e)
    reg=c.get('china_agent:verified_campaign_state:v1') or {};reg[cid]=key;c.put('china_agent:verified_campaign_state:v1',reg)
    c.put(ROOT+'inflight:v1',{'key':None})
-   text='Автоизменение РК '+cid+': '+('; '.join(x['article']+' — '+x['kind']+((' '+str(x['old']/100)+' → '+str(x['target']/100)+' CNY') if x['kind']=='lower' else '') for x in items))+'. WB подтвердил.'
+   text='Автоизменение РК '+cid+': '+('; '.join(x['article']+' — '+dict(lower='снижение ставки',exclude='исключение',pause='пауза РК')[x['kind']]+((' '+str(x['old']/100)+' → '+str(x['target']/100)+' CNY') if x['kind']=='lower' else '') for x in items))+'. WB подтвердил.'
    c.notice(key,text,e);return e
   if attempt<3:time.sleep(12)
  e['status']='readback_pending';c.put(key,e);raise RuntimeError('WB readback pending; no retry')
@@ -181,7 +181,9 @@ def telegram_funding(c,p,cid,summary,remaining,need,slot,ec):
  except Exception:
   c.put(key,dict(status='uncertain',text=text,chat_id=-1004342917488));c.notice(key,'Запрос пополнения РК '+cid+': результат Telegram не подтверждён, повтор заблокирован.');return False
 
-def run(preflight=False):
+def shared_payload(snap):
+ return dict(observed_at=snap['observed_at'],source_key=ROOT+'snapshot:'+snap['slot'],campaigns=list(snap['campaigns'].values()),ad_batches=[dict(ids=[x['advertId'] for x in snap['stats']],data=snap['stats'])],budgets=list(snap['budgets'].values()),complete=True)
+def run(preflight=False,cutover=False):
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner':raise RuntimeError('Public runner only')
  c=Cache();p=c.get(POLICY)
  if not p or p.get('cabinet')!='token_3':raise RuntimeError('Owner policy missing')
@@ -191,7 +193,8 @@ def run(preflight=False):
   if not c.get(ROOT+'tracking:v1'):c.create(ROOT+'tracking:v1',state)
   c.put(ROOT+'deployment:v1',dict(status='preflight_verified',observed_at=stamp(),campaign_count=len(state['campaigns']),wb_requests=0,wb_writes=0,telegram_sends=0,workflow_run=os.environ.get('GITHUB_RUN_ID')))
   print('Cloud preflight verified; no WB requests, writes or Telegram sends');return
- if os.environ.get('GITHUB_REF')!='refs/heads/main' or os.environ.get('GITHUB_EVENT_NAME') not in ['schedule','workflow_dispatch']:raise RuntimeError('Live main schedule only')
+ if os.environ.get('GITHUB_REF')!='refs/heads/main' or (os.environ.get('GITHUB_EVENT_NAME') not in ['schedule','workflow_dispatch'] and not (cutover and os.environ.get('GITHUB_EVENT_NAME')=='push')):raise RuntimeError('Live main schedule only')
+ if cutover and c.get(ROOT+'cutover_probe:v1'):print('Cutover probe already completed');return
  if p.get('executor')!='github-cloud-v1':print('Cloud executor not active');return
  local=now().astimezone(ZoneInfo('Europe/Moscow'))
  slot=(local.replace(minute=10,second=0,microsecond=0) if local.minute>=10 else (local-timedelta(hours=1)).replace(minute=10,second=0,microsecond=0)).isoformat()
@@ -242,7 +245,7 @@ def run(preflight=False):
     article=pr.get('vendorCode',nm);own=products.get(nm,{})
     r=dict(cid=cid,nm=int(nm),article=article,price=price,delta=change,counters=counter,bid=member['bids_kopecks'][placement],placement=placement,buyout=dict(paid=own.get('is_payed'),finished=own.get('finished_orders'),period_to=historical.get('period_to')),price_observed_at=price_cache.get('observed_at'),profit=None,profit_unknown_reason='Complete cohort costs not verified; unknown is not zero')
     rows.append(r);reason=risk(change,price,previous.get(k))
-    if reason and authorized(p,now()):r['reason']=reason;candidates.append(r)
+    if reason and authorized(p,now()) and not cutover:r['reason']=reason;candidates.append(r)
    if candidates:
     mins=w.minimums(cid,[r['nm'] for r in candidates],placement);lowers=[];excludes=[]
     for r in candidates:
@@ -259,7 +262,7 @@ def run(preflight=False):
    if old_summary and budget is not None:
     elapsed=max((datetime.fromisoformat(snap['observed_at'])-datetime.fromisoformat(state['last_observed_at'])).total_seconds()/3600,.01)
     speed=(summary['spend']-old_summary['spend'])/elapsed
-    if speed>0 and budget<speed*1.25 and camp['status']==9:
+    if speed>0 and budget<speed*1.25 and camp['status']==9 and not cutover:
      rate=drr(summary);ec=(c.get('china_agent:hourly_economics:v1') or {}).get(cid,{})
      if rate is not None and rate<=5 and ec.get('all_costs_confirmed') is True and ec.get('expected_total_profit_cny',-1)>0:
       telegram_funding(c,p,cid,summary,budget,math.ceil(max(speed*72-budget,1)/50)*50,slot,ec)
@@ -270,9 +273,10 @@ def run(preflight=False):
   if not authorized(p,now()):c.notice('autonomy-expired','Пробные двое суток автоснижения завершены. Почасовой контроль продолжается без WB-изменений; нужен пересмотр режима.')
   state.update(previous_delta=current_delta,previous_counters=ss,previous_campaign_counters=cc,last_observed_at=snap['observed_at'],campaigns=snap['campaigns'],last_slot=slot,last_rows=rows,last_actions=actions,registry=c.get('china_agent:verified_campaign_state:v1') or {})
   c.put(ROOT+'tracking:v1',state);c.put(ROOT+'analysis:'+slot,dict(status='completed',observed_at=snap['observed_at'],rows=rows,actions=actions,campaigns=cc,autonomy_active=authorized(p,now()),attribution_preliminary=True))
-  c.put('china_agent:advertising_intraday:'+slot[:10]+':v1',dict(observed_at=snap['observed_at'],source_key=ROOT+'snapshot:'+slot,campaigns=list(snap['campaigns'].values()),stats=snap['stats'],budgets=list(snap['budgets'].values()),complete=True))
+  c.put('china_agent:advertising_intraday:'+slot[:10]+':v1',shared_payload(snap))
   c.put(ROOT+'slot:'+slot,dict(status='completed',run_id=owner,completed_at=stamp(),actions=len(actions)))
   c.put(ROOT+'health:v1',dict(status='healthy',last_slot=slot,observed_at=stamp(),run_id=owner))
+  if cutover:c.put(ROOT+'cutover_probe:v1',dict(status='verified',slot=slot,observed_at=stamp(),campaign_count=len(snap['campaigns']),wb_writes=0,telegram_sends=0,run_id=owner))
   print('Hourly cloud check completed; operational data saved privately')
  except Exception as ex:
   c.notice('blocker:'+type(ex).__name__+':'+str(ex),'Облачный рекламный контроль: '+str(ex)+'. Записи с неопределённым результатом не повторяются.')
@@ -280,4 +284,4 @@ def run(preflight=False):
   raise RuntimeError('Hourly cloud check needs attention') from None
  finally:c.release(owner)
 if __name__=='__main__':
- parser=argparse.ArgumentParser();parser.add_argument('--preflight',action='store_true');args=parser.parse_args();run(args.preflight)
+ parser=argparse.ArgumentParser();parser.add_argument('--preflight',action='store_true');parser.add_argument('--cutover',action='store_true');args=parser.parse_args();run(args.preflight,args.cutover)

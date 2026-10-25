@@ -49,4 +49,12 @@ class Recovery(unittest.TestCase):
   r=recommend(c,n,ds,days,[dict(cid=42,nm=1,kind='price',at='2026-10-24T10:00:00+00:00')],28,200)
   self.assertAlmostEqual(r['period_drr'],25/1100*100)
 
+
+ def test_truncated_membership_keeps_exact_total(self):
+  from china_analytic_dialog import copy_summary
+  r=copy_summary(dict(campaigns=[dict(id=42,nm_settings=[dict(nm_id=i) for i in range(31)])]))
+  c=r['campaigns'][0]
+  self.assertEqual(len(c['nm_settings']),12)
+  self.assertEqual(c['sku_count'],31);self.assertEqual(c['nm_settings_total'],31)
+
 if __name__=='__main__':unittest.main()

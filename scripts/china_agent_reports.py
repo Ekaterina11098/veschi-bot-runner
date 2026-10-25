@@ -121,10 +121,14 @@ def make(w,job,kind,days=3,nm_ids=(),repeat=False,report_day=None):
   from china_price_apply import IO
   from china_advertising_v2 import prepare
   from china_advertising_v2_png import render as grouped_render
-  b=prepare(IO(),day)
+  intraday=day==str(today) and bool(re.search(r'сейчас|текущ|сегодня|до вечера|на данный',job['request_text'],re.I))
+  if intraday:
+   from china_advertising_intraday import prepare as current_report
+   b=current_report(IO(),day)
+  else:b=prepare(IO(),day)
   if nm_ids:
    for c in b['campaigns']:c['focus']=[r for r in c['focus'] if r['nm'] in nm_ids]
-  family='drr' if kind=='advertising' else 'budgets';parts=[f['bytes'] for f in grouped_render(b) if f['family']==family]
+  family='drr' if kind=='advertising' else 'budgets';parts=[f['bytes'] for f in grouped_render(b) if f['family']==family or intraday]
   return freeze(w,job,kind,parts,dict(period=b['days'][0]+' — '+b['days'][-1],repeat=False,format_version=b['version'],actions_not_bound=True,note='Просмотр; исполнение только по привязанному ежедневному PNG'))
  if kind=='actions':
   from china_experience import decision_context

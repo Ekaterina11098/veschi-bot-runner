@@ -115,19 +115,20 @@ def recommend(c,n,ds,days,changes,minimum,price):
  if c['status']!=9 or type(old)is not int or old<=0:return None
  rows=[ds.get(d,dict(spend=0,amount=0,orders=0,views=0,clicks=0)) for d in days];period=sums(rows);last=rows[-1];drr=ratio(period);ratios=[ratio(x) for x in rows]
  latest=next((x for x in reversed(changes) if x['cid']==c['id'] and x['nm']==nm and x['kind'] in ['bid','added','price']),None)
- action=None;reason='';decision='';changed=False;comparison=None
+ action=None;reason='';decision='';changed=False;comparison=None;pending_first_day=False
  if latest:
   first=datetime.fromisoformat(latest['at'].replace('Z','+00:00')).astimezone(MSK).date()+timedelta(days=1);end=date.fromisoformat(days[-1])
   if end<first:
    # Newly added products without a full reporting day stay in the campaign summary, not 120 empty SKU rows.
    if latest['kind']=='added':return None
-   decision=f'Сохранить {old/100:g} ¥ до {first:%d.%m}; оценка {first+timedelta(days=1):%d.%m}.';reason='Первый полный день теста ещё не завершён.';changed=True
+   pending_first_day=True;decision=f'Сохранить {old/100:g} ¥ до {first:%d.%m}; оценка {first+timedelta(days=1):%d.%m}.';reason='Первый полный день теста ещё не завершён.';changed=True
   else:
    postdays=[d for d in sorted(ds) if first.isoformat()<=d<=days[-1]][-3:]
    if postdays:
     post=sums(ds[d] for d in postdays);before_end=first-timedelta(days=2);prekeys=[(before_end-timedelta(days=i)).isoformat() for i in range(len(postdays))]
     if all(d in ds for d in prekeys):
      pre=sums(ds[d] for d in prekeys);a=ratio(pre);b=ratio(post);comparison=dict(before=pre,after=post,from_days=prekeys,to_days=postdays)
+     if b is not None and b<=5 and ratio(last) is not None and ratio(last)<=5:return None
      if a is not None and b is not None and a>5 and b<a*.8 and post['orders']>0:
       decision=f'Сохранить {old/100:g} ¥ ещё один полный день; оценка {date.fromisoformat(days[-1])+timedelta(days=2):%d.%m}.';reason=f'ДРР после изменений {a:.2f} → {b:.2f}%; улучшение {(a-b)/a*100:.0f}%.';changed=True
     period_for_decision=post
@@ -156,7 +157,7 @@ def recommend(c,n,ds,days,changes,minimum,price):
    decision=f'Сохранить {old/100:g} ¥; оценка {date.fromisoformat(days[-1])+timedelta(days=2):%d.%m}.';reason=f'Единичное превышение; ДРР периода {drr:.2f}%.'
  if not decision:return None
  if action:action['id']=str(c['id'])+':'+str(nm);action['article']=''
- return dict(nm=nm,daily=rows,period=period,period_drr=drr,decision=decision,reason=reason,action=action,changed=changed,comparison=comparison)
+ return dict(nm=nm,daily=rows,period=period,period_drr=drr,decision=decision,reason=reason,action=action,changed=changed,comparison=comparison,pending_first_day=pending_first_day)
 
 def build(s,minima=None):
  minima=minima or {};end=date.fromisoformat(s['period_to']);days=[str(end-timedelta(days=i)) for i in [2,1,0]];labels=price_map(s['catalogue']);changes=history(s['executions']);cs=[];budgets={};raw=[]
@@ -209,6 +210,10 @@ def build(s,minima=None):
    ds=byproduct.get(x['nm'],{});pp=sums(ds.get(d,zeros) for d in days)
    if any(r['nm']==x['nm'] for r in focus):continue
    focus.append(dict(nm=x['nm'],article=labels.get(x['nm'],{}).get('article','WB '+str(x['nm'])),daily=[ds.get(d,zeros) for d in days],period=pp,period_drr=ratio(pp),decision='Выполнено. Повторно не исключать.',reason='',action=None,done=x['text']+' · '+datetime.fromisoformat(x['at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M')))
+  all_excluded={r['nm'] for r in focus if r['action'] and r['action']['kind']=='ad_exclude_sku'}=={n['nm_id'] for n in c['nm_settings']}
+  if all_excluded:
+   for r in focus:
+    if r['action']:r['action']=None;r['decision']='Приостановить всю РК; подтверждение в отчёте бюджетов.'
   focus.sort(key=lambda r:(r['action'] is None,r['article']))
   member_days=[sum(byproduct.get(n['nm_id'],{}).get(d,zeros)['spend'] for n in c.get('nm_settings',[])) for d in days] if cp else []
   rate=max(member_days[-1],sum(member_days)/3) if member_days else None
@@ -217,14 +222,16 @@ def build(s,minima=None):
   forecast=None if incomplete_composition else rate*3 if rate is not None else None
   bdrr=ratio(period);action=None;recommendation='Не пополнять: первый полный день нового состава ещё не оценён.' if incomplete_composition else 'Не пополнять сейчас.'
   if c['status']!=9:recommendation='Сохранить текущую паузу/черновик; не пополнять.'
-  elif cp and len(c['nm_settings'])==1 and period['orders']==0 and period['spend']>0:
+  elif cp and len(c['nm_settings'])==1 and period['orders']==0 and period['spend']>0 and not any(r.get('pending_first_day') for r in focus):
    nm=c['nm_settings'][0]['nm_id'];price=labels.get(nm,{}).get('price')
    if isinstance(price,(int,float)) and period['spend']>=price*.05 and not incomplete_composition:
     action=dict(id='pause:'+str(c['id']),kind='pause_campaign',campaign_id=c['id'],status_before=9,nm_ids=sorted(n['nm_id'] for n in c['nm_settings']));recommendation='Приостановить РК. За 3 дня '+f'{period["spend"]:.2f} ¥; 0 рекламных заказов.'
+  if c['status']==9 and all_excluded and not incomplete_composition:
+   action=dict(id='pause:'+str(c['id']),kind='pause_campaign',campaign_id=c['id'],status_before=9,nm_ids=sorted(n['nm_id'] for n in c['nm_settings']));recommendation='Приостановить РК: все текущие SKU требуют исключения; расход 3 дней '+str(round(period['spend'],2))+' ¥.'
   econ=s.get('economics',{});econrows=econ.get('rows',{});econ_ok=econ.get('status')=='available' and all(econrows.get(str(n['nm_id']),{}).get('expected_total_profit_rub',-1)>=0 for n in c['nm_settings'])
   if not action and c['status']==9 and forecast is not None and bdrr is not None and bdrr<=5 and period['orders']>=3 and forecast>balance['total'] and not econ_ok:
    missing=sum(str(n['nm_id']) not in econrows for n in c['nm_settings']);recommendation='Пополнение не готово: '+str(missing)+' SKU без свежей подтверждённой модели прибыли.' if missing else 'Не пополнять: модель прибыли содержит отрицательный или устаревший результат.'
-  if not action and c['status']==9 and forecast is not None and bdrr is not None and bdrr<=5 and period['orders']>=3 and forecast>balance['total'] and econ_ok:
+  if not action and c['status']==9 and forecast is not None and bdrr is not None and bdrr<=5 and period['orders']>=3 and forecast>balance['total'] and econ_ok and not any(r['action'] for r in focus):
    amount=max(math.ceil(s['config']['minTopUp']/100),math.ceil((forecast-balance['total'])/50)*50)
    action=dict(id='topup:'+str(c['id']),kind='topup_campaign',campaign_id=c['id'],amount_cny=amount,balance_before=balance['total'],target_balance=balance['total']+amount,status_before=9,nm_ids=sorted(n['nm_id'] for n in c['nm_settings']));recommendation=f'Пополнить на {amount} ¥. Расчёт на 3 дня: {forecast:.2f} ¥.'
   elif not action and bdrr is not None and bdrr>5 and not incomplete_composition:recommendation='Не пополнять: ДРР '+f'{bdrr:.2f}%. '+('Сначала изменения SKU из рекламного отчёта.' if any(r['action'] for r in focus) else 'Сохранить бюджет до следующей оценки.')
@@ -248,7 +255,7 @@ def build(s,minima=None):
   recent_funds=[f for f in funds if f[0][:10]>=days[-1]]
   funding_done='; '.join('+'+str(f[1])+' ¥ · '+datetime.fromisoformat(f[0].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M') for f in sorted(set(recent_funds))) or 'Нет новых подтверждённых пополнений'
   out.append(dict(funding_done=funding_done,id=c['id'],name=c['settings']['name'],zone=zone,payment=bid,status=c['status'],period=period,last=last,drr=bdrr,focus=focus,balance=balance['total'],forecast=forecast,coverage=balance['total']/rate if rate and not incomplete_composition else None,budget_recommendation=recommendation,budget_action=action,new_composition=incomplete_composition,missing_stats=cp is None,created=created))
- return dict(version=VERSION,day=str(end+timedelta(days=1)),days=days,source_observed_at=s['observed_at'],campaigns=out,wb_writes=0)
+ return dict(version=VERSION,day=str(end+timedelta(days=1)),days=days,source_observed_at=datetime.fromisoformat(s['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m.%Y %H:%M МСК'),campaigns=out,wb_writes=0)
 
 def prepare(io,day):
  s=collect(io,day);minimums={}

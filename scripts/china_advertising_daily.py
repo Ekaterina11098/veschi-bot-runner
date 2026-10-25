@@ -12,23 +12,26 @@ def run():
  day=datetime.now(ZoneInfo('Europe/Moscow')).date().isoformat();io=IO()
  if (io.get('china_agent:advertising_delivery:'+day+':v1') or {}).get('status')=='delivered':
   print(json.dumps(dict(status='already_delivered',day=day,telegram_calls=0,wb_writes=0)));return
- key='china_agent:advertising_artifacts:'+day+':v1';saved=io.get(key)
+ key='china_agent:advertising_artifacts:'+day+':v2';saved=io.get(key)
  if not saved:
-  source=collect(io,day)
-  prices=io.get('china_agent:prices:v1') or {}
-  if prices.get('cabinet')!='token_3':raise ValueError('China article catalogue unavailable')
-  articles={str(x['nmID']):x['vendorCode'] for x in prices.get('rows',[])}
-  # Reuse complete archived daily campaign summaries; no extra MPStats calls.
-  history=[io.get('china_agent:advertising_source:'+(datetime.fromisoformat(day).date()-timedelta(days=i)).isoformat()+':v1') or {} for i in (1,2)]
-  bundle=normalize(source,day,articles,history)
-  with tempfile.TemporaryDirectory() as out:
-   paths=render(bundle,out)
-   images=[dict(kind=k,b64=base64.b64encode(p.read_bytes()).decode()) for k,p in zip(('drr','budgets'),paths)]
+  from china_advertising_v2 import prepare,VERSION
+  from china_advertising_v2_png import render as render_grouped
+  from china_daily_ad_actions import plan
+  bundle=prepare(io,day)
+  pages=render_grouped(bundle);images=[]
+  for index,f in enumerate(pages):
+   p=plan(io,day,f,index)
+   images.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))
   saved=dict(day=day,status='frozen',bundle=bundle,files=images,wb_writes=0)
   if not io.create(key,saved):saved=io.get(key)
  if saved.get('day')!=day or saved.get('status')!='frozen':raise ValueError('Frozen image scope invalid')
- files=[dict(kind=f['kind'],bytes=base64.b64decode(f['b64'],validate=True),
-  caption=('Китай · ДРР и расходы за '+saved['bundle']['period'] if f['kind']=='drr' else 'Китай · бюджеты · '+day+' · время проверки внутри')) for f in saved['files']]
- result=deliver(io,day,files,telegram_sender(io))
+ from china_daily_ad_actions import bind
+ files=[]
+ for f in saved['files']:
+  caption='Китай · '+('реклама' if f['family']=='drr' else 'бюджеты')+' · '+day+' · '+str(f['page'])+'/'+str(f['total'])+'. Новых действий: '+str(f['action_count'])+'.'
+  caption+=(' Ответьте «Сделай всё» для новых действий только этого PNG.' if f['action_count'] else ' Новых действий для исполнения нет.')
+  files.append(dict(f,bytes=base64.b64decode(f['b64'],validate=True),caption=caption))
+ result=deliver(io,day,files,telegram_sender(io),binder=lambda f,r:bind(io,f,r))
  print(json.dumps(dict(status=result['status'],day=day,message_ids=[x['message_id'] for x in result['parts']],wb_writes=0)))
 if __name__=='__main__':run()
+

@@ -49,7 +49,11 @@ def run():
   p=io.get(PLAN+a['plan_id'])
   if not p:continue
   # Expiration gates new writes; an existing execution may only recover readback.
-  if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']) and not io.get(EXEC+str(a['job_id'])) and not (p.get('execution_kind')=='ad_create_campaigns' and io.get('china_agent:new_ad_execution:v1:'+p['plan_id'])) and not (p.get('execution_kind')=='ad_drr_rule' and io.get('china_agent:ad_rule_execution:'+p['plan_id']+':v1')):continue
+  if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']) and not io.get(EXEC+str(a['job_id'])) and not (p.get('execution_kind')=='ad_create_campaigns' and io.get('china_agent:new_ad_execution:v1:'+p['plan_id'])) and not (p.get('execution_kind')=='daily_ad_actions_v2' and io.get('china_agent:daily_ad_execution:v2:'+p['plan_id'])) and not (p.get('execution_kind')=='ad_drr_rule' and io.get('china_agent:ad_rule_execution:'+p['plan_id']+':v1')):continue
+  if p.get('execution_kind')=='daily_ad_actions_v2':
+   from china_daily_ad_actions import process_and_deliver
+   process_and_deliver(io,a,p)
+   continue
   if p.get('execution_kind')=='ad_create_campaigns':
    from china_new_ads import process_and_deliver
    process_and_deliver(io,a,p)
@@ -75,5 +79,6 @@ def run():
   except Exception:io.put(delivery,dict(status='uncertain',text=body,chat_id=CHAT))
   print(json.dumps(dict(plan_id=a['plan_id'],status=e['status'],items=[dict(id=x['id'],status=x['status']) for x in e['items']]),ensure_ascii=False))
 if __name__=='__main__':run()
+
 
 

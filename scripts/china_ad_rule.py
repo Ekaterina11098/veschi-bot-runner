@@ -162,6 +162,9 @@ def bind(w,text,message_id):
  p['report_message_ids']=sorted(set(p.get('report_message_ids',[])+[message_id]));w.save(PLAN+pid,p)
  w.save('china_agent:ad_rule_message:'+str(message_id),dict(plan_id=pid,plan_sha256=p['plan_sha256'],chat_id=CHAT))
 def handle(w,job,history=()):
+ from china_daily_ad_actions import handle as daily_handle
+ daily_result=daily_handle(w,job)
+ if daily_result is not None:return daily_result
  text=job.get('request_text','');m=marker(job)
  if is_all(text):
   binding=w.get('china_agent:ad_rule_message:'+str(m.get('reply_message_id')))
@@ -290,3 +293,4 @@ def process_and_deliver(io,a,p):
   except Exception:
    state['parts'][idx]['status']='uncertain';io.put(key,state);return e
  state['status']='sent';io.put(key,state);return e
+

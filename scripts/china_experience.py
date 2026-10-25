@@ -64,7 +64,7 @@ def sync(w):
  prefetched=read_rows(w,ROOT,limit=5000)
  w._experience_prefetched={r['cache_key']:r['payload'] for r in prefetched}
  count=0
- prefixes=['china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:loss_ad_execution:','china_agent:price_execution:v1:','china_agent:codex_bid_raise:']
+ prefixes=['china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:loss_ad_execution:','china_agent:price_execution:v1:','china_agent:codex_bid_raise:','china_agent:codex_bid_revert:']
  for prefix in prefixes:
   for row in read_rows(w,prefix,limit=5000):
    key=row['cache_key'];p=row['payload'];actions=[]

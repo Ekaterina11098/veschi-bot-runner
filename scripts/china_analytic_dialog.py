@@ -88,7 +88,7 @@ class Analyst:
  def memory(self):return self.w.get(MEMORY) or {'available':False}
  def actions(self):
   output=[]
-  for prefix in ['china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:price_execution:v1:','china_agent:loss_ad_execution:','china_agent:codex_bid_raise:']:
+  for prefix in ['china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:price_execution:v1:','china_agent:loss_ad_execution:','china_agent:codex_bid_raise:','china_agent:codex_bid_revert:']:
    rows=self.w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':5}) or []
    for row in rows:
     p=row['payload'];output.append(dict(key=row['cache_key'],updated_at=row.get('updated_at'),status=p.get('status'),completed_at=p.get('completed_at'),verified_at=p.get('verified_at'),plan=p.get('plan'),items=[{k:i.get(k) for k in ['id','article','status','selection','campaign_id','reason']} for i in p.get('items',[])],campaigns=p.get('campaigns')))

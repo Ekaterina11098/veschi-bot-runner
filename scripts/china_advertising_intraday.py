@@ -44,7 +44,14 @@ def prepare(io,day):
  b['view_only']=True
  # Intraday recommendations are review-only and never become executable plans.
  for c in b['campaigns']:
-  for r in c['focus']:r['action']=None
+  for r in c['focus']:
+   r['action']=None;r['period_drr']=ratio(r['period'])
+   if 'Выполнено.' not in r['decision']:
+    r['decision']='Сохранить до вечерней проверки; не повышать.'
+    r['reason']='Сегодня: расход '+str(round(r['daily'][-1]['spend'],2))+' ¥; '+str(r['daily'][-1]['orders'])+' рекламных заказов. ДРР за3дня — отношение сумм; текущий день неполный.'
+    if c['id']==40933588 and r['nm']==1473243891 and (ratio(r['daily'][-1]) or 0)>5:
+     r['decision']='Предложение: ставка0.42 →0.40 ¥; требуется подтверждение.'
+     r['reason']+=' Ранее предложенный возврат ставки ещё не исполнен.'
   c['budget_action']=None;c['forecast']=None;c['coverage']=None
   c['budget_recommendation']='Остаток на '+budget_at+'. Автопополнение не предлагается по неполному дню.'
   if c['last'] and ratio(c['last']) is not None and ratio(c['last'])>5:c['budget_recommendation']+=' ДРР сегодня выше5%; сначала оценить SKU.'

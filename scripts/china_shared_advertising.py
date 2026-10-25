@@ -22,9 +22,10 @@ def shared(w,first,last,ids,campaign_ids=()):
  byid={c['id']:c for c in campaigns};membership_at={cid:base['observed_at'] for cid in byid}
  if current and current.get('campaigns'):
   byid={c['id']:c for c in current['campaigns']};membership_at={cid:current['observed_at'] for cid in byid}
- ex=w.get('china_agent:codex_search_exclude553:2026-10-25:v1:execution') or {}
- if ex.get('status')=='verified' and ex.get('after') and ex.get('verified_at','')>membership_at.get(41298169,''):
-  byid[41298169]=ex['after'];membership_at[41298169]=ex['verified_at']
+ for receipt_key,cid in [('china_agent:codex_search_exclude553:2026-10-25:v1:execution',41298169),('china_agent:codex_bid_revert:2026-10-25:v1:execution',40933588),('china_agent:codex_search_trim:2026-10-25:v1:execution',41298169)]:
+  ex=w.get(receipt_key) or {}
+  if ex.get('status')=='verified' and ex.get('after',{}).get('id')==cid and ex.get('verified_at','')>membership_at.get(cid,''):
+   byid[cid]=ex['after'];membership_at[cid]=ex['verified_at']
  campaigns=list(byid.values())
  selected=[];totals={};campaign_daily={};products={}
  for cid,ds in raw.items():

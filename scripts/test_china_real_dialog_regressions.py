@@ -87,4 +87,21 @@ class ReplayRegressions(unittest.TestCase):
   r=a.live('orders',[],'2026-10-24','2026-10-25')
   self.assertEqual(r['wb_reads'],0);self.assertTrue(r['cached_context_available']);self.assertFalse(r['available'])
 
+ def test_latest_verified_membership_keeps_excluded_historical_spend(self):
+  w=self.fixture();original_get=w.get
+  base=original_get('china_agent:advertising_source:2026-10-25:v2')
+  base['batches']['0']['campaigns']['adverts'][0].update(id=41298169,nm_settings=[dict(nm_id=n) for n in range(1,45)])
+  current=original_get('china_agent:advertising_intraday:2026-10-25:v1')
+  current['ad_batches'][0]['data'][0]['advertId']=41298169
+  def receipt(start,at):
+   return dict(status='verified',verified_at=at,after=dict(id=41298169,status=9,settings={},nm_settings=[dict(nm_id=n) for n in range(start,45)]))
+  values={'china_agent:advertising_source:2026-10-25:v2':base,'china_agent:advertising_intraday:2026-10-25:v1':current,
+   'china_agent:codex_search_exclude553:2026-10-25:v1:execution':receipt(2,'2026-10-25T16:22:00+00:00'),
+   'china_agent:codex_search_trim:2026-10-25:v1:execution':receipt(12,'2026-10-25T19:45:00+00:00')}
+  w.get=lambda k:copy.deepcopy(values.get(k))
+  r=shared(w,date(2026,10,25),date(2026,10,25),[1],campaign_ids=[41298169])
+  self.assertEqual(r['campaigns'][0]['sku_count'],33)
+  self.assertEqual(r['campaigns'][0]['membership_observed_at'],'2026-10-25T19:45:00+00:00')
+  self.assertEqual(r['products']['1']['41298169']['2026-10-25']['spend_cny'],8)
+
 if __name__=='__main__':unittest.main()

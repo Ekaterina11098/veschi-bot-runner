@@ -24,7 +24,7 @@ def allowed_read(method,url,body=None):
  if u.hostname=='api.moysklad.ru':return method=='GET' and path in ['/api/remap/1.2/entity/store','/api/remap/1.2/report/stock/all','/api/remap/1.2/entity/product']
  if u.hostname=='marketplace-api.wildberries.ru':return method=='GET' and path=='/api/v3/orders'
  if u.hostname=='discounts-prices-api.wildberries.ru':return method=='GET' and path=='/api/v2/list/goods/filter'
- if u.hostname=='advert-api.wildberries.ru':return method=='GET' and path in ['/adv/v1/promotion/count','/api/advert/v2/adverts','/adv/v3/fullstats','/api/advert/v1/config','/adv/v1/balance','/adv/v1/budget'] or method=='POST' and path=='/api/advert/v1/bids/min'
+ if u.hostname=='advert-api.wildberries.ru':return method=='GET' and path in ['/adv/v1/promotion/count','/api/advert/v2/adverts','/adv/v3/fullstats','/api/advert/v1/config','/adv/v1/balance','/adv/v1/budget'] or method=='POST' and (path=='/api/advert/v1/bids/min' or path=='/api/advert/v2/budget' and isinstance(body,dict) and set(body)=={'advertIds'} and isinstance(body['advertIds'],list) and 0<len(body['advertIds'])<=50 and all(type(n)is int and n>0 for n in body['advertIds']))
  if u.hostname=='feedbacks-api.wildberries.ru':return method=='GET' and path in ['/api/v1/feedbacks','/api/v1/feedbacks/archive']
  if u.hostname=='mcp.mpstats.io' and path=='/mcp' and method=='POST' and isinstance(body,dict):
   if body.get('method') in ['initialize','notifications/initialized','tools/list']:return True
@@ -301,6 +301,7 @@ def copy_summary(value):
   return v
  result=compact(result)
  return result
+
 
 
 

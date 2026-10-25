@@ -42,4 +42,29 @@ class ReplayRegressions(unittest.TestCase):
   event=dict(event_id='new',record_type='verified_action',source_key='receipt')
   first=put_event(w,event);second=put_event(w,event)
   self.assertEqual(first,second);self.assertEqual(sum(k==ROOT+'new' for k,v in saved),1)
+
+ def test_rating_comes_from_saved_source_with_unknown_review_count(self):
+  source=dict(observed_at='2026-10-25T17:05:00+00:00',products=[dict(nm_id=1,sa_name='one-bag',commentsvaluation=5)])
+  w=SimpleNamespace(now=datetime(2026,10,25,17,tzinfo=timezone.utc),catalog=lambda:[('1','one-bag')],get=lambda k:copy.deepcopy(source) if k.startswith('china_agent:new_ad_source:') else None)
+  r=Analyst(w,{},[]).card_quality(['one-bag'])
+  self.assertEqual(r['rows'][0]['rating'],5);self.assertIsNone(r['rows'][0]['review_count']);self.assertEqual(r['wb_reads'],0)
+ def test_basket_followup_uses_advertising_not_general_product_funnel(self):
+  w=self.fixture();w.catalog=lambda:[('1','one-bag')]
+  r=Analyst(w,{},[]).baskets(['one-bag'],'2026-10-25','2026-10-25')
+  self.assertEqual(r['products']['1']['42']['2026-10-25']['basket_events'],6);self.assertEqual(r['wb_reads'],0)
+ def test_one_campaign_context_keeps_all_member_metrics(self):
+  w=self.fixture();w.catalog=lambda:[('1','one-bag')]
+  r=Analyst(w,{},[]).campaign(42,'2026-10-25','2026-10-25')
+  self.assertEqual(r['articles']['1'],'one-bag');self.assertEqual(r['products']['1']['42']['2026-10-25']['spend_cny'],8)
+ def test_execution_time_stays_separate_from_verification_time(self):
+  from unittest.mock import patch
+  source=dict(period_from='2026-09-25',period_to='2026-10-24',products=[dict(nm_id=1,sa_name='one-bag',is_payed=2,finished_orders=3)])
+  prices=dict(observed_at='2026-10-25T15:00:00+00:00',rows=[dict(nmID=1,vendorCode='one-bag',sizes=[dict(discountedPrice=100)])])
+  w=SimpleNamespace(now=datetime(2026,10,25,17,tzinfo=timezone.utc),catalog=lambda:[('1','one-bag')],get=lambda k:copy.deepcopy(prices if k=='china_agent:prices:v1' else source))
+  event=dict(event_id='e',record_type='verified_action',action=dict(nm_ids=[1],kind='bid_change'),started_at='2026-10-23T10:00:00+00:00',verified_at='2026-10-23T16:00:00+00:00',comparison={})
+  with patch('china_experience.search',return_value=dict(experiences=[event])):r=Analyst(w,{},[]).product_context(['one-bag'])
+  c=r['rows'][0]['changes'][0]
+  self.assertEqual(c['executed_at'],event['started_at']);self.assertEqual(c['verification_at'],event['verified_at'])
+  self.assertEqual(r['rows'][0]['own_statistics_period'],['2026-09-25','2026-10-24'])
+
 if __name__=='__main__':unittest.main()

@@ -74,7 +74,7 @@ def main(kind='feedbacks'):
         source=SQLSource(conn);bridge=DurableBridge(app,source);store=DurableReviews(_request)
         control=('questions-morning:' if kind=='questions' else 'reviews-morning:')+day
         state=repo.get('events',control) or {'status':'collecting','date':day,'scopes':{},'items':{},'created_at':time.time(),'telegram_confirmed':0}
-        if not refresh_completed(state):return {'status':'already_complete','telegram_confirmed':state['telegram_confirmed']}
+        if state.get('status')=='complete' and (kind!='feedbacks' or not refresh_completed(state)):return {'status':'already_complete','telegram_confirmed':state['telegram_confirmed']}
         def preserve():
             out=Path(os.environ['RUNNER_TEMP'])/'stock-deploy-proof';out.mkdir(exist_ok=True)
             (out/'morning-live-supplement.aes.json').write_text(json.dumps(encrypt(snapshot(repo),OWNER_PUBLIC.encode())))

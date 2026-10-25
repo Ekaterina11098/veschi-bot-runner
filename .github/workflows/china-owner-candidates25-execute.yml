@@ -1,4 +1,4 @@
-name: Recover exact approved candidate additions 25Oct
+name: Verify accepted candidate launch 25Oct
 on:
   push:
     branches: [china-owner-candidates25-execute]

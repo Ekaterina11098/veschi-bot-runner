@@ -85,7 +85,7 @@ class Analyst:
    rows=self.w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':5}) or []
    for row in rows:
     p=row['payload'];output.append(dict(key=row['cache_key'],updated_at=row.get('updated_at'),status=p.get('status'),completed_at=p.get('completed_at'),verified_at=p.get('verified_at'),plan=p.get('plan'),items=[{k:i.get(k) for k in ['id','article','status','selection','campaign_id','reason']} for i in p.get('items',[])],campaigns=p.get('campaigns')))
-  return dict(today_launches=self.w.get('china_agent:advertising_launch_summary:v1'),expanded_tracking=self.w.get('china_agent:expanded_tests:2026-10-25:tracking:v1'),search_tracking=self.w.get('china_agent:search_test:2026-10-25:tracking:v1'),verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Только status verified/applied/launched подтверждает исполнение. Отсутствие квитанции не равно выполнено.')
+  return dict(today_launches=self.w.get('china_agent:advertising_launch_summary:v1'),expanded_tracking={k:v for k,v in (self.w.get('china_agent:expanded_tests:2026-10-25:tracking:v1') or {}).items() if k in ['status','baseline_at','campaign_ids','last_checked_at','last_analysis']},search_tracking={k:v for k,v in (self.w.get('china_agent:search_test:2026-10-25:tracking:v1') or {}).items() if k in ['status','campaign_id','baseline_at','owner_changes']},verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Только status verified/applied/launched подтверждает исполнение. Отсутствие квитанции не равно выполнено.')
  def chat(self,query):
   rows=self.w.db('GET','business_agent_jobs',params={'agent_id':'eq.china','chat_id':'eq.'+str(self.job['chat_id']),'status':'eq.done','id':'lt.'+str(self.job['id']),'select':'id,request_text,answer,created_at','order':'id.desc','limit':80}) or []
   words=query.casefold().split()
@@ -208,7 +208,8 @@ def answer(w,job,history):
  from china_experience import decision_context,search as experience_search
  experience=decision_context(w)
  experience=dict(experience,total_events=len(experience['experiences']),experiences=[{k:v for k,v in e.items() if k not in ['observations','current_condition_comparison','latest_change_observation']} for e in experience['experiences'][:12]])
- growth_question=bool(re.search(r'кандидат|добав.*РК|добав.*реклам|повыс.*ставк|подн.*ставк|подня.*ставк',job['request_text'],re.I))
+ completed_question=bool(re.search(r'сегодня|уже',job['request_text'],re.I) and re.search(r'добавили|запустили|подключили|выполн|сделали',job['request_text'],re.I))
+ growth_question=not completed_question and bool(re.search(r'кандидат|добав.*РК|добав.*реклам|повыс.*ставк|подн.*ставк|подня.*ставк',job['request_text'],re.I))
  decline_question=bool(re.search(r'падени|снижени.*заказ|снижени.*продаж',job['request_text'],re.I))
  available=[t for t in c.tools('china') if t['name'] in names]+tools();data=Data('china',lambda table,params:w.db('GET',table,params=params))
  prompt=('Ты аналитик VESCHI Китай. Отвечай на любые вопросы по доступному бизнес-контексту свободно, кратко и конкретно: вывод, 2–4 существенные цифры с датой, действие. Обычно до 1200 символов; детали только по просьбе. '
@@ -240,7 +241,7 @@ def answer(w,job,history):
   from conversion_watches import question_request
   request=question_request
  for turn in range(start_turn,10):
-  choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
+  choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else {'type':'function','name':'read_recent_actions'} if completed_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
   w.save(checkpoint_key,dict(status='ready',scope=scope,date_msk=str(w.now.astimezone(MSK).date()),messages=messages,trace=trace,turn=turn,fresh_reads=analyst.fresh_reads))
   body=dict(model=policy.get('model','gpt-6.1-sol'),input=messages,tools=available,parallel_tool_calls=False,tool_choice=choice,reasoning=dict(effort='medium'),text=dict(verbosity='low'),max_output_tokens=4000,store=False,include=['reasoning.encrypted_content'])
   response=request(body);output=response.get('output') or [];calls=[x for x in output if x.get('type')=='function_call']

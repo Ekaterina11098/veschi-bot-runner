@@ -1,0 +1,39 @@
+name: Launch owner approved search-only CPC test
+on:
+  push:
+    branches: [china-owner-candidates25-execute]
+    paths: ['.github/workflows/china-owner-search25-launch.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-candidates25-execute
+  cancel-in-progress: false
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+      - run: pip install requests==2.32.5 Pillow==12.3.0 > /tmp/dependencies.log 2>&1
+      - run: python scripts/execute_owner_search25.py
+        env:
+          PYTHONPATH: scripts:source
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}

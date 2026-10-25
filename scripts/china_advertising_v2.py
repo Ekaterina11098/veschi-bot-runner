@@ -1,0 +1,270 @@
+"""Owner-approved daily format: live China readbacks, ratio-of-sums and exact new actions."""
+import copy,json,math,statistics,time
+from datetime import date,datetime,timedelta,timezone
+from zoneinfo import ZoneInfo
+from urllib.parse import quote
+MSK=ZoneInfo('Europe/Moscow');VERSION='grouped_campaigns_v2';FORMAT='china_agent:advertising_format:v2'
+def stamp():return datetime.now(timezone.utc).isoformat()
+def save(io,k,v):
+ if io.get(k) is None:
+  if not io.create(k,v):raise RuntimeError('Concurrent daily state')
+ else:io.put(k,v)
+def http(io,path,method='GET',body=None):
+ import requests
+ allowed=(method=='GET' and path.split('?')[0] in ['/adv/v1/promotion/count','/api/advert/v2/adverts','/adv/v3/fullstats','/api/advert/v1/config']) or (method=='POST' and path in ['/api/advert/v2/budget','/api/advert/v1/bids/min'])
+ if not allowed:raise ValueError('Daily generator is read-only')
+ time.sleep(1.5);r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':io.token},json=body,timeout=60)
+ if not r.ok:raise RuntimeError('China advertising read HTTP '+str(r.status_code))
+ return r.json() if r.content else {}
+def collect(io,day):
+ policy=io.get(FORMAT)
+ if not policy or policy.get('status')!='approved' or policy.get('version')!=VERSION:raise ValueError('Approved daily advertising format missing')
+ key='china_agent:advertising_source:'+day+':v2';s=io.get(key)
+ if s and s.get('status')=='complete':return s
+ end=date.fromisoformat(day)-timedelta(days=1);start=end-timedelta(days=6)
+ if not s:s=dict(status='collecting',version=VERSION,cabinet='token_3',observed_at=stamp(),period_from=str(start),period_to=str(end),wb_writes=0);save(io,key,s)
+ if 'ids' not in s:
+  j=http(io,'/adv/v1/promotion/count');s['ids']=sorted({x['advertId'] for g in j.get('adverts',[]) if g.get('status') in [4,9,11] for x in g.get('advert_list',[])});save(io,key,s)
+ if not s['ids'] or len(s['ids'])>1000:raise ValueError('Campaign catalogue incomplete')
+ s.setdefault('batches',{})
+ for pos in range(0,len(s['ids']),50):
+  ids=s['ids'][pos:pos+50];b=s['batches'].setdefault(str(pos),{})
+  for name,path,method,body in [('campaigns','/api/advert/v2/adverts?ids='+','.join(map(str,ids)),'GET',None),('budgets','/api/advert/v2/budget','POST',dict(advertIds=ids)),('stats','/adv/v3/fullstats?ids='+','.join(map(str,ids))+'&beginDate='+str(start)+'&endDate='+str(end),'GET',None)]:
+   if name not in b:b[name]=http(io,path,method,body);save(io,key,s)
+ if 'config' not in s:s['config']=http(io,'/api/advert/v1/config');save(io,key,s)
+ if s['config'].get('currency')!='CNY':raise ValueError('Wrong advertising currency')
+ cat=io.get('china_agent:prices:v1') or {}
+ if cat.get('cabinet')!='token_3':raise ValueError('China article catalogue unavailable')
+ s['catalogue']=cat
+ if 'executions' not in s:
+  since=(date.fromisoformat(day)-timedelta(days=14)).isoformat()
+  query='telegram_api_cache?or=(cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:loss_ad_execution:*,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:new_ad_execution:*)&updated_at=gte.'+since+'&select=cache_key,payload&limit=100'
+  s['executions']=io.db(query)
+  if len(s['executions'])>=100:raise ValueError('Execution history needs pagination')
+  save(io,key,s)
+ if 'experience' not in s:
+  s['experience']=io.db('telegram_api_cache?cache_key=like.china_agent:experience:v1:*&select=payload&limit=300')
+  if len(s['experience'])>=300:raise ValueError('Experience history pagination needed')
+  save(io,key,s)
+ if 'economics' not in s:
+  model=io.get('china_agent:loss_economics:latest:v1') or {};s['economics']=dict(status='unavailable',rows={})
+  try:
+   observed=datetime.fromisoformat(model['observed_at'].replace('Z','+00:00'))
+   if observed.tzinfo is None:observed=observed.replace(tzinfo=MSK)
+   if abs((datetime.now(timezone.utc)-observed).total_seconds())<=48*3600:
+    from china_loss_policy import evaluate
+    assessed={}
+    for row in model.get('records',[]):
+     try:
+      value=evaluate(row);assessed[str(row['nm_id'])]=dict(expected_total_profit_rub=value['expected_total_profit_rub'],basis='preliminary_model')
+     except (ValueError,KeyError,TypeError):continue
+    s['economics']=dict(status='available',observed_at=model['observed_at'],rows=assessed)
+  except (KeyError,ValueError,TypeError,ImportError):pass
+ s['status']='complete';s['completed_at']=stamp();save(io,key,s);return s
+
+def validnum(x):
+ if isinstance(x,bool) or not isinstance(x,(int,float)) or not math.isfinite(x) or x<0:raise ValueError('Unknown advertising amount is not zero')
+ return x
+def sums(rows):
+ out=dict(spend=0,amount=0,orders=0,views=0,clicks=0)
+ for row in rows:
+  for k in out:out[k]+=row[k]
+ return out
+def ratio(row):return row['spend']/row['amount']*100 if row and row['amount']>0 else None
+def daily_metrics(raw):
+ return {k:validnum(raw.get(f)) for k,f in [('spend','sum'),('amount','sum_price'),('orders','orders'),('views','views'),('clicks','clicks')]}
+def history(records):
+ """Only verified receipts; campaign-specific changes, never inferred from a recommendation."""
+ found=[]
+ def walk(x,root):
+  if isinstance(x,list):
+   for z in x:walk(z,root)
+  if not isinstance(x,dict):return
+  status=x.get('status');before=x.get('before');after=x.get('after')
+  if status in ['verified','verified_active','verified_draft'] and isinstance(after,dict) and isinstance(after.get('id'),int):
+   cid=after['id'];at=x.get('verified_at') or x.get('submitted_at') or root.get('verified_at') or root.get('completed_at') or root.get('created_at')
+   if at:
+    old={n['nm_id']:n for n in (before or {}).get('nm_settings',[])};new={n['nm_id']:n for n in after.get('nm_settings',[])}
+    for nm in old.keys()-new.keys():found.append(dict(cid=cid,nm=nm,kind='excluded',at=at,text='Исключён из РК'))
+    for nm in new.keys()-old.keys():
+     if not before:continue
+     found.append(dict(cid=cid,nm=nm,kind='added',at=at,text='Добавлен в РК'))
+    for nm in old.keys()&new.keys():
+     for zone in ['search','recommendations']:
+      a=old[nm].get('bids_kopecks',{}).get(zone);b=new[nm].get('bids_kopecks',{}).get(zone)
+      if type(a)is int and type(b)is int and a!=b:found.append(dict(cid=cid,nm=nm,kind='bid',at=at,zone=zone,old=a,target=b,text=f'Ставка {a/100:g} → {b/100:g} ¥'))
+  for key in ['items','groups','campaigns']:walk(x.get(key,[]),root)
+  # Nested maps of candidate executions.
+  if not any(k in x for k in ['status','before','after']):
+   for v in x.values():
+    if isinstance(v,(dict,list)):walk(v,root)
+ for r in records:walk(r.get('payload',r),r.get('payload',r))
+ dedup={(x['cid'],x['nm'],x['kind'],x['at']):x for x in found}
+ return sorted(dedup.values(),key=lambda x:x['at'])
+def price_map(cat):
+ out={}
+ for x in cat.get('rows',[]):
+  sizes=x.get('sizes',[]);p=x.get('price')
+  if p is None and sizes:p=sizes[0].get('discountedPrice')
+  out[int(x['nmID'])]=dict(article=x.get('vendorCode') or 'WB '+str(x['nmID']),price=p)
+ return out
+
+def recommend(c,n,ds,days,changes,minimum,price):
+ """A complete post-change day, trend and expense signals precede any proposed write."""
+ nm=n['nm_id'];zone='search' if c['settings']['placements'].get('search') else 'recommendations';old=n.get('bids_kopecks',{}).get(zone)
+ if c['status']!=9 or type(old)is not int or old<=0:return None
+ rows=[ds.get(d,dict(spend=0,amount=0,orders=0,views=0,clicks=0)) for d in days];period=sums(rows);last=rows[-1];drr=ratio(period);ratios=[ratio(x) for x in rows]
+ latest=next((x for x in reversed(changes) if x['cid']==c['id'] and x['nm']==nm and x['kind'] in ['bid','added','price']),None)
+ action=None;reason='';decision='';changed=False;comparison=None
+ if latest:
+  first=datetime.fromisoformat(latest['at'].replace('Z','+00:00')).astimezone(MSK).date()+timedelta(days=1);end=date.fromisoformat(days[-1])
+  if end<first:
+   # Newly added products without a full reporting day stay in the campaign summary, not 120 empty SKU rows.
+   if latest['kind']=='added':return None
+   decision=f'Сохранить {old/100:g} ¥ до {first:%d.%m}; оценка {first+timedelta(days=1):%d.%m}.';reason='Первый полный день теста ещё не завершён.';changed=True
+  else:
+   postdays=[d for d in sorted(ds) if first.isoformat()<=d<=days[-1]][-3:]
+   if postdays:
+    post=sums(ds[d] for d in postdays);before_end=first-timedelta(days=2);prekeys=[(before_end-timedelta(days=i)).isoformat() for i in range(len(postdays))]
+    if all(d in ds for d in prekeys):
+     pre=sums(ds[d] for d in prekeys);a=ratio(pre);b=ratio(post);comparison=dict(before=pre,after=post,from_days=prekeys,to_days=postdays)
+     if a is not None and b is not None and a>5 and b<a*.8 and post['orders']>0:
+      decision=f'Сохранить {old/100:g} ¥ ещё один полный день; оценка {date.fromisoformat(days[-1])+timedelta(days=2):%d.%m}.';reason=f'ДРР после изменений {a:.2f} → {b:.2f}%; улучшение {(a-b)/a*100:.0f}%.';changed=True
+    period_for_decision=post
+   else:period_for_decision=period
+ else:period_for_decision=period
+ if not decision:
+  decision_period=period_for_decision
+  if latest and 'postdays' in locals() and postdays:
+   decision_rows=[ds[d] for d in postdays];ratios=[ratio(x) for x in decision_rows];drr=ratio(decision_period)
+  sustained=sum(x is not None and x>5 for x in ratios)>=2
+  rising=len(ratios)==3 and all(x is not None for x in ratios) and ratios[0]<ratios[1]<ratios[2] and ratios[2]>5
+  threshold=price*.05 if isinstance(price,(int,float)) and price>0 else None
+  no_orders=decision_period['orders']==0 and threshold is not None and decision_period['spend']>=threshold
+  if no_orders or ((drr is not None and drr>10) and sustained and latest and old<=minimum):
+   if len(c['nm_settings'])>1 and c.get('restrictions',{}).get('can_change_nms'):
+    action=dict(kind='ad_exclude_sku',campaign_id=c['id'],nm_id=nm,placement=zone,old_minor=old);decision='Исключить SKU из этой РК.'
+   else:decision='Предложение паузы всей РК — в отчёте бюджетов.'
+   reason=f'За 3 дня: расход {period["spend"]:.2f} ¥; рекламных заказов {period["orders"]:g}.'
+  elif (sustained and drr is not None and drr>5) or rising:
+   if minimum and old>minimum:
+    target=max(minimum,int(old*.8));action=dict(kind='ad_set_bid',campaign_id=c['id'],nm_id=nm,placement=zone,old_minor=old,target_minor=target);decision=f'Снизить {old/100:g} → {target/100:g} ¥.'
+    reason=(f'Рост ДРР {ratios[0]:.2f} → {ratios[-1]:.2f}%.' if rising else f'ДРР периода {drr:.2f}%; превышение повторяется.')
+   elif last['spend']>0:
+    decision=f'Сохранить минимум {old/100:g} ¥ до {date.fromisoformat(days[-1])+timedelta(days=1):%d.%m}; затем оценить исключение.';reason=f'ДРР периода {drr:.2f}%; новый более низкий CPC недоступен.'
+  elif ratios[-1] is not None and ratios[-1]>5:
+   decision=f'Сохранить {old/100:g} ¥; оценка {date.fromisoformat(days[-1])+timedelta(days=2):%d.%m}.';reason=f'Единичное превышение; ДРР периода {drr:.2f}%.'
+ if not decision:return None
+ if action:action['id']=str(c['id'])+':'+str(nm);action['article']=''
+ return dict(nm=nm,daily=rows,period=period,period_drr=drr,decision=decision,reason=reason,action=action,changed=changed,comparison=comparison)
+
+def build(s,minima=None):
+ minima=minima or {};end=date.fromisoformat(s['period_to']);days=[str(end-timedelta(days=i)) for i in [2,1,0]];labels=price_map(s['catalogue']);changes=history(s['executions']);cs=[];budgets={};raw=[]
+ for b in s['batches'].values():cs+=b['campaigns'].get('adverts',[]);raw+=b['stats'];budgets.update({x['advertId']:x for x in b['budgets'].get('adverts',[]) if x is not None})
+ if {c['id'] for c in cs}!=set(s['ids']) or len(cs)!=len(s['ids']):raise ValueError('Campaign readback incomplete')
+ for rec in s.get('experience',[]):
+  event=rec.get('payload',rec);act=event.get('action',{});at=event.get('started_at')
+  if act.get('kind')!='price_change' or not at:continue
+  for nm in act.get('nm_ids',[]):
+   for c in cs:
+    if any(n['nm_id']==nm for n in c.get('nm_settings',[])):changes.append(dict(cid=c['id'],nm=nm,kind='price',at=at,text='Цена '+str(act.get('before'))+' → '+str(act.get('after'))+' ¥'))
+ changes.sort(key=lambda x:x['at'])
+ stat={c['advertId']:c for c in raw};out=[]
+ for c in cs:
+  if c.get('currency')!='CNY':raise ValueError('Campaign currency mismatch')
+  bid=c['settings']['payment_type'];zone='поиск' if c['settings']['placements'].get('search') else 'рекомендации';cp=stat.get(c['id']);byday={};byproduct={}
+  if cp:
+   for d in cp.get('days',[]):
+    day=d['date'][:10];byday[day]=daily_metrics(d)
+    for app in d.get('apps',[]):
+     for n in app.get('nms',[]):
+      target=byproduct.setdefault(n['nmId'],{});v=target.setdefault(day,dict(spend=0,amount=0,orders=0,views=0,clicks=0))
+      for k,x in daily_metrics(n).items():v[k]+=x
+  created=c.get('timestamps',{}).get('created','')[:10];new=created>=s['period_to']
+  # Missing days within a returned WB daily series have zero activity; a missing campaign response remains unknown.
+  zeros=dict(spend=0,amount=0,orders=0,views=0,clicks=0)
+  if cp:
+   for d in days:byday.setdefault(d,dict(zeros))
+   for ds in byproduct.values():
+    for i in range(7):ds.setdefault(str(end-timedelta(days=i)),dict(zeros))
+  period=sums(byday[d] for d in days) if cp else None;last=byday.get(days[-1]);balance=budgets.get(c['id'])
+  if not balance or balance.get('currency')!='CNY':raise ValueError('Campaign balance missing')
+  focus=[]
+  for n in c.get('nm_settings',[]):
+   nm=n['nm_id'];ds=byproduct.get(nm,{})
+   if not ds:continue
+   minimum=minima.get(str(c['id'])+':'+str(nm),0)
+   r=recommend(c,n,ds,days,changes,minimum,labels.get(nm,{}).get('price'))
+   if r:
+    r['article']=labels.get(nm,{}).get('article','WB '+str(nm));recent=[x for x in changes if x['cid']==c['id'] and x['nm']==nm];r['done']=recent[-1]['text']+' · '+datetime.fromisoformat(recent[-1]['at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M') if recent else 'Нет подтверждённых изменений'
+    if r['action']:
+     if r['article'].startswith('WB '):r['action']=None;r['decision']='Нет точного артикула: действие не готово.'
+     else:r['action']['article']=r['article']
+    focus.append(r)
+  # Show recent confirmed exclusions without proposing to exclude them again.
+  for x in changes:
+   if x['cid']!=c['id'] or x['kind']!='excluded' or x['nm'] in {n['nm_id'] for n in c.get('nm_settings',[])}:continue
+   at=datetime.fromisoformat(x['at'].replace('Z','+00:00')).astimezone(MSK).date()
+   if (date.fromisoformat(s['period_to'])+timedelta(days=1)-at).days not in [0,1]:continue
+   ds=byproduct.get(x['nm'],{});pp=sums(ds.get(d,zeros) for d in days)
+   if any(r['nm']==x['nm'] for r in focus):continue
+   focus.append(dict(nm=x['nm'],article=labels.get(x['nm'],{}).get('article','WB '+str(x['nm'])),daily=[ds.get(d,zeros) for d in days],period=pp,period_drr=ratio(pp),decision='Выполнено. Повторно не исключать.',reason='',action=None,done=x['text']+' · '+datetime.fromisoformat(x['at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M')))
+  focus.sort(key=lambda r:(r['action'] is None,r['article']))
+  member_days=[sum(byproduct.get(n['nm_id'],{}).get(d,zeros)['spend'] for n in c.get('nm_settings',[])) for d in days] if cp else []
+  rate=max(member_days[-1],sum(member_days)/3) if member_days else None
+  latest_adds=[x for x in changes if x['cid']==c['id'] and x['kind']=='added' and x['at'][:10]>=days[0]]
+  incomplete_composition=new or any(datetime.fromisoformat(x['at'].replace('Z','+00:00')).astimezone(MSK).date()+timedelta(days=1)>end for x in latest_adds)
+  forecast=None if incomplete_composition else rate*3 if rate is not None else None
+  bdrr=ratio(period);action=None;recommendation='Не пополнять: первый полный день нового состава ещё не оценён.' if incomplete_composition else 'Не пополнять сейчас.'
+  if c['status']!=9:recommendation='Сохранить текущую паузу/черновик; не пополнять.'
+  elif cp and len(c['nm_settings'])==1 and period['orders']==0 and period['spend']>0:
+   nm=c['nm_settings'][0]['nm_id'];price=labels.get(nm,{}).get('price')
+   if isinstance(price,(int,float)) and period['spend']>=price*.05 and not incomplete_composition:
+    action=dict(id='pause:'+str(c['id']),kind='pause_campaign',campaign_id=c['id'],status_before=9);recommendation='Приостановить РК. За 3 дня '+f'{period["spend"]:.2f} ¥; 0 рекламных заказов.'
+  econ=s.get('economics',{});econrows=econ.get('rows',{});econ_ok=econ.get('status')=='available' and all(econrows.get(str(n['nm_id']),{}).get('expected_total_profit_rub',-1)>=0 for n in c['nm_settings'])
+  if not action and c['status']==9 and forecast is not None and bdrr is not None and bdrr<=5 and period['orders']>=3 and forecast>balance['total'] and not econ_ok:
+   missing=sum(str(n['nm_id']) not in econrows for n in c['nm_settings']);recommendation='Пополнение не готово: '+str(missing)+' SKU без свежей подтверждённой модели прибыли.' if missing else 'Не пополнять: модель прибыли содержит отрицательный или устаревший результат.'
+  if not action and c['status']==9 and forecast is not None and bdrr is not None and bdrr<=5 and period['orders']>=3 and forecast>balance['total'] and econ_ok:
+   amount=max(math.ceil(s['config']['minTopUp']/100),math.ceil((forecast-balance['total'])/50)*50)
+   action=dict(id='topup:'+str(c['id']),kind='topup_campaign',campaign_id=c['id'],amount_cny=amount,balance_before=balance['total'],target_balance=balance['total']+amount,status_before=9);recommendation=f'Пополнить на {amount} ¥. Расчёт на 3 дня: {forecast:.2f} ¥.'
+  elif not action and bdrr is not None and bdrr>5 and not incomplete_composition:recommendation='Не пополнять: ДРР '+f'{bdrr:.2f}%. '+('Сначала изменения SKU из рекламного отчёта.' if any(r['action'] for r in focus) else 'Сохранить бюджет до следующей оценки.')
+  funds=[]
+  for rec in s['executions']:
+   payload=rec.get('payload',rec)
+   def funding_steps(z):
+    if isinstance(z,dict):
+     st=z.get('steps',{})
+     if isinstance(st,dict):
+      for label,v in st.items():
+       if v.get('status') not in ['verified','accepted']:continue
+       path=v.get('path','');body=v.get('body') or {}
+       if path=='/adv/v1/budget/deposit?id='+str(c['id']) and body.get('sum'):
+        at=v.get('submitted_at') or payload.get('completed_at') or payload.get('verified_at')
+        if at:funds.append((at,body['sum']))
+     for k in ['items','campaigns','groups']:
+      v=z.get(k,[])
+      for child in v.values() if isinstance(v,dict) else v if isinstance(v,list) else []:funding_steps(child)
+   funding_steps(payload)
+  recent_funds=[f for f in funds if f[0][:10]>=days[-1]]
+  funding_done='; '.join('+'+str(f[1])+' ¥ · '+datetime.fromisoformat(f[0].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M') for f in sorted(set(recent_funds))) or 'Нет новых подтверждённых пополнений'
+  out.append(dict(funding_done=funding_done,id=c['id'],name=c['settings']['name'],zone=zone,payment=bid,status=c['status'],period=period,last=last,drr=bdrr,focus=focus,balance=balance['total'],forecast=forecast,coverage=balance['total']/rate if rate and not incomplete_composition else None,budget_recommendation=recommendation,budget_action=action,new_composition=incomplete_composition,missing_stats=cp is None,created=created))
+ return dict(version=VERSION,day=str(end+timedelta(days=1)),days=days,source_observed_at=s['observed_at'],campaigns=out,wb_writes=0)
+
+def prepare(io,day):
+ s=collect(io,day);minimums={}
+ # Query minima only for existing products with a meaningful signal, on their actual campaign/placement.
+ rough=build(s)
+ for c in rough['campaigns']:
+  ids=[r['nm'] for r in c['focus'] if 'Выполнено.' not in r['decision']]
+  if not ids or c['status']!=9 or c['payment']!='cpc':continue
+  zone='search' if c['zone']=='поиск' else 'recommendation'
+  j=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=c['id'],nm_ids=ids,payment_type='cpc',placement_types=[zone]))
+  returned=set()
+  for x in j.get('bids',[]):
+   returned.add(x['nm_id'])
+   v=[b['value'] for b in x.get('bids',[]) if b.get('type')==zone and b.get('currency')=='CNY']
+   if len(v)!=1:raise ValueError('Campaign minimum is ambiguous')
+   minimums[str(c['id'])+':'+str(x['nm_id'])]=v[0]
+  if returned!=set(ids):raise ValueError('Incomplete campaign minima')
+ return build(s,minimums)
+

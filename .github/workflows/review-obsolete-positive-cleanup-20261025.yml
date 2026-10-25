@@ -1,0 +1,53 @@
+name: Remove owner-selected obsolete positive approval card
+on:
+  push:
+    paths: ['.github/workflows/review-obsolete-positive-cleanup-20261025.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: review-obsolete-positive-cleanup-20261025
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: review-approval-preparation
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' requests==2.32.5
+      - name: Delete only the authenticated owner-selected superseded card
+        env:
+          PYTHONPATH: review-approval-preparation
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,json,time,hmac,hashlib,psycopg
+          from review_telegram_approval import Repository
+          from review_telegram_runtime import TelegramTransport
+          root=os.environ['SUPABASE_SECRET_KEY'].encode()
+          pw=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
+          with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=pw,sslmode='require',autocommit=True,connect_timeout=15) as conn:
+              repo=Repository(conn,postgres=True)
+              request=repo.get('events','telegram-cleanup-request:20261025:obsolete-positive')
+              if not request or request.get('authorization')!='owner-chat-remove-obsolete-positive-card:20261025':raise RuntimeError('Exact owner request required')
+              card=repo.get('cards',request['card_token'])
+              if not card or card.get('status')!='superseded' or str(card.get('chat_id'))!=request['chat_id'] or card.get('message_id')!=request['message_id']:raise RuntimeError('Obsolete card binding mismatch')
+              replacement=repo.get('cards',card.get('superseded_by',''))
+              item=repo.get('items',card['ref'])
+              if not replacement or replacement.get('delivery_mode')!='automatic_policy' or replacement.get('ref')!=card['ref'] or not item or item.get('token')!=card['superseded_by'] or item.get('status') not in ('approved','sent'):raise RuntimeError('Automatic replacement unavailable')
+              key='telegram-cleanup:'+request['chat_id']+':'+str(request['message_id'])
+              old=repo.get('events',key) or {}
+              if old.get('status')!='confirmed':
+                  response=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']).call('deleteMessage',dict(chat_id=request['chat_id'],message_id=request['message_id']))
+                  if response is not True and not (isinstance(response,dict) and response.get('ok') is True):raise RuntimeError('Telegram deletion unconfirmed')
+                  receipt=dict(status='confirmed',chat_id=request['chat_id'],message_id=request['message_id'],checked_at=time.time(),authorization=request['authorization'],run_id=os.getenv('GITHUB_RUN_ID'))
+                  with repo.transaction():
+                      repo.put('events',key,receipt)
+                      card['telegram_card_removal']=receipt;repo.put('cards',request['card_token'],card)
+              print('Exact obsolete card removal confirmed; WB calls=0')
+          PY

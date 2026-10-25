@@ -2,7 +2,7 @@
 from datetime import timedelta
 import copy
 from china_advertising_v2 import MSK
-def shared(w,first,last,ids):
+def shared(w,first,last,ids,campaign_ids=()):
  day=str(w.now.astimezone(MSK).date());base=w.get('china_agent:advertising_source:'+day+':v2')
  if not base or base.get('status')!='complete' or str(first)<base['period_from']:return None
  current=w.get('china_agent:advertising_intraday:'+day+':v1')
@@ -28,6 +28,7 @@ def shared(w,first,last,ids):
  campaigns=list(byid.values())
  selected=[];totals={};campaign_daily={};products={}
  for cid,ds in raw.items():
+  if campaign_ids and cid not in campaign_ids:continue
   campaign_daily[str(cid)]={}
   for d,v in sorted(ds.items()):
    if not str(first)<=d<=str(last):continue
@@ -38,7 +39,7 @@ def shared(w,first,last,ids):
    if not ids:selected.append(row)
    for a in v['apps']:
     for n in a['nms']:
-     if ids and n['nmId'] in ids:
+     if (ids and n['nmId'] in ids) or campaign_ids:
       item=products.setdefault(str(n['nmId']),{}).setdefault(str(cid),{}).setdefault(d,dict(spend_cny=0,amount_cny=0,orders=0,clicks=0,views=0,basket_events=0))
       for outfield,infield in [('spend_cny','sum'),('amount_cny','sum_price'),('orders','orders'),('clicks','clicks'),('views','views'),('basket_events','atbs')]:
        value=n.get(infield)
@@ -46,4 +47,4 @@ def shared(w,first,last,ids):
        elif item[outfield] is not None:item[outfield]+=value
      if not ids or n['nmId'] in ids:selected.append(dict(campaign_id=cid,date=d,nm_id=n['nmId'],level='SKU_app',**{k:n.get(k) for k in ['sum','sum_price','orders','clicks','views']}))
  for t in totals.values():t['drr_pct']=100*t['spend_cny']/t['ad_order_amount_cny'] if t['ad_order_amount_cny'] else None
- return dict(source='shared WB advertising snapshots',cabinet='token_3',observed_at=observed,period_from=str(first),period_to=str(last),cached=True,wb_reads=0,wb_writes=0,rows=selected,products=products,campaign_daily=campaign_daily,totals_by_day=totals,campaigns=[dict(id=c['id'],status=c['status'],settings=c['settings'],sku_count=len(c['nm_settings']),membership_observed_at=membership_at.get(c['id'],base['observed_at'])) for c in campaigns],note='Показатели из сохранённых датированных срезов; сегодняшний день неполный. Итоги РК не складывать с SKU_app. Рекламная атрибуция не уникальные заказы WB. Проверенные последующие исключения смотреть в read_recent_actions.')
+ return dict(source='shared WB advertising snapshots',cabinet='token_3',observed_at=observed,period_from=str(first),period_to=str(last),cached=True,wb_reads=0,wb_writes=0,rows=selected,products=products,campaign_daily=campaign_daily,totals_by_day=totals,campaigns=[dict(id=c['id'],status=c['status'],settings=c['settings'],sku_count=len(c['nm_settings']),membership_observed_at=membership_at.get(c['id'],base['observed_at'])) for c in campaigns if not campaign_ids or c['id'] in campaign_ids],note='Показатели из сохранённых датированных срезов; сегодняшний день неполный. Итоги РК не складывать с SKU_app. Рекламная атрибуция не уникальные заказы WB. Проверенные последующие исключения смотреть в read_recent_actions.')

@@ -13,7 +13,8 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: Cancel only the superseded pending diagnostic
-        env: {GH_TOKEN: ${{ github.token }}}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           node --input-type=module <<'JS'
           const base='https://api.github.com/repos/'+process.env.GITHUB_REPOSITORY;

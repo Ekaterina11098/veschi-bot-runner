@@ -15,7 +15,7 @@ def main():
  results=io.get(key) or dict(status='running',phase=phase,model='gpt-6.1-sol',cases=[],telegram_sends=0,wb_requests=0)
  for case in suite['cases']:
   for pattern in case.get('required',[])+case.get('forbidden',[]):re.compile(pattern)
- frozen=datetime.fromisoformat(suite['fixed_now'])
+ frozen=datetime.fromisoformat(os.environ.get('EVAL_NOW',suite['fixed_now']))
  class FrozenDateTime(datetime):
   @classmethod
   def now(cls,tz=None):return frozen.astimezone(tz) if tz else frozen.replace(tzinfo=None)
@@ -35,7 +35,9 @@ def main():
   else:assert io.create(key,value)
  persist()
  memory={};read_cache={}
+ selected=set(filter(None,os.environ.get('EVAL_CASE_IDS','').split(',')))
  for index,case in enumerate(suite['cases']):
+  if selected and case['id'] not in selected:continue
   if any(r['id']==case['id'] for r in results['cases']):continue
   results['active_case']=case['id'];results['active_stage']='initializing';persist()
   w=runtime();w.now=frozen;original_get=w.get;original_db=w.db

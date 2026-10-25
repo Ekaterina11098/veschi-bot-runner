@@ -3,15 +3,25 @@ on:
   push:
     paths: ['.github/workflows/review-china-missing-20261025.yml']
   workflow_dispatch:
-permissions: {contents: read}
+permissions: {contents: read, actions: write}
 concurrency:
-  group: review-approved-publication
+  group: review-china-missing-readonly-20261025
   cancel-in-progress: false
 jobs:
   diagnose:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
+      - name: Cancel only the superseded pending diagnostic
+        env: {GH_TOKEN: ${{ github.token }}}
+        run: |
+          node --input-type=module <<'JS'
+          const base='https://api.github.com/repos/'+process.env.GITHUB_REPOSITORY;
+          const headers={Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json'};
+          const res=await fetch(base+'/actions/runs?per_page=40',{headers});if(!res.ok)throw Error('Cannot inspect own diagnostic runs');
+          const data=await res.json();
+          for(const r of data.workflow_runs)if(r.path==='.github/workflows/review-china-missing-20261025.yml'&&String(r.id)!==process.env.GITHUB_RUN_ID&&['queued','pending','waiting'].includes(r.status)){const x=await fetch(base+'/actions/runs/'+r.id+'/cancel',{method:'POST',headers});if(!x.ok&&x.status!==409)throw Error('Cannot cancel superseded diagnostic');}
+          JS
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
       - uses: actions/checkout@v4

@@ -1,0 +1,46 @@
+name: Preview repaired IP daily PNGs
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-daily-preview-20261025.yml']
+permissions: {contents: write}
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 2f798a9509b72030d6fb5ec68fb915c5d216c31b
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: python scripts/test_daily_png_coverage.py -v
+      - run: python scripts/ip_repaired_preview_20261025.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+      - name: Preserve encrypted receipt
+        if: always()
+        run: |
+          mkdir -p recovery-output/advertising
+          f="$RUNNER_TEMP/stock-deploy-proof/ip-repaired-preview-20261025.aes.json"
+          test -f "$f" || exit 0
+          cp "$f" "recovery-output/advertising/report-preview-20261025-${{ github.run_id }}.aes.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add recovery-output/advertising/
+          git diff --cached --quiet || git commit -m "Preserve encrypted IP report repair evidence"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+          done
+          exit 1

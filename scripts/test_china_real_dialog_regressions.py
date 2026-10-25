@@ -104,4 +104,17 @@ class ReplayRegressions(unittest.TestCase):
   self.assertEqual(r['campaigns'][0]['membership_observed_at'],'2026-10-25T19:45:00+00:00')
   self.assertEqual(r['products']['1']['41298169']['2026-10-25']['spend_cny'],8)
 
+ def test_registered_verified_campaign_state_updates_any_campaign(self):
+  w=self.fixture();old=w.get
+  after=dict(id=42,status=9,settings={},nm_settings=[dict(nm_id=n) for n in range(2,30)])
+  source='china_agent:codex_any_future_change:2026-10-25:v1:execution'
+  values={'china_agent:verified_campaign_state:v1':{'42':source},source:dict(status='verified',verified_at='2026-10-25T20:00:00+00:00',after=after)}
+  w.get=lambda k:copy.deepcopy(values[k]) if k in values else old(k)
+  r=shared(w,date(2026,10,25),date(2026,10,25),[1],campaign_ids=[42])
+  self.assertEqual(r['campaigns'][0]['sku_count'],28)
+  self.assertEqual(r['products']['1']['42']['2026-10-25']['spend_cny'],8)
+  values[source]['status']='uncertain'
+  r=shared(w,date(2026,10,25),date(2026,10,25),[1],campaign_ids=[42])
+  self.assertEqual(r['campaigns'][0]['sku_count'],1)
+
 if __name__=='__main__':unittest.main()

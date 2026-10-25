@@ -55,5 +55,39 @@ class DailyFormatTests(unittest.TestCase):
   self.assertEqual(calls,['drr:001','drr:002'])
  def test_multipart_foreign_kind_rejected(self):
   with self.assertRaises(ValueError):deliver(Fake(),'2026-10-26',[dict(kind='other:001',bytes=b'a')],lambda _:None)
+class DailyExecutionTests(unittest.TestCase):
+ def test_accepted_timeout_recovers_without_second_write(self):
+  from china_daily_ad_actions import execute
+  from china_loss_control import digest
+  state=campaign();calls=[];io=Fake();io.token='mock';io.validate_owner=lambda _:None
+  item=dict(id='12:1',kind='ad_set_bid',campaign_id=12,nm_id=1,placement='recommendations',old_minor=40,target_minor=28)
+  p=dict(plan_id='fixture',execution_kind='daily_ad_actions_v2',items=[item],expires_at='2099-01-01T00:00:00+00:00',plan_sha256=digest([item]))
+  class Response:
+   ok=True;content=b'yes'
+   def __init__(self,v):self.v=v
+   def json(self):return copy.deepcopy(self.v)
+  def request(method,url,headers=None,json=None,timeout=None):
+   if '/adverts?' in url:return Response(dict(adverts=[state]))
+   if '/bids/min' in url:return Response(dict(bids=[dict(nm_id=1,bids=[dict(type='recommendation',currency='CNY',value=28)])]))
+   if method=='PATCH':
+    calls.append(url);state['nm_settings'][0]['bids_kopecks']['recommendations']=28;raise TimeoutError()
+   raise AssertionError(url)
+  fake=types.SimpleNamespace(request=request)
+  with patch.dict(sys.modules,{'requests':fake}),patch('time.sleep',lambda _:None):
+   a=dict(plan_sha256=p['plan_sha256']);first=execute(io,a,p);self.assertEqual(first['items'][0]['status'],'uncertain');second=execute(io,a,p);self.assertEqual(second['items'][0]['status'],'verified');self.assertEqual(len(calls),1)
+ def test_budget_plan_rejects_changed_membership(self):
+  from china_daily_ad_actions import execute
+  from china_loss_control import digest
+  state=campaign();io=Fake();io.token='mock';io.validate_owner=lambda _:None
+  item=dict(id='topup:12',kind='topup_campaign',campaign_id=12,nm_ids=[1],amount_cny=100,balance_before=0,target_balance=100)
+  p=dict(plan_id='membership',execution_kind='daily_ad_actions_v2',items=[item],expires_at='2099-01-01T00:00:00+00:00',plan_sha256=digest([item]))
+  class Response:
+   ok=True;content=b'yes'
+   def json(self):return dict(adverts=[copy.deepcopy(state)])
+  def request(method,*args,**kwargs):
+   self.assertEqual(method,'GET');return Response()
+  with patch.dict(sys.modules,{'requests':types.SimpleNamespace(request=request)}),patch('time.sleep',lambda _:None):
+   e=execute(io,dict(plan_sha256=p['plan_sha256']),p);self.assertEqual(e['wb_writes'],0);self.assertEqual(e['items'][0]['status'],'blocked');self.assertIn('composition',e['items'][0]['reason'])
+
 if __name__=='__main__':unittest.main()
 

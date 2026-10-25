@@ -43,12 +43,15 @@ def read_rows(w,prefix,limit=80):
 def identifier(source,item):return hashlib.sha256((source+'#'+str(item)).encode()).hexdigest()[:24]
 def put_event(w,event):
  assert event.get('source_key') and event.get('record_type') in ['verified_action','reported_observation','operational_lesson']
- key=ROOT+event['event_id'];prior=w.get(key)
+ key=ROOT+event['event_id'];batch=getattr(w,'_experience_prefetched',None)
+ prior=batch.get(key) if batch is not None else w.get(key)
  if prior:
   # Re-import may enrich receipt freshness, but cannot overwrite results or remove history.
   return prior
  event=dict(event,created_at=stamp(),business_outcome=event.get('business_outcome','pending'),causality='not_established',observations=event.get('observations',[]))
- save(w,key,event);index=w.get(INDEX) or dict(event_ids=[])
+ save(w,key,event)
+ if batch is not None:batch[key]=event
+ index=w.get(INDEX) or dict(event_ids=[])
  if event['event_id'] not in index['event_ids']:index['event_ids'].append(event['event_id']);save(w,INDEX,index)
  return event
 def windows(started_at,days=3):
@@ -57,6 +60,9 @@ def windows(started_at,days=3):
 def sync(w):
  marker_key='china_agent:experience_sync:v1';last=w.get(marker_key)
  if last and (datetime.now(timezone.utc)-datetime.fromisoformat(last['at'])).total_seconds()<300:return 0
+ # One snapshot replaces a network read for each already imported event.
+ prefetched=read_rows(w,ROOT,limit=5000)
+ w._experience_prefetched={r['cache_key']:r['payload'] for r in prefetched}
  count=0
  prefixes=['china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:loss_ad_execution:','china_agent:price_execution:v1:','china_agent:codex_bid_raise:']
  for prefix in prefixes:

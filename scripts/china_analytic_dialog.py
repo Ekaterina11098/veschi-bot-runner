@@ -46,6 +46,11 @@ def tools():
  function('read_experience','Проверенная история действий и наблюдения до/после: заказы, клик-заказ, завершённый выкуп, ДРР, общая ожидаемая/закрытая прибыль и пробелы. Прогнозные положительные/отрицательные исходы отдельно от доказанного факта. Откат только рекомендация. Прошлый успех не гарантия.',dict(nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},query={'type':'string'})),
  function('get_growth_candidates','Проверить кандидатов для добавления в текущие РК/повышения ставок. Обязательно читает память до отбора, актуальные WB минимумы/шаг, экономику, МойСклад и отзывы. Только рекомендации; не создаёт подтверждение или WB-запись.',dict(kind={'type':'string','enum':['both','add','raise']},days={'type':'integer','minimum':2,'maximum':14})),
  function('search_chat_history','Найти предыдущие вопросы/ответы в этом чате, не просить повторять известное.',dict(query={'type':'string'})),
+ function('get_advertising_baskets','Прочитать рекламные корзины обсуждаемых артикулов из общего сохранённого среза. Не запрашивает MPStats products и не смешивает общие корзины с рекламными.',dict(articles={'type':'array','items':{'type':'string'},'maxItems':30},date_from={'type':'string'},date_to={'type':'string'})),
+ function('get_saved_product_context','Сохранённая цена, собственный завершённый выкуп и verified-история цены/ставки по артикулу. Даты финансового периода и среза отдельно; время исполнения и поздней проверки различать.',dict(articles={'type':'array','items':{'type':'string'},'maxItems':30})),
+ function('get_saved_card_quality','Рейтинг отзывов и известное число отзывов по сохранённой карточке. Не смешивать рейтинг отзывов5баллов с оценкой заполнения карточки10баллов. Число отзывов может быть неизвестным.',dict(articles={'type':'array','items':{'type':'string'},'maxItems':30})),
+ function('get_saved_campaign','Прочитать общие расходы/заказы/ДРР и все SKU/корзины одной РК из общего датированного кэша; без новых WB запросов.',dict(campaign_id={'type':'integer'},date_from={'type':'string'},date_to={'type':'string'})),
+ function('get_saved_profit_comparison','Прочитать уже рассчитанную ожидаемую общую прибыль за два дня, с собственным завершённым выкупом, всей рекламой, расходами, датой и ограничениями. Это прогноз, не закрытая чистая прибыль; повторный сбор не нужен.',dict(date_from={'type':'string'},date_to={'type':'string'})),
  function('read_recent_actions','Фактические квитанции изменений цен/РК и доставленных планов. План и исполнение различать.',{}),
  function('get_live_data','Самостоятельно получить недостающие read-only данные Китая с кэшем: orders=созданные WB заказы; stock=свободный МойСклад МСК; prices=продавец WB; products=MPStats и своя завершённая выборка; advertising=РК/день/SKU. Даты обязательны для чисел, null=последние 2 полных дня (products:30), сегодня отдельно.',dict(topic={'type':'string','enum':['orders','stock','prices','products','advertising']},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},date_from={'type':['string','null']},date_to={'type':['string','null']})),
  function('calculate','Проверить арифметику: только числа и + - * / %, без кода.',dict(expression={'type':'string'})),
@@ -85,7 +90,57 @@ class Analyst:
    rows=self.w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':5}) or []
    for row in rows:
     p=row['payload'];output.append(dict(key=row['cache_key'],updated_at=row.get('updated_at'),status=p.get('status'),completed_at=p.get('completed_at'),verified_at=p.get('verified_at'),plan=p.get('plan'),items=[{k:i.get(k) for k in ['id','article','status','selection','campaign_id','reason']} for i in p.get('items',[])],campaigns=p.get('campaigns')))
-  return dict(today_launches=self.w.get('china_agent:advertising_launch_summary:v1'),expanded_tracking={k:v for k,v in (self.w.get('china_agent:expanded_tests:2026-10-25:tracking:v1') or {}).items() if k in ['status','baseline_at','campaign_ids','last_checked_at','last_analysis']},search_tracking={k:v for k,v in (self.w.get('china_agent:search_test:2026-10-25:tracking:v1') or {}).items() if k in ['status','campaign_id','baseline_at','owner_changes']},verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Только status verified/applied/launched подтверждает исполнение. Отсутствие квитанции не равно выполнено.')
+  return dict(monitoring=self.w.get('china_agent:observation_policy:v1'),today_launches=self.w.get('china_agent:advertising_launch_summary:v1'),expanded_tracking={k:v for k,v in (self.w.get('china_agent:expanded_tests:2026-10-25:tracking:v1') or {}).items() if k in ['status','baseline_at','campaign_ids','last_checked_at','last_analysis']},search_tracking={k:v for k,v in (self.w.get('china_agent:search_test:2026-10-25:tracking:v1') or {}).items() if k in ['status','campaign_id','baseline_at','owner_changes']},verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Только status verified/applied/launched подтверждает исполнение. Отсутствие квитанции не равно выполнено.')
+ def article_ids(self,articles):
+  labels={a.casefold():int(n) for n,a in self.w.catalog()}
+  result=[]
+  for article in articles:
+   key=article.casefold()
+   if key not in labels:raise ValueError('Нужен точный артикул из сохранённого каталога')
+   result.append(labels[key])
+  if not result:raise ValueError('Нужен хотя бы один обсуждаемый артикул')
+  return result
+ def baskets(self,articles,date_from,date_to):
+  ids=self.article_ids(articles);result=self.live('advertising',ids,date_from,date_to)
+  return dict(result,instruction='Использовать products.basket_events с суммой по приложениям. Сохранить РК и дату; это события, не уникальные покупатели. Не обращаться за общими корзинами products вместо рекламных.')
+ def product_context(self,articles):
+  self.cached_product_context_supplied=True
+  from china_experience import search
+  ids=self.article_ids(articles);day=str(self.w.now.astimezone(MSK).date());source=self.w.get('china_agent:new_ad_source:v1:'+day) or {};prices=self.w.get('china_agent:prices:v1') or {}
+  products={int(r['nm_id']):r for r in source.get('products',[])};pr={int(r['nmID']):r for r in prices.get('rows',[])};events=search(self.w,ids,limit=20)['experiences'];rows=[]
+  for nm in ids:
+   r=products.get(nm,{});p=pr.get(nm,{})
+   changes=[]
+   for e in events:
+    if nm not in e.get('action',{}).get('nm_ids',[]) or e.get('record_type')!='verified_action':continue
+    latest=e.get('latest_change_observation') or (e.get('observations') or [{}])[-1]
+    comparisons=[]
+    for x in latest.get('rows',[]):
+     if x.get('nm_id')!=nm:continue
+     comparisons.append(dict(before_period=[x.get('before',{}).get('period_from'),x.get('before',{}).get('period_to')],after_period=[x.get('after',{}).get('period_from'),x.get('after',{}).get('period_to')],before_orders=x.get('before',{}).get('wb_orders'),after_orders=x.get('after',{}).get('wb_orders'),before_expected=x.get('before',{}).get('expected'),after_expected=x.get('after',{}).get('expected'),result=x.get('result')))
+    changes.append(dict(event_id=e['event_id'],action=e.get('action'),executed_at=e.get('started_at'),verification_at=e.get('verified_at'),comparison=e.get('comparison'),latest_comparisons=comparisons))
+   rows.append(dict(nm_id=nm,article=r.get('sa_name') or p.get('vendorCode'),seller_price_cny=(p.get('sizes') or [{}])[0].get('discountedPrice'),price_observed_at=prices.get('observed_at'),own_paid=r.get('is_payed'),own_completed=r.get('finished_orders'),own_statistics_period=[source.get('period_from'),source.get('period_to')],rating=r.get('commentsvaluation'),changes=changes))
+  return dict(rows=rows,cached=True,wb_reads=0,note='Собственная статистика относится к подписанному периоду, не к любому запрошенному диапазону. Время исполнения executed_at, поздняя проверка verification_at отдельно. При неполных расходах полная прибыль не подтверждена; прогноз не факт.')
+ def card_quality(self,articles):
+  ids=self.article_ids(articles);day=str(self.w.now.astimezone(MSK).date());source=self.w.get('china_agent:new_ad_source:v1:'+day) or {}
+  rows=[]
+  for r in source.get('products',[]):
+   if int(r['nm_id']) not in ids:continue
+   review=self.w.get('china_agent:growth_review:v1:'+str(r['nm_id'])) or {}
+   rows.append(dict(nm_id=r['nm_id'],article=r['sa_name'],rating=r.get('commentsvaluation') if r.get('commentsvaluation') is not None else r.get('rating'),review_count=review.get('count') if review.get('complete') else None,rating_observed_at=source.get('observed_at'),review_count_complete=review.get('complete',False)))
+  return dict(available=len(rows)==len(ids),rows=rows,cached=True,wb_reads=0,note='Сохранённый рейтинг MPStats, не новая проверка публичной карточки. Неизвестное число отзывов не0. Низкий рейтинг сам по себе не доказывает причину отсутствия заказов.')
+ def campaign(self,campaign_id,date_from,date_to):
+  from china_shared_advertising import shared as shared_ads
+  first,last=period(self.w,date_from,date_to,'advertising');value=shared_ads(self.w,first,last,[],[campaign_id])
+  if value is None:return dict(available=False,missing='Нет общего среза за запрошенные даты; нужен адресный сбор этой РК')
+  labels=dict(self.w.catalog());value['articles']={nm:labels.get(str(nm)) for nm in value.get('products',{})};value['monitoring']=self.w.get('china_agent:observation_policy:v1')
+  return value
+ def profit(self,date_from,date_to):
+  first=datetime.fromisoformat(date_from).date();last=datetime.fromisoformat(date_to).date()
+  if first>last or last>self.w.now.astimezone(MSK).date():raise ValueError('Нужны прошедшие или текущие даты в правильном порядке')
+  key='china_agent:profit_comparison:'+str(first)+':'+str(last)+':v1';saved=self.w.get(key)
+  if not saved:return dict(available=False,source_key=key,missing='Сохранённого прогноза за запрошенные даты нет; отсутствие суммы не0')
+  return dict(saved,cached=True,source_key=key,wb_reads=0,instruction='Сравнивать одинаковый метод. Сегодня неполный день; сравнение с полными вчерашними сутками не доказывает снижение прибыли. Допущения и неподтверждённые расходы обязательны. Пополнения бюджетов не расходы.')
  def chat(self,query):
   rows=self.w.db('GET','business_agent_jobs',params={'agent_id':'eq.china','chat_id':'eq.'+str(self.job['chat_id']),'status':'eq.done','id':'lt.'+str(self.job['id']),'select':'id,request_text,answer,created_at','order':'id.desc','limit':80}) or []
   words=query.casefold().split()
@@ -98,9 +153,15 @@ class Analyst:
   m=self.memory();m['revision']=m.get('revision',0)+1;m.setdefault('preferences',{})[key]=dict(quote=quote,source_job=self.job['id'],sender_id=self.job['sender_id'],at=self.w.now.isoformat());self.w.save(MEMORY,m)
   return dict(saved=True,key=key,quote=quote)
  def live(self,topic,nm_ids,start,end):
+  if topic=='orders' and getattr(self,'cached_profit_context_supplied',False):return dict(available=False,cached_context_available=True,wb_reads=0,note='Датированный прогноз и число заказов уже переданы. Текущий срез не обновлялся; для ответа используй его время и ограничения. Нельзя выдавать частичный день за полный.')
   valid={int(nm) for nm,_ in self.w.catalog()}
   if len(nm_ids)>30 or any(type(n) is not int or n not in valid for n in nm_ids):raise ValueError('Сначала разреши артикул через find_products в точный nmID Китая')
   first,last=period(self.w,start,end,topic)
+  if topic=='products':
+   from china_saved_products import saved_products
+   saved=saved_products(self.w,first,last,nm_ids)
+   if saved is not None:return saved
+   if getattr(self,'cached_product_context_supplied',False):return dict(available=False,missing='Точной сохранённой выгрузки за этот диапазон нет. Используй уже переданные датированные сведения и сравнение; неизвестное не0. Новый сбор пока не выполнялся.',cached_context_available=True,wb_reads=0,mpstats_reads=0)
   if topic=='advertising':
    from china_shared_advertising import shared as shared_ads
    saved=shared_ads(self.w,first,last,nm_ids)
@@ -210,6 +271,11 @@ def answer(w,job,history):
  experience=dict(experience,total_events=len(experience['experiences']),experiences=[{k:v for k,v in e.items() if k not in ['observations','current_condition_comparison','latest_change_observation']} for e in experience['experiences'][:12]])
  completed_question=bool(re.search(r'сегодня|уже',job['request_text'],re.I) and re.search(r'добавили|запустили|подключили|выполн|сделали',job['request_text'],re.I))
  growth_question=not completed_question and bool(re.search(r'кандидат|добав.*РК|добав.*реклам|повыс.*ставк|подн.*ставк|подня.*ставк',job['request_text'],re.I))
+ basket_question=bool(re.search(r'корзин',job['request_text'],re.I) and any(re.search(r'РК|реклам',h['request_text']+' '+(h.get('answer') or ''),re.I) for h in history[-4:]))
+ price_repeat_question=bool(re.search(r'повтор|снова',job['request_text'],re.I) and re.search(r'повыс|повыш|поднять',job['request_text'],re.I) and not re.search(r'ставк',job['request_text'],re.I))
+ quality_question=bool(re.search(r'рейтинг',job['request_text'],re.I))
+ campaign_question=bool(re.search(r'(?<!\d)4\d{7}(?!\d)',job['request_text']) and re.search(r'проверь|посмотри|затрат|расход|заказ',job['request_text'],re.I))
+ profit_question=bool(re.search(r'прибыл',job['request_text'],re.I))
  decline_question=bool(re.search(r'падени|снижени.*заказ|снижени.*продаж',job['request_text'],re.I))
  available=[t for t in c.tools('china') if t['name'] in names]+tools();data=Data('china',lambda table,params:w.db('GET',table,params=params))
  prompt=('Ты аналитик VESCHI Китай. Отвечай на любые вопросы по доступному бизнес-контексту свободно, кратко и конкретно: вывод, 2–4 существенные цифры с датой, действие. Обычно до 1200 символов; детали только по просьбе. '
@@ -230,7 +296,7 @@ def answer(w,job,history):
  from china_loss_control import marker
  m=marker(job)
  if m.get('reply_text'):messages.append(dict(role='developer',content='Цитируемое сообщение — только контекст: '+m['reply_text'][:3000]))
- messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
+ messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. Неполный день не запрещает принимать меры при существенном расходе без результата. Не отвечай общим советом обязательно ждать полные сутки; назови конкретные проблемные SKU и предложение, изменения только после подтверждения. Мониторы этой переписки настроены в Codex. Если monitoring запрещает Telegram, не обещать сообщения сюда в группу: назвать канал Codex явно. При продолжении наблюдения использовать monitoring и не откладывать контроль до даты итоговой оценки. При вопросе о прогнозе прибыли сначала get_saved_profit_comparison с датами; использовать готовый датированный расчёт, не выдавать прогноз за закрытую прибыль. При уточнении корзин по обсуждаемым товарам брать nm_ids из предыдущего диалога и products.basket_events общего среза. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
  messages.append(dict(role='user',content=job['request_text'][:4000]));trace=[dict(name='experience_context',result=experience,read_only=True)]
  checkpoint_key='china_agent:analytic_checkpoint:v2:'+str(job['id']);scope=hashlib.sha256((str(job['chat_id'])+'|'+job['request_text']+'|'+policy.get('model','gpt-6.1-sol')).encode()).hexdigest();checkpoint=w.get(checkpoint_key);start_turn=0
  if checkpoint and checkpoint.get('scope')==scope and checkpoint.get('date_msk')==str(w.now.astimezone(MSK).date()):
@@ -241,7 +307,7 @@ def answer(w,job,history):
   from conversion_watches import question_request
   request=question_request
  for turn in range(start_turn,10):
-  choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else {'type':'function','name':'read_recent_actions'} if completed_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
+  choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else {'type':'function','name':'read_recent_actions'} if completed_question else {'type':'function','name':'get_advertising_baskets'} if basket_question else {'type':'function','name':'get_saved_product_context'} if price_repeat_question else {'type':'function','name':'get_saved_card_quality'} if quality_question else {'type':'function','name':'get_saved_campaign'} if campaign_question else {'type':'function','name':'get_saved_profit_comparison'} if profit_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
   w.save(checkpoint_key,dict(status='ready',scope=scope,date_msk=str(w.now.astimezone(MSK).date()),messages=messages,trace=trace,turn=turn,fresh_reads=analyst.fresh_reads))
   body=dict(model=policy.get('model','gpt-6.1-sol'),input=messages,tools=available,parallel_tool_calls=False,tool_choice=choice,reasoning=dict(effort='medium'),text=dict(verbosity='low'),max_output_tokens=4000,store=False,include=['reasoning.encrypted_content'])
   response=request(body);output=response.get('output') or [];calls=[x for x in output if x.get('type')=='function_call']
@@ -254,6 +320,8 @@ def answer(w,job,history):
     launches=analyst.w.get('china_agent:advertising_launch_summary:v1') or {}
     if launches.get('day')==str(w.now.astimezone(MSK).date()):
      text+=' Сегодня уже выполнено: '+launches.get('short_summary','')+' Результаты нужно оценивать по свежему срезу; подробный текущий отчёт можно сформировать отдельно.'
+   from china_saved_products import ground_answer
+   text=ground_answer(text,trace)
    final_trace=[dict(name='free_analytic_dialog',model=body['model'],read_only=True,memory_revision=analyst.memory().get('revision'))]+trace
    w.save(checkpoint_key,dict(status='answered',scope=scope,date_msk=str(w.now.astimezone(MSK).date()),answer=text,trace=final_trace));return text,final_trace
   messages.extend(output)
@@ -268,7 +336,9 @@ def answer(w,job,history):
     elif name=='get_wb_evidence':
      if any(n not in {int(i) for i,_ in w.catalog()} for n in args['nm_ids']):raise ValueError('Неизвестный nmID Китая')
      from china_wb_evidence import context
-     with reading():result=context(w,args['nm_ids'],args['date_from'],args['date_to'])
+     if getattr(analyst,'cached_product_context_supplied',False):result=dict(available=False,cached_context_available=True,wb_reads=0,note='Датированный товарный контекст уже передан. Дополнительная первичная воронка за этот диапазон не подтверждена. Не выполнять повторный сбор для этого ответа; неизвестные расходы не0.')
+     else:
+      with reading():result=context(w,args['nm_ids'],args['date_from'],args['date_to'])
     elif name=='list_reports':
      from china_agent_reports import catalog
      result=catalog()
@@ -286,6 +356,13 @@ def answer(w,job,history):
      result={k:v for k,v in result.items() if k not in ['experience']};result['rows']=[{k:v for k,v in r.items() if k not in ['before_campaign','experience']} for r in result['rows']]
     elif name=='search_chat_history':result=analyst.chat(**args)
     elif name=='read_recent_actions':result=analyst.actions()
+    elif name=='get_saved_profit_comparison':
+     result=analyst.profit(**args)
+     if result.get('available') is not False:analyst.cached_profit_context_supplied=True
+    elif name=='get_advertising_baskets':result=analyst.baskets(**args)
+    elif name=='get_saved_card_quality':result=analyst.card_quality(**args)
+    elif name=='get_saved_product_context':result=analyst.product_context(**args)
+    elif name=='get_saved_campaign':result=analyst.campaign(**args)
     elif name=='get_live_data':result=analyst.live(args['topic'],args['nm_ids'],args['date_from'],args['date_to'])
     elif name=='calculate':result=calculate(**args)
     elif name=='remember_preference':result=analyst.remember(**args)

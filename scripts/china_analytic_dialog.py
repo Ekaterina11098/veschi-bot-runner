@@ -47,6 +47,7 @@ def tools():
  function('get_growth_candidates','Проверить кандидатов для добавления в текущие РК/повышения ставок. Обязательно читает память до отбора, актуальные WB минимумы/шаг, экономику, МойСклад и отзывы. Только рекомендации; не создаёт подтверждение или WB-запись.',dict(kind={'type':'string','enum':['both','add','raise']},days={'type':'integer','minimum':2,'maximum':14})),
  function('search_chat_history','Найти предыдущие вопросы/ответы в этом чате, не просить повторять известное.',dict(query={'type':'string'})),
  function('get_advertising_baskets','Прочитать рекламные корзины обсуждаемых артикулов из общего сохранённого среза. Не запрашивает MPStats products и не смешивает общие корзины с рекламными.',dict(articles={'type':'array','items':{'type':'string'},'maxItems':30},date_from={'type':'string'},date_to={'type':'string'})),
+ function('get_saved_product_context','Сохранённая цена, собственный завершённый выкуп и verified-история цены/ставки по артикулу. Даты финансового периода и среза отдельно; время исполнения и поздней проверки различать.',dict(articles={'type':'array','items':{'type':'string'},'maxItems':30})),
  function('get_saved_card_quality','Рейтинг отзывов и известное число отзывов по сохранённой карточке. Не смешивать рейтинг отзывов5баллов с оценкой заполнения карточки10баллов. Число отзывов может быть неизвестным.',dict(articles={'type':'array','items':{'type':'string'},'maxItems':30})),
  function('get_saved_campaign','Прочитать общие расходы/заказы/ДРР и все SKU/корзины одной РК из общего датированного кэша; без новых WB запросов.',dict(campaign_id={'type':'integer'},date_from={'type':'string'},date_to={'type':'string'})),
  function('get_saved_profit_comparison','Прочитать уже рассчитанную ожидаемую общую прибыль за два дня, с собственным завершённым выкупом, всей рекламой, расходами, датой и ограничениями. Это прогноз, не закрытая чистая прибыль; повторный сбор не нужен.',dict(date_from={'type':'string'},date_to={'type':'string'})),
@@ -102,6 +103,23 @@ class Analyst:
  def baskets(self,articles,date_from,date_to):
   ids=self.article_ids(articles);result=self.live('advertising',ids,date_from,date_to)
   return dict(result,instruction='Использовать products.basket_events с суммой по приложениям. Сохранить РК и дату; это события, не уникальные покупатели. Не обращаться за общими корзинами products вместо рекламных.')
+ def product_context(self,articles):
+  from china_experience import search
+  ids=self.article_ids(articles);day=str(self.w.now.astimezone(MSK).date());source=self.w.get('china_agent:new_ad_source:v1:'+day) or {};prices=self.w.get('china_agent:prices:v1') or {}
+  products={int(r['nm_id']):r for r in source.get('products',[])};pr={int(r['nmID']):r for r in prices.get('rows',[])};events=search(self.w,ids,limit=20)['experiences'];rows=[]
+  for nm in ids:
+   r=products.get(nm,{});p=pr.get(nm,{})
+   changes=[]
+   for e in events:
+    if nm not in e.get('action',{}).get('nm_ids',[]) or e.get('record_type')!='verified_action':continue
+    latest=e.get('latest_change_observation') or (e.get('observations') or [{}])[-1]
+    comparisons=[]
+    for x in latest.get('rows',[]):
+     if x.get('nm_id')!=nm:continue
+     comparisons.append(dict(before_period=[x.get('before',{}).get('period_from'),x.get('before',{}).get('period_to')],after_period=[x.get('after',{}).get('period_from'),x.get('after',{}).get('period_to')],before_orders=x.get('before',{}).get('wb_orders'),after_orders=x.get('after',{}).get('wb_orders'),before_expected=x.get('before',{}).get('expected'),after_expected=x.get('after',{}).get('expected'),result=x.get('result')))
+    changes.append(dict(event_id=e['event_id'],action=e.get('action'),executed_at=e.get('started_at'),verification_at=e.get('verified_at'),comparison=e.get('comparison'),latest_comparisons=comparisons))
+   rows.append(dict(nm_id=nm,article=r.get('sa_name') or p.get('vendorCode'),seller_price_cny=(p.get('sizes') or [{}])[0].get('discountedPrice'),price_observed_at=prices.get('observed_at'),own_paid=r.get('is_payed'),own_completed=r.get('finished_orders'),own_statistics_period=[source.get('period_from'),source.get('period_to')],rating=r.get('commentsvaluation'),changes=changes))
+  return dict(rows=rows,cached=True,wb_reads=0,note='Собственная статистика относится к подписанному периоду, не к любому запрошенному диапазону. Время исполнения executed_at, поздняя проверка verification_at отдельно. При неполных расходах полная прибыль не подтверждена; прогноз не факт.')
  def card_quality(self,articles):
   ids=self.article_ids(articles);day=str(self.w.now.astimezone(MSK).date());source=self.w.get('china_agent:new_ad_source:v1:'+day) or {}
   rows=[]
@@ -247,8 +265,9 @@ def answer(w,job,history):
  completed_question=bool(re.search(r'сегодня|уже',job['request_text'],re.I) and re.search(r'добавили|запустили|подключили|выполн|сделали',job['request_text'],re.I))
  growth_question=not completed_question and bool(re.search(r'кандидат|добав.*РК|добав.*реклам|повыс.*ставк|подн.*ставк|подня.*ставк',job['request_text'],re.I))
  basket_question=bool(re.search(r'корзин',job['request_text'],re.I) and any(re.search(r'РК|реклам',h['request_text']+' '+(h.get('answer') or ''),re.I) for h in history[-4:]))
+ price_repeat_question=bool(re.search(r'повтор|снова',job['request_text'],re.I) and re.search(r'повыс|повыш|поднять',job['request_text'],re.I) and not re.search(r'ставк',job['request_text'],re.I))
  quality_question=bool(re.search(r'рейтинг',job['request_text'],re.I))
- campaign_question=bool(re.search(r'(?<!\\d)4\\d{7}(?!\\d)',job['request_text']) and re.search(r'проверь|посмотри|затрат|расход|заказ',job['request_text'],re.I))
+ campaign_question=bool(re.search(r'(?<!\d)4\d{7}(?!\d)',job['request_text']) and re.search(r'проверь|посмотри|затрат|расход|заказ',job['request_text'],re.I))
  profit_question=bool(re.search(r'прибыл',job['request_text'],re.I))
  decline_question=bool(re.search(r'падени|снижени.*заказ|снижени.*продаж',job['request_text'],re.I))
  available=[t for t in c.tools('china') if t['name'] in names]+tools();data=Data('china',lambda table,params:w.db('GET',table,params=params))
@@ -281,7 +300,7 @@ def answer(w,job,history):
   from conversion_watches import question_request
   request=question_request
  for turn in range(start_turn,10):
-  choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else {'type':'function','name':'read_recent_actions'} if completed_question else {'type':'function','name':'get_advertising_baskets'} if basket_question else {'type':'function','name':'get_saved_card_quality'} if quality_question else {'type':'function','name':'get_saved_campaign'} if campaign_question else {'type':'function','name':'get_saved_profit_comparison'} if profit_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
+  choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else {'type':'function','name':'read_recent_actions'} if completed_question else {'type':'function','name':'get_advertising_baskets'} if basket_question else {'type':'function','name':'get_saved_product_context'} if price_repeat_question else {'type':'function','name':'get_saved_card_quality'} if quality_question else {'type':'function','name':'get_saved_campaign'} if campaign_question else {'type':'function','name':'get_saved_profit_comparison'} if profit_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
   w.save(checkpoint_key,dict(status='ready',scope=scope,date_msk=str(w.now.astimezone(MSK).date()),messages=messages,trace=trace,turn=turn,fresh_reads=analyst.fresh_reads))
   body=dict(model=policy.get('model','gpt-6.1-sol'),input=messages,tools=available,parallel_tool_calls=False,tool_choice=choice,reasoning=dict(effort='medium'),text=dict(verbosity='low'),max_output_tokens=4000,store=False,include=['reasoning.encrypted_content'])
   response=request(body);output=response.get('output') or [];calls=[x for x in output if x.get('type')=='function_call']
@@ -329,6 +348,7 @@ def answer(w,job,history):
     elif name=='get_saved_profit_comparison':result=analyst.profit(**args)
     elif name=='get_advertising_baskets':result=analyst.baskets(**args)
     elif name=='get_saved_card_quality':result=analyst.card_quality(**args)
+    elif name=='get_saved_product_context':result=analyst.product_context(**args)
     elif name=='get_saved_campaign':result=analyst.campaign(**args)
     elif name=='get_live_data':result=analyst.live(args['topic'],args['nm_ids'],args['date_from'],args['date_to'])
     elif name=='calculate':result=calculate(**args)

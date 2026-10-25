@@ -49,7 +49,9 @@ def put_event(w,event):
   # Re-import may enrich receipt freshness, but cannot overwrite results or remove history.
   return prior
  event=dict(event,created_at=stamp(),business_outcome=event.get('business_outcome','pending'),causality='not_established',observations=event.get('observations',[]))
- save(w,key,event);index=w.get(INDEX) or dict(event_ids=[])
+ save(w,key,event)
+ if batch is not None:batch[key]=event
+ index=w.get(INDEX) or dict(event_ids=[])
  if event['event_id'] not in index['event_ids']:index['event_ids'].append(event['event_id']);save(w,INDEX,index)
  return event
 def windows(started_at,days=3):

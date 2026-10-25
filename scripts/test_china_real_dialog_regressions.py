@@ -67,4 +67,18 @@ class ReplayRegressions(unittest.TestCase):
   self.assertEqual(c['executed_at'],event['started_at']);self.assertEqual(c['verification_at'],event['verified_at'])
   self.assertEqual(r['rows'][0]['own_statistics_period'],['2026-09-25','2026-10-24'])
 
+
+ def test_exact_period_product_snapshot_is_reused(self):
+  from china_saved_products import saved_products
+  product=dict(nm_id=1,sa_name='one-bag',finished_orders=2,is_payed=1)
+  obs=dict(tool='lk_wb_products',status='received',scope_verified=True,arguments=dict(date_from='2026-10-24',date_to='2026-10-24'),data=dict(data=dict(data=[product],need_update=0,total=1)))
+  w=SimpleNamespace(db=lambda *a,**kw:[dict(id=1,collected_at='2026-10-25T10:00:00+00:00',payload=[obs])])
+  r=saved_products(w,date(2026,10,24),date(2026,10,24),[1])
+  self.assertEqual(r['rows'][0]['buyout_pct'],50);self.assertEqual(r['wb_reads'],0);self.assertEqual(r['mpstats_reads'],0)
+ def test_grounded_answer_keeps_sku_and_fx(self):
+  from china_saved_products import ground_answer
+  trace=[dict(name='get_saved_product_context',result=dict(rows=[dict(article='one-bag')])),dict(name='get_saved_profit_comparison',result=dict(assumptions=dict(fx_rub_per_cny=12,tax_pct=5,handling_rub_per_order=10)))]
+  result=ground_answer('Предварительная оценка',trace)
+  self.assertIn('one-bag',result);self.assertIn('12 ₽/¥',result);self.assertIn('допущения',result)
+
 if __name__=='__main__':unittest.main()

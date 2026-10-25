@@ -43,6 +43,52 @@ def expected_campaign(before,items):
   else:raise ValueError('Forbidden action')
  assert out['nm_settings']
  return out
+
+def observed_interval(previous,snap,current):
+ start=datetime.fromisoformat(previous['last_observed_at']);end=datetime.fromisoformat(snap['observed_at'])
+ hours=(end-start).total_seconds()/3600
+ a=start.astimezone(ZoneInfo('Europe/Moscow'));b=end.astimezone(ZoneInfo('Europe/Moscow'))
+ phase='mixed_or_other'
+ if a.date()==b.date() and 0<=a.hour<6 and b.hour<6:phase='night_00_06'
+ if a.date()==b.date() and 12<=a.hour<18 and b.hour<18:phase='day_12_18'
+ rows={}
+ for cid,total in current.items():
+  old=previous.get('previous_campaign_counters',{}).get(cid)
+  if old is None:continue
+  change=delta(total,old);before=previous.get('campaigns',{}).get(cid);after=snap['campaigns'].get(cid)
+  revised=any(change[k]<0 for k in ['spend','orders','amount','clicks'])
+  changed=bool(before and after and projection(before)!=projection(after)) or any(str(x.get('cid'))==cid for x in previous.get('last_actions',[]))
+  rows[cid]=dict(delta=change,drr_pct=drr(change),attribution_revision=revised,settings_changed=changed,comparable=0<hours<=1.5 and phase!='mixed_or_other' and not revised and not changed)
+ return dict(slot=snap['slot'],observed_from=start.isoformat(),observed_to=end.isoformat(),msk_date=a.date().isoformat(),duration_hours=hours,phase=phase,campaigns=rows,orders_time_basis='WB attribution updates observed during interval, not ad-click or order cohort time',preliminary=True,automatic_actions_allowed=False)
+def summarize_time(intervals):
+ out={}
+ for interval in intervals:
+  for cid,row in interval['campaigns'].items():
+   entry=out.setdefault(cid,dict(night=zero()|dict(hours=0,dates=[]),day=zero()|dict(hours=0,dates=[]),excluded_intervals=0))
+   if not row['comparable']:entry['excluded_intervals']+=1;continue
+   key='night' if interval['phase']=='night_00_06' else 'day'
+   group=entry[key]
+   for k in FIELDS:group[k]+=row['delta'][k]
+   group['hours']+=interval['duration_hours']
+   if interval['msk_date'] not in group['dates']:group['dates'].append(interval['msk_date'])
+ for cid,entry in out.items():
+  for key in ['night','day']:
+   g=entry[key];g['drr_pct']=drr(g);g['spend_per_observed_hour']=g['spend']/g['hours'] if g['hours']>0 else None
+  n=entry['night'];d=entry['day'];ready=len(n['dates'])>=2 and len(d['dates'])>=2 and min(n['hours'],d['hours'])>=8
+  entry['enough_repeated_observations']=ready
+  entry['hypothesis_for_owner_only']=bool(ready and d['orders']>=5 and ((n['orders']==0 and n['clicks']>=60 and n['spend']>0) or (n['drr_pct'] is not None and d['drr_pct'] is not None and n['drr_pct']>5 and n['drr_pct']>d['drr_pct']*1.5)))
+  entry['not_a_closed_cohort_or_causal_estimate']=True
+ return out
+def record_time_observation(c,state,snap,current):
+ interval=observed_interval(state,snap,current);key=ROOT+'time_interval:'+snap['slot'];c.create(key,interval)
+ rows=c.req('GET',dict(cache_key='like.'+ROOT+'time_interval:*',select='payload',order='updated_at.desc',limit=72))
+ summary=summarize_time([r['payload'] for r in rows])
+ c.put(ROOT+'time_of_day:v1',dict(observed_at=snap['observed_at'],windows_msk=dict(night='00:00–06:00',day_reference='12:00–18:00'),normalization='per actual observed hour; never compare unequal raw totals',campaigns=summary,automatic_pause_allowed=False,attribution_warning='Order deltas show update time, not proved click-time conversion; late and negative revisions preserved'))
+ for cid,r in summary.items():
+  if r['hypothesis_for_owner_only']:
+   n=r['night'];d=r['day'];nr='неопределена' if n['drr_pct'] is None else str(round(n['drr_pct'],2))+'%'
+   c.notice('time-pattern:'+cid+':'+snap['slot'][:10],'РК '+cid+': повторяется гипотеза слабой ночной отдачи. Ночь: '+str(round(n['spend'],2))+' CNY / '+str(n['orders'])+' обновлений рекламных заказов, ДРР '+nr+'; день: '+str(round(d['spend'],2))+' CNY / '+str(d['orders'])+' заказов, ДРР '+str(round(d['drr_pct'],2))+'%. Только предложение обсудить расписание: РК НЕ остановлена, атрибуция предварительная.',r)
+
 class Cache:
  def __init__(self):
   self.url=os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache'
@@ -143,6 +189,10 @@ def execute(c,w,slot,before,items,snap):
   raise RuntimeError('Prior write unresolved: no retry')
  p=c.get(POLICY)
  if not authorized(p,now()) or p.get('executor')!='github-cloud-v1':raise RuntimeError('Write authorization expired or changed')
+ allowed=p.get('allowed',[])
+ for x in items:
+  permission=dict(lower='decrease_bid_above_fresh_WB_minimum',exclude='exclude_underperforming_sku',pause='pause_underperforming_campaign_if_item_level_action_insufficient')[x['kind']]
+  if permission not in allowed or (x['kind']=='pause' and p.get('pause_authorized') is not True):raise RuntimeError('Action forbidden by current owner policy')
  if projection(w.campaigns([int(cid)])[cid])!=projection(before):raise RuntimeError('Campaign changed before write')
  kinds={x['kind'] for x in items}
  if kinds=={'pause'}:path='/adv/v0/pause?id='+cid;method='GET';body=None
@@ -214,7 +264,7 @@ def run(preflight=False,cutover=False):
    c.notice(inflight['key'],'Отложенная проверка WB подтвердила изменение РК '+str(got['id'])+'.',e)
   if not c.create(ROOT+'slot:'+slot,dict(status='running',run_id=owner,started_at=stamp())):return
   snap=snapshot(c,w,slot);c.put(ROOT+'snapshot:'+slot,snap)
-  cc,ss=counts(snap['stats']);price_cache=c.get('china_agent:prices:v1') or {};prices={str(x['nmID']):x for x in price_cache.get('rows',[])}
+  cc,ss=counts(snap['stats']);record_time_observation(c,state,snap,cc);price_cache=c.get('china_agent:prices:v1') or {};prices={str(x['nmID']):x for x in price_cache.get('rows',[])}
   historical=c.get('china_agent:new_ad_source:v1:2026-10-25') or {};products={str(x['nm_id']):x for x in historical.get('products',[])}
   baselines=state.setdefault('baselines',{});previous=state.get('previous_delta',{});current_delta={};actions=[];rows=[]
   registry=c.get('china_agent:verified_campaign_state:v1') or {}
@@ -254,7 +304,10 @@ def run(preflight=False,cutover=False):
      item=dict(nm=r['nm'],article=r['article'],placement=placement,old=r['bid'],reason=r['reason'],counters=r['delta']);minimum=mins[r['nm']]
      if 0<minimum<r['bid']:lowers.append(item|dict(kind='lower',target=minimum))
      elif minimum==r['bid']:excludes.append(item|dict(kind='exclude'))
-    if len(excludes)==len(camp['nm_settings']):excludes=[dict(kind='pause',article='вся РК',nm=0,reason='all_active_skus_ineffective')]
+    if len(excludes)==len(camp['nm_settings']):
+     if p.get('pause_authorized') is True and 'pause_underperforming_campaign_if_item_level_action_insufficient' in p.get('allowed',[]):excludes=[dict(kind='pause',article='вся РК',nm=0,reason='all_active_skus_ineffective')]
+     else:
+      c.notice('pause-proposal:'+cid+':'+slot[:10],'РК '+cid+': все активные SKU достигли сигнала неэффективного расхода. Автопауза владельцем запрещена; РК оставлена активной, требуется отдельное решение.',dict(candidates=excludes));excludes=[]
     for items in [lowers,excludes]:
      if not items:continue
      e=execute(c,w,slot,camp,items,snap);actions.append(dict(cid=cid,items=items,verified_at=e['verified_at']));camp=e['after'];snap['campaigns'][cid]=camp

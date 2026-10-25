@@ -60,9 +60,14 @@ jobs:
                       with repo.transaction():repo.put('events','china-missing-api:20261025:'+str(target),dict(http_status=response.status_code,body=body,checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID')))
                   return response
               requests.get=capture
-              for ident in ('UWOCLnzyhlGC78lrjtWZ','LdBRlxJVNLjHIzufp4BL','kvSXnQoqoyCHo8bmT5ca'):
+              @wb.scoped
+              def read_list(answered):return wb.request_wb(wb.BASE_URL+'/api/v1/feedbacks',params=dict(isAnswered=answered,take=100,skip=0,order='dateDesc'))
+              for ident in ():
                   try:wb.get_reply_answer(ident,'feedbacks',cabinet='token_3')
                   except wb.ReviewRateLimit as e:print('Cabinet pause; no retries or writes');break
                   except Exception as e:print(type(e).__name__)
-              print('Diagnostic reads finished; WB writes=0')
+              for answered in ('false','true'):
+                  try:read_list(answered,cabinet='token_3')
+                  except wb.ReviewRateLimit:print('Cabinet pause; no retries');break
+              print('List diagnostic finished; WB writes=0')
           PY

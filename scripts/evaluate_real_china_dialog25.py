@@ -1,8 +1,8 @@
 """Replay private real questions through the production model; no Telegram/WB network."""
-import os,json,copy,re,hashlib
+import os,json,copy,re,hashlib,time
 from datetime import datetime,timezone
 from unittest.mock import patch
-from urllib.parse import urlparse
+from urllib.parse import urlparse,parse_qs
 import requests
 from china_price_apply import IO
 from conversion_watches import runtime,question_request
@@ -22,6 +22,9 @@ def main():
  def guard(session,method,url,*args,**kwargs):
   u=urlparse(url)
   if u.hostname==host and method.upper()=='GET':return original(session,method,url,*args,**kwargs)
+  if u.hostname==host and u.path=='/rest/v1/telegram_api_cache':
+   body=kwargs.get('json') or {};filters=parse_qs(u.query)
+   if (method.upper()=='POST' and str(body.get('cache_key','')).startswith(ROOT)) or (method.upper()=='PATCH' and filters.get('cache_key',[''])[0].startswith('eq.'+ROOT)):return original(session,method,url,*args,**kwargs)
   if u.hostname=='api.openai.com' and u.path=='/v1/responses' and method.upper()=='POST':return original(session,method,url,*args,**kwargs)
   blocked.append(dict(host=u.hostname,method=method.upper()));raise PermissionError('Evaluation blocked external transport')
  def persist():
@@ -29,15 +32,30 @@ def main():
   if io.get(key):io.put(key,value)
   else:assert io.create(key,value)
  persist()
+ memory={};read_cache={}
  for index,case in enumerate(suite['cases']):
   if any(r['id']==case['id'] for r in results['cases']):continue
-  w=runtime();w.now=frozen;memory={};original_get=w.get
+  results['active_case']=case['id'];results['active_stage']='initializing';persist()
+  w=runtime();w.now=frozen;original_get=w.get;original_db=w.db
+  def db_read(method,table,params=None,**kwargs):
+   if method.upper()!='GET':raise PermissionError('Evaluation forbids production writes')
+   signature=json.dumps([table,params],sort_keys=True)
+   if signature not in read_cache:read_cache[signature]=original_db(method,table,params=params,**kwargs)
+   return copy.deepcopy(read_cache[signature])
+  w.db=db_read
   w.get=lambda k:copy.deepcopy(memory[k]) if k in memory else original_get(k)
   def save(k,v,insert=False):
    if insert and k in memory:return False
    memory[k]=copy.deepcopy(v);return True
   w.save=save;w.transport=lambda *a,**kw:(_ for _ in ()).throw(PermissionError('Evaluation forbids Telegram'))
-  w.collect=None;w.model_request=question_request
+  w.collect=None
+  def model_request(body):
+   results['active_stage']='model';results['active_input_chars']=len(json.dumps(body['input'],ensure_ascii=False));results['model_calls']=results.get('model_calls',0)+1;persist()
+   started=time.monotonic()
+   value=question_request(body)
+   results['last_model_seconds']=round(time.monotonic()-started,2);results['active_stage']='tools';persist()
+   return value
+  w.model_request=model_request
   job=dict(id=-int(os.environ.get('GITHUB_RUN_ID','1'))*100-index,agent_id='china',chat_id=-1004342917488,sender_id=5122667182,request_text=case['question'],tool_trace=[])
   before=len(blocked)
   try:

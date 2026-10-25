@@ -4,7 +4,7 @@ on:
     - cron: '10 * * * *'
   workflow_dispatch:
   push:
-    branches: [china-cloud-cost-control25, main]
+    branches: [china-cloud-cost-control25, china-night-observe26, main]
     paths:
       - 'scripts/china_cloud_cost_control.py'
       - 'scripts/test_china_cloud_cost_control.py'

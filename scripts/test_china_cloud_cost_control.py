@@ -9,7 +9,7 @@ def counter(spend=0,clicks=0,orders=0,amount=0):return m.zero()|dict(spend=spend
 def campaign():
  return dict(id=1,status=9,currency='CNY',bid_type='manual',settings=dict(payment_type='cpc',placements=dict(search=False,recommendations=True)),nm_settings=[dict(nm_id=11,bids_kopecks=dict(search=0,recommendations=40)),dict(nm_id=12,bids_kopecks=dict(search=0,recommendations=28))])
 class State:
- def __init__(self):self.data={m.POLICY:dict(status='active',cabinet='token_3',executor='github-cloud-v1',expires_at=(m.now()+timedelta(days=1)).isoformat())};self.notices=[]
+ def __init__(self):self.data={m.POLICY:dict(status='active',cabinet='token_3',executor='github-cloud-v1',allowed=['decrease_bid_above_fresh_WB_minimum','exclude_underperforming_sku'],pause_authorized=False,expires_at=(m.now()+timedelta(days=1)).isoformat())};self.notices=[]
  def get(self,k):return copy.deepcopy(self.data.get(k))
  def put(self,k,v):self.data[k]=copy.deepcopy(v)
  def create(self,k,v):
@@ -79,4 +79,31 @@ class Tests(unittest.TestCase):
   with self.assertRaises(ValueError):m.WB().req('/adv/v1/budget/deposit','POST',{},write=True)
  def test_pause_endpoint_cannot_be_read(self):
   with self.assertRaises(ValueError):m.WB().req('/adv/v0/pause?id=1')
+
+ def test_pause_revoked_before_any_wb_write(self):
+  c=State();b=campaign();items=[dict(kind='pause',nm=0,article='all')];w=WB(b,m.expected_campaign(b,items))
+  with self.assertRaises(RuntimeError):m.execute(c,w,'slot',b,items,dict(stats=[],observed_at=m.stamp()))
+  self.assertEqual(w.writes,0)
+ def test_observed_hour_not_order_cohort(self):
+  p=dict(last_observed_at='2026-10-25T22:10:00+00:00',previous_campaign_counters={'1':counter(10,20,2,100)},campaigns={'1':campaign()})
+  s=dict(slot='hour',observed_at='2026-10-25T23:10:00+00:00',campaigns={'1':campaign()})
+  v=m.observed_interval(p,s,{'1':counter(15,30,2,100)})
+  self.assertEqual(v['phase'],'night_00_06');self.assertEqual(v['campaigns']['1']['delta']['orders'],0);self.assertFalse(v['automatic_actions_allowed'])
+ def test_negative_hourly_revision_excluded_not_zeroed(self):
+  p=dict(last_observed_at='2026-10-25T22:10:00+00:00',previous_campaign_counters={'1':counter(10,20,2,100)},campaigns={'1':campaign()})
+  s=dict(slot='hour',observed_at='2026-10-25T23:10:00+00:00',campaigns={'1':campaign()})
+  r=m.observed_interval(p,s,{'1':counter(15,30,1,50)})['campaigns']['1']
+  self.assertEqual(r['delta']['orders'],-1);self.assertFalse(r['comparable'])
+ def test_one_night_never_a_pattern(self):
+  v=dict(msk_date='2026-10-26',duration_hours=1,phase='night_00_06',campaigns={'1':dict(delta=counter(30,100),comparable=True)})
+  r=m.summarize_time([v])['1'];self.assertFalse(r['enough_repeated_observations']);self.assertFalse(r['hypothesis_for_owner_only'])
+ def test_pattern_requires_repeated_equal_window_observation(self):
+  intervals=[]
+  for day in ['2026-10-26','2026-10-27']:
+   for i in range(4):
+    for phase,total in [('night_00_06',counter(10,30)),('day_12_18',counter(2,10,1,100))]:
+     intervals.append(dict(msk_date=day,duration_hours=1,phase=phase,campaigns={'1':dict(delta=total,comparable=True)}))
+  r=m.summarize_time(intervals)['1']
+  self.assertTrue(r['hypothesis_for_owner_only']);self.assertIsNone(r['night']['drr_pct']);self.assertEqual(r['day']['drr_pct'],2)
+
 if __name__=='__main__':unittest.main()

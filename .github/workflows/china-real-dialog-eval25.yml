@@ -31,7 +31,7 @@ jobs:
       - run: python scripts/evaluate_real_china_dialog25.py
         env:
           PYTHONPATH: scripts:source
-          EVAL_PHASE: before
+          EVAL_PHASE: after
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

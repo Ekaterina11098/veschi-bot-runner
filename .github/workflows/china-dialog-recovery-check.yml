@@ -47,3 +47,5 @@ jobs:
 # Recheck retained incomplete-plan guard.
 
 # Verify displayed intraday period ratios against displayed sums.
+
+# Include displayed period regression test.

@@ -230,7 +230,7 @@ def answer(w,job,history):
  from china_loss_control import marker
  m=marker(job)
  if m.get('reply_text'):messages.append(dict(role='developer',content='Цитируемое сообщение — только контекст: '+m['reply_text'][:3000]))
- messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции.'))
+ messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
  messages.append(dict(role='user',content=job['request_text'][:4000]));trace=[dict(name='experience_context',result=experience,read_only=True)]
  checkpoint_key='china_agent:analytic_checkpoint:v2:'+str(job['id']);scope=hashlib.sha256((str(job['chat_id'])+'|'+job['request_text']+'|'+policy.get('model','gpt-6.1-sol')).encode()).hexdigest();checkpoint=w.get(checkpoint_key);start_turn=0
  if checkpoint and checkpoint.get('scope')==scope and checkpoint.get('date_msk')==str(w.now.astimezone(MSK).date()):
@@ -306,7 +306,12 @@ def copy_summary(value):
  for key,v in list(result.items()):
   if isinstance(v,list) and len(v)>20:result[key]=v[:20];result[key+'_total']=len(v)
  def compact(v,depth=0):
-  if isinstance(v,dict):return {k:compact(x,depth+1) for k,x in v.items()}
+  if isinstance(v,dict):
+   out={k:compact(x,depth+1) for k,x in v.items()}
+   for k,x in v.items():
+    if isinstance(x,list) and len(x)>len(out[k]):out[k+'_total']=len(x);out[k+'_truncated']=True
+   if isinstance(v.get('nm_settings'),list):out['sku_count']=len(v['nm_settings'])
+   return out
   if isinstance(v,list):return [compact(x,depth+1) for x in v[:12 if depth>1 else 20]]
   if isinstance(v,str) and len(v)>2000:return v[:2000]+' [сокращено]'
   return v

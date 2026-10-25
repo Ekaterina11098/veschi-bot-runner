@@ -24,6 +24,9 @@ def context(w):
  info=dict(period_from=value.get('period_from'),period_to=value.get('period_to'),observed_at=value.get('observed_at'),catalogue_count=value.get('catalogue_count'),assessed_count=len(value.get('records',[]))-len(missing),unassessed_count=len(missing),losses=assessed,limitations=value.get('limitations'),current=False)
  return POLICY+'\nСохранённый расчёт (даты обязательны, это не новая проверка): '+json.dumps(info,ensure_ascii=False)
 def handle(w,job):
+ from china_daily_ad_actions import handle as daily_handle
+ daily_result=daily_handle(w,job)
+ if daily_result is not None:return daily_result
  """DB-only hook; explicit execution queued for isolated post-dialog phase."""
  m=marker(job);latest=w.get(LATEST)
  from china_group_permissions import allowed
@@ -118,5 +121,6 @@ def summary(e):
   lines.append(x['article']+' — '+label+('. '+details if details else ''))
  lines.append('По рекламе: точные РК/SKU и ставка старая→новая либо отключениеSKU предложу отдельно после проверки данных. ДРР не записывается вWB как настройка; общиеРК целиком не останавливаю.')
  return '\n'.join(lines)
+
 
 

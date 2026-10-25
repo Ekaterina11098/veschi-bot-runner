@@ -68,7 +68,7 @@ def photo(w,chat,text):
 
 def archive(w,kind,day):
  if kind in ['advertising','budgets']:
-  p=w.get('china_agent:advertising_artifacts:'+day+':v1') or {};which='drr' if kind=='advertising' else 'budgets';parts=[f for f in p.get('files',[]) if f.get('kind')==which]
+  p=w.get('china_agent:advertising_artifacts:'+day+':v2') or w.get('china_agent:advertising_artifacts:'+day+':v1') or {};which='drr' if kind=='advertising' else 'budgets';parts=[f for f in p.get('files',[]) if f.get('kind','').split(':')[0]==which]
   if not parts:raise ValueError('Исходный PNG за '+day+' недоступен')
   return [base64.b64decode(f['b64'],validate=True) for f in parts],dict(period=p.get('bundle',{}).get('period',day),repeat=True,source_key='china_agent:advertising_artifacts:'+day+':v1')
  if kind=='loss':
@@ -256,7 +256,7 @@ def daily_loss():
  prior=w.get(key)
  if prior and prior.get('status') in ['delivered','sending','uncertain']:return prior['status']
  pair=w.get('china_agent:advertising_delivery:'+day+':v1') or {}
- if pair.get('status')!='delivered' or {p.get('kind') for p in pair.get('parts',[]) if p.get('status')=='sent' and p.get('message_id')}!={'drr','budgets'}:return 'waiting_for_advertising_pair'
+ if pair.get('status')!='delivered' or {p.get('kind','').split(':')[0] for p in pair.get('parts',[]) if p.get('status')=='sent' and p.get('message_id')}!={'drr','budgets'}:return 'waiting_for_advertising_pair'
  if prior and prior.get('status') not in ['frozen']:return 'requires_review'
  if not prior:
   with saved_network_guard(),reading():images,meta=fresh_loss(w)
@@ -284,4 +284,5 @@ if __name__=='__main__':
  if sys.argv[1:]!=['--daily-loss']:raise SystemExit('Expected --daily-loss')
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise SystemExit('Public main only')
  print(json.dumps(dict(status=daily_loss(),wb_writes=0)))
+
 

@@ -26,6 +26,9 @@ class WB:
   if self.fail:raise TimeoutError()
   return {}
 class Tests(unittest.TestCase):
+ def test_shared_snapshot_contract(self):
+  p=m.shared_payload(dict(slot='hour',observed_at='time',campaigns={'1':campaign()},stats=[dict(advertId=1)],budgets={}))
+  self.assertEqual(p['ad_batches'][0]['data'][0]['advertId'],1)
  def test_ratio_of_sums_and_zero(self):
   self.assertIsNone(m.drr(counter(4)));self.assertEqual(m.drr(counter(20,orders=2,amount=400)),5)
  def test_negative_attribution_not_clamped(self):

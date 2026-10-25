@@ -45,3 +45,5 @@ jobs:
 # Validate final cache-first recovery revision.
 
 # Recheck retained incomplete-plan guard.
+
+# Verify displayed intraday period ratios against displayed sums.

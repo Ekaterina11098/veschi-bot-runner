@@ -9,6 +9,10 @@ from advertising_agent import agent_store as store
 from advertising_budget_evidence import load_daily_table_view,deliver_daily_tables
 from advertising_daily_png import render_daily_png
 from stock_deploy_support import seal,error
+def publication_coverage(view):
+ rows=view.get('campaigns') or []
+ known=sum(1 for row in rows if row.get('metrics_complete') is True)
+ return dict(ready=known>0,known=known,total=len(rows))
 def main():
  report=dict(source_calls=0,wb_writes=0,telegram_calls=0,business_status='incomplete')
  native=requests.sessions.Session.request;host=urlparse(os.environ['SUPABASE_URL']).hostname
@@ -28,6 +32,11 @@ def main():
    return report
   view=load_daily_table_view(store,datetime.now(timezone.utc))
   report['view']=view
+  coverage=publication_coverage(view)
+  report['campaign_coverage']=coverage
+  if not coverage['ready']:
+   report.update(business_status='incomplete',notification_status='not_sent',data_coverage='missing_daily_campaign_metrics',reason='No campaign/day metrics; both PNGs withheld before rendering or delivery claims')
+   return report
   images=render_daily_png(view,Path(os.environ['RUNNER_TEMP'])/'daily-advertising-png')
   import hashlib
   messages=[]

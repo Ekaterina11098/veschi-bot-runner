@@ -745,14 +745,27 @@ def split_message(text):
     return parts
 
 
+def drain_saved_questions(w,requested_id,limit=10):
+    """A surviving dispatch also handles questions whose pending dispatch was replaced."""
+    rows=w.db('GET','business_agent_jobs',params={'agent_id':'eq.china','created_at':'gte.'+DEPLOYED_AFTER,'status':'eq.pending','retry_at':'lte.'+w.now.isoformat(),'select':'id,tool_trace','order':'id.asc','limit':100}) or []
+    ids=[r['id'] for r in rows if question_marker(r)]
+    if requested_id not in ids:ids.append(requested_id)
+    results=[]
+    for job_id in ids[:limit]:
+        # question() owns participant checks, claim and durable per-message delivery receipts.
+        with saved_network_guard():
+            result=w.question(job_id)
+        results.append(dict(job_id=job_id,status=result))
+    return results
+
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--verify',action='store_true');parser.add_argument('--smoke',action='store_true');parser.add_argument('--dialog-job',type=int);args=parser.parse_args()
     w=runtime()
     if args.dialog_job is not None:
         w.collect=None
-        with saved_network_guard():
-            result=w.question(args.dialog_job)
-        print(json.dumps({'status':result,'job_id':args.dialog_job,'wb_search_reads':'recorded_in_tool_trace','wb_writes':0}));return
+        results=drain_saved_questions(w,args.dialog_job)
+        print(json.dumps({'status':'processed_saved_questions','jobs':results,'wb_search_reads':'recorded_in_tool_trace','wb_writes':0}));return
     if args.verify:
         cfg=w.config();watches=w.watches()
         info=w.bot_check()

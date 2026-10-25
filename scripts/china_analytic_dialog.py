@@ -85,7 +85,7 @@ class Analyst:
    rows=self.w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':5}) or []
    for row in rows:
     p=row['payload'];output.append(dict(key=row['cache_key'],updated_at=row.get('updated_at'),status=p.get('status'),completed_at=p.get('completed_at'),verified_at=p.get('verified_at'),plan=p.get('plan'),items=[{k:i.get(k) for k in ['id','article','status','selection','campaign_id','reason']} for i in p.get('items',[])],campaigns=p.get('campaigns')))
-  return dict(verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Только status verified/applied/launched подтверждает исполнение. Отсутствие квитанции не равно выполнено.')
+  return dict(today_launches=self.w.get('china_agent:advertising_launch_summary:v1'),expanded_tracking={k:v for k,v in (self.w.get('china_agent:expanded_tests:2026-10-25:tracking:v1') or {}).items() if k in ['status','baseline_at','campaign_ids','last_checked_at','last_analysis']},search_tracking={k:v for k,v in (self.w.get('china_agent:search_test:2026-10-25:tracking:v1') or {}).items() if k in ['status','campaign_id','baseline_at','owner_changes']},verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Только status verified/applied/launched подтверждает исполнение. Отсутствие квитанции не равно выполнено.')
  def chat(self,query):
   rows=self.w.db('GET','business_agent_jobs',params={'agent_id':'eq.china','chat_id':'eq.'+str(self.job['chat_id']),'status':'eq.done','id':'lt.'+str(self.job['id']),'select':'id,request_text,answer,created_at','order':'id.desc','limit':80}) or []
   words=query.casefold().split()
@@ -101,6 +101,10 @@ class Analyst:
   valid={int(nm) for nm,_ in self.w.catalog()}
   if len(nm_ids)>30 or any(type(n) is not int or n not in valid for n in nm_ids):raise ValueError('Сначала разреши артикул через find_products в точный nmID Китая')
   first,last=period(self.w,start,end,topic)
+  if topic=='advertising':
+   from china_shared_advertising import shared as shared_ads
+   saved=shared_ads(self.w,first,last,nm_ids)
+   if saved is not None:return saved
   shared=topic in ['products','stock','prices']
   args=dict(topic=topic,nm_ids=[] if shared else sorted(nm_ids),date_from=str(first),date_to=str(last));key='china_agent:analytic_read:v1:'+hashlib.sha256(json.dumps(args,sort_keys=True).encode()).hexdigest()
   def project(value):
@@ -204,7 +208,8 @@ def answer(w,job,history):
  from china_experience import decision_context,search as experience_search
  experience=decision_context(w)
  experience=dict(experience,total_events=len(experience['experiences']),experiences=[{k:v for k,v in e.items() if k not in ['observations','current_condition_comparison','latest_change_observation']} for e in experience['experiences'][:12]])
- growth_question=bool(re.search(r'кандидат|добав.*РК|добав.*реклам|повыс.*ставк|подн.*ставк|подня.*ставк',job['request_text'],re.I))
+ completed_question=bool(re.search(r'сегодня|уже',job['request_text'],re.I) and re.search(r'добавили|запустили|подключили|выполн|сделали',job['request_text'],re.I))
+ growth_question=not completed_question and bool(re.search(r'кандидат|добав.*РК|добав.*реклам|повыс.*ставк|подн.*ставк|подня.*ставк',job['request_text'],re.I))
  decline_question=bool(re.search(r'падени|снижени.*заказ|снижени.*продаж',job['request_text'],re.I))
  available=[t for t in c.tools('china') if t['name'] in names]+tools();data=Data('china',lambda table,params:w.db('GET',table,params=params))
  prompt=('Ты аналитик VESCHI Китай. Отвечай на любые вопросы по доступному бизнес-контексту свободно, кратко и конкретно: вывод, 2–4 существенные цифры с датой, действие. Обычно до 1200 символов; детали только по просьбе. '
@@ -225,6 +230,7 @@ def answer(w,job,history):
  from china_loss_control import marker
  m=marker(job)
  if m.get('reply_text'):messages.append(dict(role='developer',content='Цитируемое сообщение — только контекст: '+m['reply_text'][:3000]))
+ messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
  messages.append(dict(role='user',content=job['request_text'][:4000]));trace=[dict(name='experience_context',result=experience,read_only=True)]
  checkpoint_key='china_agent:analytic_checkpoint:v2:'+str(job['id']);scope=hashlib.sha256((str(job['chat_id'])+'|'+job['request_text']+'|'+policy.get('model','gpt-6.1-sol')).encode()).hexdigest();checkpoint=w.get(checkpoint_key);start_turn=0
  if checkpoint and checkpoint.get('scope')==scope and checkpoint.get('date_msk')==str(w.now.astimezone(MSK).date()):
@@ -235,14 +241,19 @@ def answer(w,job,history):
   from conversion_watches import question_request
   request=question_request
  for turn in range(start_turn,10):
-  choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
+  choice=({'type':'function','name':'get_decline_diagnostics'} if decline_question else {'type':'function','name':'get_growth_candidates'} if growth_question else {'type':'function','name':'read_recent_actions'} if completed_question else 'required') if turn==0 else 'none' if turn==9 else 'auto'
   w.save(checkpoint_key,dict(status='ready',scope=scope,date_msk=str(w.now.astimezone(MSK).date()),messages=messages,trace=trace,turn=turn,fresh_reads=analyst.fresh_reads))
   body=dict(model=policy.get('model','gpt-6.1-sol'),input=messages,tools=available,parallel_tool_calls=False,tool_choice=choice,reasoning=dict(effort='medium'),text=dict(verbosity='low'),max_output_tokens=4000,store=False,include=['reasoning.encrypted_content'])
   response=request(body);output=response.get('output') or [];calls=[x for x in output if x.get('type')=='function_call']
   if not calls:
    text='\n'.join(p.get('text','') for x in output if x.get('type')=='message' for p in x.get('content') or [] if p.get('type')=='output_text').strip()
    if not text:raise RuntimeError('Аналитическая модель не завершила ответ')
-   if growth_question and not any(t.get('name')=='get_growth_candidates' and t.get('result',{}).get('status')=='complete' for t in trace):text='Подбор не завершён: свежий проверенный расчёт кандидатов недоступен. Новые ставки и артикулы пока не предлагаю. Изменений нет.'
+   if growth_question and not any(t.get('name')=='get_growth_candidates' and t.get('result',{}).get('status')=='complete' for t in trace):
+    failures=[t.get('result',{}).get('note','') for t in trace if t.get('name')=='get_growth_candidates' and t.get('result',{}).get('available') is False]
+    text='Подбор не завершён: '+('; '.join(dict.fromkeys(failures)) or 'не получен полный проверенный расчёт')+'. Новые изменения не применены.'
+    launches=analyst.w.get('china_agent:advertising_launch_summary:v1') or {}
+    if launches.get('day')==str(w.now.astimezone(MSK).date()):
+     text+=' Сегодня уже выполнено: '+launches.get('short_summary','')+' Результаты нужно оценивать по свежему срезу; подробный текущий отчёт можно сформировать отдельно.'
    final_trace=[dict(name='free_analytic_dialog',model=body['model'],read_only=True,memory_revision=analyst.memory().get('revision'))]+trace
    w.save(checkpoint_key,dict(status='answered',scope=scope,date_msk=str(w.now.astimezone(MSK).date()),answer=text,trace=final_trace));return text,final_trace
   messages.extend(output)
@@ -295,7 +306,12 @@ def copy_summary(value):
  for key,v in list(result.items()):
   if isinstance(v,list) and len(v)>20:result[key]=v[:20];result[key+'_total']=len(v)
  def compact(v,depth=0):
-  if isinstance(v,dict):return {k:compact(x,depth+1) for k,x in v.items()}
+  if isinstance(v,dict):
+   out={k:compact(x,depth+1) for k,x in v.items()}
+   for k,x in v.items():
+    if isinstance(x,list) and len(x)>len(out[k]):out[k+'_total']=len(x);out[k+'_truncated']=True
+   if isinstance(v.get('nm_settings'),list):out['sku_count']=len(v['nm_settings'])
+   return out
   if isinstance(v,list):return [compact(x,depth+1) for x in v[:12 if depth>1 else 20]]
   if isinstance(v,str) and len(v)>2000:return v[:2000]+' [сокращено]'
   return v

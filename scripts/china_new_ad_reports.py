@@ -74,6 +74,8 @@ def source(io):
      a=e['after'].get(str(cid)) or e['after'].get(cid)
      if a:protected.update({n['nm_id'] for n in b.get('nm_settings',[])}-{n['nm_id'] for n in a.get('nm_settings',[])})
  result=dict(observed_at=now.isoformat(),period_from=str(start),period_to=str(end),cutoff_msk=cutoff.astimezone(MSK).isoformat(),stock=stock,prices=prices,campaigns=campaigns,orders=orders,products=rows,protected=sorted(protected),policy=policy,config=Transport(io).config(),experience=experience,memory_used=True,wb_writes=0)
+ # PostgreSQL JSON objects return string keys; compare the same wire representation.
+ result=json.loads(json.dumps(result,allow_nan=False))
  io.put(cache,result) if old else io.create(cache,result)
  return result
 

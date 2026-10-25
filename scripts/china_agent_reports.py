@@ -8,7 +8,7 @@ from datetime import datetime,timedelta,timezone
 from zoneinfo import ZoneInfo
 MSK=ZoneInfo('Europe/Moscow');PREFIX='CHINA_AGENT_REPORT:'
 RECIPES={
- 'advertising':dict(title='ДРР и расходы',schedule='07:30 МСК',generator='china_advertising_daily',formats=['png'],period='1–90 полных дней'),
+ 'advertising':dict(title='ДРР и расходы',schedule='07:30 МСК',generator='china_advertising_daily',formats=['png'],period='3 полных дня; группировка по РК'),
  'budgets':dict(title='Бюджеты РК',schedule='07:30 МСК',generator='china_advertising_daily',formats=['png'],period='срез с фактическим временем'),
  'loss':dict(title='Товары, требующие внимания',schedule='после подтверждённой утренней рекламной пары',generator='china_agent_reports',formats=['png'],period='30 полных дней; динамика с даты оценки'),
  'price_morning':dict(title='Утренние предложения по ценам',schedule='10:30 МСК',generator='china_morning_pair',formats=['text','png'],period='действующая методика 4 полных дней'),
@@ -64,7 +64,7 @@ def photo(w,chat,text):
  if not p or p['status']!='frozen' or p['chat_id']!=chat or p['job_id']!=getattr(w,'active_question_id',None):raise PermissionError('Requested report scope')
  part=p['files'][int(index)];data=base64.b64decode(part['data'],validate=True)
  if hashlib.sha256(data).hexdigest()!=part['sha256']:raise ValueError('Report image hash')
- return data,RECIPES[p['kind']]['title']+' · '+p['meta'].get('period','')+' · '+('повтор исходного среза' if p['meta'].get('repeat') else 'по запросу')+'. Изменения не применены.'
+ return data,RECIPES[p['kind']]['title']+' · '+p['meta'].get('period','')+' · '+('повтор исходного среза' if p['meta'].get('repeat') else 'по запросу')+'. Изменения не применены.'+(' Только просмотр; для исполнения нужен ежедневный PNG.' if p['meta'].get('actions_not_bound') else '')
 
 def archive(w,kind,day):
  if kind in ['advertising','budgets']:
@@ -116,6 +116,16 @@ def make(w,job,kind,days=3,nm_ids=(),repeat=False,report_day=None):
  if datetime.fromisoformat(day).date()>today:raise ValueError('Будущего отчёта нет')
  if repeat:
   images,meta=archive(w,kind,day);return freeze(w,job,kind,images,meta)
+ if kind in ['advertising','budgets']:
+  if days!=3:raise ValueError('Согласованный новый формат — 3 полных дня; другой период требует отдельного расчёта')
+  from china_price_apply import IO
+  from china_advertising_v2 import prepare
+  from china_advertising_v2_png import render as grouped_render
+  b=prepare(IO(),day)
+  if nm_ids:
+   for c in b['campaigns']:c['focus']=[r for r in c['focus'] if r['nm'] in nm_ids]
+  family='drr' if kind=='advertising' else 'budgets';parts=[f['bytes'] for f in grouped_render(b) if f['family']==family]
+  return freeze(w,job,kind,parts,dict(period=b['days'][0]+' — '+b['days'][-1],repeat=False,format_version=b['version'],actions_not_bound=True,note='Просмотр; исполнение только по привязанному ежедневному PNG'))
  if kind=='actions':
   from china_experience import decision_context
   events=decision_context(w,nm_ids)['experiences'];labels=dict(w.catalog());lines=[]

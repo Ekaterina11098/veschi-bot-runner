@@ -24,7 +24,7 @@ jobs:
           path: source
           persist-credentials: false
       - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
-      - run: python scripts/read_clutch22_25.py
+      - run: python scripts/complete_clutch_orders22_25.py
         env:
           PYTHONPATH: scripts:source
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

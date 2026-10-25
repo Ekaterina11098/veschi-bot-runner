@@ -31,7 +31,8 @@ def prepare(io,day):
    prev=raw.setdefault(c['advertId'],copy.deepcopy(c));ds={d['date'][:10]:d for d in prev['days']}
    ds.update({d['date'][:10]:d for d in c['days']});prev['days']=[ds[d] for d in sorted(ds)]
  ex=io.get('china_agent:codex_search_exclude553:2026-10-25:v1:execution') or {}
- if ex.get('status')=='verified' and ex.get('after'):campaigns[41298169]=ex['after']
+ if ex.get('status')=='verified' and ex.get('after'):
+  campaigns[41298169]=ex['after'];s.setdefault('executions',[]).append(dict(payload=ex))
  budgets=fresh.get('budgets') or [x for b in s['batches'].values() for x in b['budgets']['adverts']]
  s['batches']={'0':dict(campaigns=dict(adverts=list(campaigns.values())),stats=list(raw.values()),budgets=dict(adverts=budgets))}
  b=build(s);b['day']=day;b['intraday']=True

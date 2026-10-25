@@ -46,6 +46,12 @@ jobs:
               app=Approval(repo,'automatic-policy-only',str(cfg['owner_id']),str(cfg['chat_id']),str(cfg['bot_id']),enabled=True)
               app.chat=app.delivery_chat();bridge=DurableBridge(app,source);store=DurableReviews(_request)
               policy=source.read(CONFIG_KEY);report=[]
+              deadline=time.monotonic()+240
+              while time.monotonic()<deadline:
+                  health=repo.get('events','approved-worker:health:v1') or {}
+                  if health.get('auto_policy_code_version')=='positive-size-fur-20261025':break
+                  time.sleep(5)
+              else:raise RuntimeError('Fixed publisher not yet active; no intents created')
               for ident in ('UWOCLnzyhlGC78lrjtWZ','LdBRlxJVNLjHIzufp4BL','kvSXnQoqoyCHo8bmT5ca'):
                   observed=repo.get('events','china-missing-api:20261025:'+ident) or {}
                   body=observed.get('body') or {};item=body.get('data')

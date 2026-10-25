@@ -1,0 +1,29 @@
+name: Adopt verified review filter fix in isolated publisher
+on:
+  push:
+    paths: ['.github/workflows/review-positive-cutover-20261025.yml']
+permissions: {contents: read, actions: write}
+jobs:
+  adopt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Restart only review publisher and targeted recovery on current main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'JS'
+          const base='https://api.github.com/repos/'+process.env.GITHUB_REPOSITORY;
+          const headers={Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','Content-Type':'application/json'};
+          async function request(path,method='GET',body){const r=await fetch(base+path,{method,headers,body:body?JSON.stringify(body):undefined});if(!r.ok&&r.status!==409)throw Error('Scoped review cutover request failed '+r.status);return r.status===204?null:r.json().catch(()=>null);}
+          for(let pass=0;pass<3;pass++){
+            const data=await request('/actions/runs?per_page=60');
+            const selected=data.workflow_runs.filter(r=>(r.path==='.github/workflows/review-approved-publication.yml'||r.path==='.github/workflows/review-china-recover-20261025.yml')&&r.head_sha!==process.env.GITHUB_SHA&&['queued','pending','waiting','in_progress'].includes(r.status));
+            if(!selected.length)break;
+            for(const r of selected)await request('/actions/runs/'+r.id+'/cancel','POST');
+            await new Promise(r=>setTimeout(r,3000));
+          }
+          await request('/actions/workflows/review-approved-publication.yml/dispatches','POST',{ref:'main'});
+          await request('/actions/workflows/review-china-recover-20261025.yml/dispatches','POST',{ref:'main'});
+          console.log('Only isolated review publisher and exact three-review recovery adopted current main.');
+          JS

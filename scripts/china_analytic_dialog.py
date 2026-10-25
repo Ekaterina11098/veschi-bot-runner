@@ -153,6 +153,7 @@ class Analyst:
   m=self.memory();m['revision']=m.get('revision',0)+1;m.setdefault('preferences',{})[key]=dict(quote=quote,source_job=self.job['id'],sender_id=self.job['sender_id'],at=self.w.now.isoformat());self.w.save(MEMORY,m)
   return dict(saved=True,key=key,quote=quote)
  def live(self,topic,nm_ids,start,end):
+  if topic=='orders' and getattr(self,'cached_profit_context_supplied',False):return dict(available=False,cached_context_available=True,wb_reads=0,note='Датированный прогноз и число заказов уже переданы. Текущий срез не обновлялся; для ответа используй его время и ограничения. Нельзя выдавать частичный день за полный.')
   valid={int(nm) for nm,_ in self.w.catalog()}
   if len(nm_ids)>30 or any(type(n) is not int or n not in valid for n in nm_ids):raise ValueError('Сначала разреши артикул через find_products в точный nmID Китая')
   first,last=period(self.w,start,end,topic)
@@ -335,7 +336,9 @@ def answer(w,job,history):
     elif name=='get_wb_evidence':
      if any(n not in {int(i) for i,_ in w.catalog()} for n in args['nm_ids']):raise ValueError('Неизвестный nmID Китая')
      from china_wb_evidence import context
-     with reading():result=context(w,args['nm_ids'],args['date_from'],args['date_to'])
+     if getattr(analyst,'cached_product_context_supplied',False):result=dict(available=False,cached_context_available=True,wb_reads=0,note='Датированный товарный контекст уже передан. Дополнительная первичная воронка за этот диапазон не подтверждена. Не выполнять повторный сбор для этого ответа; неизвестные расходы не0.')
+     else:
+      with reading():result=context(w,args['nm_ids'],args['date_from'],args['date_to'])
     elif name=='list_reports':
      from china_agent_reports import catalog
      result=catalog()
@@ -353,7 +356,9 @@ def answer(w,job,history):
      result={k:v for k,v in result.items() if k not in ['experience']};result['rows']=[{k:v for k,v in r.items() if k not in ['before_campaign','experience']} for r in result['rows']]
     elif name=='search_chat_history':result=analyst.chat(**args)
     elif name=='read_recent_actions':result=analyst.actions()
-    elif name=='get_saved_profit_comparison':result=analyst.profit(**args)
+    elif name=='get_saved_profit_comparison':
+     result=analyst.profit(**args)
+     if result.get('available') is not False:analyst.cached_profit_context_supplied=True
     elif name=='get_advertising_baskets':result=analyst.baskets(**args)
     elif name=='get_saved_card_quality':result=analyst.card_quality(**args)
     elif name=='get_saved_product_context':result=analyst.product_context(**args)

@@ -1,0 +1,43 @@
+name: China dialog recovery verification
+on:
+  push:
+    branches: [china-dialog-queue-recovery]
+    paths: ['.github/workflows/china-dialog-recovery-check.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - run: python scripts/install_china_dialog.py
+      - run: pip install requests==2.32.5 Pillow==12.3.0 > /tmp/dependencies.log 2>&1
+      - run: |
+          python -m compileall -q scripts
+          python -m unittest discover -s scripts -p test_china_dialog_recovery.py
+          python -m unittest discover -s scripts -p test_china_analytic_dialog.py
+          python -m unittest discover -s scripts -p test_china_agent_reports.py
+          python -m unittest discover -s scripts -p test_china_growth_candidates.py
+          python -m unittest discover -s scripts -p test_conversion_watches.py
+        env:
+          PYTHONPATH: scripts:source
+      - run: python scripts/verify_dialog_recovery25.py
+        env:
+          PYTHONPATH: scripts:source
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}

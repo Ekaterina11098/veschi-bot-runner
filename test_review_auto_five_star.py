@@ -66,6 +66,14 @@ class PolicyTests(unittest.TestCase):
      self.assertFalse(classify(self.review(**{key:'Не '+text}))['eligible'])
   for text in ('Большой, но тяжёлый','Хорошая, но не мой размер','Дешево и сердито?','Прекрасная, внутри органайзер порвался','Все работает, но закрывается с трудом'):
    self.assertFalse(classify(self.review(text))['eligible'])
+ def test_positive_size_price_and_fur_descriptions(self):
+  examples=('Аккуратная, небольшая, мне такая и нужна была. И цена устроила на 💯 %','Панама классная,тактильно и визуально очень симпатичная. Цвет красивый. Пушистая. Внутри есть шнурок чтобы отрегулировать по размеру своей головы. Панама объёмная.','')
+  for key in ('text','pros','cons'):
+   for value in examples:
+    self.assertTrue(classify(self.review(**{key:value}))['eligible'])
+    self.assertFalse(classify(self.review(**{key:value+' Но шнурок порвался'}))['eligible'])
+  for value in ('Не симпатичная','Объемная, но тяжёлая','Шнурок неудобный','Небольшая, но не подошла','Цена не устроила на 💯 %'):
+   self.assertFalse(classify(self.review(value))['eligible'])
  def test_purchase_status_neutral(self):
   for status in ('buyout','rejected','returned',None):
    answer=answer_for(self.review(orderStatus=status))

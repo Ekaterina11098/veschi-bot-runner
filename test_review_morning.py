@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime,timezone
 from unittest.mock import Mock
 sys.path.insert(0,str(Path(__file__).parent/'review-approval-preparation'))
-from review_morning import target_day,eligible
+from review_morning import target_day,eligible,refresh_completed
 class MorningTests(unittest.TestCase):
     def test_local_moscow_day_and_manual_catchup(self):
         self.assertEqual(target_day(datetime(2026,10,16,5,tzinfo=timezone.utc)),'2026-10-16')
@@ -25,6 +25,14 @@ class MorningTests(unittest.TestCase):
             self.assertFalse(eligible(item,cabinet,source,repo,hold))
             hold.return_value=None;repo.get.return_value={'status':'held'}
             self.assertFalse(eligible(item,cabinet,source,repo,hold))
+    def test_completed_snapshot_refreshed_without_replaying_delivered_items(self):
+        s={'status':'complete','checked_at':'2026-10-25T05:00:00+00:00','scopes':{'token_3':{'items':[{'id':'old'}]}},'items':{'token_3:old':{'status':'confirmed'}},'telegram_confirmed':1}
+        stamp=datetime(2026,10,25,5,tzinfo=timezone.utc).timestamp()
+        self.assertFalse(refresh_completed(s,lambda:stamp+1799))
+        self.assertTrue(refresh_completed(s,lambda:stamp+1800))
+        self.assertEqual(s['scopes'],{})
+        self.assertEqual(s['items'],{'token_3:old':{'status':'confirmed'}})
+        self.assertEqual(s['telegram_confirmed'],1)
     def test_answered_and_missing_id_never_notify(self):
         for item in ({},{'id':'x','isAnswered':True},{'id':'x','answer':{'text':'already'}}):
             self.assertFalse(eligible(item,'token_1',Mock(),Mock(),Mock()))

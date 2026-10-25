@@ -34,6 +34,17 @@ def eligible(item,cabinet,source,repo,read_hold,kind='feedbacks'):
     # Any existing card/hold/decision belongs to the existing approval workflow.
     return repo.get('items',identity(cabinet,kind,item_id)) is None
 
+def refresh_completed(state,now=time.time):
+    """Recheck late API arrivals, without forgetting delivered identities."""
+    if state.get('status')!='complete':return True
+    stamp=state.get('checked_at')
+    try:stamp=datetime.fromisoformat(stamp).timestamp()
+    except (ValueError,TypeError):stamp=state.get('created_at',0)
+    if now()-stamp<1800:return False
+    state['status']='collecting'
+    state['scopes']={}
+    return True
+
 def main(kind='feedbacks'):
     if kind not in ('feedbacks','questions'):raise ValueError('Unsupported morning scope')
     import psycopg,requests
@@ -63,7 +74,7 @@ def main(kind='feedbacks'):
         source=SQLSource(conn);bridge=DurableBridge(app,source);store=DurableReviews(_request)
         control=('questions-morning:' if kind=='questions' else 'reviews-morning:')+day
         state=repo.get('events',control) or {'status':'collecting','date':day,'scopes':{},'items':{},'created_at':time.time(),'telegram_confirmed':0}
-        if state['status']=='complete':return {'status':'already_complete','telegram_confirmed':state['telegram_confirmed']}
+        if not refresh_completed(state):return {'status':'already_complete','telegram_confirmed':state['telegram_confirmed']}
         def preserve():
             out=Path(os.environ['RUNNER_TEMP'])/'stock-deploy-proof';out.mkdir(exist_ok=True)
             (out/'morning-live-supplement.aes.json').write_text(json.dumps(encrypt(snapshot(repo),OWNER_PUBLIC.encode())))

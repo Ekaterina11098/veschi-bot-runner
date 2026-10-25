@@ -1,4 +1,4 @@
-name: Execute exact owner candidate additions 25Oct
+name: Recover exact approved candidate additions 25Oct
 on:
   push:
     branches: [china-owner-candidates25-execute]

@@ -39,4 +39,14 @@ class Recovery(unittest.TestCase):
   self.assertEqual(result['totals_by_day']['2026-10-25']['drr_pct'],5)
   self.assertEqual(result['wb_reads'],0);self.assertEqual(result['campaigns'][0]['sku_count'],1)
 
+
+ def test_displayed_period_drr_is_not_post_change_drr(self):
+  from china_advertising_v2 import recommend
+  days=['2026-10-23','2026-10-24','2026-10-25']
+  ds={d:dict(spend=s,amount=a,orders=1,views=100,clicks=10) for d,s,a in zip(days,[5,5,15],[500,500,100])}
+  c=dict(id=42,status=9,settings=dict(placements=dict(search=True)),nm_settings=[dict(nm_id=1)],restrictions={})
+  n=dict(nm_id=1,bids_kopecks=dict(search=28))
+  r=recommend(c,n,ds,days,[dict(cid=42,nm=1,kind='price',at='2026-10-24T10:00:00+00:00')],28,200)
+  self.assertAlmostEqual(r['period_drr'],25/1100*100)
+
 if __name__=='__main__':unittest.main()

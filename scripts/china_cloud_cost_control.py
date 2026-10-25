@@ -136,7 +136,7 @@ def snapshot(c,w,slot):
  for cid in missing:c.notice('missing-stats:'+str(cid)+':'+slot[:10],'РК '+str(cid)+': рекламная статистика отсутствует; это не нулевой расход.')
  return dict(slot=slot,observed_at=stamp(),campaigns=campaigns,budgets={str(x['advertId']):x for x in budgets},stats=stats,complete=True)
 def execute(c,w,slot,before,items,snap):
- cid=str(before['id']);key=ROOT+'execution:'+slot+':'+cid+':'+digest(items)[:16];old=c.get(key)
+ cid=str(before['id']);key=ROOT+'execution:'+slot+':'+cid+':'+digest(items)[:16]+':execution';old=c.get(key)
  expected=expected_campaign(before,items)
  if old:
   if old['status']=='verified':return old
@@ -160,6 +160,8 @@ def execute(c,w,slot,before,items,snap):
    e.update(status='verified',after=got,verified_at=stamp());c.put(key,e)
    reg=c.get('china_agent:verified_campaign_state:v1') or {};reg[cid]=key;c.put('china_agent:verified_campaign_state:v1',reg)
    c.put(ROOT+'inflight:v1',{'key':None})
+   alias_items=[dict(id=cid+':'+str(x['nm']),campaign_id=int(cid),nm_id=x['nm'],article=x['article'],kind=dict(lower='ad_set_bid',exclude='ad_exclude_sku',pause='ad_pause_campaign')[x['kind']],target_minor=x.get('target'),status='verified',before=before,after=got,verified_at=e['verified_at'],source_execution_key=key) for x in items]
+   c.put('china_agent:ad_rule_execution:cloud-hourly-'+digest(key)[:20]+':v1',dict(status='done',alias_of_verified_batch=True,canonical_source_execution_key=key,wb_writes=0,actual_batch_writes=1,items=alias_items))
    text='Автоизменение РК '+cid+': '+('; '.join(x['article']+' — '+dict(lower='снижение ставки',exclude='исключение',pause='пауза РК')[x['kind']]+((' '+str(x['old']/100)+' → '+str(x['target']/100)+' CNY') if x['kind']=='lower' else '') for x in items))+'. WB подтвердил.'
    c.notice(key,text,e);return e
   if attempt<3:time.sleep(12)

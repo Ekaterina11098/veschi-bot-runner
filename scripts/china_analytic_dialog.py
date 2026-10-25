@@ -85,7 +85,7 @@ class Analyst:
    rows=self.w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':5}) or []
    for row in rows:
     p=row['payload'];output.append(dict(key=row['cache_key'],updated_at=row.get('updated_at'),status=p.get('status'),completed_at=p.get('completed_at'),verified_at=p.get('verified_at'),plan=p.get('plan'),items=[{k:i.get(k) for k in ['id','article','status','selection','campaign_id','reason']} for i in p.get('items',[])],campaigns=p.get('campaigns')))
-  return dict(verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Только status verified/applied/launched подтверждает исполнение. Отсутствие квитанции не равно выполнено.')
+  return dict(today_launches=self.w.get('china_agent:advertising_launch_summary:v1'),expanded_tracking=self.w.get('china_agent:expanded_tests:2026-10-25:tracking:v1'),search_tracking=self.w.get('china_agent:search_test:2026-10-25:tracking:v1'),verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Только status verified/applied/launched подтверждает исполнение. Отсутствие квитанции не равно выполнено.')
  def chat(self,query):
   rows=self.w.db('GET','business_agent_jobs',params={'agent_id':'eq.china','chat_id':'eq.'+str(self.job['chat_id']),'status':'eq.done','id':'lt.'+str(self.job['id']),'select':'id,request_text,answer,created_at','order':'id.desc','limit':80}) or []
   words=query.casefold().split()
@@ -225,6 +225,7 @@ def answer(w,job,history):
  from china_loss_control import marker
  m=marker(job)
  if m.get('reply_text'):messages.append(dict(role='developer',content='Цитируемое сообщение — только контекст: '+m['reply_text'][:3000]))
+ messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции.'))
  messages.append(dict(role='user',content=job['request_text'][:4000]));trace=[dict(name='experience_context',result=experience,read_only=True)]
  checkpoint_key='china_agent:analytic_checkpoint:v2:'+str(job['id']);scope=hashlib.sha256((str(job['chat_id'])+'|'+job['request_text']+'|'+policy.get('model','gpt-6.1-sol')).encode()).hexdigest();checkpoint=w.get(checkpoint_key);start_turn=0
  if checkpoint and checkpoint.get('scope')==scope and checkpoint.get('date_msk')==str(w.now.astimezone(MSK).date()):
@@ -242,7 +243,12 @@ def answer(w,job,history):
   if not calls:
    text='\n'.join(p.get('text','') for x in output if x.get('type')=='message' for p in x.get('content') or [] if p.get('type')=='output_text').strip()
    if not text:raise RuntimeError('Аналитическая модель не завершила ответ')
-   if growth_question and not any(t.get('name')=='get_growth_candidates' and t.get('result',{}).get('status')=='complete' for t in trace):text='Подбор не завершён: свежий проверенный расчёт кандидатов недоступен. Новые ставки и артикулы пока не предлагаю. Изменений нет.'
+   if growth_question and not any(t.get('name')=='get_growth_candidates' and t.get('result',{}).get('status')=='complete' for t in trace):
+    failures=[t.get('result',{}).get('note','') for t in trace if t.get('name')=='get_growth_candidates' and t.get('result',{}).get('available') is False]
+    text='Новый подбор пока не завершён: '+('; '.join(dict.fromkeys(failures)) or 'не получен полный проверенный расчёт')+'. Новые изменения не применены.'
+    launches=analyst.w.get('china_agent:advertising_launch_summary:v1') or {}
+    if launches.get('day')==str(w.now.astimezone(MSK).date()):
+     text+=' Сегодня уже выполнено: '+launches.get('short_summary','')+' Результаты нужно оценивать по свежему срезу; подробный текущий отчёт можно сформировать отдельно.'
    final_trace=[dict(name='free_analytic_dialog',model=body['model'],read_only=True,memory_revision=analyst.memory().get('revision'))]+trace
    w.save(checkpoint_key,dict(status='answered',scope=scope,date_msk=str(w.now.astimezone(MSK).date()),answer=text,trace=final_trace));return text,final_trace
   messages.extend(output)

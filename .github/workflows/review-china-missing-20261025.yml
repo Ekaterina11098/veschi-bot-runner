@@ -1,0 +1,57 @@
+name: Diagnose three China reviews missing from morning API list
+on:
+  push:
+    paths: ['.github/workflows/review-china-missing-20261025.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: review-approved-publication
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 18649db15489c3dc77edc22bec5a4ddc5ed6a410
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' requests==2.32.5 python-dotenv==1.1.1
+      - name: Read exact reviews and both API lists without publishing
+        env:
+          PYTHONPATH: private-source:review-approval-preparation
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python - <<'PY'
+          import os,json,time,hmac,hashlib,psycopg,requests
+          import wildberries as wb
+          from review_telegram_approval import Repository
+          root=os.environ['SUPABASE_SECRET_KEY'].encode()
+          pw=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
+          with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=pw,sslmode='require',autocommit=True,connect_timeout=15) as conn:
+              repo=Repository(conn,postgres=True)
+              native=requests.get
+              def capture(url,*args,**kw):
+                  response=native(url,*args,**kw)
+                  if 'wildberries.ru' in url:
+                      try:body=response.json()
+                      except ValueError:body=None
+                      target=(kw.get('params') or {}).get('id') or str((kw.get('params') or {}).get('isAnswered'))
+                      with repo.transaction():repo.put('events','china-missing-api:20261025:'+str(target),dict(http_status=response.status_code,body=body,checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID')))
+                  return response
+              requests.get=capture
+              for ident in ('UWOCLnzyhlGC78lrjtWZ','LdBRlxJVNLjHIzufp4BL','kvSXnQoqoyCHo8bmT5ca'):
+                  try:wb.get_reply_answer(ident,'feedbacks',cabinet='token_3')
+                  except wb.ReviewRateLimit as e:print('Cabinet pause; no retries or writes');break
+                  except Exception as e:print(type(e).__name__)
+              print('Diagnostic reads finished; WB writes=0')
+          PY

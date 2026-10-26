@@ -35,3 +35,5 @@ jobs:
 # Read-only reconcile deposit400; no writes in this pass.
 
 # Reconciled zero budgets; use available settlement net for exact approved200CNY.
+
+# Settlement continuation uses its own reconciled execution receipt.

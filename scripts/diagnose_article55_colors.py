@@ -1,6 +1,7 @@
 """Read-only diagnosis of same-article WB picking-list colors."""
 import datetime as dt,json,os,urllib.request,urllib.error,gzip
 import fbs_document_chain as m
+os.environ["WB_TOKEN_3"]=os.environ["WB_TOKEN_1"]
 t=m.Transport();db=m.Cache(t)
 out={"at":m.now(),"status":"reading","orders":[]}
 wanted={5906318744,5900513083,5899579370}
@@ -17,7 +18,7 @@ for page_no in range(40):
  if not batch or not nxt or nxt in seen:break
  seen.add(nxt);cursor=nxt
 out["missing_order_ids"]=sorted(wanted-{x["id"] for x in out["orders"]})
-db.put("wb:china:article55:color_diagnosis:20261026",out)
+db.put("wb:ip:article55:color_diagnosis:20261026",out)
 # This exact POST endpoint lists cards and does not modify them.
 url="https://content-api.wildberries.ru/content/v2/get/cards/list"
 body={"settings":{"cursor":{"limit":100},"filter":{"withPhoto":-1,"textSearch":"55-NoelBag-green"}}}
@@ -30,5 +31,5 @@ try:
  out["cards"]=[c for c in data.get("cards",[]) if (c.get("vendorCode") or "").strip().casefold()=="55-noelbag-green"]
 except urllib.error.HTTPError as e:out["cards_error"]="HTTP_"+str(e.code)
 except Exception:out["cards_error"]="transport_error"
-out["status"]="verified";db.put("wb:china:article55:color_diagnosis:20261026",out)
+out["status"]="verified";db.put("wb:ip:article55:color_diagnosis:20261026",out)
 print(json.dumps({"status":"verified","orders":len(out["orders"]),"cards":len(out.get("cards",[]))}))

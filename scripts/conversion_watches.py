@@ -225,6 +225,8 @@ class Worker:
             if receipt['status']=='sent':
                 from china_ad_rule import bind
                 bind(self,text,receipt['message_id'])
+                from china_advertising_plans import bind as bind_ads
+                bind_ads(self,text,receipt['message_id'])
             return receipt['status']
         if receipt and receipt.get('retry_at') and self.now<datetime.fromisoformat(receipt['retry_at']):return 'waiting'
         if not receipt:
@@ -244,6 +246,8 @@ class Worker:
         receipt.update(status='sent',message_id=message['message_id']);self.save(RECEIPTS+key,receipt)
         from china_ad_rule import bind
         bind(self,text,message['message_id'])
+        from china_advertising_plans import bind as bind_ads
+        bind_ads(self,text,message['message_id'])
         return 'sent'
 
     def jobs(self):
@@ -308,6 +312,13 @@ class Worker:
             note='Конверсия: заказы воронки / просмотры. Сумма заказов воронки может отличаться от заказов WB. Пропуски не равны нулю. Наблюдение и расписание не созданы.')
 
     def saved_question(self,job,history):
+        from china_advertising_plans import handle as ads_handle
+        ads=ads_handle(self,job,history)
+        if ads is not None:return ads
+        if re.search(r'добавляй|делай.*реклам|меняем.*ставк|ставки.*увеличь',job.get('request_text',''),re.I):
+            from china_analytic_dialog import answer as ad_answer
+            value=ad_answer(self,job,history)
+            if value is not None:return value
         history=[x for x in history if not any(t.get('name')=='china_loss_answer_invalid' for t in x.get('tool_trace',[]))]
         from china_new_ads import handle as new_ad_handle
         new_ad_answer=new_ad_handle(self,job,history)

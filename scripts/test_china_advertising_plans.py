@@ -60,4 +60,42 @@ class Tests(unittest.TestCase):
   w.mem[p.E+v['plan_id']]=dict(status='attention',items=[],steps={'0:bid':dict(status='uncertain')})
   mod=types.ModuleType('china_cloud_cost_control');mod.WB=lambda:(_ for _ in ()).throw(AssertionError('WB constructor must not run'))
   with patch.dict(sys.modules,{'china_cloud_cost_control':mod}):self.assertEqual(p.execute(w,a,v)['status'],'attention')
+
+class ExecTests(unittest.TestCase):
+ def setup_io(self):
+  w=W();v=plan(w);v['expires_at']='2036-10-26T16:00:00+00:00';v['items'][0]['economics']=dict(seller_price_cny=100,cogs_kopecks=1000);v['plan_sha256']=digest(v['items']);w.mem[p.P+v['plan_id']]=v;p.bind(w,v['text'],71)
+  w.validate_owner=lambda a:None
+  w.put=lambda k,x:w.save(k,x)
+  w.create=lambda k,x:w.save(k,x,insert=True)
+  w.prices=lambda ids:{'100':dict(vendorCode='one-bag',currencyIsoCode4217='CNY',sizes=[dict(discountedPrice=100)])}
+  a=dict(plan_id=v['plan_id'],plan_sha256=v['plan_sha256'],reply_message_id=71)
+  return w,v,a
+ def test_exact_verified_raise_preserves_before_and_other_bids(self):
+  w,v,a=self.setup_io()
+  class WB:
+   token='not-a-real-token'
+   def __init__(self):
+    self.c=dict(id=10,status=9,currency='CNY',bid_type='manual',settings=dict(payment_type='cpc',placements=dict(search=False,recommendations=True)),nm_settings=[dict(nm_id=100,subject=dict(id=50),bids_kopecks=dict(search=0,recommendations=28)),dict(nm_id=101,subject=dict(id=50),bids_kopecks=dict(search=0,recommendations=40))])
+    self.writes=[]
+   def campaigns(self,ids):return {'10':copy.deepcopy(self.c)}
+   def minimums(self,*args):return {100:28}
+   def req(self,path,method='GET',body=None,write=False):
+    if not write:return [dict(days=[dict(apps=[dict(nms=[dict(nmId=100,sum=2,sum_price=100)])])])]
+    self.writes.append((path,method,copy.deepcopy(body)));self.c['nm_settings'][0]['bids_kopecks']['recommendations']=31;return {}
+  wb=WB()
+  class Response:
+   ok=True
+   def __init__(self,value):self.value=value
+   def json(self):return self.value
+  def get(url,**kwargs):
+   if url.endswith('/entity/store'):return Response(dict(rows=[dict(name='МСК',meta=dict(href='https://api.moysklad.ru/store'))]))
+   return Response(dict(rows=[dict(article='one-bag',stock=3,reserve=0,price=1000)]))
+  mod=types.ModuleType('china_cloud_cost_control');mod.WB=lambda:wb
+  req=types.ModuleType('requests');req.get=get
+  with patch.dict(sys.modules,{'china_cloud_cost_control':mod,'requests':req}),patch.dict('os.environ',{'MOYSKLAD_API_TOKEN':'fake'}):
+   result=p.execute(w,a,v);again=p.execute(w,a,v)
+  self.assertEqual(result['status'],'verified');self.assertEqual(len(wb.writes),1);self.assertEqual(again['status'],'verified')
+  self.assertEqual(result['items'][0]['before']['nm_settings'][0]['bids_kopecks']['recommendations'],28)
+  self.assertEqual(result['items'][0]['after']['nm_settings'][1]['bids_kopecks']['recommendations'],40)
+
 if __name__=='__main__':unittest.main()

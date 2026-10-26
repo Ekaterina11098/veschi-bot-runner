@@ -12,7 +12,7 @@ def assess(balance,today,period,hour,horizon):
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise RuntimeError('Public main only')
  c=Cache();w=WB();validate_identity(c,w)
- t=datetime.now(ZoneInfo('Europe/Moscow'));day=t.date().isoformat();slot=day+(':morning' if t.hour<12 else ':afternoon')
+ t=datetime.now(ZoneInfo('Europe/Moscow'));day=t.date().isoformat();slot=day+(':morning' if t.hour<12 else ':afternoon') if os.environ.get('GITHUB_EVENT_NAME')=='schedule' else day+':manual:'+os.environ.get('GITHUB_RUN_ID',stamp())
  key=ROOT+'run:'+slot
  if not c.create(key,dict(status='running',created_at=stamp())):return
  inv=w.req('/adv/v1/promotion/count');ids=sorted({x['advertId'] for g in inv.get('adverts',[]) if g['status']==9 for x in g.get('advert_list',[])})

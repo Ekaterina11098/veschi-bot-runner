@@ -18,7 +18,7 @@ def main():
         cfg=dict(row[0]) if row else {}
         group=conn.execute("SELECT payload FROM review_approval.source_cache WHERE cache_key='reviews:content-group:v1'").fetchone()
         if group and group[0].get('enabled') and group[0].get('destination_verified'):cfg['content_group_chat_id']=str(group[0]['chat_id'])
-        pending=due_intents(repo,cfg) if cfg.get('cutover') is not None else []
+        pending=due_intents(repo,cfg,now=float('inf')) if cfg.get('cutover') is not None else []
         base='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/workflows/'+WORKFLOW
         headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
         with urllib.request.urlopen(urllib.request.Request(base+'/runs?per_page=100',headers=headers),timeout=30) as response:runs=json.load(response)['workflow_runs']

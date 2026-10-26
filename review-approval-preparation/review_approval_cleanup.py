@@ -2,18 +2,18 @@
 import json
 from review_telegram_approval import sha
 NORMAL=frozenset(('approved','verifying','accepted','public'))
-def cleanup_completed(a,tg,preserve=None,intent_id=None):
+def cleanup_completed(a,tg,preserve=None,intent_id=None,cabinet=None):
     # Worker starts in the legacy private chat; sweep the verified group too.
     original=a.chat
     report={'deleted':0,'already_deleted':0,'unconfirmed':0}
     try:
         for chat in dict.fromkeys(filter(None,(original,a.group_chat()))):
             a.chat=chat
-            for key,value in _cleanup_chat(a,tg,preserve,intent_id).items():report[key]+=value
+            for key,value in _cleanup_chat(a,tg,preserve,intent_id,cabinet).items():report[key]+=value
     finally:a.chat=original
     return report
 
-def _cleanup_chat(a,tg,preserve=None,intent_id=None):
+def _cleanup_chat(a,tg,preserve=None,intent_id=None,cabinet=None):
     repo=a.repo
     intents={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}intents').fetchall()}
     cards={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}cards').fetchall()}
@@ -23,6 +23,7 @@ def _cleanup_chat(a,tg,preserve=None,intent_id=None):
     processed={}
     skip=set()
     for key,i in intents.items():
+        if cabinet and i.get('cabinet')!=cabinet:continue
         if intent_id and key!=intent_id:continue
         card=cards.get(i.get('card_token'));item=repo.get('items',i.get('ref',''))
         if card and card.get('delivery_mode')=='automatic_policy':continue

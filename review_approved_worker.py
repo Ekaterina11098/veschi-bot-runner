@@ -3,12 +3,15 @@ import os,sys,json,time,hmac,hashlib,base64,contextlib,io
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parent/'review-approval-preparation'))
 
-def due_intents(repo,cfg):
+def due_intents(repo,cfg,cabinet=None,now=None):
+    if cabinet not in (None,'token_1','token_2','token_3'):raise ValueError('Unknown worker cabinet')
+    now=time.time() if now is None else now
     rows=repo.execute('SELECT id,payload FROM {p}intents').fetchall()
     groups={c:[] for c in ('token_1','token_2','token_3')}
     for intent_id,raw in rows:
         i=json.loads(raw)
-        if (i.get('cabinet') not in groups or i.get('status') not in ('awaiting_preflight','verify') or
+        if (i.get('cabinet') not in groups or (cabinet is not None and i.get('cabinet')!=cabinet) or
+            max(i.get('retry_at') or 0,i.get('worker_retry_at') or 0)>now or i.get('status') not in ('awaiting_preflight','verify') or
             i.get('created_at',0)<cfg['cutover'] or str(i.get('owner_id'))!=str(cfg['owner_id']) or str(i.get('chat_id')) not in {str(cfg['chat_id']),str(cfg.get('content_group_chat_id',''))}):continue
         groups[i['cabinet']].append(i)
     # Finish a cabinet's current write/readback before consuming its GET quota on another review.
@@ -22,6 +25,8 @@ def main():
     from review_approval_executor import Executor,WBAdapter
     from review_approval_backup import snapshot,encrypt
     from stock_deploy_support import OWNER_PUBLIC,seal,error
+    worker_cabinet=os.environ.get('REVIEW_WORKER_CABINET') or None
+    if worker_cabinet not in (None,'token_1','token_2','token_3'):raise ValueError('Unknown worker cabinet')
     root=os.environ['SUPABASE_SECRET_KEY'].encode()
     pw=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
     with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=pw,sslmode='require',autocommit=True,connect_timeout=15,options='-c statement_timeout=30000') as conn:
@@ -79,7 +84,7 @@ def main():
         requests.sessions.Session.request=guarded
         try:
             from review_approval_cleanup import cleanup_completed
-            cleanup_completed(app,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),preserve)
+            cleanup_completed(app,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),preserve,cabinet=worker_cabinet)
             deadline=time.monotonic()+25*60
             while time.monotonic()<deadline:
                 cfg=config();app.group=cfg.get('content_group_policy',{})
@@ -98,7 +103,7 @@ def main():
                     report['benchmarks']=sync_live(repo,str(cfg['owner_id']))
                 except Exception as exc:
                     report['benchmarks']={'error_type':type(exc).__name__}
-                pending=due_intents(repo,cfg)
+                pending=due_intents(repo,cfg,cabinet=worker_cabinet)
                 for intent in pending:
                     if intent.get('worker_retry_at',0)>time.time():continue
                     if adapter.pause(intent['cabinet']) or intent.get('retry_at',0)>time.time():continue
@@ -131,12 +136,14 @@ def main():
                         active=None;app.chat=app.legacy_chat
                 # Stay available while idle; GitHub schedules can be delayed.
                 with repo.transaction():
-                    repo.put('events','approved-worker:health:v1',dict(checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),code_commit=os.getenv('GITHUB_SHA'),auto_policy_code_version='positive-usage-inflections-20261026',pending_cabinets=len(pending),inbox=report.get('inbox',{}),errors=len(report['errors']),legacy_queue_calls=0))
+                    health=dict(checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),code_commit=os.getenv('GITHUB_SHA'),auto_policy_code_version='positive-usage-inflections-20261026',worker_cabinet=worker_cabinet,pending_cabinets=len(pending),inbox=report.get('inbox',{}),errors=len(report['errors']),legacy_queue_calls=0)
+                    repo.put('events','approved-worker:health:v1',health)
+                    if worker_cabinet:repo.put('events','approved-worker:health:v1:'+worker_cabinet,health)
                 time.sleep(10)
             preserve()
             counts={}
             for r in report['checked'].values():counts[r['status']]=counts.get(r['status'],0)+1
-            return {'states':counts,'pending':len(due_intents(repo,cfg)),'errors':len(report['errors']),'legacy_queue_calls':0}
+            return {'states':counts,'pending':len(due_intents(repo,cfg,cabinet=worker_cabinet)),'errors':len(report['errors']),'legacy_queue_calls':0}
         finally:requests.sessions.Session.request=native
 
 if __name__=='__main__':

@@ -12,6 +12,11 @@ concurrency:
   cancel-in-progress: false
 jobs:
   approved-replies:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        cabinet: [token_1, token_2, token_3]
     runs-on: ubuntu-latest
     timeout-minutes: 38
     steps:
@@ -34,10 +39,11 @@ jobs:
           python -m unittest discover -s review-approval-preparation -p test_review_telegram.py
           python -m unittest test_review_autonomy.py test_review_cleanup.py test_review_reliability.py
           node review-approval-preparation/test_review_inbox_route.mjs
-          python -m unittest test_review_approved_watchdog.py
+          python -m unittest test_review_approved_watchdog.py test_review_cabinet_capacity.py
           python -m py_compile review_approved_worker.py
       - name: Resume only post-cutover authenticated Telegram approvals
         env:
+          REVIEW_WORKER_CABINET: ${{ matrix.cabinet }}
           PYTHONPATH: ${{ github.workspace }}/private-source
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -51,7 +57,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: owner-encrypted-approved-publication-receipts
+          name: owner-encrypted-approved-publication-receipts-${{ matrix.cabinet }}
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
 

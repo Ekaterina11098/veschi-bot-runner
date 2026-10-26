@@ -1,0 +1,40 @@
+name: Restore only morning reviews and questions delivery
+on:
+  push:
+    paths: ['.github/workflows/review-morning-restore-20261026.yml']
+  workflow_dispatch:
+permissions: {contents: read, actions: write}
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Inspect and restore only the two morning workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'JS'
+          const base='https://api.github.com/repos/'+process.env.GITHUB_REPOSITORY;
+          const headers={Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','Content-Type':'application/json'};
+          async function api(path,method='GET',body){const r=await fetch(base+path,{method,headers,body:body?JSON.stringify(body):undefined});if(!r.ok)throw Error('Morning workflow operation failed '+r.status);return r.status===204?null:r.json();}
+          for(const name of ['reviews-morning.yml','questions-morning.yml']){
+            const state=await api('/actions/workflows/'+name);
+            console.log(name+' initial state='+state.state);
+            if(state.state!=='active'){await api('/actions/workflows/'+name+'/enable','PUT');console.log(name+' enabled');}
+          }
+          const name='reviews-morning.yml';
+          const before=await api('/actions/workflows/'+name+'/runs?per_page=1');
+          const previous=before.workflow_runs[0]?.id;
+          await api('/actions/workflows/'+name+'/dispatches','POST',{ref:'main'});
+          console.log('Reviews dispatched; wait for its durable collection before questions.');
+          const deadline=Date.now()+20*60*1000;let observed;
+          while(Date.now()<deadline){
+            const runs=await api('/actions/workflows/'+name+'/runs?per_page=5');
+            observed=runs.workflow_runs.find(r=>r.id!==previous&&r.event==='workflow_dispatch');
+            if(observed?.status==='completed'){console.log('Reviews run '+observed.id+' conclusion='+observed.conclusion);break;}
+            await new Promise(r=>setTimeout(r,20000));
+          }
+          await api('/actions/workflows/questions-morning.yml/dispatches','POST',{ref:'main'});
+          console.log('Questions dispatched; no other workflows enabled or dispatched.');
+          if(observed?.status!=='completed'||observed.conclusion!=='success')throw Error('Review run needs inspection; question dispatch preserved');
+          JS

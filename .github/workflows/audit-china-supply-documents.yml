@@ -27,3 +27,5 @@ jobs:
         run: python scripts/audit_china_supply_documents.py
 
 # Recheck after requested chain recovery.
+
+# Verify scope, links, posting and zero prices by exact external code.

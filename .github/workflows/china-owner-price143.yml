@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   price:
+    if: ${{ false }} # Owner143 increase completed and WB-verified; no repeat.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

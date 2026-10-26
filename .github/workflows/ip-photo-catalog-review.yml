@@ -27,4 +27,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
-        run: python scripts/ip_photo_catalog_review.py
+        run: |
+          python -m pip install --quiet pillow==11.3.0 numpy==2.2.6
+          python scripts/ip_photo_hash_review.py

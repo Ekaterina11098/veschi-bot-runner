@@ -17,7 +17,7 @@ class Wire:
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise RuntimeError('Public main only')
  c=Cache();w=Wire();validate_identity(c,w)
- key='china_agent:owner_search_fund:2026-10-26:v2:execution'
+ key='china_agent:owner_search_fund:2026-10-26:v3:execution'
  approval=c.get('china_agent:owner_search_fund:2026-10-26:v1:approval') or {}
  if approval.get('status')!='approved' or approval.get('amounts')!={'41325622':100,'41325637':100} or approval.get('start') is not True:raise RuntimeError('Exact funding approval missing')
  if c.get(key):print('Existing execution: never repeat writes');return
@@ -32,6 +32,7 @@ def run():
   try:r=w.req(path,method,body)
   except Exception:e['steps'][step]['status']='uncertain';save();raise
   e['steps'][step].update(status='accepted',response=r);save()
+ def members(row):return sorted((n['nm_id'],n['subject']['id'],tuple(sorted(n['bids_kopecks'].items()))) for n in row['nm_settings'])
  def budget(cid):
   rows=w.req('/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts']
   if len(rows)!=1 or rows[0].get('currency')!='CNY':raise RuntimeError('Exact CNY budget missing')
@@ -44,7 +45,7 @@ def run():
    prior=next(x for x in parent['campaigns'] if x['campaign_id']==cid)
    before=w.campaigns([cid])[str(cid)]
    e.setdefault('preflight_snapshots',{})[str(cid)]=before;save()
-   if before['status']!=4 or before['currency']!='CNY' or before['settings']!=prior['after']['settings'] or sorted(before['nm_settings'],key=lambda n:n['nm_id'])!=sorted(prior['after']['nm_settings'],key=lambda n:n['nm_id']):raise RuntimeError('Draft changed since approval')
+   if before['status']!=4 or before['currency']!='CNY' or before['settings']!=prior['after']['settings'] or members(before)!=members(prior['after']):raise RuntimeError('Draft changed since approval')
    b=budget(cid)
    if b!=0:raise RuntimeError('Draft already funded; do not deposit again')
    e['campaigns'].append(dict(campaign_id=cid,before=before,items=prior['items'],baseline_budget=b,status='preflight'));save()
@@ -61,7 +62,7 @@ def run():
    e['steps']['deposit:'+p]['status']='verified';e['total_deposit_cny']+=100;save()
    write('start:'+p,'/adv/v0/start?id='+p,'GET')
    after=w.campaigns([cid])[p];state['after']=after
-   if after['status']!=9 or after['settings']!=state['before']['settings'] or sorted(after['nm_settings'],key=lambda n:n['nm_id'])!=sorted(state['before']['nm_settings'],key=lambda n:n['nm_id']):raise RuntimeError('Active state/composition not confirmed; never repeat start')
+   if after['status']!=9 or after['settings']!=state['before']['settings'] or members(after)!=members(state['before']):raise RuntimeError('Active state/composition not confirmed; never repeat start')
    e['steps']['start:'+p]['status']='verified';state['status']='verified_active';save()
   e['status']='verified'
  except Exception as ex:

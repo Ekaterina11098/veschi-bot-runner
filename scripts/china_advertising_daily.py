@@ -9,7 +9,10 @@ from china_advertising_png import render
 from china_advertising_delivery import deliver,telegram_sender
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
- day=datetime.now(ZoneInfo('Europe/Moscow')).date().isoformat();io=IO()
+ local=datetime.now(ZoneInfo('Europe/Moscow'));day=local.date().isoformat();io=IO()
+ if local.hour>=10:
+  io.put('china_agent:advertising_missed_slot:'+day+':v1',dict(status='late_send_blocked',observed_at=local.isoformat(),reason='Morning report must not arrive as stale afternoon report'))
+  print('Morning delivery window closed; no stale Telegram send');return
  if (io.get('china_agent:advertising_delivery:'+day+':v1') or {}).get('status')=='delivered':
   print(json.dumps(dict(status='already_delivered',day=day,telegram_calls=0,wb_writes=0)));return
  key='china_agent:advertising_artifacts:'+day+':v2';saved=io.get(key)

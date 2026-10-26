@@ -33,3 +33,5 @@ jobs:
 # One exact100CNY deposit per draft; no automatic repeat funding.
 
 # Read-only reconcile deposit400; no writes in this pass.
+
+# Reconciled zero budgets; use available settlement net for exact approved200CNY.

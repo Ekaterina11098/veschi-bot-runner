@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   owner:
+    if: ${{ false }} # Owner will fund manually; execution disabled.
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

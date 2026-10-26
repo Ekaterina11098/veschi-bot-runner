@@ -36,13 +36,24 @@ def prepare(w,job,kind,nm_ids):
  for cid,key in (w.get('china_agent:verified_campaign_state:v1') or {}).items():
   r=w.get(key) or {}
   if r.get('status')=='verified' and str(r.get('after',{}).get('id'))==cid:cs[int(cid)]=r['after']
+ recent=set()
+ for key in (w.get('china_agent:verified_campaign_state:v1') or {}).values():
+  receipt=w.get(key) or {};at=receipt.get('verified_at')
+  try:changed=datetime.fromisoformat(at.replace('Z','+00:00'))
+  except (AttributeError,TypeError,ValueError):continue
+  if w.now-changed<timedelta(days=3):
+   for item in receipt.get('items',[]):
+    if item.get('nm_id'):recent.add(item['nm_id'])
+ from china_growth_candidates import excluded_history
+ protected=set(source.get('protected',[]))|excluded_history(w,cs)
  cfg=current.get('config') or {};step=cfg.get('cpcStep')
  if cfg.get('currency')!='CNY' or type(step)is not int or step<=0:raise ValueError('Шаг/валюта ставок не подтверждены')
  items=[];blocked=[]
  for nm in nm_ids:
   try:
    econ=economics(source,nm)
-   if nm in source.get('protected',[]):raise ValueError('Товар требует отдельной проверки истории исключения')
+   if kind=='raise' and nm in recent:raise ValueError('Недавнее подтверждённое изменение: нужен результат текущего теста, повторное повышение не предлагаю')
+   if nm in protected:raise ValueError('Товар требует отдельной проверки истории исключения')
    candidates=[r for r in rows if r['nm_id']==nm and r['placement']=='recommendations']
    if not candidates:raise ValueError('Нет подтверждённой рекомендации с рекламной статистикой')
    r=max(candidates,key=lambda r:(r.get('previous_full_days') or {}).get('orders',0))

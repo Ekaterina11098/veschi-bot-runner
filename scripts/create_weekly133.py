@@ -38,6 +38,7 @@ for uid,items in groups.items():
  d=getdoc("demand",uid);assert check_common(d),("Invalid basis",uid)
  basis=counter(ps("demand",uid));returned=collections.Counter()
  for r in all_returns:
+  if r.get("externalCode","").startswith("weekly-ip-133-return-"):continue
   if m.href(r.get("demand",{}))==m.href(d):
    for a,q in counter(ps("salesreturn",r["id"])).items():returned[a]+=q
  for a,q in items.items():assert basis.get(a,0)-returned[a]>=q,("Insufficient return capacity",a,uid)

@@ -93,6 +93,11 @@ class Analyst:
    rows=self.w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':5}) or []
    for row in rows:
     p=row['payload'];output.append(dict(key=row['cache_key'],updated_at=row.get('updated_at'),status=p.get('status'),completed_at=p.get('completed_at'),verified_at=p.get('verified_at'),plan=p.get('plan'),items=[{k:i.get(k) for k in ['id','article','status','selection','campaign_id','reason']} for i in p.get('items',[])],campaigns=p.get('campaigns')))
+  known={x['key'] for x in output}
+  for cid,key in (self.w.get('china_agent:verified_campaign_state:v1') or {}).items():
+   receipt=self.w.get(key) or {};after=receipt.get('after') or {}
+   if receipt.get('status')=='verified' and str(after.get('id'))==cid and key not in known:
+    output.append(dict(key=key,status='verified',campaign_id=int(cid),verified_at=receipt.get('verified_at'),items=receipt.get('items'),before=receipt.get('before'),after=after,sku_count=len(after.get('nm_settings',[]))))
   return dict(monitoring=self.w.get('china_agent:observation_policy:v1'),today_launches=self.w.get('china_agent:advertising_launch_summary:v1'),expanded_tracking={k:v for k,v in (self.w.get('china_agent:expanded_tests:2026-10-25:tracking:v1') or {}).items() if k in ['status','baseline_at','campaign_ids','last_checked_at','last_analysis']},search_tracking={k:v for k,v in (self.w.get('china_agent:search_test:2026-10-25:tracking:v1') or {}).items() if k in ['status','campaign_id','baseline_at','owner_changes']},verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Только status verified/applied/launched подтверждает исполнение. Отсутствие квитанции не равно выполнено.')
  def article_ids(self,articles):
   labels={a.casefold():int(n) for n,a in self.w.catalog()}

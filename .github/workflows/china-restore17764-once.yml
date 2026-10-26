@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
+    if: ${{ false }} # Stock preflight blocked64; no marketplace writes.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

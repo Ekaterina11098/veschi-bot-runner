@@ -22,7 +22,7 @@ def run():
   for index,f in enumerate(pages):
    p=plan(io,day,f,index)
    images.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))
-  saved=dict(day=day,status='frozen',bundle=bundle,files=images,wb_writes=0)
+  saved=dict(day=day,status='frozen',presentation=bundle.get('presentation'),bundle=bundle,files=images,wb_writes=0)
   if not io.create(key,saved):saved=io.get(key)
  if saved.get('day')!=day or saved.get('status')!='frozen':raise ValueError('Frozen image scope invalid')
  from china_daily_ad_actions import bind

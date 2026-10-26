@@ -15,6 +15,13 @@ def saved(w,kind,days):
   stats=[r for b in current['batches'].values() for r in b.get('stats',[])]
  else:
   camps=current.get('campaigns',[]);stats=[r for b in current.get('ad_batches',[]) for r in b.get('data',[])]
+ registry=w.get('china_agent:verified_campaign_state:v1') or {}
+ byid={c['id']:c for c in camps}
+ for cid,key in registry.items():
+  receipt=w.get(key) or {}
+  after=receipt.get('after') or {}
+  if receipt.get('status')=='verified' and str(after.get('id'))==cid:byid[int(cid)]=after
+ camps=list(byid.values())
  if not camps:
   return dict(status='diagnostic',available=True,rows=[],requires_confirmation=True,wb_reads=0,wb_writes=0,limitations=['Сохранённый актуальный состав не найден; предварительный расчёт недоступен. Не обращаться к WB повторно без необходимости.'])
  observed=current.get('completed_at') or current.get('observed_at')
@@ -48,4 +55,4 @@ def saved(w,kind,days):
    if kind=='add' and (placement!='recommendations' or nm in search):continue
    rows.append(dict(nm_id=nm,article=labels.get(nm,'WB '+str(nm)),campaign_id=c['id'],placement=placement,current_minor=n.get('bids_kopecks',{}).get(placement),today=a,today_drr=rate(a) if a else None,previous_full_days=b,previous_drr=rate(b) if b else None,already_in_search=nm in search,economics_confirmed=False,execution_ready=False))
  rows.sort(key=lambda r:((r['today'] or {}).get('orders',0),(r['previous_full_days'] or {}).get('orders',0)),reverse=True)
- return dict(status='diagnostic',available=True,cached=True,observed_at=observed,period_from=dates[-1],period_to=dates[0],today=day,rows=rows[:40],total_candidates=len(rows),truncated=len(rows)>40,wb_reads=0,wb_writes=0,memory_used=True,requires_confirmation=True,execution_ready=False,limitations=['Это предварительный отбор по сохранённой статистике, не готовый план исполнения.','Текущий минимум/шаг и полная экономика перед запуском ещё проверяются.','Ставку нельзя умножать на5/ДРР и обещать пропорциональный рост заказов.','Учитывать историю изменений и исключений, собственный завершённый выкуп и все расходы.','История и текущий день имеют разные даты срезов; рекламная атрибуция не равна уникальным WBзаказам/прибыли.'])
+ return dict(status='diagnostic',available=True,cached=True,observed_at=observed,period_from=dates[0],period_to=dates[-1],today=day,rows=rows[:40],total_candidates=len(rows),truncated=len(rows)>40,wb_reads=0,wb_writes=0,memory_used=True,requires_confirmation=True,execution_ready=False,limitations=['Это предварительный отбор по сохранённой статистике, не готовый план исполнения.','Текущий минимум/шаг и полная экономика перед запуском ещё проверяются.','Ставку нельзя умножать на5/ДРР и обещать пропорциональный рост заказов.','Учитывать историю изменений и исключений, собственный завершённый выкуп и все расходы.','История и текущий день имеют разные даты срезов; рекламная атрибуция не равна уникальным WBзаказам/прибыли.'])

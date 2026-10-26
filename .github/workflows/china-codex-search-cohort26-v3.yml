@@ -1,0 +1,35 @@
+name: Owner high conversion search cohort26 recovered
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-codex-search-cohort26-v3.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-cost-control-single-writer
+  cancel-in-progress: false
+jobs:
+  cohort:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Fetch only exact public sources pinned to this commit
+        run: |
+          python - <<'PY'
+          import os,pathlib,re,urllib.request
+          sha=os.environ['GITHUB_SHA']
+          assert re.fullmatch('[0-9a-f]{40}',sha)
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          for name in ['china_codex_search_cohort26_v3.py','china_cloud_cost_control.py','china_price_apply.py']:
+              url='https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+sha+'/scripts/'+name
+              root.joinpath(name).write_bytes(urllib.request.urlopen(url,timeout=40).read())
+          PY
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - run: python -m py_compile scripts/china_codex_search_cohort26_v3.py
+      - run: python scripts/china_codex_search_cohort26_v3.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

@@ -1,0 +1,26 @@
+name: Resume existing isolated approved review publisher
+on:
+  push:
+    paths: ['.github/workflows/review-approved-resume-20261026.yml']
+  workflow_dispatch:
+permissions: {contents: read, actions: write}
+jobs:
+  resume:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Dispatch only the existing publisher if no active run exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'JS'
+          const base='https://api.github.com/repos/'+process.env.GITHUB_REPOSITORY;
+          const headers={Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','Content-Type':'application/json'};
+          const r=await fetch(base+'/actions/workflows/review-approved-publication.yml/runs?per_page=20',{headers});
+          if(!r.ok)throw Error('Cannot inspect publisher runs');
+          const data=await r.json();
+          if(data.workflow_runs.some(x=>['queued','pending','waiting','in_progress'].includes(x.status))){console.log('Existing publisher already active; no duplicate dispatch');process.exit(0);}
+          const dispatched=await fetch(base+'/actions/workflows/review-approved-publication.yml/dispatches',{method:'POST',headers,body:JSON.stringify({ref:'main'})});
+          if(dispatched.status!==204)throw Error('Publisher dispatch failed '+dispatched.status);
+          console.log('Only isolated approved publisher resumed; no intents or WB data modified');
+          JS

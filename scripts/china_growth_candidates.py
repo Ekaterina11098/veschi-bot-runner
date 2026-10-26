@@ -105,7 +105,12 @@ def score(s,current,daily,mins,config,protected,recent,targets,today,days=3):
    result.append(dict(base,kind='ad_raise_bid',campaign_id=cid,old_minor=old,target_minor=target,minimum_minor=minimum,subject_id=r.get('subject_id'),confidence='limited_test',drr=round(drr,2),orders=orders,daily=[dict(date=d,**values[d],drr=values[d]['spend']/values[d]['amount']*100 if values[d]['amount'] else None) for d in dates],today_drr=round(tdrr,2) if tdrr is not None else None,modeled_drr=round(drr*target/old,2),reason='Есть запас до ДРР5%; без последовательного роста стоимости заказа',estimated_total_profit_rub=round(orders*exp,2)))
  result.sort(key=lambda r:((r.get('orders') or counts.get(r['nm_id'],0)),r['stock']),reverse=True)
  return result[:12],blocked
-def collect(w,kind='both',days=3):
+def collect(w,kind='both',days=3,fresh=False):
+ if not fresh:
+  from china_growth_saved import saved
+  return saved(w,kind,days)
+ return _collect_live(w,kind,days)
+def _collect_live(w,kind='both',days=3):
  if kind not in ['both','add','raise'] or not 2<=days<=14:raise ValueError('Для подбора нужны2–14полныхдней')
  from china_price_apply import IO
  from china_new_ad_reports import source

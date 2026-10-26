@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   rename:
+    if: ${{ false }} # Completed and WB-verified; one-off execution disabled.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

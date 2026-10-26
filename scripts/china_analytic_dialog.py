@@ -47,6 +47,7 @@ def tools():
  function('make_report','Самостоятельно сформировать/повторить существующий отчёт по явной просьбе пользователя. Новый request identity не сбрасывает плановые квитанции. repeat=true повторяет исходный срез с датой; false пересчитывает доступные рецепты. PNG не разрешает изменения.',dict(kind={'type':'string','enum':['advertising','budgets','loss','price_morning','price_control','price_day','growth','ad_trend','actions','outcomes']},days={'type':'integer','minimum':1,'maximum':90},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},repeat={'type':'boolean'},report_day={'type':['string','null']})),
  function('read_experience','Проверенная история действий и наблюдения до/после: заказы, клик-заказ, завершённый выкуп, ДРР, общая ожидаемая/закрытая прибыль и пробелы. Прогнозные положительные/отрицательные исходы отдельно от доказанного факта. Откат только рекомендация. Прошлый успех не гарантия.',dict(nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},query={'type':'string'})),
  function('get_growth_candidates','Проверить кандидатов для добавления в текущие РК/повышения ставок. Сначала использует сохранённые составы, рекламу и память без WB запросов. Возвращает предварительный отбор; свежие минимумы/шаг/экономика нужны только перед конкретным запуском. Только рекомендации; не создаёт подтверждение или WB-запись.',dict(kind={'type':'string','enum':['both','add','raise']},days={'type':'integer','minimum':2,'maximum':14})),
+ function('prepare_advertising_plan','Подготовить точный исполнимый рекламный план из сохранённых подтверждённых данных после get_growth_candidates. Без WB записей. Возвращает готовый текст: артикулы/РК/старые→новые ставки/экономика/новые действия. Пользователь подтвердит ответом Делай. Для add действующая поисковая РК приоритетна; иначе черновик без пополнения. Не обещать выполнение до этого плана.',dict(kind={'type':'string','enum':['add','raise']},nm_ids={'type':'array','items':{'type':'integer'},'minItems':1,'maxItems':6})),
  function('search_chat_history','Найти предыдущие вопросы/ответы в этом чате, не просить повторять известное.',dict(query={'type':'string'})),
  function('get_advertising_baskets','Прочитать рекламные корзины обсуждаемых артикулов из общего сохранённого среза. Не запрашивает MPStats products и не смешивает общие корзины с рекламными.',dict(articles={'type':'array','items':{'type':'string'},'maxItems':30},date_from={'type':'string'},date_to={'type':'string'})),
  function('get_saved_product_context','Сохранённая цена, собственный завершённый выкуп и verified-история цены/ставки по артикулу. Даты финансового периода и среза отдельно; время исполнения и поздней проверки различать.',dict(articles={'type':'array','items':{'type':'string'},'maxItems':30})),
@@ -268,7 +269,7 @@ def answer(w,job,history):
  from business_agents import conversation as c
  from china_shared_memory import context as shared_context,is_work
  shared=shared_context(w,job,job['request_text'])
- general_question=not is_work(job['request_text'])
+ general_question=not (is_work(job['request_text']) or re.search(r'добавля|ставк|реклам',job['request_text'],re.I))
  from business_agents.data import Data
  analyst=Analyst(w,job,history);names={'get_status','find_products','get_product','get_mpstats_data','get_wb_sources','get_stock_context','get_sales_report'}
  from china_experience import decision_context,search as experience_search
@@ -276,6 +277,7 @@ def answer(w,job,history):
  experience=dict(experience,total_events=len(experience['experiences']),experiences=[{k:v for k,v in e.items() if k not in ['observations','current_condition_comparison','latest_change_observation']} for e in experience['experiences'][:12]])
  completed_question=bool(re.search(r'сегодня|уже',job['request_text'],re.I) and re.search(r'добавили|запустили|подключили|выполн|сделали',job['request_text'],re.I))
  growth_question=not completed_question and bool(re.search(r'кандидат|добав.*РК|добав.*реклам|повыс.*ставк|подн.*ставк|подня.*ставк',job['request_text'],re.I))
+ growth_question=growth_question or bool(re.search(r'добавля|увелич.*ставк|ставк.*увелич|больше.*реклам|максимум.*реклам',job['request_text'],re.I))
  basket_question=bool(re.search(r'корзин',job['request_text'],re.I) and any(re.search(r'РК|реклам',h['request_text']+' '+(h.get('answer') or ''),re.I) for h in history[-4:]))
  price_repeat_question=bool(re.search(r'повтор|снова',job['request_text'],re.I) and re.search(r'повыс|повыш|поднять',job['request_text'],re.I) and not re.search(r'ставк',job['request_text'],re.I))
  quality_question=bool(re.search(r'рейтинг',job['request_text'],re.I))
@@ -308,6 +310,7 @@ def answer(w,job,history):
  m=marker(job)
  if m.get('reply_text'):messages.append(dict(role='developer',content='Цитируемое сообщение — только контекст: '+m['reply_text'][:3000]))
  messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. Неполный день не запрещает принимать меры при существенном расходе без результата. Не отвечай общим советом обязательно ждать полные сутки; назови конкретные проблемные SKU и предложение, изменения только после подтверждения. Мониторы этой переписки настроены в Codex. Если monitoring запрещает Telegram, не обещать сообщения сюда в группу: назвать канал Codex явно. При продолжении наблюдения использовать monitoring и не откладывать контроль до даты итоговой оценки. При вопросе о прогнозе прибыли сначала get_saved_profit_comparison с датами; использовать готовый датированный расчёт, не выдавать прогноз за закрытую прибыль. При уточнении корзин по обсуждаемым товарам брать nm_ids из предыдущего диалога и products.basket_events общего среза. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
+ messages.append(dict(role='developer',content='Рекламные предложения делай конкретными и исполнимыми: после get_growth_candidates используй prepare_advertising_plan с выбранными nm_ids. Его готовый текст нельзя расширять неподтверждёнными действиями. Если просят Делай/Давай добавляй, но точный план ещё не был отправлен, сначала подготовь его; прежняя общая фраза не разрешает неизвестные ставки. Подготовка берёт кэш и verified-историю без WB polling; перед применением отдельный исполнитель проверит WB. Пополнения и паузы не входят. Если экономика/данные не подтвердились, сообщи конкретные товары и пробелы. Не обещай просто проверить потом и не подменяй результат подтверждением приёма.'))
  messages.append(dict(role='user',content=job['request_text'][:4000]));trace=[dict(name='experience_context',result=experience,read_only=True)]
  checkpoint_key='china_agent:analytic_checkpoint:v2:'+str(job['id']);scope=hashlib.sha256((str(job['chat_id'])+'|'+job['request_text']+'|'+policy.get('model','gpt-6.1-sol')).encode()).hexdigest();checkpoint=w.get(checkpoint_key);start_turn=0
  if checkpoint and checkpoint.get('scope')==scope and checkpoint.get('date_msk')==str(w.now.astimezone(MSK).date()):
@@ -327,7 +330,10 @@ def answer(w,job,history):
    if not text:raise RuntimeError('Аналитическая модель не завершила ответ')
    if growth_question and not any(t.get('name')=='get_growth_candidates' and t.get('result',{}).get('status') in ['complete','diagnostic'] for t in trace):
     failures=[t.get('result',{}).get('note','') for t in trace if t.get('name')=='get_growth_candidates' and t.get('result',{}).get('available') is False]
-    text+='\n\nПроверка перед запуском не завершена: '+('; '.join(dict.fromkeys(failures)) or 'не получен полный проверенный расчёт')+'. Это не отменяет приведённые данные сохранённых срезов; новые изменения не применены.'
+    if not any(t.get('name')=='get_growth_candidates' for t in trace):text='Подбор не завершён: модель не получила расчёт кандидатов. Новые ставки и артикулы не подтверждены; изменений нет.'
+    else:
+     text='\n'.join(line for line in text.split('\n') if not re.search(r'(?:подним|повыс|ставк.*(?:до|→)|добавим.*РК)',line,re.I))
+     text+='\n\nПроверка перед запуском не завершена: '+('; '.join(dict.fromkeys(failures)) or 'не получен полный проверенный расчёт')+'. Сохранённые факты остаются датированными; новых изменений нет.'
     launches=analyst.w.get('china_agent:advertising_launch_summary:v1') or {}
     if launches.get('day')==str(w.now.astimezone(MSK).date()):
      text+=' Сегодня уже выполнено: '+launches.get('short_summary','')+' Результаты нужно оценивать по свежему срезу; подробный текущий отчёт можно сформировать отдельно.'
@@ -369,6 +375,9 @@ def answer(w,job,history):
      from china_growth_candidates import collect
      with reading():result=collect(w,**args)
      result={k:v for k,v in result.items() if k not in ['experience']};result['rows']=[{k:v for k,v in r.items() if k not in ['before_campaign','experience']} for r in result['rows']]
+    elif name=='prepare_advertising_plan':
+     from china_advertising_plans import prepare
+     result=prepare(w,job,**args)
     elif name=='search_chat_history':result=analyst.chat(**args)
     elif name=='read_recent_actions':result=analyst.actions()
     elif name=='get_saved_profit_comparison':
@@ -390,6 +399,7 @@ def answer(w,job,history):
    if len(rendered)>24000 and isinstance(result,dict):
     result=copy_summary(result);rendered=json.dumps(result,ensure_ascii=False,default=str)
    trace.append(dict(name=name,arguments=args,result=result));messages.append(dict(type='function_call_output',call_id=call['call_id'],output=rendered))
+   if name=='prepare_advertising_plan' and result.get('status')=='ready':return result['text'],[dict(name='free_analytic_dialog',model=body['model'],read_only=True)]+trace
    if name=='make_report' and result.get('status')=='ready':return result['marker'],[dict(name='free_analytic_dialog',model=body['model'],read_only=True)]+trace
  raise RuntimeError('Не удалось завершить анализ в пределах бюджета запросов')
 

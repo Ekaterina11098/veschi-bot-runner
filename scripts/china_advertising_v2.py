@@ -16,12 +16,12 @@ def http(io,path,method='GET',body=None):
  time.sleep(1.5);r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':io.token},json=body,timeout=60)
  if not r.ok:raise RuntimeError('China advertising read HTTP '+str(r.status_code))
  return r.json() if r.content else {}
-def collect(io,day):
+def collect(io,day,current=False):
  policy=io.get(FORMAT)
  if not policy or policy.get('status')!='approved' or policy.get('version')!=VERSION:raise ValueError('Approved daily advertising format missing')
- key='china_agent:advertising_source:'+day+':v2';s=io.get(key)
+ key=('china_agent:advertising_midday_source:' if current else 'china_agent:advertising_source:')+day+':v2';s=io.get(key)
  if s and s.get('status')=='complete':return s
- end=date.fromisoformat(day)-timedelta(days=1);start=end-timedelta(days=6)
+ end=date.fromisoformat(day) if current else date.fromisoformat(day)-timedelta(days=1);start=end if current else end-timedelta(days=6)
  if not s:s=dict(status='collecting',version=VERSION,cabinet='token_3',observed_at=stamp(),period_from=str(start),period_to=str(end),wb_writes=0);save(io,key,s)
  if 'ids' not in s:
   j=http(io,'/adv/v1/promotion/count');s['ids']=sorted({x['advertId'] for g in j.get('adverts',[]) if g.get('status') in [4,9,11] for x in g.get('advert_list',[])});save(io,key,s)

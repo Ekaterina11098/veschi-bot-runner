@@ -27,7 +27,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-        run: python scripts/weekly133_historical_costs.py
+        run: python scripts/weekly133_historical_stock.py
 
 # Read-only retry after a transient upstream error.
 

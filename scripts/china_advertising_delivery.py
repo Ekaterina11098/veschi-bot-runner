@@ -3,8 +3,8 @@ import hashlib
 from datetime import datetime,timezone
 CHAT=-1004342917488
 BOT=8780468043
-def deliver(io,day,files,sender,binder=None):
- key='china_agent:advertising_delivery:'+day+':v1'
+def deliver(io,day,files,sender,binder=None,delivery_key=None,expected_families=None):
+ key=delivery_key or 'china_agent:advertising_delivery:'+day+':v1'
  e=io.get(key)
  if e and e.get('status')=='delivered':return e
  if not e:
@@ -12,7 +12,7 @@ def deliver(io,day,files,sender,binder=None):
   if not io.create(key,e):raise RuntimeError('Concurrent delivery')
  kinds=[x['kind'] for x in files]
  families=[k.split(':')[0] for k in kinds]
- if len(set(kinds))!=len(kinds) or not families or set(families)!={'drr','budgets'} or families!=sorted(families,key=lambda x:0 if x=='drr' else 1):raise ValueError('Expected ordered unique advertising and budget pages')
+ if len(set(kinds))!=len(kinds) or not families or set(families)!=(expected_families or {'drr','budgets'}) or families!=sorted(families,key=lambda x:0 if x=='drr' else 1):raise ValueError('Expected ordered unique advertising and budget pages')
  for f in files:
   digest=hashlib.sha256(f['bytes']).hexdigest()
   part=next((x for x in e['parts'] if x['kind']==f['kind']),None)

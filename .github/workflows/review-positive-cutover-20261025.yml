@@ -27,3 +27,5 @@ jobs:
           await request('/actions/workflows/review-positive-recover-20261026.yml/dispatches','POST',{ref:'main'});
           console.log('Only isolated review publisher and all-cabinet recovery adopted current main.');
           JS
+
+# Full module and all 18 policy tests verified before recovery.

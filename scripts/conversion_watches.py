@@ -522,8 +522,19 @@ class Worker:
                 if exc.retryable and job.get('attempts',0)+1<3:
                     patch({'status':'pending','retry_at':(datetime.now(timezone.utc)+timedelta(seconds=exc.retry_after)).isoformat(),'error':'model_deferred_'+str(exc.status),'lease_until':None})
                     return 'model_deferred'
-            patch({'status':'failed','error':'saved_question_'+type(exc).__name__,'lease_until':None})
-            raise
+            # Acknowledge is not a final answer: surface a terminal blocker once.
+            delivery=self.get(RECEIPTS+'question:'+str(job_id)+':0') or {}
+            if delivery.get('status') in ('sent','sending','uncertain'):
+                patch({'status':'failed','error':'saved_question_'+type(exc).__name__,'lease_until':None})
+                raise
+            detail=str(exc)[:220] if isinstance(exc,(ValueError,RuntimeError,PermissionError)) else type(exc).__name__
+            answer='Не удалось завершить запрос: '+detail+'. Изменения по этому ответу не подтверждены. Повторные действия автоматически не запускаю.'
+            self.active_question_id=job_id;self.reply_id=marker.get('message_id')
+            trace=[marker,dict(name='dialog_terminal_blocker',error=type(exc).__name__,detail=detail)]
+            patch({'answer':answer,'tool_trace':trace,'error':'saved_question_'+type(exc).__name__})
+            outcome=self.send_once('question_error:'+str(job_id)+':0',job['chat_id'],answer)
+            patch({'status':'done' if outcome=='sent' else 'failed','completed_at':self.now.isoformat() if outcome=='sent' else None,'lease_until':None})
+            return 'error_reported' if outcome=='sent' else 'error_delivery_'+outcome
 
     def dialog(self,job,history):
         from china_new_ads import handle as new_ad_handle

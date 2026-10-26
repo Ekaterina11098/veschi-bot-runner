@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
+    if: ${{ false }} # Read-only comparison snapshot complete.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

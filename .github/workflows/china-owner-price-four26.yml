@@ -1,0 +1,26 @@
+name: Owner confirmed four prices26
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-owner-price-four26.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-confirmed-wb-price-writes
+  cancel-in-progress: false
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - run: python -m py_compile scripts/china_owner_price_four26.py
+      - run: python scripts/china_owner_price_four26.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

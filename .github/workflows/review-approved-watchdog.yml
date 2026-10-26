@@ -1,0 +1,41 @@
+name: Keep approved review and question publishing alive
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Publish only confirmed Telegram review answers']
+    types: [completed]
+    branches: [main]
+  push:
+    paths: ['.github/workflows/review-approved-watchdog.yml']
+  schedule:
+    - cron: '13,43 * * * *'
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: review-approved-watchdog
+  cancel-in-progress: false
+jobs:
+  resume:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            review_approved_watchdog.py
+            review_approved_worker.py
+            test_review_approved_watchdog.py
+            review-approval-preparation/review_telegram_approval.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10'
+      - name: Test continuation and no duplicate dispatch
+        run: python -m unittest test_review_approved_watchdog.py
+      - name: Wake only an enabled approved publisher with pending work
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python review_approved_watchdog.py

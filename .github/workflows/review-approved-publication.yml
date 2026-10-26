@@ -34,6 +34,7 @@ jobs:
           python -m unittest discover -s review-approval-preparation -p test_review_telegram.py
           python -m unittest test_review_autonomy.py test_review_cleanup.py test_review_reliability.py
           node review-approval-preparation/test_review_inbox_route.mjs
+          python -m unittest test_review_approved_watchdog.py
           python -m py_compile review_approved_worker.py
       - name: Resume only post-cutover authenticated Telegram approvals
         env:

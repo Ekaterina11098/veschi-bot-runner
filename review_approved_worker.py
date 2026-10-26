@@ -80,7 +80,7 @@ def main():
         try:
             from review_approval_cleanup import cleanup_completed
             cleanup_completed(app,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),preserve)
-            deadline=time.monotonic()+33*60
+            deadline=time.monotonic()+25*60
             while time.monotonic()<deadline:
                 cfg=config();app.group=cfg.get('content_group_policy',{})
                 if not all(cfg.get(k) for k in ('enabled','publication_enabled','destination_verified')):break

@@ -95,9 +95,31 @@ class Receiver:
         if len(matches) != 1:
             raise Rejected('Unknown or ambiguous review message')
         token, card = matches[0]
+        original_token, original_message_id = token, reply['message_id']
+        item = a.repo.get('items',card['ref']) or {}
+        if item.get('token') and item['token'] != token:
+            # A real reply to an older bound card may edit only the current
+            # pending rework of the same unchanged source. Never forward clicks.
+            current_token = item['token']
+            current = a.repo.get('cards',current_token)
+            if (not current or item.get('status') != 'rework'
+                or current.get('status') != 'rework'
+                or a.card_chat(current) != a.chat
+                or any(current.get(k) != card.get(k) for k in ('ref','cabinet','kind','item_id','source'))
+                or any(json.loads(row[0]).get('ref') == card['ref']
+                       for row in a.repo.execute('SELECT payload FROM {p}intents').fetchall())):
+                raise Rejected('Old reply cannot replace the current decision')
+            token, card = current_token, current
         if not self.reconcile(card):
             raise Rejected('Canonical state temporarily unavailable' if getattr(self.reconcile,'last_reason',None)=='unavailable' else 'Canonical review state unavailable or blocked')
-        return a.record_edit(token, str(msg['from']['id']), a.chat, reply['message_id'], msg['text'])
+        result = a.record_edit(token, str(msg['from']['id']), a.chat, card['message_id'], msg['text'])
+        if token != original_token:
+            with a.repo.transaction():
+                a.repo.put('events','reply-route:'+str(msg.get('message_id'))+':'+token,
+                    dict(original_token=original_token,original_message_id=original_message_id,
+                         current_token=token,revision_event_id=result['revision_event_id'],
+                         actor=str(msg['from']['id']),chat_id=a.chat))
+        return result
 
     def wsgi(self, environ, start_response):
         if environ.get('REQUEST_METHOD') != 'POST':

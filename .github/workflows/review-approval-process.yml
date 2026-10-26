@@ -41,6 +41,7 @@ jobs:
           node review-approval-preparation/test_review_inbox_route.mjs
           node review-approval-preparation/test_review_webhook_state.mjs
           python -m unittest test_review_autonomy.py test_review_cleanup.py test_review_reliability.py
+          PYTHONPATH=review-approval-preparation python -m unittest discover -s review-approval-preparation -p test_review_replyrouting.py
       - name: Process one authenticated new approval, never old queues
         working-directory: review-approval-preparation
         env:

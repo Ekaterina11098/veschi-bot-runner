@@ -5,6 +5,8 @@ ZERO=dict(spend=0,amount=0,orders=0,views=0,clicks=0)
 def money(x):return f'{x:,.2f}'.replace(',',' ').replace('.',',')
 def enhance(bundle,source):
  labels=price_map(source['catalogue']);changes=history(source.get('executions',[]))
+ intraday=source.get('intraday') or {};today_raw={r['advertId']:r for b in intraday.get('ad_batches',[]) for r in b.get('data',[])}
+ today_date=bundle['day']
  raw={r['advertId']:r for b in source['batches'].values() for r in b['stats']}
  campaigns={c['id']:c for b in source['batches'].values() for c in b['campaigns'].get('adverts',[])}
  for c in bundle['campaigns']:
@@ -25,7 +27,8 @@ def enhance(bundle,source):
    exclusions[x['nm']]=dict(nm=x['nm'],article=labels.get(x['nm'],{}).get('article','WB '+str(x['nm'])),at=x['at'],date=local.strftime('%d.%m'))
   active=sums(bynm.get(nm,ZERO) for nm in members) if not c['missing_stats'] else None
   maximum=max((v['spend'] for nm,v in bynm.items() if nm in members),default=0)
-  c.update(confirmed_exclusions=list(exclusions.values()),current_period=active,max_member_spend=maximum,
+  today=next((daily_metrics(d) for d in today_raw.get(c['id'],{}).get('days',[]) if d['date'][:10]==today_date),None)
+  c.update(today=today,yesterday=c.get('last'),today_observed_at=intraday.get('observed_at'),confirmed_exclusions=list(exclusions.values()),current_period=active,max_member_spend=maximum,
            member_count=len(members),current_articles=[dict(nm=nm,article=labels.get(nm,{}).get('article','WB '+str(nm))) for nm in sorted(members)],facts_checked=True)
   # Only concrete new actions appear as individual SKU rows. Waiting/old actions stay out.
   c['attention']=[r for r in c['focus'] if r.get('action') and r['nm'] in members]
@@ -33,6 +36,8 @@ def enhance(bundle,source):
    c['budget_action']=None;c['budget_recommendation']='Не пополнять. РК остаётся активной: пауза не согласована.'
   c['notes']=notes(c)
  bundle['presentation']='campaign_cards_v3'
+ bundle['today_observed_at']=intraday.get('observed_at')
+ bundle['total_yesterday_spend']=sum(c['last']['spend'] for c in bundle['campaigns'] if c.get('last') is not None) if all(c.get('last') is not None or c['status']!=9 for c in bundle['campaigns']) else None
  bundle['receipt_basis']='verified before/after diff and current campaign membership'
  return bundle
 

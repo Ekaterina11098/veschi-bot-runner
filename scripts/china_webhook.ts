@@ -203,23 +203,6 @@ async function launchPrice(approval_key:string) {
 
 Deno.serve(async(request:Request):Promise<Response>=>{
   if(request.method!=='POST')return new Response('Method not allowed',{status:405});
-  // One addressed recovery of the owner's already saved exact price confirmation.
-  const recovery=request.headers.get('x-china-route-recovery-key');
-  if(recovery){
-   if(await digest(recovery)!=='3af262a9e683f61e876fcbe7cf076db728d4b4f1515c7f554f702303990638db'||new Date().toISOString().slice(0,10)!=='2026-10-26')return new Response('Unauthorized',{status:401});
-   const input=await request.json();
-   if(input.job_id!==128)return new Response('Recovery scope',{status:403});
-   const config=(await database('business_agent_config?agent_id=eq.china&limit=1'))?.[0];
-   const job=(await database('business_agent_jobs?id=eq.128&agent_id=eq.china&chat_id=eq.-1004342917488&sender_id=eq.5122667182&select=id,update_id,sender_id,chat_id,request_text,tool_trace,created_at&limit=1'))?.[0];
-   if(!job||Date.now()-Date.parse(job.created_at)>86400000)return new Response('Job unavailable',{status:409});
-   const m=job.tool_trace?.find((x:any)=>x.name==='china_saved_question');
-   if(m?.bot_id!==config.bot_id||!m.reply_message_id||typeof m.reply_text!=='string')return new Response('Original binding unavailable',{status:409});
-   const message={message_id:m.message_id,chat:{id:job.chat_id,type:'supergroup'},from:{id:job.sender_id,is_bot:false},reply_to_message:{message_id:m.reply_message_id,from:{id:config.bot_id},text:m.reply_text}};
-   const result=await handlePriceApproval(config,message,job.request_text,job.update_id,{database,telegram,digest,same,launchPrice,deferMembership:true});
-   const body=result?await result.json():{text:'Not a price confirmation'};
-   await database('telegram_api_cache?on_conflict=cache_key','POST',{cache_key:'china_agent:price_route_recovery:v1:128',payload:{job_id:128,result:body.text,recorded_at:new Date().toISOString(),telegram_sends:0},expires_at:'2036-10-26T00:00:00Z'},'resolution=merge-duplicates,return=representation');
-   return Response.json({job_id:128,result:body.text,telegram_sends:0});
-  }
   const secret=request.headers.get('X-Telegram-Bot-Api-Secret-Token');
   if(!secret||secret.length>200)return new Response('Unauthorized',{status:401});
   try{

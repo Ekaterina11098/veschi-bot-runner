@@ -2,6 +2,7 @@ import {stripTypeScriptTypes} from 'node:module';
 import vm from 'node:vm';import fs from 'node:fs';import assert from 'node:assert/strict';import {webcrypto} from 'node:crypto';
 const secret='test-secret';const digest=Buffer.from(await webcrypto.subtle.digest('SHA-256',Buffer.from(secret))).toString('hex');
 let cfg={agent_id:'china',chat_id:-123,owner_user_id:5,bot_id:9,bot_username:'china_test_bot',active:true,secret_digest:digest};
+let adsBound=false;
 let handler,jobs=[],dispatches=[],line=null;const acknowledgements=new Map();
 const env={SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'test',CHINA_TELEGRAM_BOT_TOKEN:'test',GITHUB_WORKFLOW_DISPATCH_TOKEN:'test'};
 const ctx={Response,Request,AbortSignal,TextEncoder,crypto:webcrypto,console,Deno:{env:{get:k=>env[k]},serve:f=>handler=f},fetch:async(url,opt)=>{
@@ -21,6 +22,7 @@ const ctx={Response,Request,AbortSignal,TextEncoder,crypto:webcrypto,console,Den
   else if(opt.method==='PATCH'){cfg={...cfg,...b};result=[cfg];}
   else result=[cfg];
  }else if(table==='telegram_api_cache'){
+  if(adsBound && p.get('cache_key')?.includes('advertising_dialog_message:v1:71'))return Response.json([{payload:{chat_id:cfg.chat_id,plan_id:'dialog-ads-1-raise'}}]);
   if(b?.cache_key?.includes('question_ack')){if(!acknowledgements.has(b.cache_key)){acknowledgements.set(b.cache_key,b);result=[b];}}
   else if(b?.cache_key?.includes('chat_migration')||p.get('cache_key')?.includes('chat_migration')){
    if(opt.method==='POST'){line=b;result=[line];}else result=line?[line]:[];
@@ -47,3 +49,5 @@ assert.equal((await call(migrate)).status,200);assert.equal(cfg.chat_id,-456);
 const bad={update_id:7,message:{message_id:7,chat:{id:-999,type:'group'},migrate_to_chat_id:-888}};assert.equal((await call(bad)).status,503);assert.equal(cfg.chat_id,-456);
 console.log('Webhook auth, all-member input, exact dispatch, duplicate, reply and migration checks passed');
 
+
+adsBound=true;const beforeAds=jobs.length;const ad=msg(99,6,cfg.chat_id);ad.message.text='Подтверждаю';ad.message.reply_to_message={from:{id:9},message_id:71,text:'Точный план рекламы'};const resultAds=await call(ad);assert.equal(resultAds.status,200);assert.equal(jobs.length,beforeAds+1);assert.equal(jobs.at(-1).request_text,'Подтверждаю');console.log('Advertising confirmation routed by bound message');

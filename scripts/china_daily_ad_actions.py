@@ -4,8 +4,8 @@ from datetime import datetime,timezone,timedelta
 from china_loss_control import CHAT,BOT,PLAN,APPROVAL,digest,is_all,marker
 BIND='china_agent:daily_ad_message:v2:'
 EXEC='china_agent:daily_ad_execution:v2:'
-def plan(io,day,f,index):
- pid='daily-'+day+'-'+f['family']+'-'+str(index);items=copy.deepcopy(f['actions'])
+def plan(io,day,f,index,slot=''):
+ pid='daily-'+day+('-'+slot if slot else '')+'-'+f['family']+'-'+str(index);items=copy.deepcopy(f['actions'])
  p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='daily_ad_actions_v2',family=f['family'],created_at=datetime.now(timezone.utc).isoformat(),expires_at=(datetime.now(timezone.utc)+timedelta(hours=20)).isoformat(),items=items,plan_sha256=digest(items),report_message_ids=[],price_changes=False,auto_topup=False,period_to=day)
  k=PLAN+pid;old=io.get(k)
  if old:

@@ -1,10 +1,14 @@
 """Read-only MS preparation for user-requested weekly report; data stays private."""
-import json,collections
+import json,collections,time
 import fbs_document_chain as m
 class ReadOnly(m.Transport):
  def request(self,base,path,method="GET",body=None,params=None):
   if base==m.MS and method!="GET":raise m.Stop("MS writes prohibited")
-  return super().request(base,path,method,body,params)
+  for attempt in range(3):
+   try:return super().request(base,path,method,body,params)
+   except m.Stop:
+    if method!="GET" or attempt==2:raise
+    time.sleep(3*(attempt+1))
 t=ReadOnly();db=m.Cache(t);w=m.Worker(t,db,{})
 key="weekly_report_review:133:"
 inp=db.get(key+"input:v1");assert inp and inp["rules_version"]=="2026-10-23-reviewed"
@@ -26,7 +30,7 @@ for typ in ("customerorder","demand","salesreturn"):
   if any(str(n) in d.get("name","")+" "+d.get("description","") for n in inp["report_ids"]) or "0(133)" in d.get("description",""):
    d["type"]=typ;out["duplicates"].append(d)
 db.put(key+"prepare:v1",out)
-for d in w.ms_rows("entity/demand",{"filter":flt+";moment>=2026-08-01 00:00:00;moment<2026-10-26 00:00:00","expand":"customerOrder","order":"moment,desc"}):
+for d in w.ms_rows("entity/demand",{"filter":flt+";moment>=2026-08-01 00:00:00;moment<2026-10-26 00:00:00","order":"moment,desc"}):
  order=d.get("customerOrder",{})
  if m.href(order).startswith(m.MS):order=t.request(m.MS,m.href(order)[len(m.MS):])
  d["customerOrder"]=order

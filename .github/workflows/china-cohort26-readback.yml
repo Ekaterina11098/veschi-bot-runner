@@ -1,0 +1,27 @@
+name: China cohort26 known draft readback
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-cohort26-readback.yml']
+permissions:
+  contents: read
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          python - <<'PY'
+          import os,pathlib,urllib.request
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          for name in ['china_cohort26_reconcile.py','china_cloud_cost_control.py']:
+              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
+          PY
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - run: python scripts/china_cohort26_reconcile.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

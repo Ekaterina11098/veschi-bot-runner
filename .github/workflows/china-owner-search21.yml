@@ -1,0 +1,27 @@
+name: Owner approved China search21
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-owner-search21.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-cost-control-single-writer
+  cancel-in-progress: false
+jobs:
+  owner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - run: python -m py_compile scripts/china_owner_search21.py scripts/china_growth_saved.py scripts/china_analytic_dialog.py
+      - name: Apply only the owner-approved 21-SKU plan; private receipts
+        run: python scripts/china_owner_search21.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

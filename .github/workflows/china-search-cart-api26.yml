@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
+    if: ${{ false }} # One-off completed: WB403 Jam subscription required; no repeated calls.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

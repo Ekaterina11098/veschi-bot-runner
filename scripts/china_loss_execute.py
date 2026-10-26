@@ -39,6 +39,8 @@ class IO(BaseIO):
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
  io=IO()
+ from china_advertising_plans import process as process_advertising_plans
+ process_advertising_plans(io)
  from china_new_ad_reports import process_requests
  process_requests(io)
  rows=io.db('telegram_api_cache?cache_key=like.'+quote(APPROVAL+'*',safe='')+'&select=payload&limit=100')

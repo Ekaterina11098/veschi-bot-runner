@@ -39,6 +39,14 @@ class CardFactsTests(unittest.TestCase):
   pages=render(enhance(b,s));self.assertEqual({x['family'] for x in pages},{'drr','budgets'})
   self.assertEqual([a for p in pages for a in p['actions']],[a])
   self.assertTrue(all(p['bytes'].startswith(b'\x89PNG') for p in pages))
+ def test_yesterday_is_separate_from_partial_today(self):
+  b,s=fixture()
+  s['intraday']=dict(observed_at='2026-10-26T06:10:00Z',ad_batches=[dict(data=[dict(advertId=12,days=[dict(date='2026-10-26',sum=2,sum_price=0,orders=0,views=10,clicks=3)])])])
+  c=enhance(b,s)['campaigns'][0]
+  self.assertEqual(c['today']['spend'],2);self.assertEqual(c['yesterday']['spend'],20)
+  self.assertEqual(b['total_yesterday_spend'],20)
+ def test_missing_today_never_replaced_by_yesterday(self):
+  b,s=fixture();self.assertIsNone(enhance(b,s)['campaigns'][0]['today'])
  def test_missing_stats_not_zero(self):
   b,s=fixture();b['campaigns'][0]['missing_stats']=True
   self.assertIsNone(enhance(b,s)['campaigns'][0]['current_period'])

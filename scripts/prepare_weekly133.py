@@ -26,8 +26,10 @@ for typ in ("customerorder","demand","salesreturn"):
   if any(str(n) in d.get("name","")+" "+d.get("description","") for n in inp["report_ids"]) or "0(133)" in d.get("description",""):
    d["type"]=typ;out["duplicates"].append(d)
 db.put(key+"prepare:v1",out)
-for d in w.ms_rows("entity/demand",{"filter":flt+";moment>=2026-08-01 00:00:00;moment<2026-10-19 00:00:00","expand":"customerOrder","order":"moment,desc"}):
+for d in w.ms_rows("entity/demand",{"filter":flt+";moment>=2026-08-01 00:00:00;moment<2026-10-26 00:00:00","expand":"customerOrder","order":"moment,desc"}):
  order=d.get("customerOrder",{})
+ if m.href(order).startswith(m.MS):order=t.request(m.MS,m.href(order)[len(m.MS):])
+ d["customerOrder"]=order
  if not ("0(" in order.get("description","") or "ВБ ВА" in order.get("description","")):continue
  pos=w.ms_rows("entity/demand/"+d["id"]+"/positions",{"expand":"assortment","fields":"stock"})
  matching=[p for p in pos if (p.get("assortment",{}).get("article") or "").strip().casefold() in inp["returns"]]

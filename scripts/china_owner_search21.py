@@ -10,14 +10,20 @@ class Wire:
  def req(self,path,method='GET',body=None):
   permitted={('GET','/adv/v1/balance'),('GET','/adv/v1/promotion/count'),('GET','/api/advert/v2/adverts'),('GET','/api/advert/v1/config'),('POST','/api/advert/v2/budget'),('POST','/api/advert/v1/bids/min'),('PATCH','/adv/v0/auction/nms'),('PATCH','/api/advert/v1/bids'),('POST','/adv/v2/seacat/save-ad'),('PUT','/api/advert/v0/daily-limits'),('GET','/api/advert/v0/daily-limits'),('POST','/adv/v1/budget/deposit'),('GET','/adv/v0/start')}
   if (method,path.split('?')[0]) not in permitted:raise RuntimeError('Endpoint outside exact owner scope')
-  time.sleep(2);r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':self.token},json=body,timeout=50)
+  safe=(method=='GET' and path.split('?')[0]!='/adv/v0/start') or (method=='POST' and path.split('?')[0] in ['/api/advert/v2/budget','/api/advert/v1/bids/min'])
+  for attempt in range(3):
+   time.sleep(3)
+   try:
+    r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':self.token},json=body,timeout=50);break
+   except (requests.ConnectionError,requests.Timeout):
+    if not safe or attempt==2:raise
   if not r.ok:raise RuntimeError('WB HTTP '+str(r.status_code))
   return r.json() if r.content else {}
  def campaigns(self,ids):return {str(x['id']):x for x in self.req('/api/advert/v2/adverts?ids='+','.join(map(str,ids)))['adverts']}
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise RuntimeError('Public main only')
  c=Cache();w=Wire();validate_identity(c,w)
- key='china_agent:owner_search_fund:2026-10-26:v5:execution'
+ key='china_agent:owner_search_fund:2026-10-26:v6:execution'
  approval=c.get('china_agent:owner_search_fund:2026-10-26:v1:approval') or {}
  if approval.get('status')!='approved' or approval.get('amounts')!={'41325622':100,'41325637':100} or approval.get('start') is not True:raise RuntimeError('Exact funding approval missing')
  if c.get(key):print('Existing execution: never repeat writes');return

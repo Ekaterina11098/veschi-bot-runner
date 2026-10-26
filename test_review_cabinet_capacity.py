@@ -1,4 +1,6 @@
-import json,sqlite3,unittest
+import json,sqlite3,unittest,sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).parent/'review-approval-preparation'))
 from collections import Counter
 from types import SimpleNamespace
 from review_telegram_approval import Approval,Repository,sha

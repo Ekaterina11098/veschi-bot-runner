@@ -63,3 +63,5 @@ jobs:
 
 # Durable inbox, idempotent Telegram UI repair and actual WB rate headers; no legacy queues.
 
+
+# Capacity tests resolve approval modules from the production directory layout.

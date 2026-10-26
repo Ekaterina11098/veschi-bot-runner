@@ -1,0 +1,26 @@
+name: Owner approved China campaign names26
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-owner-rename26.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-cost-control-single-writer
+  cancel-in-progress: false
+jobs:
+  rename:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - run: python -m py_compile scripts/china_owner_rename26.py
+      - run: python scripts/china_owner_rename26.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

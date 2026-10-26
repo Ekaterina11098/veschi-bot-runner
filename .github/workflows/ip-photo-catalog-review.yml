@@ -1,0 +1,30 @@
+name: Read IP catalog for photo rights review
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-photo-catalog-review.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ip-photo-rights-read-only
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read catalog into private cache
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+        run: python scripts/ip_photo_catalog_review.py

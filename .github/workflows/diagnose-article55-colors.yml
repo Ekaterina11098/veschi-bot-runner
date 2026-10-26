@@ -25,5 +25,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
         run: python scripts/diagnose_article55_colors.py

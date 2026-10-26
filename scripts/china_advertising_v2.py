@@ -38,9 +38,12 @@ def collect(io,day):
  s['catalogue']=cat
  if 'executions' not in s:
   since=(date.fromisoformat(day)-timedelta(days=14)).isoformat()
-  query='telegram_api_cache?or=(cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:loss_ad_execution:*,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:new_ad_execution:*)&updated_at=gte.'+since+'&select=cache_key,payload&limit=100'
-  s['executions']=io.db(query)
-  if len(s['executions'])>=100:raise ValueError('Execution history needs pagination')
+  query='telegram_api_cache?or=(cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:loss_ad_execution:*,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:new_ad_execution:*,cache_key.like.china_agent:hourly_cloud:execution:*,cache_key.like.china_agent:daily_ad_execution:v2:*)&updated_at=gte.'+since+'&select=cache_key,payload&order=cache_key.asc&limit=100'
+  s['executions']=[]
+  for offset in range(0,2000,100):
+   page=io.db(query+'&offset='+str(offset));s['executions']+=page
+   if len(page)<100:break
+  else:raise ValueError('Execution history exceeds safe pagination bound')
   save(io,key,s)
  if 'experience' not in s:
   s['experience']=io.db('telegram_api_cache?cache_key=like.china_agent:experience:v1:*&select=payload&limit=300')
@@ -280,5 +283,6 @@ def prepare(io,day):
    if len(v)!=1:raise ValueError('Campaign minimum is ambiguous')
    minimums[str(c['id'])+':'+str(x['nm_id'])]=v[0]
   if returned!=set(ids):raise ValueError('Incomplete campaign minima')
- return build(s,minimums)
+ from china_advertising_cards import enhance
+ return enhance(build(s,minimums),s)
 

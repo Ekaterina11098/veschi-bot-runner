@@ -1,7 +1,7 @@
 """Read-only diagnosis of same-article WB picking-list colors."""
 import datetime as dt,json,os,urllib.request,urllib.error,gzip
 import fbs_document_chain as m
-os.environ["WB_TOKEN_3"]=os.environ["WB_TOKEN_1"]
+os.environ["WB_TOKEN_3"]=os.environ["WB_TOKEN_2"]
 t=m.Transport();db=m.Cache(t)
 out={"at":m.now(),"status":"reading","orders":[]}
 wanted={5906318744,5900513083,5899579370}
@@ -18,9 +18,10 @@ try:
   if r.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
   data=json.loads(raw)
  out["cards"]=[c for c in data.get("cards",[]) if (c.get("vendorCode") or "").strip().casefold()=="55-noelbag-green"]
+ assert all(c["nmID"]==1007948806 for c in out.get("cards",[])), "Unexpected cabinet card ID"
 except urllib.error.HTTPError as e:out["cards_error"]="HTTP_"+str(e.code)
 except Exception:out["cards_error"]="transport_error"
-out["status"]="cards_read";db.put("wb:ip:article55:color_diagnosis:20261026",out)
+out["status"]="cards_read";db.put("wb:ip:article55:color_diagnosis:20261026:v2",out)
 for page_no in range(40):
  response=t.request(m.WB,"api/v3/orders",params={"limit":1000,"next":cursor,"dateFrom":begin,"dateTo":end})
  batch=response.get("orders",[])
@@ -31,7 +32,7 @@ for page_no in range(40):
  if not batch or not nxt or nxt in seen:break
  seen.add(nxt);cursor=nxt
 out["missing_order_ids"]=sorted(wanted-{x["id"] for x in out["orders"]})
-db.put("wb:ip:article55:color_diagnosis:20261026",out)
+db.put("wb:ip:article55:color_diagnosis:20261026:v2",out)
 
-out["status"]="verified";db.put("wb:ip:article55:color_diagnosis:20261026",out)
+out["status"]="verified";db.put("wb:ip:article55:color_diagnosis:20261026:v2",out)
 print(json.dumps({"status":"verified","orders":len(out["orders"]),"cards":len(out.get("cards",[]))}))

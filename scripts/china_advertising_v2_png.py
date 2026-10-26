@@ -1,7 +1,8 @@
 """Owner-approved compact campaign cards; separate actionable budgets, durable families."""
 import io
 from PIL import Image,ImageDraw,ImageFont
-from china_advertising_v2 import ratio
+from china_advertising_v2 import ratio,MSK
+from datetime import datetime
 NAVY='#193e52';BG='#edf3f7';INK='#213f51';MUTED='#627582';RED='#b4394c'
 def font(n,b=False):
  for p in ['/usr/share/fonts/truetype/dejavu/DejaVuSans'+('-Bold' if b else '')+'.ttf','C:/Windows/Fonts/'+('arialbd.ttf' if b else 'arial.ttf')]:
@@ -15,6 +16,9 @@ def pct(v):
  return 'Нет заказов' if v['spend']>0 else 'Нет расхода'
 def render(bundle):
  files=[];W=2200;days=bundle['days'];last=days[-1][8:10]+'.'+days[-1][5:7];period=days[0][8:10]+'.'+days[0][5:7]+'–'+last
+ observed=bundle.get('today_observed_at')
+ try:observed=datetime.fromisoformat(observed.replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M МСК') if observed else 'нет данных'
+ except (ValueError,TypeError):observed='нет данных'
  def canvas(title):
   im=Image.new('RGB',(W,6500),BG);d=ImageDraw.Draw(im)
   def text(s,x,y,w,n=27,col=INK,b=False,draw=True):
@@ -38,7 +42,7 @@ def render(bundle):
   files.append(dict(family=family,bytes=b.getvalue(),actions=actions))
  # A campaign can continue across pages; each action stays on exactly its own page.
  im,d,t=canvas('Китай · реклама и остатки по РК');y=170;actions=[]
- y=t('Всего за вчера: '+money(bundle.get('total_yesterday_spend'))+' ¥. Сегодняшний срез: '+str(bundle.get('today_observed_at') or 'нет данных'),32,y,W-64,26,INK,True)+14
+ y=t('Всего за вчера: '+money(bundle.get('total_yesterday_spend'))+' ¥. Сегодняшний срез: '+str(observed),32,y,W-64,26,INK,True)+14
  for c in bundle['campaigns']:
   entries=[(v,False,None) for v in c.get('notes',['Изменений не нужно.'])]
   for r in c.get('attention',[r for r in c.get('focus',[]) if r.get('action')]):

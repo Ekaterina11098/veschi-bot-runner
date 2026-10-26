@@ -3,7 +3,7 @@ import os,json,copy,time,math
 from datetime import datetime,timezone
 import requests
 from china_cloud_cost_control import Cache,validate_identity
-KEY='china_agent:owner_search_expand:2026-10-26:v2:execution'
+KEY='china_agent:owner_search_expand:2026-10-26:v3:execution'
 ARTICLES=['143-ReginaBag-black','447-AngelaBag-burgundy','595-Noelbag-zblack','600-JessicaBag-blue','044-NoelBag-black','673-NoelBag-green','58-NoelBag-brown','208-AngelaBag-black','36-EthelBag-brown','267-AmiraBag-beige','623-AngelaBag-brown','523-AngelaBag-black','680-VivienneBag-black','594-NoelBag-green','2-FurPanama-black','8-FurPanama-pink','92-Zont-red','64-Zont-cream-beige','114-Zont-Iblue','65-Zont-lilac-cream','26-Zont-green']
 class Wire:
  def __init__(self):self.token=os.environ['WB_TOKEN_3']
@@ -48,6 +48,22 @@ def run():
    p=products[article];nm=int(p['nm_id']);pr=prices.get(nm);st=stocks.get(article.casefold())
    if not pr or pr.get('currencyIsoCode4217')!='CNY' or not st or st.get('stock') is None or st.get('reserve') is None or st['stock']-st['reserve']<=0:
     e.setdefault('skipped',[]).append(dict(article=article,reason='Price or available stock not confirmed; absent row is not zero'));save();continue
+   log=source.get('policy',{}).get('logistics_by_nm',{}).get(str(nm))
+   if not log and nm==1473243439:
+    finance=c.get('china_agent:wb_evidence:v1:finance:2026-09-26:2026-10-25') or {}
+    records=[r for r in finance.get('rows',[]) if str(r.get('nmId'))==str(nm)]
+    forward=[r for r in records if float(r.get('deliveryService') or 0)>0]
+    if finance.get('complete') and len(forward)==1:log=dict(delivery_cny=float(forward[0]['deliveryService']),delivery_source='own_finance26Oct; single completed sample')
+   finished=p.get('finished_orders') or 0;paid=p.get('is_payed')
+   if not finished or paid is None or not log or st.get('price') is None or not p.get('price_after_discount'):
+    e.setdefault('skipped',[]).append(dict(article=article,reason='Own completed buyout/logistics/COGS incomplete'));save();continue
+   price=pr['sizes'][0]['discountedPrice'];fee=p.get('total_commission_without_spp_in_sales')
+   if fee is None or not p.get('sales_sum_without_spp'):
+    e.setdefault('skipped',[]).append(dict(article=article,reason='Own commission not confirmed'));save();continue
+   expected=(paid/finished)*(price*(1-fee/100-.05*p.get('price_after_spp',0)/p['price_after_discount'])-st['price']/1200)-log['delivery_cny']-10/12-.05*price
+   e.setdefault('economics',[]).append(dict(article=article,paid=paid,finished=finished,expected_cny_per_dispatch_at5=round(expected,2),preliminary=True,expenses_note='Own COGS/fee/logistics; tax5% and FX12 assumptions; WBPromotion not duplicated'))
+   if expected<=0:
+    e.setdefault('skipped',[]).append(dict(article=article,reason='Expected negative at5% DRR with own finished buyout',expected_cny=round(expected,2)));save();continue
    groups.setdefault(p['subject_id'],[]).append(dict(nm_id=nm,article=article))
   cfg=w.req('/api/advert/v1/config')
   if cfg.get('currency')!='CNY':raise RuntimeError('Wrong currency')

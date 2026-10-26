@@ -1,0 +1,27 @@
+name: Owner approved four recommendation bid increases
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-owner-raise-four.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-cost-control-single-writer
+  cancel-in-progress: false
+jobs:
+  owner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - run: python -m py_compile scripts/china_owner_raise_four.py
+      - name: Apply exact approved bids once and verify WB readback
+        run: python scripts/china_owner_raise_four.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

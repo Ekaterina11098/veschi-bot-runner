@@ -268,7 +268,7 @@ def build(s,minima=None):
  return dict(version=VERSION,day=str(end+timedelta(days=1)),days=days,source_observed_at=datetime.fromisoformat(s['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m.%Y %H:%M МСК'),campaigns=out,wb_writes=0)
 
 def prepare(io,day):
- s=collect(io,day);minimums={}
+ s=dict(collect(io,day));s['intraday']=io.get('china_agent:advertising_intraday:'+day+':v1') or {};minimums={}
  # Query minima only for existing products with a meaningful signal, on their actual campaign/placement.
  rough=build(s)
  for c in rough['campaigns']:

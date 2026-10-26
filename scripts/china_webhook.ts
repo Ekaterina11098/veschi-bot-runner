@@ -27,6 +27,20 @@ function reply(chat: number,text: string,markup?: unknown) {
   return Response.json({method:"sendMessage",chat_id:chat,text,...(markup?{reply_markup:markup}:{})});
 }
 
+async function acknowledgeQuestion(config:any,message:any,jobId:number) {
+ const key='china_agent:question_ack:v1:'+jobId;
+ const rows=await database('telegram_api_cache?on_conflict=cache_key','POST',{
+  cache_key:key,payload:{status:'webhook_response_issued',job_id:jobId,chat_id:config.chat_id,
+   input_message_id:message.message_id,text:'Принял в работу. Проверю данные и отвечу на этот вопрос.',
+   created_at:new Date().toISOString(),telegram_receipt_verified:false},
+  expires_at:'2036-10-26T00:00:00Z'},'resolution=ignore-duplicates,return=representation');
+ if(!rows?.length)return new Response('OK');
+ // Telegram executes this webhook response; it does not return a message_id receipt.
+ return Response.json({method:'sendMessage',chat_id:config.chat_id,
+  text:'Принял в работу. Проверю данные и отвечу на этот вопрос.',
+  reply_parameters:{message_id:message.message_id,allow_sending_without_reply:true}});
+}
+
 function same(a:any,b:any):boolean { const sorted=(x:any):any=>Array.isArray(x)?x.map(sorted):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,sorted(x[k])])):x;return JSON.stringify(sorted(a))===JSON.stringify(sorted(b)); }
 
 async function telegram(method: string, body: unknown) {
@@ -234,10 +248,10 @@ Deno.serve(async(request:Request):Promise<Response>=>{
       }
     }
     const inserted=await database('business_agent_jobs?on_conflict=agent_id,update_id','POST',{agent_id:'china',update_id:update.update_id,chat_id:config.chat_id,sender_id:message.from.id,request_text:text,tool_trace:[marker]},'resolution=ignore-duplicates,return=representation');
-    if(inserted.length){await launch(inserted[0].id);return new Response('OK');}
+    if(inserted.length){await launch(inserted[0].id);return acknowledgeQuestion(config,message,inserted[0].id);}
     // Telegram retry after a dispatch timeout may safely redispatch the same durable job.
     const existing=await database('business_agent_jobs?agent_id=eq.china&update_id=eq.'+update.update_id+'&chat_id=eq.'+config.chat_id+'&sender_id=eq.'+message.from.id+'&select=id,status&limit=1');
-    if(existing?.[0]?.status==='pending')await launch(existing[0].id);
+    if(existing?.[0]?.status==='pending'){await launch(existing[0].id);return acknowledgeQuestion(config,message,existing[0].id);}
     return new Response('OK');
   }catch(error){console.error('china_webhook_error', ['Bot unavailable','State unavailable','Telegram verification failed','Dispatch pending','Price dispatch pending','Price dispatch unavailable','China catalogue unavailable','Approval readback mismatch'].includes(String(error?.message))?error.message:String(error?.name??'Unknown'));return new Response('Queue unavailable',{status:503});}
 });

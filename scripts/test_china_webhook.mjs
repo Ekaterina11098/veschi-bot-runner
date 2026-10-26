@@ -2,7 +2,7 @@ import {stripTypeScriptTypes} from 'node:module';
 import vm from 'node:vm';import fs from 'node:fs';import assert from 'node:assert/strict';import {webcrypto} from 'node:crypto';
 const secret='test-secret';const digest=Buffer.from(await webcrypto.subtle.digest('SHA-256',Buffer.from(secret))).toString('hex');
 let cfg={agent_id:'china',chat_id:-123,owner_user_id:5,bot_id:9,bot_username:'china_test_bot',active:true,secret_digest:digest};
-let handler,jobs=[],dispatches=[],line=null;
+let handler,jobs=[],dispatches=[],line=null;const acknowledgements=new Map();
 const env={SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'test',CHINA_TELEGRAM_BOT_TOKEN:'test',GITHUB_WORKFLOW_DISPATCH_TOKEN:'test'};
 const ctx={Response,Request,AbortSignal,TextEncoder,crypto:webcrypto,console,Deno:{env:{get:k=>env[k]},serve:f=>handler=f},fetch:async(url,opt)=>{
  const u=new URL(url),p=u.searchParams,b=opt.body?JSON.parse(opt.body):null;
@@ -21,7 +21,8 @@ const ctx={Response,Request,AbortSignal,TextEncoder,crypto:webcrypto,console,Den
   else if(opt.method==='PATCH'){cfg={...cfg,...b};result=[cfg];}
   else result=[cfg];
  }else if(table==='telegram_api_cache'){
-  if(b?.cache_key?.includes('chat_migration')||p.get('cache_key')?.includes('chat_migration')){
+  if(b?.cache_key?.includes('question_ack')){if(!acknowledgements.has(b.cache_key)){acknowledgements.set(b.cache_key,b);result=[b];}}
+  else if(b?.cache_key?.includes('chat_migration')||p.get('cache_key')?.includes('chat_migration')){
    if(opt.method==='POST'){line=b;result=[line];}else result=line?[line]:[];
   }
  }else if(table==='business_agent_jobs'){
@@ -34,8 +35,8 @@ vm.createContext(ctx);vm.runInContext(stripTypeScriptTypes(fs.readFileSync('scri
 const call=(update,s=secret)=>handler(new Request('https://edge.test',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':s},body:JSON.stringify(update)}));
 const msg=(id,sender=6,chat=-123)=>({update_id:id,message:{message_id:id,chat:{id:chat,type:'supergroup'},from:{id:sender},text:'Покажи сохранённые данные Китая'}});
 assert.equal((await call(msg(1),'wrong')).status,401);assert.equal(jobs.length,0);
-assert.equal((await call(msg(1))).status,200);assert.equal(jobs.length,1);assert.equal(jobs[0].sender_id,6);assert.equal(dispatches[0].inputs.action,'dialog');assert.equal(dispatches[0].inputs.job_id,'1');
-await call(msg(1));assert.equal(jobs.length,1);
+const firstAck=await call(msg(1));assert.equal(firstAck.status,200);const ack=await firstAck.json();assert.equal(ack.method,'sendMessage');assert.equal(ack.reply_parameters.message_id,1);assert.match(ack.text,/Принял в работу/);assert.equal(jobs.length,1);assert.equal(jobs[0].sender_id,6);assert.equal(dispatches[0].inputs.action,'dialog');assert.equal(dispatches[0].inputs.job_id,'1');
+const duplicateAck=await call(msg(1));assert.equal(await duplicateAck.text(),'OK');assert.equal(jobs.length,1);assert.equal(acknowledgements.size,1);assert.equal([...acknowledgements.values()][0].payload.telegram_receipt_verified,false);
 await call(msg(2,5));assert.equal(jobs.length,2);
 await call(msg(3,6,-99));assert.equal(jobs.length,2);
 const bot=msg(4);bot.message.from.is_bot=true;await call(bot);assert.equal(jobs.length,2);

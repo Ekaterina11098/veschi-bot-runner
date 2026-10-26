@@ -483,6 +483,8 @@ class Worker:
                 elif intent(job['request_text']):
                     answer='Управлять заданиями могут действующие участники этой группы. Вопросы по сохранённым данным доступны всем участникам.';trace=[]
                 else:answer,trace=self.saved_question(job,history)
+                from china_reply_quality import normalize_answer
+                answer=normalize_answer(answer)
                 trace=[marker]+trace
                 patch({'answer':answer,'tool_trace':trace})
             from china_shared_memory import record_turn

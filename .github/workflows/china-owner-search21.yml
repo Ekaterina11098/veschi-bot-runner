@@ -1,4 +1,4 @@
-name: Owner approved China search21 economics-verified continuation
+name: Owner approved China search21 remaining category drafts only
 on:
   push:
     branches: [main]

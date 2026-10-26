@@ -17,7 +17,7 @@ class Wire:
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise RuntimeError('Public main only')
  c=Cache();w=Wire();validate_identity(c,w)
- key='china_agent:owner_search_fund:2026-10-26:v4:execution'
+ key='china_agent:owner_search_fund:2026-10-26:v5:execution'
  approval=c.get('china_agent:owner_search_fund:2026-10-26:v1:approval') or {}
  if approval.get('status')!='approved' or approval.get('amounts')!={'41325622':100,'41325637':100} or approval.get('start') is not True:raise RuntimeError('Exact funding approval missing')
  if c.get(key):print('Existing execution: never repeat writes');return

@@ -27,3 +27,5 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
 
 # Exact membership comparison is independent of WB response row order.
+
+# Compare category IDs, never presentation label casing.

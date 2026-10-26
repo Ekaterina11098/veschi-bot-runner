@@ -44,7 +44,7 @@ jobs:
           with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=pw,sslmode='require',autocommit=True,connect_timeout=15) as conn:
               repo=Repository(conn,postgres=True)
               plan=repo.get('events','audit-oct25:20261026:v1:plan') or {}
-              if plan.get('authorization_ref')!='owner-chat-audit-cleanup-oct25:20261026:v1' or len(plan.get('refs',[]))!=6:raise RuntimeError('Exact owner audit scope required')
+              if plan.get('authorization_ref')!='owner-chat-audit-cleanup-oct25:20261026:v1' or len(plan.get('refs',[]))!=7:raise RuntimeError('Exact owner audit scope required')
               refs=set(plan['refs'])
               cfg=conn.execute("SELECT payload FROM review_approval.source_cache WHERE cache_key='reviews:telegram-approval:config:v1'").fetchone()[0]
               a=Approval(repo,'audit-cleanup-only',cfg['owner_id'],cfg['chat_id'],cfg['bot_id'])
@@ -105,7 +105,7 @@ jobs:
                       approved=current[original['ref']]
                       if m.get('date',float('inf'))<=approved['created_at'] or (isinstance(m.get('text'),str) and m['text'].strip()==approved['answer']):
                           add(chat,m.get('message_id'),'owner-reply-before-approval')
-              for key in ('reviews-morning:2026-10-25:summary',):
+              for key in ('reviews-morning:2026-10-25:summary','questions-morning:2026-10-25:summary'):
                   summary=events.get(key) or {}
                   add(a.group_chat(),summary.get('message_id'),'completed-daily-summary',True)
               if len(targets)>180:raise RuntimeError('Unexpectedly broad cleanup selection')

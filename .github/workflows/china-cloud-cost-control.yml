@@ -1,7 +1,5 @@
 name: China hourly cloud cost control
 on:
-  schedule:
-    - cron: '10 * * * *'
   workflow_dispatch:
   push:
     branches: [china-cloud-cost-control25, china-night-observe26, main]
@@ -16,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   hourly:
-    if: github.run_attempt == 1
+    if: ${{ false }} # Owner disabled hourly control and changes on 2026-10-26
     runs-on: ubuntu-latest
     timeout-minutes: 18
     steps:

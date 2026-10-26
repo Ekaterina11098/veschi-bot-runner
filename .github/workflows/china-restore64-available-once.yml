@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
+    if: ${{ false }} # Exact64 restoration WB-verified; one-off complete.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

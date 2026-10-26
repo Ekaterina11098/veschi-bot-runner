@@ -1,4 +1,4 @@
-name: Owner approved China search21
+name: Owner approved China search21 verified-stock continuation
 on:
   push:
     branches: [main]

@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   price:
+    if: ${{ false }} # Exact38 price260.15CNY WB-verified; one-off disabled.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

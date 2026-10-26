@@ -230,7 +230,15 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     if(!text)return new Response('OK');
     const first=text.split(/\s+/,1)[0];const parsed=/^\/(\S+?)(?:@([a-z0-9_]+))?$/i.exec(first);const cmd=parsed?.[1].toLowerCase();
     if(parsed?.[2]&&parsed[2].toLowerCase()!==config.bot_username?.toLowerCase())return new Response('OK');
-    const priceApproval=await handlePriceApproval(config,message,text,update.update_id,{database,telegram,digest,same,launchPrice,deferMembership:true});
+    // A generic confirmation belongs to the actual bound advertising message, not the price route.
+    let advertisingApproval=false;
+    if(priceApprovalIntent(text)&&message.reply_to_message?.from?.id===config.bot_id&&Number.isSafeInteger(message.reply_to_message.message_id)){
+      const mid=message.reply_to_message.message_id;
+      const keys=['china_agent:advertising_dialog_message:v1:','china_agent:daily_ad_message:v2:','china_agent:new_ad_message:v1:'].map(k=>k+mid);
+      const bindings=await database('telegram_api_cache?cache_key=in.('+keys.join(',')+')&select=payload&limit=4');
+      advertisingApproval=bindings.some((b:any)=>b.payload?.chat_id===config.chat_id);
+    }
+    const priceApproval=advertisingApproval?null:await handlePriceApproval(config,message,text,update.update_id,{database,telegram,digest,same,launchPrice,deferMembership:true});
     if(priceApproval)return priceApproval;
     if(cmd==='confirm')return reply(config.chat_id,'Изменения WB здесь не выполняются.');
     if(['help','start','ask'].includes(cmd??'')||(cmd==='agent'&&text===first))return reply(config.chat_id,'Задавайте вопрос обычным сообщением. Вопросы и подтверждения ценовых рекомендаций доступны всем участникам, управление заданиями — владельцу. Для подтверждения ответьте на отчёт: «Подтверждаю все изменения».');

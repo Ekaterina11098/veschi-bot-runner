@@ -29,3 +29,5 @@ jobs:
 # Exact membership comparison is independent of WB response row order.
 
 # Compare category IDs, never presentation label casing.
+
+# One exact100CNY deposit per draft; no automatic repeat funding.

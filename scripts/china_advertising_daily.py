@@ -21,8 +21,7 @@ def run():
   from china_advertising_v2_png import render as render_grouped
   from china_daily_ad_actions import plan
   bundle=prepare(io,day)
-  from china_search_trials_report import append_trial_pages
-  pages=append_trial_pages(io,day,render_grouped(bundle),midday=False);images=[]
+  pages=render_grouped(bundle);images=[]
   for index,f in enumerate(pages):
    p=plan(io,day,f,index)
    images.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))

@@ -47,6 +47,23 @@ class Transport:
         self.last = 0
 
     def request(self, base, path, method="GET", body=None, params=None):
+        # Reads can be retried safely; an uncertain write must be reconciled by ensure().
+        for attempt in range(3):
+            try:
+                return self._request_once(base, path, method, body, params)
+            except Stop as error:
+                message = str(error)
+                transient = message == "API transport outcome uncertain" or any(
+                    message.startswith("HTTP_" + str(code) + " ")
+                    for code in (429, 500, 502, 503, 504))
+                if method != "GET" or not transient or attempt == 2:
+                    raise
+                delay = 2 * (attempt + 1)
+                print(json.dumps({"event": "safe_read_retry",
+                                  "attempt": attempt + 2, "delay_seconds": delay}))
+                time.sleep(delay)
+
+    def _request_once(self, base, path, method="GET", body=None, params=None):
         if base not in (MS, WB, os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1/"):
             raise Stop("Unexpected API destination")
         if base == WB and method != "GET" and not (method == "POST" and path == "api/v3/orders/status"):

@@ -9,6 +9,9 @@ def assess(balance,today,period,hour,horizon):
  rate=today['spend']/max(hour,1)
  needed=rate*horizon
  return dict(risk=rate>0 and balance<needed,rate_per_hour=rate,until_next=needed,proposed=max(0,math.ceil((needed-balance)/50)*50),drr_today=drr(today),drr_3days=drr(period))
+def continuation_ok(today,previous):
+ a=drr(today);b=drr(previous) if previous else None
+ return a is not None and (a<=5 or a<=5.5 and b is not None and a<=b*.8 and today['orders']>=3)
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise RuntimeError('Public main only')
  c=Cache();w=WB();validate_identity(c,w)
@@ -43,8 +46,8 @@ def run():
   if c.get(nk):continue
   dr='не определена' if a['drr_today'] is None else f"{a['drr_today']:.2f}%"
   ec=(c.get('china_agent:hourly_economics:v1') or {}).get(cid,{})
-  viable=ec.get('all_costs_confirmed') is True and ec.get('expected_total_profit_cny',-1)>0 and a['drr_today'] is not None and a['drr_today']<=5
-  decision=f"Предлагаемая сумма: {a['proposed']:.0f} CNY до следующего среза." if viable else "Пополнение пока не рекомендовано: "+("ДРР выше цели либо заказов нет." if a['drr_today'] is None or a['drr_today']>5 else "полная экономика оставшихся товаров не подтверждена.")
+  viable=ec.get('all_costs_confirmed') is True and ec.get('expected_total_profit_cny',-1)>0 and continuation_ok(today[cid],period.get(cid))
+  decision=f"Предлагаемая сумма: {a['proposed']:.0f} CNY до следующего среза." if viable else "Пополнение пока не рекомендовано: "+("ДРР выше цели либо заказов нет." if not continuation_ok(today[cid],period.get(cid)) else "полная экономика оставшихся товаров не подтверждена.")
   text=f"Бюджет РК {cid}\nОстаток: {balances[cid]:.2f} CNY\nРасход сегодня: {today[cid]['spend']:.2f} CNY\nДРР сегодня: {dr}\nПри текущем темпе остатка может не хватить до {nextcheck.strftime('%d.%m %H:%M')} МСК.\n{decision}\nСрез {t.strftime('%d.%m %H:%M')} МСК. Прогноз предварительный; автопополнения нет."
   if not c.create(nk,dict(status='preparing',text=text)):continue
   bot=os.environ['CHINA_TELEGRAM_BOT_TOKEN'];me=requests.get('https://api.telegram.org/bot'+bot+'/getMe',timeout=20).json()

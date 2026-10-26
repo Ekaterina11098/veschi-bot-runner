@@ -1,0 +1,41 @@
+name: Remove owner-authorized stale China report
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-delete-stale-284-285.yml']
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - name: Delete exactly two approved Telegram messages and preserve delivery journal
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,requests
+          from datetime import datetime,timezone
+          token=os.environ['CHINA_TELEGRAM_BOT_TOKEN'];chat=-1004342917488
+          headers={'apikey':os.environ['SUPABASE_SECRET_KEY'],'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+          base=os.environ['SUPABASE_URL']+'/rest/v1/telegram_api_cache'
+          for mid in [284,285]:
+              key='china_agent:owner_delete:2026-10-26:'+str(mid)
+              old=requests.get(base,params={'cache_key':'eq.'+key,'select':'payload'},headers=headers,timeout=30).json()
+              if old and old[0]['payload'].get('status')=='deleted':continue
+              me=requests.get('https://api.telegram.org/bot'+token+'/getMe',timeout=20).json()
+              assert me.get('ok') and me['result']['id']==8780468043
+              r=requests.post('https://api.telegram.org/bot'+token+'/deleteMessage',json={'chat_id':chat,'message_id':mid},timeout=30).json()
+              assert r.get('ok') and r.get('result') is True, 'Deletion not confirmed'
+              now=datetime.now(timezone.utc).isoformat()
+              z=requests.post(base,params={'on_conflict':'cache_key'},headers=headers,json={'cache_key':key,'payload':{'status':'deleted','message_id':mid,'chat_id':chat,'owner_authorized':True,'observed_at':now},'updated_at':now,'expires_at':'2036-10-26T00:00:00Z'},timeout=30)
+              z.raise_for_status()
+          print('Approved message cleanup confirmed')
+          PY

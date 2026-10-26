@@ -1,0 +1,138 @@
+name: Audit and clean only owner-processed cards from October 24
+on:
+  push:
+    paths: ['.github/workflows/review-oct24-audit-cleanup-20261026.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: review-oct24-audit-cleanup-20261026
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: review-approval-preparation
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10'
+      - name: Clean authenticated processed messages in the exact saved scope
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,sys,json,time,hmac,hashlib,urllib.request,urllib.error,psycopg
+          sys.path.insert(0,'review-approval-preparation')
+          from review_telegram_approval import Approval,Repository,sha
+          from review_telegram_runtime import TelegramTransport
+          class TelegramError(Exception):
+              def __init__(self,code,description):self.code=code;self.description=description;super().__init__(description)
+          def opener(request,timeout=8):
+              try:return urllib.request.urlopen(request,timeout=timeout)
+              except urllib.error.HTTPError as exc:
+                  try:description=json.loads(exc.read(16384)).get('description','')
+                  except Exception:description='Unreadable Telegram error'
+                  raise TelegramError(exc.code,description) from None
+          root=os.environ['SUPABASE_SECRET_KEY'].encode()
+          pw=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
+          with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=pw,sslmode='require',autocommit=True,connect_timeout=15) as conn:
+              repo=Repository(conn,postgres=True)
+              plan=repo.get('events','audit-oct24:20261026:v1:plan') or {}
+              if plan.get('authorization_ref')!='owner-chat-audit-cleanup-oct24:20261026:v1' or len(plan.get('refs',[]))!=18:raise RuntimeError('Exact owner audit scope required')
+              refs=set(plan['refs'])
+              cfg=conn.execute("SELECT payload FROM review_approval.source_cache WHERE cache_key='reviews:telegram-approval:config:v1'").fetchone()[0]
+              a=Approval(repo,'audit-cleanup-only',cfg['owner_id'],cfg['chat_id'],cfg['bot_id'])
+              tg=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN'],opener=opener)
+              member=tg.call('getChatMember',dict(chat_id=a.group_chat(),user_id=a.bot))
+              if member.get('status')!='creator' and member.get('can_delete_messages') is not True:raise RuntimeError('Bot delete permission unavailable')
+              cards={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}cards').fetchall()}
+              intents={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}intents').fetchall()}
+              events={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}events').fetchall()}
+              current={}
+              for ref in refs:
+                  item=repo.get('items',ref) or {}
+                  matches=[i for i in intents.values() if i.get('ref')==ref and i.get('card_token')==item.get('token') and i.get('status') in ('awaiting_preflight','verify','confirmed')]
+                  if len(matches)!=1 or item.get('status') not in ('approved','sent','uncertain'):raise RuntimeError('Unresolved owner decision in requested scope')
+                  i=matches[0];card=cards.get(i['card_token']) or {}
+                  if str(i.get('owner_id'))!=a.owner or i.get('answer_sha256')!=sha(i.get('answer')) or i.get('answer_sha256') not in card.get('hashes',[]):raise RuntimeError('Approved text binding changed')
+                  current[ref]=i
+              targets={};bot_cards={}
+              def add(chat,mid,reason,bot=False):
+                  chat=str(chat)
+                  if chat not in (a.legacy_chat,a.group_chat()) or not isinstance(mid,int) or isinstance(mid,bool) or mid<=0:return
+                  key=(chat,mid)
+                  targets.setdefault(key,dict(chat_id=chat,message_id=mid,reasons=[],bot_message=False))
+                  targets[key]['reasons'].append(reason);targets[key]['bot_message']|=bot
+              scoped_cards={k:c for k,c in cards.items() if c.get('ref') in refs}
+              for token,c in scoped_cards.items():
+                  mid=c.get('message_id');chat=a.card_chat(c)
+                  if not isinstance(mid,int):continue
+                  bot_cards[(chat,mid)]=c
+                  if (c.get('telegram_card_removal') or {}).get('status')=='confirmed':continue
+                  add(chat,mid,'scoped-card',True)
+              for key,e in events.items():
+                  i=intents.get(e.get('intent_id'))
+                  if key.startswith(('owner-receipt:','owner-problem:')) and i and i.get('ref') in refs:
+                      active=current[i['ref']]
+                      if e.get('stage') in ('approved','verifying','accepted','public') or active['status']=='confirmed' or active['id']!=i['id']:
+                          add(e.get('chat_id',i['chat_id']),e.get('message_id'),'scoped-receipt',True)
+                  elif e.get('card_token') in scoped_cards:
+                      c=scoped_cards[e['card_token']]
+                      add(e.get('chat_id',a.card_chat(c)),e.get('message_id'),'bound-card-event',True)
+                  elif key.startswith('new-notice:') and e.get('ref') in refs:
+                      add(e.get('chat_id',a.group_chat()),e.get('message_id'),'scoped-new-notice',True)
+                  elif key.startswith('revision-delivery:'):
+                      edit=events.get(e.get('revision_event_id'),{});c=scoped_cards.get(edit.get('token'))
+                      if c:add(e.get('chat_id',a.card_chat(c)),e.get('message_id'),'scoped-revision-delivery',True)
+                  if key.startswith('telegram-ingress:'):
+                      m=(e.get('update') or {}).get('message') or {};chat=str((m.get('chat') or {}).get('id'))
+                      reply=m.get('reply_to_message') or {};original=bot_cards.get((chat,reply.get('message_id')))
+                      if not original or str((m.get('from') or {}).get('id'))!=a.owner or str((reply.get('from') or {}).get('id'))!=a.bot:continue
+                      approved=current[original['ref']]
+                      if m.get('date',float('inf'))<=approved['created_at'] or (isinstance(m.get('text'),str) and m['text'].strip()==approved['answer']):
+                          add(chat,m.get('message_id'),'owner-reply-before-approval')
+              for key in ('reviews-morning:2026-10-24:summary','questions-morning:2026-10-24:summary'):
+                  summary=events.get(key) or {}
+                  add(a.group_chat(),summary.get('message_id'),'completed-daily-summary',True)
+              if len(targets)>180:raise RuntimeError('Unexpectedly broad cleanup selection')
+              with repo.transaction():repo.put('events','audit-oct24:20261026:v1:cleanup-plan',dict(targets=list(targets.values()),checked_at=time.time(),authorization_ref=plan['authorization_ref']))
+              results=[]
+              for (chat,mid),target in sorted(targets.items()):
+                  key='telegram-cleanup:'+chat+':'+str(mid);old=repo.get('events',key) or {}
+                  if old.get('status')=='confirmed':
+                      results.append(dict(**target,status='already_confirmed'));continue
+                  result=dict(**target,checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),attempts=old.get('attempts',0)+1)
+                  try:
+                      response=tg.call('deleteMessage',dict(chat_id=chat,message_id=mid))
+                      if response is not True:raise RuntimeError('Deletion unconfirmed')
+                      result['status']='confirmed'
+                  except TelegramError as exc:
+                      if exc.code==400 and 'message to delete not found' in exc.description.lower():result['status']='confirmed'
+                      else:
+                          result.update(status='not_deletable' if exc.code==400 and ("can't be deleted" in exc.description.lower() or 'cannot be deleted' in exc.description.lower()) else 'uncertain',telegram_code=exc.code,telegram_description=exc.description)
+                          if result['status']=='not_deletable':
+                              result['attempts']=3
+                              if target['bot_message']:
+                                  try:
+                                      c=bot_cards.get((chat,mid));i=current.get((c or {}).get('ref'))
+                                      text='Обработано. Повторно отвечать не нужно.'
+                                      if i and i['status']!='confirmed':text='Подтверждение сохранено. Ответ в автоматической отправке; повторно отвечать не нужно.'
+                                      edited=tg.call('editMessageText',dict(chat_id=chat,message_id=mid,text=text,reply_markup={'inline_keyboard':[]}))
+                                      result['compacted']=edited is True or isinstance(edited,dict) and edited.get('message_id')==mid
+                                  except TelegramError as edit_error:
+                                      result['compacted']='message is not modified' in edit_error.description.lower()
+                  except Exception as exc:result.update(status='uncertain',error=type(exc).__name__)
+                  with repo.transaction():
+                      repo.put('events',key,result)
+                      if result['status']=='confirmed' and (chat,mid) in bot_cards:
+                          token=next(k for k,c in scoped_cards.items() if c is bot_cards[(chat,mid)])
+                          card=repo.get('cards',token);card['telegram_card_removal']=result;repo.put('cards',token,card)
+                  results.append(result)
+                  with repo.transaction():repo.put('events','audit-oct24:20261026:v1:cleanup-result',dict(results=results,checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),wb_writes=0))
+              print(json.dumps(dict(deleted=sum(x['status']=='confirmed' for x in results),already=sum(x['status']=='already_confirmed' for x in results),not_deletable=sum(x['status']=='not_deletable' for x in results),uncertain=sum(x['status']=='uncertain' for x in results))))
+          
+          PY

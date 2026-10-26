@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
+    if: ${{ false }} # Available177 continuation completed; no repeat writes.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

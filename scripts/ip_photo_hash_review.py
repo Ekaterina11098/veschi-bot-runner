@@ -23,7 +23,8 @@ def read(task):
   with urllib.request.urlopen(req,timeout=15) as r:im=Image.open(io.BytesIO(r.read())).convert("RGB")
   return {"nmID":c["nmID"],"article":c["vendorCode"],"photo":i+1,"url":url,"hashes":hashes(im),"flipped_hashes":hashes(ImageOps.mirror(im))}
  except Exception:return {"nmID":c["nmID"],"photo":i+1,"error":"image_read_failed"}
-tasks=[(c,i,p) for c in cards for i,p in enumerate((c.get("photos") or [])[:3])]
+cards=[c for c in cards if "brown" in c["vendorCode"].lower() or ("noelbag" in c["vendorCode"].lower() and "green" in c["vendorCode"].lower())]
+tasks=[(c,i,p) for c in cards for i,p in enumerate(c.get("photos") or [])]
 out={"status":"comparing","at":m.now(),"total":len(tasks),"read":0,"errors":0,"best":{z["article"]:[] for z in targets}}
 index=[]
 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
@@ -38,7 +39,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     best=out["best"][target["article"]]
     best.append({**{k:row[k] for k in ("nmID","article","photo","url")},"distance":min(norm,flip),"mirrored":flip<norm})
     best.sort(key=lambda z:z["distance"]);del best[5:]
-  if out["read"]%100==0:db.put(root+"matches:v1",out)
-for off in range(0,len(index),100):db.put(root+"hashes:"+str(off),index[off:off+100])
-out["status"]="compared";out["completed_at"]=m.now();db.put(root+"matches:v1",out)
+  if out["read"]%100==0:db.put(root+"matches_extended:v1",out)
+for off in range(0,len(index),100):db.put(root+"hashes_extended:"+str(off),index[off:off+100])
+out["status"]="compared";out["completed_at"]=m.now();db.put(root+"matches_extended:v1",out)
 print(json.dumps({"status":out["status"],"read":out["read"],"errors":out["errors"]}))

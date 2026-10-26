@@ -3,7 +3,7 @@ import os,json,copy,time,math
 from datetime import datetime,timezone
 import requests
 from china_cloud_cost_control import Cache,validate_identity
-KEY='china_agent:owner_search_expand:2026-10-26:v1:execution'
+KEY='china_agent:owner_search_expand:2026-10-26:v2:execution'
 ARTICLES=['143-ReginaBag-black','447-AngelaBag-burgundy','595-Noelbag-zblack','600-JessicaBag-blue','044-NoelBag-black','673-NoelBag-green','58-NoelBag-brown','208-AngelaBag-black','36-EthelBag-brown','267-AmiraBag-beige','623-AngelaBag-brown','523-AngelaBag-black','680-VivienneBag-black','594-NoelBag-green','2-FurPanama-black','8-FurPanama-pink','92-Zont-red','64-Zont-cream-beige','114-Zont-Iblue','65-Zont-lilac-cream','26-Zont-green']
 class Wire:
  def __init__(self):self.token=os.environ['WB_TOKEN_3']
@@ -16,7 +16,10 @@ class Wire:
  def campaigns(self,ids):return {str(x['id']):x for x in self.req('/api/advert/v2/adverts?ids='+','.join(map(str,ids)))['adverts']}
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise RuntimeError('Public main only')
- c=Cache();w=Wire();validate_identity(c,w);old=c.get(KEY)
+ c=Cache();w=Wire();validate_identity(c,w)
+ previous=c.get('china_agent:owner_search_expand:2026-10-26:v1:execution') or {}
+ if previous.get('wb_writes')!=0:raise RuntimeError('Previous execution may have writes; no retry')
+ old=c.get(KEY)
  if old:print('Owner execution already recorded; do not repeat');return
  e=dict(status='preflight',owner_id=5122667182,owner_quotes=['делай все','давай добавим все предложенное, а потом лучше будем исключать.','если есть возможность, то добавляем в действующие рк, если таких нет, то создаем'],articles=ARTICLES,test_cap_cny=200,steps={},campaigns=[],wb_writes=0,telegram_sends=0,created_at=datetime.now(timezone.utc).isoformat())
  if not c.create(KEY,e):return
@@ -43,7 +46,8 @@ def run():
   groups={}
   for article in ARTICLES:
    p=products[article];nm=int(p['nm_id']);pr=prices.get(nm);st=stocks.get(article.casefold())
-   if not pr or pr.get('currencyIsoCode4217')!='CNY' or not st or st.get('stock',0)-st.get('reserve',0)<=0:raise RuntimeError('Price/available stock not confirmed: '+article)
+   if not pr or pr.get('currencyIsoCode4217')!='CNY' or not st or st.get('stock') is None or st.get('reserve') is None or st['stock']-st['reserve']<=0:
+    e.setdefault('skipped',[]).append(dict(article=article,reason='Price or available stock not confirmed; absent row is not zero'));save();continue
    groups.setdefault(p['subject_id'],[]).append(dict(nm_id=nm,article=article))
   cfg=w.req('/api/advert/v1/config')
   if cfg.get('currency')!='CNY':raise RuntimeError('Wrong currency')

@@ -1,0 +1,31 @@
+name: China read-only budget alerts
+on:
+  schedule:
+    - cron: '40 4 * * *'
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-budget-alerts.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-budget-alerts
+  cancel-in-progress: false
+jobs:
+  budgets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - name: Read active campaigns and send only budget-risk notices
+        run: python scripts/china_budget_alerts.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}

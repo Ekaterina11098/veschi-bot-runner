@@ -3,7 +3,7 @@ import os,json,copy,time,math
 from datetime import datetime,timezone
 import requests
 from china_cloud_cost_control import Cache,validate_identity
-KEY='china_agent:owner_search_expand:2026-10-26:v3:execution'
+KEY='china_agent:owner_search_expand:2026-10-26:v4:execution'
 ARTICLES=['143-ReginaBag-black','447-AngelaBag-burgundy','595-Noelbag-zblack','600-JessicaBag-blue','044-NoelBag-black','673-NoelBag-green','58-NoelBag-brown','208-AngelaBag-black','36-EthelBag-brown','267-AmiraBag-beige','623-AngelaBag-brown','523-AngelaBag-black','680-VivienneBag-black','594-NoelBag-green','2-FurPanama-black','8-FurPanama-pink','92-Zont-red','64-Zont-cream-beige','114-Zont-Iblue','65-Zont-lilac-cream','26-Zont-green']
 class Wire:
  def __init__(self):self.token=os.environ['WB_TOKEN_3']
@@ -23,7 +23,7 @@ def run():
  if old:print('Owner execution already recorded; do not repeat');return
  e=dict(status='preflight',owner_id=5122667182,owner_quotes=['делай все','давай добавим все предложенное, а потом лучше будем исключать.','если есть возможность, то добавляем в действующие рк, если таких нет, то создаем'],articles=ARTICLES,test_cap_cny=200,steps={},campaigns=[],wb_writes=0,telegram_sends=0,created_at=datetime.now(timezone.utc).isoformat())
  if not c.create(KEY,e):return
- def save():c.put(KEY,e)
+ def save():c.put(KEY,json.loads(json.dumps(e)))
  def mutate(step,path,method,body=None):
   if step in e['steps']:raise RuntimeError('Prior write exists; never repeat')
   e['steps'][step]=dict(status='submitting',path=path,method=method,body=body);save()
@@ -82,6 +82,7 @@ def run():
     p=fp.get(item['nm_id'])
     if not p or p.get('vendorCode')!=item['article'] or p.get('currencyIsoCode4217')!='CNY':raise RuntimeError('Fresh SKU identity unavailable')
   for subject,items in groups.items():
+   if subject==50:continue # Already WB-verified in v3; never repeat its writes.
    wanted={x['nm_id'] for x in items}
    suitable=[x for x in cs.values() if x['status']==9 and x.get('currency')=='CNY' and x.get('bid_type')=='manual' and x['settings']['payment_type']=='cpc' and x['settings']['placements']=={'search':True,'recommendations':False} and {n['subject']['id'] for n in x['nm_settings']}=={subject}]
    suitable.sort(key=lambda x:(x['id']!=41298169,-len(wanted & {n['nm_id'] for n in x['nm_settings']})))
@@ -114,24 +115,9 @@ def run():
    after=campaign(cid)
    if any(n['bids_kopecks'].get('search')!=targets[n['nm_id']] for n in after['nm_settings'] if n['nm_id'] in wanted):raise RuntimeError('Bid readback failed')
    e['steps']['bids:'+str(cid)]['status']='verified';state.update(status='composition_bids_verified',after=after,bids=targets,baseline_budget=budget(cid));save()
-  # Existing total remaining budget plus the two new category minima must fit200.
-  existing=sum(x['baseline_budget'] for x in e['campaigns'] if x['existing']);new=[x for x in e['campaigns'] if not x['existing']]
   minimum=math.ceil(max(cfg.get('minTopUp',0),cfg.get('minDailyLimit',0))/100)
-  if minimum<=0 or existing+len(new)*minimum>200:raise RuntimeError('Verified WB minimum budgets plus existing balance exceed200CNY cap; drafts left unfunded')
-  for state in new:
-   cid=state['campaign_id'];limit=minimum*100
-   mutate('limit:'+str(cid),'/api/advert/v0/daily-limits','PUT',dict(advertIds=[cid],enabled=True,dailyLimit=limit,carryOverEnabled=False))
-   rows=w.req('/api/advert/v0/daily-limits?advertIds='+str(cid))['adverts']
-   if len(rows)!=1 or rows[0].get('dailyLimit')!=limit or rows[0].get('enabled')is not True or rows[0].get('carryOverEnabled')is not False:raise RuntimeError('Daily limit not verified')
-   if budget(cid)!=0:raise RuntimeError('New draft already funded; no duplicate')
-   mutate('deposit:'+str(cid),'/adv/v1/budget/deposit?id='+str(cid),'POST',dict(sum=minimum,type=0))
-   if budget(cid)!=minimum:raise RuntimeError('Deposit readback not confirmed')
-   state['funded_cny']=minimum
-   mutate('start:'+str(cid),'/adv/v0/start?id='+str(cid),'GET')
-   after=campaign(cid)
-   if after['status']!=9:raise RuntimeError('Start accepted, active status not yet confirmed; no repeated start')
-   state.update(status='verified_active',after=after);save()
-  e.update(status='verified',completed_at=datetime.now(timezone.utc).isoformat(),remaining_exposure_cap_basis='Current whole-campaign balances + single new deposits <=200CNY; no re-funding')
+  e.update(status='drafts_verified_unfunded',minimum_new_campaign_cny=minimum,config=cfg,reason='No funding or starts in this continuation; preserve200CNY cap pending reconciliation with309CNY existing balance',completed_at=datetime.now(timezone.utc).isoformat())
+
  except Exception as ex:
   e.update(status='uncertain' if any(s.get('status')=='uncertain' for s in e['steps'].values()) else 'blocked',reason=str(ex) if isinstance(ex,RuntimeError) else type(ex).__name__,completed_at=datetime.now(timezone.utc).isoformat())
  finally:

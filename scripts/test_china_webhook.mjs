@@ -50,4 +50,22 @@ const bad={update_id:7,message:{message_id:7,chat:{id:-999,type:'group'},migrate
 console.log('Webhook auth, all-member input, exact dispatch, duplicate, reply and migration checks passed');
 
 
-adsBound=true;const beforeAds=jobs.length;const ad=msg(99,6,cfg.chat_id);ad.message.text='Подтверждаю';ad.message.reply_to_message={from:{id:9},message_id:71,text:'Точный план рекламы'};const resultAds=await call(ad);assert.equal(resultAds.status,200);assert.equal(jobs.length,beforeAds+1);assert.equal(jobs.at(-1).request_text,'Подтверждаю');console.log('Advertising confirmation routed by bound message');
+
+
+adsBound=true;const beforeAds=jobs.length;const ad=msg(99,6,cfg.chat_id);ad.message.text='Подтверждаю';ad.message.reply_to_message={from:{id:9},message_id:71,text:'Точный план рекламы'};const resultAds=await call(ad);assert.equal(resultAds.status,200);assert.equal(jobs.length,beforeAds+1);assert.equal(jobs.at(-1).request_text,'Подтверждаю');console.log('Advertising confirmation bypasses price routing only with actual bound message');
+vm.runInContext('globalThis.priceHandler=handlePriceApproval;globalThis.priceParser=priceApprovalIntent;globalThis.webSame=same;',ctx);
+for(const alias of ['делай','сделай все','Сделай всё','примени','меняй цены'])assert.equal(ctx.priceParser(alias).all,true);
+for(const negative of ['не делай','не меняй цены'])assert.equal(ctx.priceParser(negative),null);
+const report='Повышение · 022-AlessiaBag-grey Продавец: 117,25 → 123,2 ¥\nПокупатель: 1 231 → 1 293 ₽';
+const retainedPrices=new Map();const priceDispatch=[];
+const priceDeps={deferMembership:true,now:()=>new Date('2026-10-26T14:00:00Z'),same:ctx.webSame,digest:async text=>Buffer.from(await webcrypto.subtle.digest('SHA-256',Buffer.from(text))).toString('hex'),launchPrice:async key=>priceDispatch.push(key),database:async(path,method='GET',body)=>{
+if(path.startsWith('business_agent_jobs?'))return [{id:126,request_text:'/china_morning_pair_candidates',answer:report,tool_trace:[{name:'china_price_daily_report',report_date:'2026-10-26'},{name:'china_report_delivery',sent_parts:1}]}];
+if(path.includes('eq.china_agent:prices:v1'))return [{payload:{cabinet:'token_3',rows:[{nmID:1473245499,vendorCode:'022-AlessiaBag-grey',currencyIsoCode4217:'CNY',discount:50,clubDiscount:0,editableSizePrice:false,sizes:[{price:234.5,discountedPrice:117.25}]}]}}];
+if(method==='POST'){retainedPrices.set(body.cache_key,body.payload);return [body];}
+const key=decodeURIComponent(path.match(/cache_key=eq.([^&]+)/)?.[1]??'');return retainedPrices.has(key)?[{payload:retainedPrices.get(key)}]:[];
+}};
+const priceMessage={message_id:304,chat:{id:-123,type:'supergroup'},from:{id:6,is_bot:false},reply_to_message:{from:{id:9},message_id:300,text:report}};
+const priceResult=await ctx.priceHandler({active:true,chat_id:-123,bot_id:9},priceMessage,'сделай все',12345,priceDeps);
+assert.match((await priceResult.json()).text,/Подтверждение принято/);assert.equal(priceDispatch.length,1);assert.equal([...retainedPrices.values()][0].selections[0].target_cny,'123.2');
+console.log('Natural price approval binds exact report and dispatches exact target; negations rejected');
+

@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   cohort:
+    if: ${{ false }} # One-off finished; canonical receipts prevent any action replay.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

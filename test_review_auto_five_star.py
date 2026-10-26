@@ -90,6 +90,12 @@ class PolicyTests(unittest.TestCase):
   self.assertEqual(self.repo.get('cards',token)['status'],'superseded')
   self.assertEqual(self.repo.count('intents'),1)
   self.assertEqual(enqueue(self.app,self.bridge,self.source,item,'token_3','new',150,self.policy,adopt_existing=True)['status'],'existing')
+ def test_common_positive_usage_and_inflections(self):
+  positives=('Ношу её каждый день','Качество огонь. Рекомендую.','Любимая сумочка!!!!@','Идеальный пошив снаружи и внутри, советую 100%','Красивый зонтик, материал отличный','Сумочка в гардероб! Форма и цвет понравились','Качественная сумка, упакована в пыльник, соответствует фото и описанию. Спасибо производителю 🌷','Пушистая, соответствует фото','Отличная сумка, от упаковки до самой','Очень понравилась, хорошо упакована, качественная и вместительная')
+  complaints=('Ношу её каждый день, но ремень порвался','Качество огонь, но есть запах','Упакована плохо','Не советую 100%','Не соответствует фото','Пошив снаружи хороший, внутри дырка','Красивая, но асимметрия','Не каждый день могу носить','Упаковка рваная','Классная, но для меня большая')
+  for key in ('text','pros','cons'):
+   for value in positives:self.assertTrue(classify(self.review(**{key:value}))['eligible'],value)
+   for value in complaints:self.assertFalse(classify(self.review(**{key:value}))['eligible'],value)
  def test_purchase_status_neutral(self):
   for status in ('buyout','rejected','returned',None):
    answer=answer_for(self.review(orderStatus=status))

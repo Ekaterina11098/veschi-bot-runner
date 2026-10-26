@@ -1,4 +1,4 @@
-name: Owner approved China search21 remaining category drafts only
+name: Owner approved China search21 confirmed100CNY deposits and activation
 on:
   push:
     branches: [main]

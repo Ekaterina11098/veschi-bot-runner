@@ -14,15 +14,10 @@ try:
  for kind in m.TYPES:
   ext=c.get("document_prefix","fbs-china")+":"+sid+":"+kind
   for d in w.ms_rows("entity/"+kind,{"filter":"externalCode="+ext}):docs[(kind,d["id"])]=d
- for (kind,uid),d in list(docs.items()):
-  if kind=="customerorder":
-   for dd in w.ms_rows("entity/demand",{"filter":"customerOrder="+m.href(d)}):docs[("demand",dd["id"])]=dd
- for (kind,uid),d in list(docs.items()):
-  if kind=="demand":
-   for dd in w.ms_rows("entity/salesreturn",{"filter":"demand="+m.href(d)}):docs[("salesreturn",dd["id"])]=dd
  for (kind,uid),d in docs.items():
+  d=t.request(m.MS,"entity/"+kind+"/"+uid,params={"expand":"state,organization,agent,store"})
   ps=w.ms_rows("entity/"+kind+"/"+uid+"/positions")
-  out["documents"].append({"type":kind,"id":uid,"name":d["name"],"created":d.get("created"),"updated":d.get("updated"),"moment":d.get("moment"),"posted":d.get("applicable"),"sum":d.get("sum"),"quantity":sum(p["quantity"] for p in ps),"positions":len(ps),"prices_zero":all(p["price"]==0 for p in ps),"comment":d.get("description")})
+  out["documents"].append({"type":kind,"id":uid,"name":d["name"],"created":d.get("created"),"updated":d.get("updated"),"moment":d.get("moment"),"posted":d.get("applicable"),"sum":d.get("sum"),"quantity":sum(p["quantity"] for p in ps),"positions":len(ps),"prices_zero":all(p["price"]==0 for p in ps),"comment":d.get("description"),"state":d.get("state",{}).get("name"),"store":d.get("store",{}).get("name"),"organization":d.get("organization",{}).get("name"),"agent":d.get("agent",{}).get("name"),"basis":m.href(d.get("customerOrder",{})) or m.href(d.get("demand",{}))})
  out["status"]="read_verified"
 except m.Stop as e:
  out["status"]="api_unavailable";out["errors"].append(str(e))

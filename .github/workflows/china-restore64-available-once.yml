@@ -1,0 +1,31 @@
+name: China approved available64 search restoration
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-restore64-available-once.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-restore64-available-once
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          python - <<'PY'
+          import os,pathlib,urllib.request
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          for name in ['china_restore64_available_once.py','china_cloud_cost_control.py']:
+              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
+          PY
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - run: python scripts/china_restore64_available_once.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

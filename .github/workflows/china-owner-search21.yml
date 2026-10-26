@@ -37,3 +37,5 @@ jobs:
 # Reconciled zero budgets; use available settlement net for exact approved200CNY.
 
 # Settlement continuation uses its own reconciled execution receipt.
+
+# Recover read-only connection failure; financial requests are never retried.

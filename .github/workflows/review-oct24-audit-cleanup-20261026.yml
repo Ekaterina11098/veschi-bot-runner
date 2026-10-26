@@ -31,11 +31,13 @@ jobs:
           from review_telegram_runtime import TelegramTransport
           class TelegramError(Exception):
               def __init__(self,code,description):self.code=code;self.description=description;super().__init__(description)
+          last_telegram_error={}
           def opener(request,timeout=8):
               try:return urllib.request.urlopen(request,timeout=timeout)
               except urllib.error.HTTPError as exc:
                   try:description=json.loads(exc.read(16384)).get('description','')
                   except Exception:description='Unreadable Telegram error'
+                  last_telegram_error.update(code=exc.code,description=description)
                   raise TelegramError(exc.code,description) from None
           root=os.environ['SUPABASE_SECRET_KEY'].encode()
           pw=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
@@ -47,6 +49,14 @@ jobs:
               cfg=conn.execute("SELECT payload FROM review_approval.source_cache WHERE cache_key='reviews:telegram-approval:config:v1'").fetchone()[0]
               a=Approval(repo,'audit-cleanup-only',cfg['owner_id'],cfg['chat_id'],cfg['bot_id'])
               tg=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN'],opener=opener)
+              raw_call=tg.call
+              def audited_call(method,payload):
+                  last_telegram_error.clear()
+                  try:return raw_call(method,payload)
+                  except RuntimeError:
+                      if last_telegram_error:raise TelegramError(last_telegram_error['code'],last_telegram_error['description']) from None
+                      raise
+              tg.call=audited_call
               member=tg.call('getChatMember',dict(chat_id=a.group_chat(),user_id=a.bot))
               if member.get('status')!='creator' and member.get('can_delete_messages') is not True:raise RuntimeError('Bot delete permission unavailable')
               cards={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}cards').fetchall()}

@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prices:
+    if: ${{ false }} # All four owner-approved prices WB-verified; one-off disabled.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

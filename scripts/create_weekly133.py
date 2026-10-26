@@ -64,12 +64,20 @@ def ensure(kind,tag,body,wanted):
  return d
 order=ensure("customerorder","order",{**common,"name":plan["name"],"description":plan["comment"],"positions":[pos(a,q) for a,q in plan["sales"].items()]},plan["sales"])
 demand=ensure("demand","demand",{**common,"customerOrder":m.meta(order),"description":plan["comment"],"positions":[pos(a,q) for a,q in plan["sales"].items()]},plan["sales"])
+historical=db.get(ROOT+"historical_costs:v1")
 priced=ps("demand",demand["id"],True)
 zero=[];valuation=0;valuations=[]
 for p in priced:
  q=Decimal(str(p["quantity"]));cost=Decimal(str(p.get("stock",{}).get("cost") or 0))
  unit=int((cost/q).to_integral_value(rounding=ROUND_FLOOR))
  a=(p["assortment"].get("article") or "").strip().casefold()
+ if unit<=0 and a in plan.get("valuation_overrides",{}):
+  allowed={int(Decimal(str(z["stock"]["cost"]))/Decimal(str(z["quantity"]))) for z in historical.get("history",{}).get(a,[])}
+  for z in historical.get("stock_snapshots",{}).get(a,[]):
+   allowed.update(int(Decimal(str(r["price"]))) for r in z["rows"] if (r.get("stock") or 0)>0 and (r.get("price") or 0)>0)
+  override=plan["valuation_overrides"][a]["unit_price"]
+  assert override>0 and override in allowed,("Historical cost not verified",a)
+  unit=override
  if unit<=0:zero.append(a)
  valuations.append({"article":a,"quantity":p["quantity"],"stock_cost":str(cost),"unit_price":unit});valuation+=Decimal(unit)*q
 result["valuation_positions"]=valuations;result["zero_cost_articles"]=zero

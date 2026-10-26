@@ -31,3 +31,5 @@ jobs:
 # Compare category IDs, never presentation label casing.
 
 # One exact100CNY deposit per draft; no automatic repeat funding.
+
+# Read-only reconcile deposit400; no writes in this pass.

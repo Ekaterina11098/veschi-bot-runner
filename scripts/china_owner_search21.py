@@ -17,117 +17,62 @@ class Wire:
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise RuntimeError('Public main only')
  c=Cache();w=Wire();validate_identity(c,w)
- previous=c.get('china_agent:owner_search_expand:2026-10-26:v1:execution') or {}
- if previous.get('wb_writes')!=0:raise RuntimeError('Previous execution may have writes; no retry')
- old=c.get(KEY)
- if old:print('Owner execution already recorded; do not repeat');return
- e=dict(status='preflight',owner_id=5122667182,owner_quotes=['делай все','давай добавим все предложенное, а потом лучше будем исключать.','если есть возможность, то добавляем в действующие рк, если таких нет, то создаем'],articles=ARTICLES,test_cap_cny=200,steps={},campaigns=[],wb_writes=0,telegram_sends=0,created_at=datetime.now(timezone.utc).isoformat())
- if not c.create(KEY,e):return
- def save():c.put(KEY,json.loads(json.dumps(e)))
- def mutate(step,path,method,body=None):
-  if step in e['steps']:raise RuntimeError('Prior write exists; never repeat')
+ key='china_agent:owner_search_fund:2026-10-26:v1:execution'
+ approval=c.get('china_agent:owner_search_fund:2026-10-26:v1:approval') or {}
+ if approval.get('status')!='approved' or approval.get('amounts')!={'41325622':100,'41325637':100} or approval.get('start') is not True:raise RuntimeError('Exact funding approval missing')
+ if c.get(key):print('Existing execution: never repeat writes');return
+ parent=c.get('china_agent:owner_search_expand:2026-10-26:v4:execution') or {}
+ if parent.get('status')!='drafts_verified_unfunded':raise RuntimeError('Verified draft plan missing')
+ e=dict(status='preflight',owner_quote='подтверждаю пополнение',owner_id=5122667182,steps={},campaigns=[],total_deposit_cny=0,telegram_sends=0,created_at=datetime.now(timezone.utc).isoformat())
+ if not c.create(key,e):return
+ def save():c.put(key,json.loads(json.dumps(e)))
+ def write(step,path,method,body=None):
+  if step in e['steps']:raise RuntimeError('Never repeat an existing write')
   e['steps'][step]=dict(status='submitting',path=path,method=method,body=body);save()
   try:r=w.req(path,method,body)
   except Exception:e['steps'][step]['status']='uncertain';save();raise
-  e['steps'][step].update(status='accepted',response=r);e['wb_writes']+=1;save();return r
- def campaign(cid):return w.campaigns([cid])[str(cid)]
+  e['steps'][step].update(status='accepted',response=r);save()
  def budget(cid):
   rows=w.req('/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts']
-  if len(rows)!=1 or rows[0].get('currency')!='CNY':raise RuntimeError('Budget scope invalid')
+  if len(rows)!=1 or rows[0].get('currency')!='CNY':raise RuntimeError('Exact CNY budget missing')
   return rows[0]['total']
  try:
-  auth=c.get('china_agent:owner_search_expand:2026-10-26:v1:approval') or {}
-  if auth.get('status')!='approved' or auth.get('test_cap_cny')!=200:raise RuntimeError('Exact current owner approval missing')
-  source=c.get('china_agent:new_ad_source:v1:2026-10-26') or {}
-  products={x['sa_name']:x for x in source.get('products',[])}
-  prices={x['nmID']:x for x in source.get('prices',[])}
-  stocks={x.get('article','').casefold():x for x in source.get('stock',[])}
-  if set(ARTICLES)-set(products):raise RuntimeError('Exact article catalogue missing')
-  groups={}
-  for article in ARTICLES:
-   p=products[article];nm=int(p['nm_id']);pr=prices.get(nm);st=stocks.get(article.casefold())
-   if not pr or pr.get('currencyIsoCode4217')!='CNY' or not st or st.get('stock') is None or st.get('reserve') is None or st['stock']-st['reserve']<=0:
-    e.setdefault('skipped',[]).append(dict(article=article,reason='Price or available stock not confirmed; absent row is not zero'));save();continue
-   log=source.get('policy',{}).get('logistics_by_nm',{}).get(str(nm))
-   if not log and nm==1473243439:
-    finance=c.get('china_agent:wb_evidence:v1:finance:2026-09-26:2026-10-25') or {}
-    records=[r for r in finance.get('rows',[]) if str(r.get('nmId'))==str(nm)]
-    forward=[r for r in records if float(r.get('deliveryService') or 0)>0]
-    if finance.get('complete') and len(forward)==1:log=dict(delivery_cny=float(forward[0]['deliveryService']),delivery_source='own_finance26Oct; single completed sample')
-   finished=p.get('finished_orders') or 0;paid=p.get('is_payed')
-   if not finished or paid is None or not log or st.get('price') is None or not p.get('price_after_discount'):
-    e.setdefault('skipped',[]).append(dict(article=article,reason='Own completed buyout/logistics/COGS incomplete'));save();continue
-   price=pr['sizes'][0]['discountedPrice'];fee=p.get('total_commission_without_spp_in_sales')
-   if fee is None or not p.get('sales_sum_without_spp'):
-    e.setdefault('skipped',[]).append(dict(article=article,reason='Own commission not confirmed'));save();continue
-   expected=(paid/finished)*(price*(1-fee/100-.05*p.get('price_after_spp',0)/p['price_after_discount'])-st['price']/1200)-log['delivery_cny']-10/12-.05*price
-   e.setdefault('economics',[]).append(dict(article=article,paid=paid,finished=finished,expected_cny_per_dispatch_at5=round(expected,2),preliminary=True,expenses_note='Own COGS/fee/logistics; tax5% and FX12 assumptions; WBPromotion not duplicated'))
-   if expected<=0:
-    e.setdefault('skipped',[]).append(dict(article=article,reason='Expected negative at5% DRR with own finished buyout',expected_cny=round(expected,2)));save();continue
-   groups.setdefault(p['subject_id'],[]).append(dict(nm_id=nm,article=article))
   cfg=w.req('/api/advert/v1/config')
-  if cfg.get('currency')!='CNY':raise RuntimeError('Wrong currency')
-  inv=w.req('/adv/v1/promotion/count');ids=sorted({x['advertId'] for g in inv.get('adverts',[]) if g['status'] in [4,9,11] for x in g.get('advert_list',[])})
-  cs=w.campaigns(ids)
-  # Confirm exact prices narrowly through the WB price API; no price writes.
-  fresh=[]
-  for offset in [0]:
-   time.sleep(2);r=requests.get('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter',headers={'Authorization':w.token},params={'limit':1000,'offset':offset},timeout=50)
-   if not r.ok:raise RuntimeError('WB prices HTTP '+str(r.status_code))
-   fresh=r.json().get('data',{}).get('listGoods',[])
-   if not fresh: fresh=r.json().get('listGoods',[])
-  fp={x['nmID']:x for x in fresh}
-  for items in groups.values():
-   for item in items:
-    p=fp.get(item['nm_id'])
-    if not p or p.get('vendorCode')!=item['article'] or p.get('currencyIsoCode4217')!='CNY':raise RuntimeError('Fresh SKU identity unavailable')
-  for subject,items in groups.items():
-   if subject==50:continue # Already WB-verified in v3; never repeat its writes.
-   wanted={x['nm_id'] for x in items}
-   suitable=[x for x in cs.values() if x['status']==9 and x.get('currency')=='CNY' and x.get('bid_type')=='manual' and x['settings']['payment_type']=='cpc' and x['settings']['placements']=={'search':True,'recommendations':False} and {n['subject']['id'] for n in x['nm_settings']}=={subject}]
-   suitable.sort(key=lambda x:(x['id']!=41298169,-len(wanted & {n['nm_id'] for n in x['nm_settings']})))
-   if suitable:
-    before=suitable[0];cid=before['id'];oldids={n['nm_id'] for n in before['nm_settings']};add=sorted(wanted-oldids)
-    if len(oldids|wanted)>50:raise RuntimeError('Existing campaign would exceed conservative 50SKU bound')
-    state=dict(campaign_id=cid,subject_id=subject,existing=True,items=items,before=before,status='preflight');e['campaigns'].append(state);save()
-    if add:mutate('add:'+str(cid),'/adv/v0/auction/nms','PATCH',dict(nms=[dict(advert_id=cid,nms=dict(add=add,delete=[]))]))
-    after=campaign(cid)
-    if {n['nm_id'] for n in after['nm_settings']}!=oldids|wanted or after['status']!=9 or after['settings']!=before['settings']:raise RuntimeError('Existing membership not verified')
-    state['after_membership']=after
-    if add:e['steps']['add:'+str(cid)]['status']='verified'
-   else:
-    name='Китай поиск 26.10 · '+str(subject)+' · owner21'
-    state=dict(subject_id=subject,existing=False,items=items,status='preflight');e['campaigns'].append(state);save()
-    resp=mutate('create:'+str(subject),'/adv/v2/seacat/save-ad','POST',dict(name=name,nms=sorted(wanted),bid_type='manual',payment_type='cpc',placement_types=['search']))
-    cid=resp if type(resp)is int else resp.get('advertId') if isinstance(resp,dict) else None
-    if type(cid)is not int:raise RuntimeError('Uncertain creation ID; no retry')
-    state['campaign_id']=cid;save();after=campaign(cid)
-    if after['status']!=4 or after['settings']['placements']!={'search':True,'recommendations':False} or {n['nm_id'] for n in after['nm_settings']}!=wanted:raise RuntimeError('New draft verification failed')
-    e['steps']['create:'+str(subject)]['status']='verified'
-   mins=w.req('/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=sorted(wanted),payment_type='cpc',placement_types=['search']))
-   targets={}
-   for row in mins.get('bids',[]):
-    vs=[b['value'] for b in row.get('bids',[]) if b.get('currency')=='CNY' and b.get('type')=='search']
-    if len(vs)!=1 or type(vs[0])is not int or vs[0]>28:raise RuntimeError('Minimum exceeds approved conservative .28CNY ceiling')
-    targets[row['nm_id']]=max(28 if subject==50 else vs[0],vs[0])
-   if set(targets)!=wanted:raise RuntimeError('Incomplete exact search minima')
-   mutate('bids:'+str(cid),'/api/advert/v1/bids','PATCH',dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=nm,bid_kopecks=bid,placement='search') for nm,bid in targets.items()])]))
-   after=campaign(cid)
-   if any(n['bids_kopecks'].get('search')!=targets[n['nm_id']] for n in after['nm_settings'] if n['nm_id'] in wanted):raise RuntimeError('Bid readback failed')
-   e['steps']['bids:'+str(cid)]['status']='verified';state.update(status='composition_bids_verified',after=after,bids=targets,baseline_budget=budget(cid));save()
-  minimum=math.ceil(max(cfg.get('minTopUp',0),cfg.get('minDailyLimit',0))/100)
-  e.update(status='drafts_verified_unfunded',minimum_new_campaign_cny=minimum,config=cfg,reason='No funding or starts in this continuation; preserve200CNY cap pending reconciliation with309CNY existing balance',completed_at=datetime.now(timezone.utc).isoformat())
-
+  if cfg.get('currency')!='CNY' or max(cfg.get('minTopUp',0),cfg.get('minDailyLimit',0))>10000:raise RuntimeError('Fresh minimum exceeds approved100CNY')
+  # Validate BOTH exact drafts before any financial mutation.
+  for cid in [41325622,41325637]:
+   prior=next(x for x in parent['campaigns'] if x['campaign_id']==cid)
+   before=w.campaigns([cid])[str(cid)]
+   if before['status']!=4 or before['currency']!='CNY' or before['settings']!=prior['after']['settings'] or before['nm_settings']!=prior['after']['nm_settings']:raise RuntimeError('Draft changed since approval')
+   b=budget(cid)
+   if b!=0:raise RuntimeError('Draft already funded; do not deposit again')
+   e['campaigns'].append(dict(campaign_id=cid,before=before,items=prior['items'],baseline_budget=b,status='preflight'));save()
+  for state in e['campaigns']:
+   cid=state['campaign_id'];p=str(cid)
+   write('limit:'+p,'/api/advert/v0/daily-limits','PUT',dict(advertIds=[cid],enabled=True,dailyLimit=10000,carryOverEnabled=False))
+   rows=w.req('/api/advert/v0/daily-limits?advertIds='+p)['adverts']
+   if len(rows)!=1 or rows[0].get('dailyLimit')!=10000 or rows[0].get('enabled')is not True or rows[0].get('carryOverEnabled')is not False:raise RuntimeError('Daily limit readback failed')
+   e['steps']['limit:'+p]['status']='verified';save()
+   if budget(cid)!=0:raise RuntimeError('Balance changed before deposit')
+   write('deposit:'+p,'/adv/v1/budget/deposit?id='+p,'POST',dict(sum=100,type=0))
+   b=budget(cid);state['balance_after_deposit']=b
+   if b!=100:raise RuntimeError('Deposit readback mismatch; never repeat')
+   e['steps']['deposit:'+p]['status']='verified';e['total_deposit_cny']+=100;save()
+   write('start:'+p,'/adv/v0/start?id='+p,'GET')
+   after=w.campaigns([cid])[p];state['after']=after
+   if after['status']!=9 or after['settings']!=state['before']['settings'] or after['nm_settings']!=state['before']['nm_settings']:raise RuntimeError('Active state/composition not confirmed; never repeat start')
+   e['steps']['start:'+p]['status']='verified';state['status']='verified_active';save()
+  e['status']='verified'
  except Exception as ex:
-  e.update(status='uncertain' if any(s.get('status')=='uncertain' for s in e['steps'].values()) else 'blocked',reason=str(ex) if isinstance(ex,RuntimeError) else type(ex).__name__,completed_at=datetime.now(timezone.utc).isoformat())
+  e.update(status='uncertain' if any(x.get('status')in ['submitting','uncertain','accepted'] for x in e['steps'].values()) else 'blocked',reason=str(ex) if isinstance(ex,RuntimeError) else type(ex).__name__)
  finally:
-  save()
+  e['completed_at']=datetime.now(timezone.utc).isoformat();save()
   registry=c.get('china_agent:verified_campaign_state:v1') or {}
-  for x in e['campaigns']:
-   if x.get('after') and x['status'] in ['composition_bids_verified','verified_active']:
-    k='china_agent:owner_search_expand:2026-10-26:'+str(x['campaign_id'])+':execution'
-    c.put(k,dict(status='verified',before=x.get('before'),after=x['after'],verified_at=e.get('completed_at'),items=x['items'],parent=KEY))
-    registry[str(x['campaign_id'])]=k
+  for state in e['campaigns']:
+   if state.get('status')=='verified_active':
+    receipt='china_agent:owner_search_fund:2026-10-26:'+str(state['campaign_id'])+':execution'
+    c.put(receipt,dict(status='verified',before=state['before'],after=state['after'],items=state['items'],funded_cny=100,verified_at=e['completed_at'],parent=key))
+    registry[str(state['campaign_id'])]=receipt
   c.put('china_agent:verified_campaign_state:v1',registry)
-  print('Owner search execution saved privately; status='+e['status'])
+  print('Funding result saved privately: '+e['status'])
 if __name__=='__main__':run()

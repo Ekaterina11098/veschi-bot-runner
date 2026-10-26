@@ -17,7 +17,7 @@ class Wire:
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise RuntimeError('Public main only')
  c=Cache();w=Wire();validate_identity(c,w)
- key='china_agent:owner_search_fund:2026-10-26:v3:execution'
+ key='china_agent:owner_search_fund:2026-10-26:v4:execution'
  approval=c.get('china_agent:owner_search_fund:2026-10-26:v1:approval') or {}
  if approval.get('status')!='approved' or approval.get('amounts')!={'41325622':100,'41325637':100} or approval.get('start') is not True:raise RuntimeError('Exact funding approval missing')
  if c.get(key):print('Existing execution: never repeat writes');return
@@ -40,6 +40,8 @@ def run():
  try:
   cfg=w.req('/api/advert/v1/config')
   if cfg.get('currency')!='CNY' or max(cfg.get('minTopUp',0),cfg.get('minDailyLimit',0))>10000:raise RuntimeError('Fresh minimum exceeds approved100CNY')
+  prior_attempt=c.get('china_agent:owner_search_fund:2026-10-26:v3:execution') or {}
+  if prior_attempt.get('total_deposit_cny')!=0 or any(k.startswith(('deposit:','start:')) for k in prior_attempt.get('steps',{})):raise RuntimeError('Prior financial execution exists; reconcile first')
   # Validate BOTH exact drafts before any financial mutation.
   for cid in [41325622,41325637]:
    prior=next(x for x in parent['campaigns'] if x['campaign_id']==cid)
@@ -51,10 +53,7 @@ def run():
    e['campaigns'].append(dict(campaign_id=cid,before=before,items=prior['items'],baseline_budget=b,status='preflight'));save()
   for state in e['campaigns']:
    cid=state['campaign_id'];p=str(cid)
-   write('limit:'+p,'/api/advert/v0/daily-limits','PUT',dict(advertIds=[cid],enabled=True,dailyLimit=10000,carryOverEnabled=False))
-   rows=w.req('/api/advert/v0/daily-limits?advertIds='+p)['adverts']
-   if len(rows)!=1 or rows[0].get('dailyLimit')!=10000 or rows[0].get('enabled')is not True or rows[0].get('carryOverEnabled')is not False:raise RuntimeError('Daily limit readback failed')
-   e['steps']['limit:'+p]['status']='verified';save()
+   state['limit_basis']='One100CNY deposit only; no refills; draft daily-limit400 produced no deposit';save()
    if budget(cid)!=0:raise RuntimeError('Balance changed before deposit')
    write('deposit:'+p,'/adv/v1/budget/deposit?id='+p,'POST',dict(sum=100,type=0))
    b=budget(cid);state['balance_after_deposit']=b

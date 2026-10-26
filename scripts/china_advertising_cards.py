@@ -28,14 +28,14 @@ def enhance(bundle,source):
   active=sums(bynm.get(nm,ZERO) for nm in members) if not c['missing_stats'] else None
   maximum=max((v['spend'] for nm,v in bynm.items() if nm in members),default=0)
   today=next((daily_metrics(d) for d in today_raw.get(c['id'],{}).get('days',[]) if d['date'][:10]==today_date),None)
-  c.update(today=today,yesterday=c.get('last'),today_observed_at=intraday.get('observed_at'),confirmed_exclusions=list(exclusions.values()),current_period=active,max_member_spend=maximum,
+  c.update(never_started=current.get('status')==4 and current.get('timestamps',{}).get('started') is None, today=today,yesterday=c.get('last'),today_observed_at=intraday.get('observed_at'),confirmed_exclusions=list(exclusions.values()),current_period=active,max_member_spend=maximum,
            member_count=len(members),current_articles=[dict(nm=nm,article=labels.get(nm,{}).get('article','WB '+str(nm))) for nm in sorted(members)],facts_checked=True)
   # Only concrete new actions appear as individual SKU rows. Waiting/old actions stay out.
   c['attention']=[r for r in c['focus'] if r.get('action') and r['nm'] in members]
   if c.get('budget_action',{} ) and c['budget_action']['kind']=='pause_campaign':
    c['budget_action']=None;c['budget_recommendation']='Не пополнять. РК остаётся активной: пауза не согласована.'
   c['notes']=notes(c)
- bundle['presentation']='campaign_cards_v3'
+ bundle['presentation']='three_day_attention_table_v4'
  bundle['today_observed_at']=intraday.get('observed_at')
  bundle['total_yesterday_spend']=sum(c['last']['spend'] for c in bundle['campaigns'] if c.get('last') is not None) if all(c.get('last') is not None or c['status']!=9 for c in bundle['campaigns']) else None
  bundle['receipt_basis']='verified before/after diff and current campaign membership'

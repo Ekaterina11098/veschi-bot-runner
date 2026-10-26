@@ -30,6 +30,7 @@ for typ in ("customerorder","demand","salesreturn"):
   if any(str(n) in d.get("name","")+" "+d.get("description","") for n in inp["report_ids"]) or "0(133)" in d.get("description",""):
    d["type"]=typ;out["duplicates"].append(d)
 db.put(key+"prepare:v1",out)
+all_returns=w.ms_rows("entity/salesreturn",{"filter":flt+";moment>=2026-08-01 00:00:00"})
 for d in w.ms_rows("entity/demand",{"filter":flt+";moment>=2026-08-01 00:00:00;moment<2026-10-26 00:00:00","order":"moment,desc"}):
  order=d.get("customerOrder",{})
  if m.href(order).startswith(m.MS):order=t.request(m.MS,m.href(order)[len(m.MS):])
@@ -40,7 +41,7 @@ for d in w.ms_rows("entity/demand",{"filter":flt+";moment>=2026-08-01 00:00:00;m
  if not matching:continue
  item={k:d.get(k) for k in ("id","name","moment","description","applicable","customerOrder","meta")}
  item["positions"]=matching
- item["returns"]=w.ms_rows("entity/salesreturn",{"filter":"demand="+m.MS+"entity/demand/"+d["id"]})
+ item["returns"]=[r for r in all_returns if m.href(r.get("demand",{}))==m.href(d)]
  for r in item["returns"]:r["positions_full"]=w.ms_rows("entity/salesreturn/"+r["id"]+"/positions",{"expand":"assortment"})
  out["demands"].append(item);db.put(key+"prepare:v1",out)
 out["status"]="prepared";out["completed_at"]=m.now();db.put(key+"prepare:v1",out)

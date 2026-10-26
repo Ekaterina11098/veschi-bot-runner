@@ -113,8 +113,7 @@ def run():
  art='china_agent:advertising_midday_artifacts:'+day+':v1';saved=io.get(art)
  if not saved:
   b=prepare_midday(io,day);files=[]
-  from china_search_trials_report import append_trial_pages
-  for i,f in enumerate(append_trial_pages(io,day,render_midday(b),midday=True)):
+  for i,f in enumerate(render_midday(b)):
    p=plan(io,day,f,i,slot='midday')
    files.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))
   saved=dict(day=day,status='frozen',bundle=b,files=files)

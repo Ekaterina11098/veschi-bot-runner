@@ -1,9 +1,21 @@
 """Read every shipment in a privately requested Moscow day, independently of ledger completeness."""
-import os,json,datetime as dt,collections
+import os,json,datetime as dt,collections,time
 import fbs_document_chain as m
 from fbs_wb_cabinets import ScopedCache
-t=m.Transport();db=m.Cache(t);reader=m.Worker(t,db,{})
+class ReviewTransport(m.Transport):
+ def request(self,base,path,method="GET",body=None,params=None):
+  semantic_read=base==m.WB and method=="POST" and path=="api/v3/orders/status"
+  for attempt in range(3 if semantic_read else 1):
+   try:return super().request(base,path,method,body,params)
+   except m.Stop as e:
+    transient=str(e)=="API transport outcome uncertain" or any(str(e).startswith("HTTP_"+str(n)) for n in (429,500,502,503,504))
+    if not semantic_read or not transient or attempt==2:
+     label="MS" if base==m.MS else "WB" if base==m.WB else "private_cache"
+     raise m.Stop(str(e)+" ["+label+" "+method+" "+path+"]") from None
+    time.sleep(2*(attempt+1))
+t=ReviewTransport();db=m.Cache(t);reader=m.Worker(t,db,{})
 root=os.environ["DAY_REVIEW_ROOT"];req=db.get(root+"request:v1")
+target=os.environ.get("TARGET_CABINET");audit_key=root+"audit:"+target+":v1" if target else root+"audit:v1"
 day=dt.date.fromisoformat(req["date"]);tz=dt.timezone(dt.timedelta(hours=3))
 begin=dt.datetime.combine(day,dt.time.min,tzinfo=tz);end=begin+dt.timedelta(days=1)
 def within(value):return bool(value) and begin<=m.stamp(value)<end
@@ -51,8 +63,9 @@ def inspect(cabinet,supply,expected,scope,worker,annotation,act=None):
     for k,v in checks.items():
      if not v:result["issues"].append({"type":typ,"id":d["id"],"issue":k})
  result["status"]="verified" if not result["issues"] else "requires_repair"
- report["chains"].append(result);db.put(root+"audit:v1",report)
+ report["chains"].append(result);db.put(audit_key,report)
 for cabinet in ("china","ip","ooo"):
+ if target and target!=cabinet:continue
  os.environ["WB_TOKEN_3"]=tokens[cabinet]
  scoped=ScopedCache(t,cabinet);config=scoped.get("fbs_document_chain:"+cabinet+":config:v1");worker=m.Worker(t,scoped,config)
  try:
@@ -84,19 +97,20 @@ for cabinet in ("china","ip","ooo"):
    scope={"all_numbers":sorted(ids),"included":sorted(included),"excluded":[{"id":i,"article":found[i]["article"],"status":statuses[i]} for i in ids if i not in included],"counts":expected,"raw_count":len(ids)}
    inspect(cabinet,supply,expected,scope,worker,worker.order_annotation(supply))
  except Exception as e:report["errors"].append({"cabinet":cabinet,"error":str(e) if isinstance(e,m.Stop) else type(e).__name__})
- db.put(root+"audit:v1",report)
-from fbs_ozon_chain import acts,snapshot,OzonWorker,virtual_supply
-try:
- config=db.get("fbs_document_chain:ozon:config:v1")
- for act in acts():
-  if act.get("departure_date")!=str(day):continue
-  scope=snapshot(act);supply=virtual_supply(act,scope)
-  if not scope["ready"]:
-   report["waiting"].append({"cabinet":"ozon","act":act,"scope":scope,"reason":"not_all_postings_in_delivery"});continue
-  worker=OzonWorker(t,db,config,act,scope)
-  inspect("ozon",supply,scope["counts"],scope,worker,worker.order_annotation(supply),act)
-except Exception as e:report["errors"].append({"cabinet":"ozon","error":str(e) if isinstance(e,m.Stop) else type(e).__name__})
+ db.put(audit_key,report)
+if not target or target=="ozon":
+ from fbs_ozon_chain import acts,snapshot,OzonWorker,virtual_supply
+ try:
+  config=db.get("fbs_document_chain:ozon:config:v1")
+  for act in acts():
+   if act.get("departure_date")!=str(day):continue
+   scope=snapshot(act);supply=virtual_supply(act,scope)
+   if not scope["ready"]:
+    report["waiting"].append({"cabinet":"ozon","act":act,"scope":scope,"reason":"not_all_postings_in_delivery"});continue
+   worker=OzonWorker(t,db,config,act,scope)
+   inspect("ozon",supply,scope["counts"],scope,worker,worker.order_annotation(supply),act)
+ except Exception as e:report["errors"].append({"cabinet":"ozon","error":str(e) if isinstance(e,m.Stop) else type(e).__name__})
 report["status"]="audited" if not report["errors"] else "incomplete"
-report["completed_at"]=m.now();db.put(root+"audit:v1",report)
+report["completed_at"]=m.now();db.put(audit_key,report)
 print(json.dumps({"status":report["status"],"chains":len(report["chains"]),"issues":sum(len(c["issues"]) for c in report["chains"]),"source_errors":len(report["errors"])}))
 if report["errors"]:raise SystemExit(1)

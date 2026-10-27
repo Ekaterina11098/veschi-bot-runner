@@ -42,11 +42,13 @@ async function handle(req) {
   const response=await fetch(repo+"/actions/workflows/fbs-document-chain.yml/runs?per_page=10",{headers:auth,signal:AbortSignal.timeout(8000)});
   if(!response.ok)throw new Error("Runner status unavailable");
   const runs=(await response.json()).workflow_runs;
-  if(runs.some(r=>["queued","pending","waiting","requested"].includes(r.status)))return finish("worker_queued");
-  for(const run of runs.filter(r=>r.status==="in_progress")){
+  for(const run of runs.filter(r=>["queued","pending","waiting","requested","in_progress"].includes(r.status))){
    const jobs=await fetch(repo+"/actions/runs/"+run.id+"/jobs",{headers:auth,signal:AbortSignal.timeout(8000)});
    if(!jobs.ok)throw new Error("Worker status unavailable");
-   if((await jobs.json()).jobs.some(j=>j.name==="chain"&&j.status!=="completed"))return finish("worker_active",{run_id:run.id});
+   const chain=(await jobs.json()).jobs.find(j=>j.name==="chain");
+   if(!chain)return finish("worker_queued",{run_id:run.id});
+   if(chain.status!=="completed")return finish(chain.status==="in_progress"?"worker_active":"worker_queued",{run_id:run.id});
+   // A pending historical audit must not block a completed creation job.
   }
   const claim="fbs_document_clock:dispatch:v1:"+Math.floor(now.getTime()/300000);
   const inserted=await save(claim,{status:"submitting",at:now.toISOString()},true);

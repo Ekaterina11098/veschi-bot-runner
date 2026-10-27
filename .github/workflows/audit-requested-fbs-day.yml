@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cabinet: [china]
+        cabinet: [ozon]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -38,3 +38,5 @@ jobs:
 # Retry only the cabinet whose document lookup timed out.
 
 # Verify China quantities and direct linked document graph.
+
+# Independently re-read Ozon after return recovery.

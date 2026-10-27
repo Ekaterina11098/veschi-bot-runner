@@ -16,7 +16,7 @@ class FullDayGuard(unittest.TestCase):
  def test_naive_launch_fails_closed(self):
   with self.assertRaises(ValueError):post_change_pending([],1,2,'2026-10-27',{'timestamps':{'started':'2026-10-26T21:00:00'}})
  def test_correction_preserves_metrics_and_valid_action(self):
-  action=lambda nm:dict(campaign_id=1,nm_id=nm,kind='ad_exclude_sku')
+  action=lambda nm:dict(campaign_id=1,nm_id=nm,article=str(nm),kind='ad_exclude_sku')
   b=dict(day='2026-10-27',observed_at='2026-10-27T12:00:00Z',campaigns=[dict(id=1,today={'spend':12},attention=[dict(action=action(2)),dict(action=action(3))])])
   before=dict(id=9,nm_settings=[])
   after=dict(id=9,nm_settings=[dict(nm_id=2,bids_kopecks={'search':28})])

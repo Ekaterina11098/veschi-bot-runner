@@ -32,6 +32,7 @@ def handle(w,job):
  if not p or p.get('chat_id')!=CHAT or p['plan_sha256']!=digest(p['items']) or b['plan_sha256']!=p['plan_sha256']:raise ValueError('Daily plan hash mismatch')
  if m.get('reply_message_id') not in p['report_message_ids']:raise ValueError('Daily reply not bound')
  if w.now>datetime.fromisoformat(p['expires_at']):return ('План устарел. Нужен свежий отчёт и подтверждение обновлённых действий.',[])
+ if p.get('invalidated_at'):return ('План этого PNG отозван после проверки: '+p.get('invalidation_reason','нужен свежий план')+'. Изменения не выполняю.',[])
  if not p['items']:return ('В этом PNG нет новых действий. Уже выполненное и наблюдение повторно не запускаю.',[])
  a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)
  w.save(APPROVAL+str(job['id']),a,insert=True)
@@ -39,6 +40,7 @@ def handle(w,job):
 
 def execute(io,a,p):
  io.validate_owner(a)
+ if p.get('invalidated_at'):raise ValueError('Daily PNG plan invalidated after audit')
  if p['execution_kind']!='daily_ad_actions_v2' or p['plan_sha256']!=digest(p['items']) or a['plan_sha256']!=p['plan_sha256']:raise ValueError('Daily execution scope changed')
  key=EXEC+p['plan_id'];e=io.get(key)
  if not e:
@@ -136,4 +138,5 @@ def process_and_deliver(io,a,p):
   r=io.tg('sendMessage',dict(chat_id=CHAT,text=text,reply_parameters=dict(message_id=a['input_message_id'],allow_sending_without_reply=True)));io.put(key,dict(status='sent',message_id=r['message_id'],text=text))
  except Exception:io.put(key,dict(status='uncertain',text=text))
  return e
+
 

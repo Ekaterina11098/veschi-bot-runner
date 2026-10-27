@@ -1,17 +1,73 @@
 name: Daily China advertising PNG reports 07:30 MSK
 on:
   schedule:
-    - cron: '30,45 4 * * *'
+    - cron: '15,30,45 4 * * *'
     - cron: '0,15 5 * * *'
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: bot-mpstats-data
+  group: china-advertising-daily
   cancel-in-progress: false
 jobs:
-  daily:
+  prepare:
     if: github.run_attempt == 1
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 1}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Check advertising arithmetic and duplicate safeguards
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
+      - name: Prepare and freeze the existing daily identity without Telegram calls
+        env:
+          CHINA_AD_PREPARE_ONLY: 'true'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: PYTHONPATH=scripts python scripts/china_advertising_daily.py
+  daily:
+    needs: prepare
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 1}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Wait for 07:30 MSK after preparation
+        run: |
+          python - <<'PY'
+          import time
+          from datetime import datetime, timezone
+          now = datetime.now(timezone.utc)
+          target = now.replace(hour=4, minute=30, second=0, microsecond=0)
+          while (remaining := (target - datetime.now(timezone.utc)).total_seconds()) > 0:
+              time.sleep(min(remaining, 15))
+          PY
+      - name: Deliver only frozen pages with the existing receipt and part identities
+        env:
+          CHINA_AD_FROZEN_ONLY: 'true'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: PYTHONPATH=scripts python scripts/china_advertising_daily.py
+  followup:
+    needs: daily
+    if: github.run_attempt == 1
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -27,18 +83,6 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0 > "$RUNNER_TEMP/install.log" 2>&1
-      - name: Check advertising arithmetic and duplicate safeguards
-        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
-      - name: Read China and deliver frozen grouped advertising and budget pages
-        working-directory: source
-        env:
-          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: PYTHONPATH=../scripts:. python ../scripts/china_advertising_daily.py
-
       - name: Cache published China Finance and all-source funnel, no marketplace writes
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -48,7 +92,6 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           PYTHONPATH: scripts:source
         run: python scripts/china_wb_evidence.py
-
       - name: Observe verified price and advertising changes, no marketplace writes
         env:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
@@ -59,7 +102,6 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           PYTHONPATH: scripts:source
         run: python scripts/china_change_observation.py --budget 60
-
       - name: Deliver one attention report after the advertising pair
         env:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}

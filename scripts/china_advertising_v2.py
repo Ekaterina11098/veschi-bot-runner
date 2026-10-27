@@ -38,7 +38,7 @@ def collect(io,day,current=False):
  s['catalogue']=cat
  if 'executions' not in s:
   since=(date.fromisoformat(day)-timedelta(days=14)).isoformat()
-  query='telegram_api_cache?or=(cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:loss_ad_execution:*,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:new_ad_execution:*,cache_key.like.china_agent:hourly_cloud:execution:*,cache_key.like.china_agent:daily_ad_execution:v2:*)&updated_at=gte.'+since+'&select=cache_key,payload&order=cache_key.asc&limit=100'
+  query='telegram_api_cache?or=(cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:loss_ad_execution:*,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:owner_*:execution,cache_key.like.china_agent:price_execution:v1:*,cache_key.like.china_agent:new_ad_execution:*,cache_key.like.china_agent:hourly_cloud:execution:*,cache_key.like.china_agent:daily_ad_execution:v2:*)&updated_at=gte.'+since+'&select=cache_key,payload&order=cache_key.asc&limit=100'
   s['executions']=[]
   for offset in range(0,2000,100):
    page=io.db(query+'&offset='+str(offset));s['executions']+=page
@@ -76,34 +76,67 @@ def sums(rows):
 def ratio(row):return row['spend']/row['amount']*100 if row and row['amount']>0 else None
 def daily_metrics(raw):
  return {k:validnum(raw.get(f)) for k,f in [('spend','sum'),('amount','sum_price'),('orders','orders'),('views','views'),('clicks','clicks')]}
+def event_time(at):
+ value=datetime.fromisoformat(at.replace('Z','+00:00'))
+ if value.tzinfo is None:raise ValueError('Receipt timestamp needs timezone')
+ return value
+
 def history(records):
- """Only verified receipts; campaign-specific changes, never inferred from a recommendation."""
+ """Normalize verified campaign diffs, mapped bid receipts and verified price readbacks."""
  found=[]
+ verified={'verified','verified_active','verified_draft'}
  def walk(x,root):
   if isinstance(x,list):
    for z in x:walk(z,root)
+   return
   if not isinstance(x,dict):return
   status=x.get('status');before=x.get('before');after=x.get('after')
-  if status in ['verified','verified_active','verified_draft'] and isinstance(after,dict) and isinstance(after.get('id'),int):
-   cid=after['id'];at=x.get('verified_at') or x.get('submitted_at') or root.get('verified_at') or root.get('completed_at') or root.get('created_at')
-   if at:
-    old={n['nm_id']:n for n in (before or {}).get('nm_settings',[])};new={n['nm_id']:n for n in after.get('nm_settings',[])}
-    for nm in old.keys()-new.keys():found.append(dict(cid=cid,nm=nm,kind='excluded',at=at,text='Исключён из РК'))
-    for nm in new.keys()-old.keys():
-     if not before:continue
-     found.append(dict(cid=cid,nm=nm,kind='added',at=at,text='Добавлен в РК'))
-    for nm in old.keys()&new.keys():
-     for zone in ['search','recommendations']:
-      a=old[nm].get('bids_kopecks',{}).get(zone);b=new[nm].get('bids_kopecks',{}).get(zone)
-      if type(a)is int and type(b)is int and a!=b:found.append(dict(cid=cid,nm=nm,kind='bid',at=at,zone=zone,old=a,target=b,text=f'Ставка {a/100:g} → {b/100:g} ¥'))
+  root_ok=root.get('status') in verified
+  ok=status in verified
+  # A price worker verifies individual applied items by an exact WB readback.
+  price_ok=ok or (status=='applied' and (root_ok or root.get('status')=='done'))
+  at=x.get('verified_at') or x.get('completed_at') or root.get('verified_at') or root.get('completed_at')
+  if at:
+   try:event_time(at)
+   except (ValueError,TypeError):at=None
+  if ok and at and isinstance(after,dict) and isinstance(after.get('id'),int):
+   cid=after['id']
+   old={n['nm_id']:n for n in (before or {}).get('nm_settings',[])}
+   new={n['nm_id']:n for n in after.get('nm_settings',[])}
+   for nm in old.keys()-new.keys():found.append(dict(cid=cid,nm=nm,kind='excluded',at=at,text='Исключён из РК'))
+   for nm in new.keys()-old.keys():
+    if before:found.append(dict(cid=cid,nm=nm,kind='added',at=at,text='Добавлен в РК'))
+   for nm in old.keys()&new.keys():
+    for zone in ['search','recommendations']:
+     a=old[nm].get('bids_kopecks',{}).get(zone);b=new[nm].get('bids_kopecks',{}).get(zone)
+     if type(a)is int and type(b)is int and a!=b:found.append(dict(cid=cid,nm=nm,kind='bid',at=at,zone=zone,old=a,target=b,text=f'Ставка {a/100:g} → {b/100:g} ¥'))
+  # Owner-approved bid batches may have an after map instead of before/after per item.
+  if ok and at and isinstance(after,dict) and 'id' not in after:
+   for item in x.get('items',[]):
+    if not isinstance(item,dict):continue
+    cid=item.get('cid');nm=item.get('nm');old=item.get('old');target=item.get('target')
+    state=after.get(str(cid),{})
+    if state.get('id')!=cid or not all(type(v)is int for v in [cid,nm,old,target]) or old==target:continue
+    member=next((n for n in state.get('nm_settings',[]) if n.get('nm_id')==nm),{})
+    for zone in ['search','recommendations']:
+     if state.get('settings',{}).get('placements',{}).get(zone) and member.get('bids_kopecks',{}).get(zone)==target:
+      found.append(dict(cid=cid,nm=nm,kind='bid',at=at,zone=zone,old=old,target=target,text=f'Ставка {old/100:g} → {target/100:g} ¥'))
+  price_after=after if isinstance(after,dict) and 'nmID' in after else x.get('readback')
+  if price_ok and at and isinstance(before,dict) and isinstance(price_after,dict):
+   nm=before.get('nmID')
+   if type(nm)is int and price_after.get('nmID')==nm and before.get('currencyIsoCode4217')==price_after.get('currencyIsoCode4217')=='CNY':
+    prices=lambda obj:{v.get('discountedPrice') for v in obj.get('sizes',[])}
+    a=prices(before);b=prices(price_after)
+    if len(a)==len(b)==1 and None not in a|b and a!=b:
+     found.append(dict(cid=None,nm=nm,kind='price',at=at,text=f'Цена {next(iter(a)):g} → {next(iter(b)):g} ¥'))
   for key in ['items','groups','campaigns']:walk(x.get(key,[]),root)
-  # Nested maps of candidate executions.
   if not any(k in x for k in ['status','before','after']):
    for v in x.values():
     if isinstance(v,(dict,list)):walk(v,root)
  for r in records:walk(r.get('payload',r),r.get('payload',r))
  dedup={(x['cid'],x['nm'],x['kind'],x['at']):x for x in found}
- return sorted(dedup.values(),key=lambda x:x['at'])
+ return sorted(dedup.values(),key=lambda x:event_time(x['at']))
+
 def price_map(cat):
  out={}
  for x in cat.get('rows',[]):
@@ -117,7 +150,7 @@ def recommend(c,n,ds,days,changes,minimum,price):
  nm=n['nm_id'];zone='search' if c['settings']['placements'].get('search') else 'recommendations';old=n.get('bids_kopecks',{}).get(zone)
  if c['status']!=9 or type(old)is not int or old<=0:return None
  rows=[ds.get(d,dict(spend=0,amount=0,orders=0,views=0,clicks=0)) for d in days];period=sums(rows);last=rows[-1];drr=ratio(period);ratios=[ratio(x) for x in rows]
- latest=next((x for x in reversed(changes) if x['cid']==c['id'] and x['nm']==nm and x['kind'] in ['bid','added','price']),None)
+ latest=next((x for x in sorted(changes,key=lambda x:event_time(x['at']),reverse=True) if x['cid']==c['id'] and x['nm']==nm and x['kind'] in ['bid','added','price']),None)
  action=None;reason='';decision='';changed=False;comparison=None;pending_first_day=False
  if latest:
   first=datetime.fromisoformat(latest['at'].replace('Z','+00:00')).astimezone(MSK).date()+timedelta(days=1);end=date.fromisoformat(days[-1])
@@ -155,8 +188,8 @@ def recommend(c,n,ds,days,changes,minimum,price):
    if len(c['nm_settings'])>1 and c.get('restrictions',{}).get('can_change_nms'):
     action=dict(kind='ad_exclude_sku',campaign_id=c['id'],nm_id=nm,placement=zone,old_minor=old);decision='Исключить SKU из этой РК.'
    else:decision='Предложение паузы всей РК — в отчёте бюджетов.'
-   reason=f'За 3 дня: расход {period["spend"]:.2f} ¥; рекламных заказов {period["orders"]:g}.'
-  elif (sustained and drr is not None and drr>5) or rising:
+   reason=(f'После изменения, за {len(postdays)} полн. дн.: ' if latest else 'За 3 дня: ')+f'расход {decision_period["spend"]:.2f} ¥; рекламных заказов {decision_period["orders"]:g}.'
+  elif drr is not None and drr>5 and (sustained or rising):
    if minimum and old>minimum:
     target=max(minimum,int(old*.8));action=dict(kind='ad_set_bid',campaign_id=c['id'],nm_id=nm,placement=zone,old_minor=old,target_minor=target);decision=f'Снизить {old/100:g} → {target/100:g} ¥.'
     reason=(f'Рост ДРР {ratios[0]:.2f} → {ratios[-1]:.2f}%.' if rising else f'ДРР периода {drr:.2f}%; превышение повторяется.')
@@ -179,6 +212,14 @@ def build(s,minima=None):
    for c in cs:
     if any(n['nm_id']==nm for n in c.get('nm_settings',[])):changes.append(dict(cid=c['id'],nm=nm,kind='price',at=at,text='Цена '+str(act.get('before'))+' → '+str(act.get('after'))+' ¥'))
  changes.sort(key=lambda x:x['at'])
+ global_prices=[x for x in changes if x['cid'] is None and x['kind']=='price']
+ changes=[x for x in changes if x['cid'] is not None]+[dict(x,cid=c['id']) for x in global_prices for c in cs if any(n['nm_id']==x['nm'] for n in c.get('nm_settings',[]))]
+ # WB's verified launch timestamp establishes a new campaign's first complete day too.
+ for c in cs:
+  at=c.get('timestamps',{}).get('started') or c.get('timestamps',{}).get('created')
+  if at and event_time(at).astimezone(MSK).date().isoformat()>=days[0]:
+   for n in c.get('nm_settings',[]):changes.append(dict(cid=c['id'],nm=n['nm_id'],kind='added',at=at,text='Запуск РК'))
+ changes.sort(key=lambda x:event_time(x['at']))
  stat={c['advertId']:c for c in raw};out=[]
  for c in cs:
   if c.get('currency')!='CNY':raise ValueError('Campaign currency mismatch')
@@ -285,4 +326,5 @@ def prepare(io,day):
   if returned!=set(ids):raise ValueError('Incomplete campaign minima')
  from china_advertising_cards import enhance
  return enhance(build(s,minimums),s)
+
 

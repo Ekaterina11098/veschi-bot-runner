@@ -80,10 +80,12 @@ def render(bundle):
   missing=[c for c in bundle['campaigns'] if c.get(key) is None and not c.get('never_started')]
   totals.append(None if missing else dict(spend=sum(c[key]['spend'] for c in known),amount=sum(c[key]['amount'] for c in known)))
  p,day=totals
- d.rounded_rectangle((24,y+10,W-24,y+190),18,fill=NAVY)
- d.text((44,y+30),'ИТОГО · кабинет Китай (token_3)',font=font(29,True),fill='white')
- d.text((44,y+82),'Расход 3 дня: '+money(p['spend'] if p else None)+' ¥   |   Расход день: '+money(day['spend'] if day else None)+' ¥',font=font(29,True),fill='white')
- d.text((44,y+132),'Общая ДРР 3 дня: '+pct(p)+'   |   Общая ДРР день: '+pct(day),font=font(29,True),fill='white')
+ d.rounded_rectangle((24,y+10,W-24,y+190),18,fill='white')
+ d.text((44,y+30),'ИТОГО · кабинет Китай (token_3)',font=font(29,True),fill=NAVY)
+ d.text((44,y+82),'Расход 3 дня: '+money(p['spend'] if p else None)+' ¥   |   Расход день: '+money(day['spend'] if day else None)+' ¥',font=font(29,True),fill=INK)
+ for x,label,value in [(44,'Общая ДРР 3 дня: ',p),(1050,'Общая ДРР день: ',day)]:
+  d.text((x,y+132),label,font=font(29,True),fill=INK)
+  d.text((x+d.textlength(label,font=font(29,True)),y+132),pct(value),font=font(29,True),fill=color(value))
  footer='ДРР = сумма расходов / сумма рекламных заказов до скидок WB. Дни без заказов входят в расходы. Нет заказов — сумма заказов 0, ДРР не вычисляется. Исторический расход исключённых сохранён. Атрибуция не равна выкупам и прибыли. Новые тесты отмечены; период может включать прежний состав. Итог относится только к кабинету Китай.'
  for j,line in enumerate(wrap(d,footer,W-88,24)):d.text((44,y+218+j*31),line,font=font(24),fill='#536b79')
  finish(im,y+240+len(wrap(d,footer,W-88,24))*31,'drr',actions)
@@ -100,3 +102,4 @@ def render(bundle):
   parts=[f for f in files if f['family']==family]
   for i,f in enumerate(parts,1):f.update(kind=family+':'+str(i).zfill(3),page=i,total=len(parts))
  return files
+

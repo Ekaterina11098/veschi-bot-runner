@@ -1,5 +1,5 @@
 """Reconcile incomplete Ozon chains in an explicitly authorized day; retain private API errors."""
-import os,json,gzip,urllib.request,urllib.error
+import os,json,gzip,datetime as dt,urllib.request,urllib.error
 import fbs_document_chain as m
 from fbs_ozon_chain import acts,snapshot,OzonWorker,virtual_supply,CONFIG,PREFIX
 original=urllib.request.urlopen
@@ -31,6 +31,7 @@ for act in acts():
   state["picking_scope"]=scope
   old=db.get(root+"ozon_before:"+sid)
   if not old:db.put(root+"ozon_before:"+sid,state)
+  db.put(root+"ozon_repair_progress:v1",{"at":m.now(),"supply_id":sid,"phase":"reconciling_inflight"})
   inflight=state.get("inflight")
   if inflight:
    ext=config["document_prefix"]+":"+sid+":"+inflight
@@ -38,7 +39,12 @@ for act in acts():
    if not existing:
     if inflight=="salesreturn":
      parent=m.href(state["documents"]["demand"])
-     linked=[d for d in worker.ms_rows("entity/salesreturn",{"filter":"agent="+m.href(config["templates"]["salesreturn"]["agent"])}) if m.href(d.get("demand",{}))==parent]
+     parent_doc=t.request(m.MS,"entity/demand/"+state["documents"]["demand"]["id"])
+     return_refs=parent_doc.get("returns",[])
+     if not isinstance(return_refs,list):raise m.Stop("Unexpected parent return-link representation")
+     linked=[t.request(m.MS,"entity/salesreturn/"+m.href(ref).rsplit("/",1)[-1]) for ref in return_refs if ref.get("meta",{}).get("type")=="salesreturn"]
+     since=(dt.date.fromisoformat(req["date"])-dt.timedelta(days=1)).strftime("%Y-%m-%d")+" 00:00:00"
+     linked += [d for d in worker.ms_rows("entity/salesreturn",{"filter":"moment>="+since}) if m.href(d.get("demand",{}))==parent]
      if linked:raise m.Stop("Existing linked manual return requires reconciliation")
     elif inflight=="demand":
      parent=m.href(state["documents"]["customerorder"])
@@ -48,6 +54,7 @@ for act in acts():
      for name in [worker.order_name,worker.order_name+" "+str(act["id"])]:
       if any(d.get("description")==worker.comment for d in worker.ms_rows("entity/customerorder",{"filter":"name="+name})):raise m.Stop("Existing manual order requires reconciliation")
     state.pop("inflight",None);state["uncertain_reconciled_at"]=m.now();db.put(key,state)
+  db.put(root+"ozon_repair_progress:v1",{"at":m.now(),"supply_id":sid,"phase":"resuming_verified_absent_document"})
   worker.process(state)
   out["repairs"].append({"supply_id":sid,"status":"verified","quantity":sum(scope["counts"].values()),"documents":state["documents"]})
  except Exception as e:

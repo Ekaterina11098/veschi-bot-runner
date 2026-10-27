@@ -131,5 +131,18 @@ class FrozenDeliveryTests(unittest.TestCase):
    with self.assertRaisesRegex(ValueError,'preparation missing'):daily.run()
    collect.assert_not_called();send.assert_not_called()
 
+
+class LaunchDayTests(unittest.TestCase):
+ def test_launch_day_spend_is_preserved_but_not_used_for_exclusion(self):
+  from china_advertising_v2 import build
+  c=campaign();c['timestamps']=dict(created='2026-10-26T18:00:00+03:00',started='2026-10-26T21:15:00+03:00')
+  def raw(day,spend):
+   nm=dict(nmId=1,sum=spend,sum_price=0,orders=0,views=100,clicks=100)
+   return dict(date=day+'T00:00:00Z',sum=spend,sum_price=0,orders=0,views=100,clicks=100,apps=[dict(nms=[nm])])
+  source=dict(period_to='2026-10-27',observed_at='2026-10-28T04:15:00Z',ids=[12],config={'minTopUp':10000},catalogue={'rows':[dict(nmID=1,vendorCode='fixture',price=100)]},executions=[],batches={'0':dict(campaigns={'adverts':[c]},budgets={'adverts':[dict(advertId=12,currency='CNY',total=100)]},stats=[dict(advertId=12,days=[raw('2026-10-26',50),raw('2026-10-27',0)])])})
+  result=build(source)['campaigns'][0]
+  self.assertEqual(result['period']['spend'],50)
+  self.assertFalse(any(r.get('action') for r in result['focus']))
+
 if __name__=='__main__':unittest.main()
 

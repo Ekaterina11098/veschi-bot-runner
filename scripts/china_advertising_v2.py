@@ -214,6 +214,11 @@ def build(s,minima=None):
  changes.sort(key=lambda x:x['at'])
  global_prices=[x for x in changes if x['cid'] is None and x['kind']=='price']
  changes=[x for x in changes if x['cid'] is not None]+[dict(x,cid=c['id']) for x in global_prices for c in cs if any(n['nm_id']==x['nm'] for n in c.get('nm_settings',[]))]
+ # WB's verified launch timestamp establishes a new campaign's first complete day too.
+ for c in cs:
+  at=c.get('timestamps',{}).get('started') or c.get('timestamps',{}).get('created')
+  if at and event_time(at).astimezone(MSK).date().isoformat()>=days[0]:
+   for n in c.get('nm_settings',[]):changes.append(dict(cid=c['id'],nm=n['nm_id'],kind='added',at=at,text='Запуск РК'))
  changes.sort(key=lambda x:event_time(x['at']))
  stat={c['advertId']:c for c in raw};out=[]
  for c in cs:

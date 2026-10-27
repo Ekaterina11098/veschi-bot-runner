@@ -1,0 +1,84 @@
+name: Owner extra WB Ozon stock27Oct
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-owner-extra-20261027.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-stock
+  cancel-in-progress: false
+jobs:
+  stock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: e0cbc7aa70b547760c6ec6e32222401da595b0dc
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/daily-install.log" 2>&1
+      - name: Owner-authorized fresh wholesale recalculation and execution
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
+          STOCK_DAILY_ENABLED: 'true'
+          STOCK_OZON_ENABLED: 'true'
+          STOCK_PENDING_RESERVE_ENABLED: 'true'
+          STOCK_NOTIFICATIONS_ENABLED: 'true'
+          STOCK_CLOUD_EXECUTION_ENABLED: 'true'
+          STOCK_JOURNAL_IMPORT_ACCEPTED: 'true'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+          WB_STOCK_WAREHOUSE_1: ${{ vars.WB_STOCK_WAREHOUSE_1 }}
+          WB_STOCK_WAREHOUSE_2: ${{ vars.WB_STOCK_WAREHOUSE_2 }}
+          WB_STOCK_WAREHOUSE_3: ${{ vars.WB_STOCK_WAREHOUSE_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MOYSKLAD_STORE_NAME: МСК
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+          AUTO_STOCK_FAIL_FAST: '1'
+        run: |
+          cat > "$RUNNER_TEMP/owner_wholesale.py" <<'PY'
+          import os,json,psycopg,time
+          from datetime import datetime,timezone,timedelta
+          from stock_deploy_support import runtime_db,password,HOST,ROLE,PROJECT,seal,error
+          from stock_regular_job import send
+          from stock_regular_service import run
+          SLOT='2026-10-27:owner-extra-1454'
+          try:
+              if datetime.now(timezone(timedelta(hours=3))).date().isoformat()!='2026-10-27':
+                  raise RuntimeError('Owner extra run date closed')
+              os.environ['STOCK_DATABASE_URL']=psycopg.conninfo.make_conninfo(host=HOST,port=5432,dbname='postgres',user=ROLE+'.'+PROJECT,password=password(),sslmode='require')
+              result=run(runtime_db,send,SLOT)
+              seal('owner-wholesale-stock',result)
+              print(json.dumps(result))
+              if result.get('status') not in ('complete','complete_with_holds','done'):
+                  raise SystemExit(75)
+          except Exception as exc:
+              seal('owner-wholesale-stock-error',error(exc))
+              print(json.dumps({'status':'stopped','error_type':type(exc).__name__}))
+              raise SystemExit(1)
+          PY
+          python content_group_destination.py "$RUNNER_TEMP/owner_wholesale.py"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-stock-wholesale21oct-receipt
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90
+

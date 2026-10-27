@@ -96,6 +96,16 @@ class PolicyTests(unittest.TestCase):
   for key in ('text','pros','cons'):
    for value in positives:self.assertTrue(classify(self.review(**{key:value}))['eligible'],value)
    for value in complaints:self.assertFalse(classify(self.review(**{key:value}))['eligible'],value)
+ def test_natural_positive_descriptions_and_complaint_suffixes(self):
+  positives=('Действительно натуральная кожа,мягкая,внутреннее отделение на замке,очень довольна,рекомендую к покупке','Сумка бомба,очень понравилась, качество отличное, смотрится красиво, спасибо','очень приятная сумочка за свои деньги. Подошла к цвету ботильонов. Вместительная и подойдет ко всему','Замечательная сумка,среднего размера,кожа мягкая,вместительная,я довольна','Сумка понравилась, пришла быстро, спасибо продавцу 👍👍👍','Красивая,удобная,стильная, Спасибо Вам!!!!','Такие классные сумочки ! Неудержалась взяла в 2х расцветках.')
+  for key in ('text','pros','cons'):
+   for value in positives:
+    self.assertTrue(classify(self.review(**{key:value}))['eligible'],value)
+    for suffix in (' Но молния заедает.',' Но кожа красится.','?'):
+     self.assertFalse(classify(self.review(**{key:value+suffix}))['eligible'],value+suffix)
+    self.assertFalse(classify(self.review(**{key:'Не '+value}))['eligible'])
+  for value in ('Прикольная шапочка, только вместо верёвки (утяжки) сделать резинку и будет хорошо','Не натуральная кожа','Сумка бомба, но пахнет','Внутреннее отделение на замке порвалось','Пришла быстро, но брак'):
+   self.assertFalse(classify(self.review(value))['eligible'],value)
  def test_purchase_status_neutral(self):
   for status in ('buyout','rejected','returned',None):
    answer=answer_for(self.review(orderStatus=status))

@@ -31,9 +31,9 @@ day=dt.date.fromisoformat(req["date"]);tz=dt.timezone(dt.timedelta(hours=3))
 begin=dt.datetime.combine(day,dt.time.min,tzinfo=tz);end=begin+dt.timedelta(days=1)
 def within(value):return bool(value) and begin<=m.stamp(value)<end
 tokens={k:os.environ["WB_TOKEN_"+v] for k,v in {"china":"3","ip":"2","ooo":"1"}.items()}
-report={"at":m.now(),"date":str(day),"status":"running","chains":[],"waiting":[],"errors":[],"source":"live API, not PDF"}
+report={"at":m.now(),"date":str(day),"status":"running","chains":[],"waiting":[],"errors":[],"source":"live API and direct document graph; not PDF"}
 recent={}
-for typ in m.TYPES:recent[typ]=reader.ms_rows("entity/"+typ,{"filter":"moment>="+begin.strftime("%Y-%m-%d %H:%M:%S")+";moment<"+end.strftime("%Y-%m-%d %H:%M:%S")})
+for typ in m.TYPES:recent[typ]=[]
 def counts(ps):
  c=collections.Counter()
  for p in ps:c[(p["assortment"].get("article") or "").strip().casefold()]+=p["quantity"]
@@ -42,15 +42,15 @@ def inspect(cabinet,supply,expected,scope,worker,annotation,act=None):
  sid=supply["id"];config=worker.c
  state=db.get("fbs_document_chain:"+cabinet+":supply:v1:"+sid)
  result={"cabinet":cabinet,"supply":supply,"scope":scope,"expected":expected,"expected_quantity":sum(expected.values()),"annotation":{"description":annotation["description"],"state":annotation["state"]},"act":act,"state_status":(state or {}).get("status"),"documents":[],"issues":[]}
- prefix=config.get("document_prefix","fbs-china");refs={}
+ prefix=config.get("document_prefix","fbs-china");refs={};parents={}
  for typ in m.TYPES:
   candidates={}
-  for d in worker.ms_rows("entity/"+typ,{"filter":"moment>="+begin.strftime("%Y-%m-%d %H:%M:%S")+";externalCode="+prefix+":"+sid+":"+typ}):candidates[d["id"]]=d
+  # Known ledger IDs plus the direct linked-document graph avoid slow broad scans.
   if state and typ in state.get("documents",{}):
    uid=state["documents"][typ]["id"];candidates[uid]=t.request(m.MS,"entity/"+typ+"/"+uid)
   if typ=="customerorder":
    if cabinet!="ozon":
-    for d in worker.ms_rows("entity/customerorder",{"filter":"moment>="+begin.strftime("%Y-%m-%d %H:%M:%S")+";name="+sid}):candidates[d["id"]]=d
+    pass
    else:
     for d in recent[typ]:
      if any(n in (d.get("description") or "") for n in scope["included"]):candidates[d["id"]]=d
@@ -58,7 +58,14 @@ def inspect(cabinet,supply,expected,scope,worker,annotation,act=None):
    link="customerOrder" if typ=="demand" else "demand";basis="customerorder" if typ=="demand" else "demand"
    for d in recent[typ]:
     if m.href(d.get(link,{})) in refs.get(basis,[]):candidates[d["id"]]=d
+  if typ!="customerorder":
+   basis="customerorder" if typ=="demand" else "demand";field="demands" if typ=="demand" else "returns"
+   for parent_doc in parents.get(basis,[]):
+    for ref in parent_doc.get(field,[]):
+     if ref.get("meta",{}).get("type")==typ:
+      uid=m.href(ref).rsplit("/",1)[-1];candidates[uid]=t.request(m.MS,"entity/"+typ+"/"+uid)
   live=[d for d in candidates.values() if not d.get("deleted")]
+  parents[typ]=live
   refs[typ]=[m.href(d) for d in live]
   if len(live)!=1:result["issues"].append({"type":typ,"issue":"missing" if not live else "duplicate","count":len(live)})
   for d in candidates.values():

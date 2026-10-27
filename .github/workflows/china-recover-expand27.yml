@@ -1,37 +1,11 @@
-name: Recover approved remaining bids and publish completed-day tests
+name: Completed approved bid recovery and proposal355
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/china-recover-expand27.yml']
+  workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: china-recover-expand27
-  cancel-in-progress: false
 jobs:
-  publish:
+  archived:
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 7
     steps:
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - run: |
-          python - <<'PY'
-          import os,pathlib,urllib.request,concurrent.futures
-          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
-          names=['china_recover_expand27.py','china_price_apply.py','china_loss_execute.py','conversion_watches.py','china_bid_proposals.py','china_advertising_plans.py','china_loss_control.py','china_group_permissions.py','china_cloud_cost_control.py','china_advertising_v2.py','china_experience.py','china_table_png.py']
-          def fetch(name):
-              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
-          with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:list(pool.map(fetch,names))
-          PY
-      - run: pip install requests==2.32.5 Pillow==11.3.0 > /tmp/dependencies.log 2>&1
-      - name: Finish only approved remaining two bids; publish separate completed-day test plan
-        run: PYTHONPATH=scripts python scripts/china_recover_expand27.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-
-# Resume only the original two approved rates after explicit current economics reconciliation.
+      - run: echo 'Completed; preserve original approvals, verified receipts and delivered PNG.'

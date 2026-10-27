@@ -1,0 +1,94 @@
+name: Owner read-only return023534 review27Oct
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-owner-return023534-review27.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-return023534-review27
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          python - <<'PY'
+          import os,pathlib,urllib.request
+          from concurrent.futures import ThreadPoolExecutor
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          names=["china_cloud_cost_control.py","china_bid_proposals.py","china_price_apply.py"]
+          def fetch(name):
+              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
+          with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(fetch,names))
+          PY
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - name: Check exact two products without marketplace writes
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import os,json,copy,math
+          from datetime import datetime,timezone,timedelta
+          from zoneinfo import ZoneInfo
+          from china_cloud_cost_control import Cache,WB,validate_identity
+          from china_bid_proposals import fresh_stock,io_config,daily
+          from china_price_apply import IO
+          KEY='china_agent:owner_return023534_review:2026-10-27:v1'
+          MSK=ZoneInfo('Europe/Moscow')
+          class ReadWB(WB):
+           def req(self,path,method='GET',body=None,write=False):
+            if write:raise PermissionError('Read-only review')
+            return super().req(path,method,body,write=False)
+          def main():
+           if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main' or str(datetime.now(MSK).date())!='2026-10-27':raise ValueError('Dated public main only')
+           c=Cache()
+           if c.get(KEY):print('Existing audit; no repeat reads');return
+           result=dict(status='checking',created_at=datetime.now(timezone.utc).isoformat(),wb_writes=0,telegram_calls=0)
+           if not c.create(KEY,result):raise ValueError('Concurrent audit')
+           try:
+            wb=ReadWB();io=IO();validate_identity(c,wb)
+            model=c.get('china_agent:new_ad_source:v1:2026-10-27') or {}
+            if not model.get('observed_at') or datetime.now(timezone.utc)-datetime.fromisoformat(model['observed_at'])>timedelta(hours=24):raise ValueError('Own economics stale')
+            ids=[1473244984,1473243903];labels=['023-AlessiaBag-black','534-NoelBag-emerald']
+            prices=io.prices(ids)
+            stock=fresh_stock(model,labels)
+            campaigns=wb.campaigns([40933588,41055480,41298169,41332083])
+            cfg=io_config(io)
+            if cfg.get('currency')!='CNY' or type(cfg.get('cpcStep')) is not int:raise ValueError('Config missing')
+            target=[v for v in campaigns.values() if v['id'] in [41298169,41332083] and v['status']==9 and v['currency']=='CNY' and v['settings']['placements']==dict(search=True,recommendations=False) and len(v['nm_settings'])<=48]
+            target.sort(key=lambda v:(v['id']!=41298169,v['id']))
+            if not target:raise ValueError('No active search capacity for both')
+            chosen=target[0];minimums=wb.minimums(chosen['id'],ids,'search')
+            stats=wb.req('/adv/v3/fullstats?ids=40933588,41055480,41298169,41332083&beginDate=2026-10-24&endDate=2026-10-26')
+            if not isinstance(stats,list):raise ValueError('Missing completed-day stats')
+            items=[]
+            for nm,article in zip(ids,labels):
+             p=next(x for x in model['products'] if int(x['nm_id'])==nm)
+             ss=[x for x in stock if (x.get('article') or '').casefold()==article.casefold()]
+             pr=prices[str(nm)]
+             if len(ss)!=1 or pr.get('vendorCode')!=article or pr.get('currencyIsoCode4217')!='CNY':raise ValueError('Exact product not verified')
+             st=ss[0];price=pr['sizes'][0]['discountedPrice'];available=st['stock']-st['reserve']
+             paid=p.get('is_payed');finished=p.get('finished_orders');fee=p.get('total_commission_without_spp_in_sales');log=model['policy']['logistics_by_nm'].get(str(nm))
+             if available<=0 or st.get('price') is None or not finished or paid is None or fee is None or not log:raise ValueError('Missing own economics')
+             proceeds=price*(1-fee/100-.05*p['price_after_spp']/p['price_after_discount'])-st['price']/1200
+             net_before_ads=paid/finished*proceeds-log['delivery_cny']-10/12
+             forecast=net_before_ads-.05*price
+             own=[dict(cid=camp['id'],name=camp['settings']['name'],status=camp['status'],placements=camp['settings']['placements'],bids=n['bids_kopecks']) for camp in campaigns.values() for n in camp['nm_settings'] if n['nm_id']==nm]
+             full={str(r['advertId']):daily(r,nm) for r in stats}
+             items.append(dict(nm_id=nm,article=article,price_cny=price,cogs_rub=st['price']/100,available=available,stock=st['stock'],reserve=st['reserve'],paid=paid,finished=finished,own_buyout=paid/finished,fee_pct=fee,logistics=log,preliminary_expected_cny_per_order_at5=round(forecast,2),break_even_drr_pct=round(100*net_before_ads/price,2),break_even_buyout_at5=(log['delivery_cny']+10/12+.05*price)/proceeds if proceeds>0 else None,existing_memberships=own,completed_days=full,campaign_id=chosen['id'],minimum_minor=minimums[nm],proposed_minor=max(28,minimums[nm])))
+            result.update(status='checked',observed_at=datetime.now(timezone.utc).isoformat(),items=items,campaigns=campaigns,prices=prices,fresh_stock=stock,config=cfg,target_campaign_id=chosen['id'],target_member_count=len(chosen['nm_settings']),own_economics_source_at=model['observed_at'],own_economics_period=[model.get('period_from'),model.get('period_to')],performance_today_used=False,expires_at=(datetime.now(timezone.utc)+timedelta(hours=2)).isoformat(),assumptions='Forecast not net profit. FX12RUB/CNY,tax5%,handling10RUB. Own completed buyouts/fees, historical delivery; common unknown deductions not0. 023 finished1 has extreme uncertainty,not proven100percent.')
+           except Exception as e:result.update(status='blocked',reason=str(e) if isinstance(e,(ValueError,RuntimeError,PermissionError)) else type(e).__name__,completed_at=datetime.now(timezone.utc).isoformat())
+           c.put(KEY,result)
+           print(json.dumps({k:result.get(k) for k in ['status','reason','observed_at','target_campaign_id','wb_writes']}))
+          main()
+          
+          PY
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}

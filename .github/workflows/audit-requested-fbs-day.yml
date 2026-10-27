@@ -8,6 +8,10 @@ permissions:
   contents: read
 jobs:
   audit:
+    strategy:
+      fail-fast: false
+      matrix:
+        cabinet: [china, ip, ooo, ozon]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -22,6 +26,7 @@ jobs:
       - name: Inspect live daily sources and all linked documents
         env:
           DAY_REVIEW_ROOT: 'fbs_day_review:20261027:'
+          TARGET_CABINET: ${{ matrix.cabinet }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}

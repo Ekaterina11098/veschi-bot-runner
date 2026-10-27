@@ -1,0 +1,32 @@
+name: Exact owner five bid raises27Oct
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-owner-five-apply27.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-advertising-write
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          python - <<'PY'
+          import os,pathlib,urllib.request
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          for name in ['china_owner_five_apply27.py','china_owner_five_checks27.py','china_cloud_cost_control.py']:
+              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
+          PY
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - name: Apply exactly five approved bids and verify full WB campaign readbacks
+        run: PYTHONPATH=scripts python scripts/china_owner_five_apply27.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}

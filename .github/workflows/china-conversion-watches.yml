@@ -56,6 +56,7 @@ jobs:
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_analytic_dialog.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_growth_candidates.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_advertising_plans.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_bid_proposals.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_agent_reports.py
           python scripts/china_chat_migration.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py

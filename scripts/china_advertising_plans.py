@@ -22,7 +22,10 @@ def economics(source,nm):
  expected=(paid/f)*(price*(1-fee/100-.05*p['price_after_spp']/p['price_after_discount'])-st['price']/1200)-log['delivery_cny']-10/12-.05*price
  if expected<=0:raise ValueError('При ДРР5% предварительная экономика отрицательная')
  return dict(article=p['sa_name'],subject_id=p['subject_id'],available=st['stock']-st['reserve'],paid=paid,finished=f,expected_cny_at5=round(expected,2),seller_price_cny=price,cogs_kopecks=st['price'],forecast=True,assumptions='FX12RUB/CNY, налог5%, обработка10RUB; WBPromotion не дублирован')
-def prepare(w,job,kind,nm_ids):
+def prepare(w,job,kind,nm_ids=(),raise_percent=None,count=None):
+ if kind=='raise':
+  from china_bid_proposals import prepare as prepare_bid
+  return prepare_bid(w,job,nm_ids,raise_percent,count)
  from china_group_permissions import allowed
  if not allowed(w,job):raise ValueError('Предложение доступно участникам группы')
  if kind not in ['add','raise'] or not 1<=len(nm_ids)<=12 or len(set(nm_ids))!=len(nm_ids):raise ValueError('Нужен точный список до12 товаров')
@@ -94,25 +97,36 @@ def bind(w,text,message_id):
  if not m:return
  p=w.get(P+m[1])
  if not p or p.get('text')!=text or digest(p['items'])!=p['plan_sha256']:raise ValueError('Текст плана не совпал')
- if message_id not in p['report_message_ids']:p['report_message_ids'].append(message_id);w.save(P+p['plan_id'],p)
+ if message_id not in p['report_message_ids']:p['report_message_ids'].append(message_id);p.setdefault('visible_from',p['created_at']);w.save(P+p['plan_id'],p)
  w.save(B+str(message_id),dict(plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],chat_id=CHAT),insert=True)
+def bid_confirmation(text):
+ return bool(re.fullmatch(r'(?:(?:да|давай|ок|хорошо)[, ]+)?(?:поднимай|подними|повышай|повышаем)(?:\s+ставки)?[.!]?',text.strip(),re.I))
+
 def handle(w,job,history=()):
- if not is_all(job.get('request_text','')):return None
+ text=job.get('request_text','')
+ if not is_all(text) and not bid_confirmation(text):return None
  m=marker(job);b=w.get(B+str(m.get('reply_message_id')))
  if not b:return None
  from china_group_permissions import allowed
  if not allowed(w,job) or m.get('bot_id')!=BOT or m.get('forwarded'):return ('Подтверждение доступно действующим участникам ответом на исходный план.',[])
  p=w.get(P+b['plan_id'])
+ if p and (p.get('invalidated_at') or p.get('status') in ['revoked','invalidated']):return ('Этот план отозван. Подготовьте новое предложение; прежние ставки не применяю.',[])
+ if p and bid_confirmation(text) and any(i.get('kind')!='ad_raise_bid' for i in p.get('items',[])):return ('Команда повышения относится только к плану ставок. Для других действий ответьте на соответствующий план.',[])
  if not p or p['plan_sha256']!=digest(p['items']) or b['plan_sha256']!=p['plan_sha256'] or m['reply_message_id'] not in p['report_message_ids']:raise ValueError('Привязанный план изменился')
+ command_at=datetime.fromisoformat(job['created_at'].replace('Z','+00:00'))
+ if command_at<datetime.fromisoformat(p.get('visible_from') or p.get('created_at',job['created_at'])):return ('Эта команда пришла до публикации плана и его не подтверждает.',[])
  if w.now>datetime.fromisoformat(p['expires_at']):return ('План устарел. Подготовлю свежий; прежнюю команду повторно не исполняю.',[])
  key=A+p['plan_id']
- a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m['message_id'],reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)
+ a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m['message_id'],reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False,execution_kind='advertising_dialog_v1')
  if not w.save(key,a,insert=True):return ('Этот план уже принят; повторных изменений не будет.',[dict(name='advertising_dialog_approval',plan_id=p['plan_id'],duplicate=True)])
  return ('Принято: '+str(len(p['items']))+' точных действий плана. Проверю параметры WB, затем пришлю подтверждённый результат или конкретный блокер. Пополнений нет.',[dict(name='advertising_dialog_approval',plan_id=p['plan_id'])])
 
 def execute(io,a,p):
  from china_cloud_cost_control import WB
  io.validate_owner(a)
+ feature=io.get('china_agent:bid_proposals:policy:v1')
+ if feature and feature.get('enabled') is False:raise ValueError('Изменения ставок выключены владельцем')
+ if p.get('invalidated_at') or p.get('status') in ['revoked','invalidated']:raise ValueError('План отозван')
  if p.get('execution_kind')!='advertising_dialog_v1' or p['plan_sha256']!=digest(p['items']) or a['plan_sha256']!=p['plan_sha256'] or a['plan_id']!=p['plan_id']:raise ValueError('План/подтверждение не совпали')
  b=io.get(B+str(a['reply_message_id']))
  if not b or b['plan_id']!=p['plan_id'] or b['plan_sha256']!=p['plan_sha256']:raise ValueError('Нет привязки к исходному сообщению')
@@ -123,6 +137,8 @@ def execute(io,a,p):
  w=WB()
  def save():io.put(key,json.loads(json.dumps(e)))
  def write(step,path,method,body):
+  active=io.get(P+p['plan_id'])
+  if not active or active.get('plan_sha256')!=p['plan_sha256'] or active.get('invalidated_at') or active.get('status') in ['revoked','invalidated']:raise ValueError('Точный план отозван или изменён')
   if step in e['steps']:raise ValueError('Повтор WB-записи запрещён')
   if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']):raise ValueError('План истёк перед записью')
   e['steps'][step]=dict(status='submitting',path=path,method=method,body=body);save()
@@ -136,6 +152,15 @@ def execute(io,a,p):
   except Exception:e['steps'][step]['status']='uncertain';save();raise
   e['steps'][step].update(status='accepted',response=result);e['wb_writes']+=1;save();return result
  try:
+  # Human consent never overrides a later campaign/price change.
+  from china_bid_proposals import sources,timestamp
+  from types import SimpleNamespace
+  current_view=sources(SimpleNamespace(now=datetime.now(timezone.utc),get=io.get,**({'db':io.db} if callable(getattr(io,'db',None)) else {})))
+  today_msk=datetime.now(timezone.utc).astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date()
+  for i in p['items']:
+   if i['kind']!='ad_raise_bid':continue
+   changes=[timestamp(x.get('at')) for x in current_view['changes'] if x.get('nm')==i['nm_id'] and x.get('cid') in (None,i['campaign_id'])]
+   if any(t and (today_msk-t.astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date()).days<=1 for t in changes):raise ValueError('После последнего изменения ещё нет полного следующего дня')
   # Identity, price and available stock are refreshed narrowly before changes.
   prices=io.prices([str(i['nm_id']) for i in p['items']])
   import requests,os
@@ -172,7 +197,8 @@ def execute(io,a,p):
       stats=w.req('/adv/v3/fullstats?ids='+str(cid)+'&beginDate='+day+'&endDate='+day)
       nsr=[n for c in stats for d in c.get('days',[]) for app in d.get('apps',[]) for n in app.get('nms',[]) if n['nmId']==i['nm_id']]
       spend=sum(n['sum'] for n in nsr);amount=sum(n['sum_price'] for n in nsr)
-      if not amount or spend/amount>.05:raise ValueError('Свежая ДРР не допускает повышение')
+      if amount and spend/amount>.05:raise ValueError('Свежая ДРР выше5%')
+      if not amount and (not i.get('economics',{}).get('seller_price_cny') or spend>=i['economics']['seller_price_cny']*.05):raise ValueError('Сегодня существенный расход без рекламных заказов')
      elif i['kind']=='ad_add_sku':
       if i['nm_id'] in ns:state.update(status='verified',already_done=True,after=before);save();continue
       if {n['subject']['id'] for n in ns.values()}!={i['subject_id']} or len(ns)>=50:raise ValueError('Категория/число SKU изменились')
@@ -215,22 +241,29 @@ def execute(io,a,p):
   io.put('china_agent:verified_campaign_state:v1',registry)
  return e
 def process(io):
- rows=io.db('telegram_api_cache?cache_key=like.'+A+'*&select=payload&limit=100')
+ rows=io.db('telegram_api_cache?cache_key=like.'+A+'*&payload->>status=eq.approved&select=payload&limit=100')
  if len(rows)>=100:raise RuntimeError('Список подтверждений неполон')
  for row in rows:
   a=row['payload'];p=io.get(P+a['plan_id'])
   if a.get('status')!='approved' or not p:continue
-  e=execute(io,a,p);key='china_agent:advertising_dialog_result:v1:'+p['plan_id']
-  if io.get(key):continue
+  key='china_agent:advertising_dialog_result:v1:'+p['plan_id']
+  if io.get(key):
+   io.put(A+p['plan_id'],dict(a,status='completed',execution_key=E+p['plan_id']));continue
+  if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']) and not io.get(E+p['plan_id']):
+   io.put(A+p['plan_id'],dict(a,status='expired'));continue
+  try:e=execute(io,a,p)
+  except (ValueError,RuntimeError) as error:e=dict(status='blocked',items=[],reason=str(error))
   lines=['Результат рекламного плана:']
   for s in e.get('items',[]):
    i=s['item'];label=i['article']+' · РК '+str(s.get('campaign_id') or i.get('campaign_id'))
-   lines.append(label+': '+('уже выполнено, повтор не нужен' if s.get('already_done') else 'создан поисковый черновик; без пополнения/запуска' if s['status']=='verified' and i['kind']=='ad_create_search_draft' else 'выполнено, проверено WB' if s['status']=='verified' else 'не завершено: '+s.get('reason',s['status'])))
+   lines.append(label+(': '+format(i['old_minor']/100,'.2f')+' → '+format(i['target_minor']/100,'.2f')+' ¥ — ' if i['kind']=='ad_raise_bid' else ': ')+('уже выполнено, повтор не нужен' if s.get('already_done') else 'создан поисковый черновик; без пополнения/запуска' if s['status']=='verified' and i['kind']=='ad_create_search_draft' else 'выполнено, проверено WB' if s['status']=='verified' else 'не завершено: '+s.get('reason',s['status'])))
   if e.get('reason'):lines.append('Блокер: '+e['reason'])
   if len(e.get('items',[]))<len(p['items']):lines.append('Оставшиеся действия не выполнялись.')
   text='\n'.join(lines)
+  a=dict(a,status='completed',result_status=e['status'],execution_key=E+p['plan_id']);io.put(A+p['plan_id'],a)
   if not io.create(key,dict(status='sending',text=text)):continue
   try:
    r=io.tg('sendMessage',dict(chat_id=CHAT,text=text,reply_parameters=dict(message_id=a['input_message_id'],allow_sending_without_reply=True)))
    io.put(key,dict(status='sent',message_id=r['message_id'],chat_id=CHAT,text=text))
   except Exception:io.put(key,dict(status='uncertain',text=text))
+

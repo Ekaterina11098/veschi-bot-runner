@@ -314,7 +314,7 @@ class Worker:
             note='Конверсия: заказы воронки / просмотры. Сумма заказов воронки может отличаться от заказов WB. Пропуски не равны нулю. Наблюдение и расписание не созданы.')
 
     def saved_question(self,job,history):
-        if re.match(r'\s*(?:да(?:вай)?|сделай|делай|выполни|выполняй|примени|применяй|подтверждаю|соглас|одобр|запуска|меня|повышай|увеличь|ок|хорошо|ладно)',job.get('request_text',''),re.I):
+        if re.match(r'\s*(?:да(?:вай)?|сделай|делай|выполни|выполняй|примени|применяй|подтверждаю|соглас|одобр|запуска|меня|повышай|подним|повышаем|увеличь|ок|хорошо|ладно)',job.get('request_text',''),re.I):
             from china_advertising_plans import handle as ads_handle
             ads=ads_handle(self,job,history)
             if ads is not None:return ads
@@ -819,6 +819,7 @@ def main():
 
 
 if __name__=='__main__':main()
+
 
 
 

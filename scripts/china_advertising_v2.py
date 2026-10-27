@@ -38,7 +38,7 @@ def collect(io,day,current=False):
  s['catalogue']=cat
  if 'executions' not in s:
   since=(date.fromisoformat(day)-timedelta(days=14)).isoformat()
-  query='telegram_api_cache?or=(cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:loss_ad_execution:*,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:owner_*:execution,cache_key.like.china_agent:price_execution:v1:*,cache_key.like.china_agent:new_ad_execution:*,cache_key.like.china_agent:hourly_cloud:execution:*,cache_key.like.china_agent:daily_ad_execution:v2:*)&updated_at=gte.'+since+'&select=cache_key,payload&order=cache_key.asc&limit=100'
+  query='telegram_api_cache?or=(cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:loss_ad_execution:*,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:owner_*:execution,cache_key.like.china_agent:price_execution:v1:*,cache_key.like.china_agent:new_ad_execution:*,cache_key.like.china_agent:hourly_cloud:execution:*,cache_key.like.china_agent:daily_ad_execution:v2:*,cache_key.like.china_agent:advertising_dialog_execution:v1:*)&updated_at=gte.'+since+'&select=cache_key,payload&order=cache_key.asc&limit=100'
   s['executions']=[]
   for offset in range(0,2000,100):
    page=io.db(query+'&offset='+str(offset));s['executions']+=page
@@ -327,5 +327,6 @@ def prepare(io,day):
   if returned!=set(ids):raise ValueError('Incomplete campaign minima')
  from china_advertising_cards import enhance
  return enhance(build(s,minimums),s)
+
 
 

@@ -27,3 +27,5 @@ jobs:
         run: python scripts/audit_weekly133_valuation.py
 
 # Read current valuation after operator inventory correction on 2026-10-27.
+
+# Reconcile operator replacement without restoring removed documents.

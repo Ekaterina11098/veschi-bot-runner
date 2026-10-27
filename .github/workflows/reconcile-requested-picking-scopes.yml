@@ -34,3 +34,5 @@ jobs:
 # Apply the private approved picking sheets after read-only audit.
 
 # Reconcile remaining act and retain validation details privately.
+
+# Retry after stable unique numbering for multiple same-day Ozon acts.

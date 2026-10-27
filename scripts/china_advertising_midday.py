@@ -6,12 +6,39 @@ from china_advertising_v2 import collect,build,http,price_map,history,daily_metr
 from china_advertising_v2_png import font,money,pct,color
 ZERO=dict(spend=0,amount=0,orders=0,views=0,clicks=0)
 
-def post_change_pending(changes,cid,nm,day):
- # The following MSK day must finish before its evidence can drive another action.
- return any(x['nm']==nm and x['kind'] in ['bid','added','price']
-            and (x['cid'] in [None,cid] or x['kind']=='bid')
-            and date.fromisoformat(day)<=datetime.fromisoformat(x['at'].replace('Z','+00:00')).astimezone(MSK).date()+timedelta(days=1)
-            for x in changes)
+def post_change_pending(changes,cid,nm,day,campaign=None):
+ # SKU changes apply across placements; explicit campaign launch protects every member.
+ cutoff=date.fromisoformat(day)
+ def pending(at):
+  changed=datetime.fromisoformat(at.replace('Z','+00:00'))
+  if changed.tzinfo is None:raise ValueError('Change timestamp has no timezone')
+  return cutoff<=changed.astimezone(MSK).date()+timedelta(days=1)
+ started=(campaign or {}).get('timestamps',{}).get('started')
+ if started and pending(started):return True
+ return any(x.get('nm')==nm and x.get('kind') in ['bid','added','price','returned','relaunch']
+            and pending(x['at']) for x in changes)
+
+def revise_midday_bundle(bundle,source,records):
+ # Owner correction of a frozen report: filter only; never collect or invent new actions.
+ import copy
+ out=copy.deepcopy(bundle);changes=history(records)
+ campaigns={c['id']:c for batch in source['batches'].values()
+            for c in batch['campaigns'].get('adverts',[])}
+ removed=[]
+ for row in out['campaigns']:
+  campaign=campaigns.get(row['id'])
+  if campaign is None:raise ValueError('Frozen campaign is missing')
+  kept=[]
+  for item in row['attention']:
+   action=item['action']
+   if post_change_pending(changes,row['id'],action['nm_id'],out['day'],campaign):
+    removed.append(action);continue
+   kept.append(item)
+  row['attention']=kept
+  if removed and any(x['campaign_id']==row['id'] for x in removed):
+   row['post_change_note']='Тест после запуска или изменения: ждём завершения полного следующего дня МСК. Исключение и снижение пока не предлагаем.'
+ out['correction']=dict(rule='full_following_msk_day_v2',removed_actions=removed)
+ return out
 
 def current_report_context(io,source,day):
  # Read the canonical journal even when a resumable source froze its older history.
@@ -44,13 +71,14 @@ def prepare_midday(io,day):
     for n in app.get('nms',[]):
      v=skus.setdefault(n['nmId'],dict(ZERO))
      for k,x in daily_metrics(n).items():v[k]+=x
-   attention=[];placement='search' if c['settings']['placements'].get('search') else 'recommendations'
+   attention=[];protected=False;placement='search' if c['settings']['placements'].get('search') else 'recommendations'
    # Only direct current SKU evidence; no 3-day actions carried into an intraday PNG.
    for n in c.get('nm_settings',[]):
     nm=n['nm_id'];p=skus.get(nm);label=labels.get(nm,{});price=label.get('price');old=n.get('bids_kopecks',{}).get(placement)
     if c['status']!=9 or not p or not isinstance(price,(int,float)) or price<=0 or type(old)is not int:continue
     # A bid change/addition today invalidates whole-day spend as a post-change exposure.
-    if post_change_pending(changes,c['id'],nm,day):continue
+    if post_change_pending(changes,c['id'],nm,day,c):
+     protected=True;continue
     if p['orders']!=0 or p['spend']<price*.05 or p['clicks']<30:continue
     article=label.get('article','')
     if not article or article.startswith('WB '):continue
@@ -71,14 +99,15 @@ def prepare_midday(io,day):
      attention.append(dict(article=article,decision=decision,action=action,spend=p['spend'],clicks=p['clicks']))
    # Do not propose to empty a campaign via individual approvals.
    if len(attention)==len(c.get('nm_settings',[])):attention=[]
-   out.append(dict(id=c['id'],name=c['settings']['name'],draft=draft,today=metric,attention=attention))
+   out.append(dict(id=c['id'],name=c['settings']['name'],draft=draft,today=metric,attention=attention,post_change_note=('Тест после запуска или изменения: полный следующий день МСК ещё не завершён; ставки и состав сохраняем.' if protected else None)))
  if not out:raise ValueError('Empty midday catalogue')
  return dict(day=day,observed_at=source.get('completed_at',source['observed_at']),campaigns=out,presentation='midday_green_current_day_v1',review_context=context)
 def recommendations(c):
  p=c['today']
  if c['draft']:return ['Черновик: не запускалась.']
  if p is None:return ['Статистика отсутствует; вывод не подтверждён.']
- if c['attention']:return [r['article']+': за сегодня '+money(r['spend'])+' ¥, '+str(int(r['clicks']))+' кликов, 0 рекламных заказов. '+r['decision'] for r in c['attention']]
+ if c.get('post_change_note') and not c['attention']:return [c['post_change_note']]
+ if c['attention']:return ([r['article']+': за сегодня '+money(r['spend'])+' ¥, '+str(int(r['clicks']))+' кликов, 0 рекламных заказов. '+r['decision'] for r in c['attention']]+([c['post_change_note']] if c.get('post_change_note') else []))
  if not p['spend']:return ['Расхода нет. Изменений не требуется.']
  if p['amount']==0:return ['За сегодня потрачено '+money(p['spend'])+' ¥; рекламных заказов нет. Подтверждённых новых действий по SKU нет.']
  if ratio(p)>5:return ['ДРР выше цели. День не завершён; оснований для нового точечного действия по проверенным SKU нет.']

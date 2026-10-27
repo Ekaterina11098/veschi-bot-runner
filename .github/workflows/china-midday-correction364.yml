@@ -1,0 +1,35 @@
+name: Owner correction of midday PNG36427Oct
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-midday-correction364.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-midday-correction364
+  cancel-in-progress: false
+jobs:
+  correction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          python - <<'PY'
+          import os,pathlib,urllib.request
+          from concurrent.futures import ThreadPoolExecutor
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          names=['china_midday_correction364.py','china_advertising_midday.py','china_advertising_state.py','china_price_apply.py','china_advertising_v2.py','china_advertising_v2_png.py','china_daily_ad_actions.py','china_loss_control.py','china_budget_context.py']
+          def fetch(name):
+              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
+          with ThreadPoolExecutor(max_workers=5) as pool:list(pool.map(fetch,names))
+          PY
+      - run: pip install requests==2.32.5 pillow==11.3.0 > /tmp/dependencies.log 2>&1
+      - name: Prepare cache-only correction without Telegram edits
+        run: PYTHONPATH=scripts python scripts/china_midday_correction364.py --prepare
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: disabled
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}

@@ -150,7 +150,12 @@ def recommend(c,n,ds,days,changes,minimum,price):
  nm=n['nm_id'];zone='search' if c['settings']['placements'].get('search') else 'recommendations';old=n.get('bids_kopecks',{}).get(zone)
  if c['status']!=9 or type(old)is not int or old<=0:return None
  rows=[ds.get(d,dict(spend=0,amount=0,orders=0,views=0,clicks=0)) for d in days];period=sums(rows);last=rows[-1];drr=ratio(period);ratios=[ratio(x) for x in rows]
- latest=next((x for x in sorted(changes,key=lambda x:event_time(x['at']),reverse=True) if x['cid']==c['id'] and x['nm']==nm and x['kind'] in ['bid','added','price']),None)
+ relevant=[x for x in changes if x['nm']==nm and x['kind'] in ['bid','added','price','returned','relaunch']]
+ started=c.get('timestamps',{}).get('started')
+ if started:
+  event_time(started)
+  relevant.append(dict(cid=c['id'],nm=nm,kind='launch',at=started))
+ latest=max(relevant,key=lambda x:event_time(x['at'])) if relevant else None
  action=None;reason='';decision='';changed=False;comparison=None;pending_first_day=False
  if latest:
   first=datetime.fromisoformat(latest['at'].replace('Z','+00:00')).astimezone(MSK).date()+timedelta(days=1);end=date.fromisoformat(days[-1])

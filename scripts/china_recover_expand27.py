@@ -8,7 +8,7 @@ from conversion_watches import Worker,RECEIPTS,question_marker
 import china_bid_proposals as q
 import china_advertising_plans as p
 import china_cloud_cost_control as cloud
-R='china_agent:bid_resume:dialog-ads-139-raise:remaining2:v1'
+R='china_agent:bid_resume:dialog-ads-139-raise:remaining2:v2'
 REQUEST='china_agent:completed_day_proposal:2026-10-27:v1:request'
 RESULT='china_agent:completed_day_proposal:2026-10-27:v1:result'
 CHAT=-1004342917488
@@ -39,7 +39,15 @@ def recover(io):
   for i in ec:
    if i['nm_id'] not in ns or ns[i['nm_id']]['bids_kopecks']['recommendations'] not in [i['old_minor'],i['target_minor']]:raise ValueError('Exact rate changed')
    pr=prices[str(i['nm_id'])];st=[s for s in stock if s.get('article')==i['article']]
-   if pr.get('currencyIsoCode4217')!='CNY' or pr.get('vendorCode')!=i['article'] or pr['sizes'][0]['discountedPrice']!=i['economics']['seller_price_cny'] or len(st)!=1 or st[0]['stock']-st[0]['reserve']<=0 or st[0]['price']!=i['economics']['cogs_kopecks']:raise ValueError('Price/COGS/stock changed')
+   check=dict(article=i['article'],expected_price=i['economics']['seller_price_cny'],actual_price=pr.get('sizes',[{}])[0].get('discountedPrice'),expected_cogs=i['economics']['cogs_kopecks'],actual_cogs=st[0].get('price') if len(st)==1 else None,available=st[0]['stock']-st[0]['reserve'] if len(st)==1 else None)
+   e.setdefault('fresh_checks',[]).append(check);io.put(R,e)
+   if pr.get('currencyIsoCode4217')!='CNY' or pr.get('vendorCode')!=i['article']:raise ValueError('Card/currency mismatch: '+i['article'])
+   if pr['sizes'][0]['discountedPrice']!=i['economics']['seller_price_cny']:raise ValueError('Seller price changed: '+i['article'])
+   if len(st)!=1 or st[0]['stock']-st[0]['reserve']<=0:raise ValueError('No fresh available stock: '+i['article'])
+   model=copy.deepcopy(io.get('china_agent:new_ad_source:v1:2026-10-27') or {})
+   model['prices']=[pr];model['stock']=st
+   fresh_economics=p.economics(model,i['nm_id'])
+   check['recalculated_economics']=fresh_economics;io.put(R,e)
    if ns[i['nm_id']]['bids_kopecks']['recommendations']!=i['target_minor']:need.append(i)
   if need:
    mins=wb.minimums(cid,[i['nm_id'] for i in need],'recommendations')

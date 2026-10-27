@@ -1,8 +1,6 @@
 name: Exact owner five bid raises27Oct
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/china-owner-five-apply27.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -10,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
+    if: ${{ false }} # Five approved raises WB verified; no repeat.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

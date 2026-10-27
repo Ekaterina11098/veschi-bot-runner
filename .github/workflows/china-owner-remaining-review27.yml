@@ -1,8 +1,6 @@
 name: Owner review all remaining campaigns27Oct
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/china-owner-remaining-review27.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -10,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   review:
+    if: ${{ false }} # Requested read-only audit completed.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

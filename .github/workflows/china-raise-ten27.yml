@@ -23,8 +23,8 @@ jobs:
               root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
           PY
       - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
-      - name: Read-only preflight for ten owner-requested bid increases
-        run: PYTHONPATH=scripts python scripts/china_raise_ten27.py
+      - name: Apply only the reviewed ten owner-authorized CPC increases
+        run: PYTHONPATH=scripts python scripts/china_raise_ten27.py --apply
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

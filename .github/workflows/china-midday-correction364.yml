@@ -1,8 +1,6 @@
 name: Owner correction of midday PNG36427Oct
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/china-midday-correction364.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -10,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   correction:
+    if: ${{ false }} # Owner correction completed; retain immutable audit.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

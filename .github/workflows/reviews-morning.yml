@@ -7,6 +7,7 @@ on:
     - cron: '0,20,40 5-7 * * *'
 permissions:
   contents: read
+  actions: write
 concurrency:
   group: review-morning-feedback-cards
   cancel-in-progress: false
@@ -52,5 +53,11 @@ jobs:
           name: owner-encrypted-morning-review-receipts
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
-# Resume today's saved complete inboxes; confirmed cards remain protected from duplicates.
-
+      - name: Continue incomplete morning collection directly
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PYTHONPATH: review-approval-preparation
+          MORNING_COLLECTION_FINISHED: '1'
+        run: python review_morning_watchdog.py

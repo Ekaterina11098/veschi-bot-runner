@@ -39,6 +39,8 @@ def main():
             with urllib.request.urlopen(urllib.request.Request(base+workflow+'/runs?per_page=100',headers=headers),timeout=30) as r:runs[kind]=json.load(r)['workflow_runs']
         event_id='morning-watchdog:'+day
         previous=repo.get('events',event_id) or {}
+        if os.getenv('MORNING_COLLECTION_FINISHED')=='1':
+            runs={k:[r for r in rs if str(r.get('id'))!=os.getenv('GITHUB_RUN_ID')] for k,rs in runs.items()}
         selected=choose(now,cfg,states,runs,previous.get('attempt_at',0))
         record=dict(previous,checked_at=now.timestamp(),run_id=os.getenv('GITHUB_RUN_ID'),code_commit=os.getenv('GITHUB_SHA'),selected=selected)
         if selected:

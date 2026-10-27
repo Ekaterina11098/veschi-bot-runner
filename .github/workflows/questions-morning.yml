@@ -7,6 +7,7 @@ on:
     - cron: '10,30,50 5-7 * * *'
 permissions:
   contents: read
+  actions: write
 concurrency:
   group: review-morning-question-cards
   cancel-in-progress: false
@@ -51,4 +52,11 @@ jobs:
           name: owner-encrypted-morning-question-receipts
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
-# Independent question delivery; no legacy queues or other stopped tasks.
+      - name: Continue incomplete morning collection directly
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PYTHONPATH: review-approval-preparation
+          MORNING_COLLECTION_FINISHED: '1'
+        run: python review_morning_watchdog.py

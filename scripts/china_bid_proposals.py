@@ -32,7 +32,9 @@ def sources(w):
  if callable(getattr(w,'db',None)):
   from china_experience import read_rows
   prices=read_rows(w,'china_agent:price_execution:v1:',limit=100)
-  if len(prices)>=100:raise ValueError('История цен обрезана; сначала уточнить последние изменения')
+  cutoff=w.now-timedelta(days=4)
+  if len(prices)>=100 and (timestamp(prices[-1].get('updated_at')) or w.now)>=cutoff:raise ValueError('Недавняя история цен обрезана; сначала уточнить последние изменения')
+  prices=[r for r in prices if (timestamp(r.get('updated_at')) or w.now)>=cutoff]
   records+=prices
  for cid,key in (w.get('china_agent:verified_campaign_state:v1') or {}).items():
   r=w.get(key) or {};after=r.get('after') or {}

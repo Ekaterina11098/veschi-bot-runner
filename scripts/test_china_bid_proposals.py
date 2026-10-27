@@ -2,6 +2,8 @@
 import copy,sys,types,unittest
 from datetime import datetime,timezone,timedelta
 from unittest.mock import patch
+try:import requests
+except ModuleNotFoundError:sys.modules.setdefault('requests',types.ModuleType('requests'))
 import china_bid_proposals as q
 import china_advertising_plans as p
 from china_loss_control import CHAT,BOT,digest

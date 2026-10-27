@@ -1,4 +1,4 @@
-name: Read-only owner growth proposal27Oct
+name: Finish read-only proposal with owner category rates
 on:
   push:
     branches: [main]

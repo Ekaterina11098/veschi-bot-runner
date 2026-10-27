@@ -120,3 +120,22 @@ class ExecutionPermissionTests(unittest.TestCase):
   io,a=self.make_io();io.tg=lambda *args:dict(status='left',user=dict(id=77,is_bot=False))
   with self.assertRaises(ValueError):io.validate_owner(a)
 
+class PngPlanTests(unittest.TestCase):
+ def test_large_plan_png_binding_preserves_exact_full_scope(self):
+  w,j,c,stat,refresh=fixture();result=q.prepare(w,j,refresh=refresh);v=w.mem[p.P+result['plan_id']]
+  seed=copy.deepcopy(v['items'][0]);v['items']=[]
+  for n in range(6):
+   i=copy.deepcopy(seed);i['nm_id']=100+n;i['article']='bag-'+str(n);v['items'].append(i)
+  v['plan_sha256']=digest(v['items']);q.freeze_plan(v);w.mem[p.P+v['plan_id']]=v;w.active_question_id=j['id']
+  parts=v['delivery_text'].split('\n[[ПРЕДЛОЖЕНИЯ]]\n')
+  for n,text in enumerate(parts):
+   image,caption=q.photo(w,CHAT,text);self.assertTrue(image.startswith(b'\x89PNG'));self.assertIn('6 товаров, все страницы',caption)
+   q.bind_photo(w,text,71+n);self.assertEqual(w.get(p.B+str(71+n))['plan_sha256'],v['plan_sha256'])
+  self.assertEqual(len(w.get(p.P+v['plan_id'])['items']),6)
+  j.update(id=9,sender_id=77,created_at=datetime.now(timezone.utc).isoformat(),request_text='поднимай',tool_trace=[dict(name='china_saved_question',bot_id=BOT,message_id=82,reply_message_id=71)])
+  w.now=datetime.now(timezone.utc);self.assertIn('6 точных действий',p.handle(w,j)[0])
+ def test_check_first_shortlist_never_returns_unverified_recommendations(self):
+  w,j,c,stat,refresh=fixture();w.mem['china_agent:new_ad_source:v1:2026-10-27']['stock']=[]
+  result=q.shortlist(w,j,count=30)
+  self.assertEqual(result['status'],'blocked');self.assertEqual(result['items'],[]);self.assertEqual(w.calls,[])
+

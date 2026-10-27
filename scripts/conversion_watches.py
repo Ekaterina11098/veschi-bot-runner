@@ -223,6 +223,8 @@ class Worker:
         receipt=self.get(RECEIPTS+key)
         if receipt and receipt.get('status') in ('sent','sending','uncertain'):
             if receipt['status']=='sent':
+                from china_bid_proposals import bind_photo
+                bind_photo(self,text,receipt['message_id'])
                 from china_ad_rule import bind
                 bind(self,text,receipt['message_id'])
                 if 'План рекламы:' in text:
@@ -245,6 +247,8 @@ class Worker:
         if message.get('chat',{}).get('id')!=chat or not isinstance(message.get('message_id'),int):
             receipt['status']='uncertain';self.save(RECEIPTS+key,receipt);return 'uncertain'
         receipt.update(status='sent',message_id=message['message_id']);self.save(RECEIPTS+key,receipt)
+        from china_bid_proposals import bind_photo
+        bind_photo(self,text,message['message_id'])
         from china_ad_rule import bind
         bind(self,text,message['message_id'])
         if 'План рекламы:' in text:
@@ -711,6 +715,9 @@ def runtime():
         if frozen_photo is None:
             from china_table_png import photo as table_photo
             frozen_photo=table_photo(worker,chat,text)
+        if frozen_photo is None:
+            from china_bid_proposals import photo as bid_plan_photo
+            frozen_photo=bid_plan_photo(worker,chat,text)
         if frozen_photo is not None:
             me=session.post('https://api.telegram.org/bot'+bot+'/getMe',timeout=20).json()
             if not me.get('ok') or me['result'].get('id')!=8780468043 or chat!=-1004342917488:raise PermissionError('China photo bot/chat mismatch')

@@ -12,7 +12,7 @@ def request_options(job,default_percent=10,default_count=5):
  text=job.get('request_text','')
  percent=re.search(r'(?:на|по)\s*(\d+(?:[.,]\d+)?)\s*%',text,re.I)
  count=re.search(r'(?:выбер\w*|подбер\w*|выбра\w*|выбрать|поднять|повысить)\s+(\d+)\s+(?:товар|артикул|сум)',text,re.I) or re.search(r'(\d+)\s+(?:товар|артикул|сум)',text,re.I)
- return (float(percent[1].replace(',','.')) if percent else default_percent,min(int(count[1]),12) if count else default_count)
+ return (float(percent[1].replace(',','.')) if percent else default_percent,min(int(count[1]),30) if count else default_count)
 def sources(w):
  day=str(w.now.astimezone(MSK).date());history=w.get('china_agent:advertising_source:'+day+':v2') or {}
  available=[history,w.get('china_agent:advertising_midday_source:'+day+':v2') or {},w.get('china_agent:advertising_intraday:'+day+':v1') or {}]
@@ -119,13 +119,13 @@ def prepare(w,job,nm_ids=(),raise_percent=None,count=None,refresh=None):
  if policy.get('enabled') is not True:return dict(status='blocked',items=[],blocked=[],note='Подготовка предложений ставок выключена владельцем')
  percent,n=request_options(job,policy.get('default_raise_percent',10),policy.get('default_count',5))
  percent=percent if raise_percent is None else raise_percent;n=n if count is None else count
- if not 0<percent<=30 or not 1<=n<=12 or len(nm_ids)>12:raise ValueError('Нужен тест до12товаров и повышение не более30%')
+ if not 0<percent<=30 or not 1<=n<=30 or len(nm_ids)>30:raise ValueError('Нужен тест до30товаров и повышение не более30%')
  from china_advertising_plans import P
  prior=w.get(P+'dialog-ads-'+str(job['id'])+'-raise')
  if prior and (prior.get('invalidated_at') or prior.get('status') in ['revoked','invalidated'] or timestamp(prior.get('expires_at')) and datetime.now(timezone.utc)>timestamp(prior['expires_at'])):
   return dict(status='blocked',items=[],blocked=[],note='Этот план отозван или устарел; нужен новый запрос')
  if prior and prior.get('items') and not prior.get('invalidated_at'):
-  return dict(status='ready',plan_id=prior['plan_id'],text=prior['text'],items=prior['items'],blocked=prior.get('blocked',[]),wb_writes=0)
+  return dict(status='ready',plan_id=prior['plan_id'],text=prior.get('delivery_text',prior['text']),items=prior['items'],blocked=prior.get('blocked',[]),wb_writes=0)
  view=sources(w);economy=w.get('china_agent:new_ad_source:v1:'+view['day']) or {}
  at=timestamp(economy.get('observed_at'))
  if not at or not timedelta(0)<=w.now-at<=timedelta(hours=24):
@@ -141,7 +141,7 @@ def prepare(w,job,nm_ids=(),raise_percent=None,count=None,refresh=None):
  rows,blocked=candidates(w,view,economy,nm_ids)
  if not rows:return dict(status='blocked',items=[],blocked=blocked[:12],note='Подходящих товаров пока нет: '+('; '.join(dict.fromkeys(x['reason'] for x in blocked))[:900] or 'нет сохранённого состава/статистики'))
  selected=rows[:n]
- # Narrow current reads only after cached economic/history screening, at most12 campaigns.
+ # Narrow current reads only after cached economic/history screening, at most30 campaigns.
  ids=sorted({r['campaign_id'] for r in selected})
  cache_key='china_agent:bid_proposal_source:v1:'+str(job['id'])
  cached=w.get(cache_key)
@@ -157,12 +157,27 @@ def prepare(w,job,nm_ids=(),raise_percent=None,count=None,refresh=None):
   cs=wb.campaigns(ids)
   stat=wb.req('/adv/v3/fullstats?ids='+','.join(map(str,ids))+'&beginDate='+str(w.now.astimezone(MSK).date()-timedelta(days=3))+'&endDate='+view['day'])
   cfg=io_config(io)
-  fresh=dict(campaigns={int(k):v for k,v in cs.items()},stats={r['advertId']:r for r in stat},config=cfg,minimums={},observed_at=iso())
+  prices=io.prices([str(r['nm_id']) for r in selected])
+  stock=fresh_stock(economy,[r['article'] for r in selected])
+  fresh=dict(campaigns={int(k):v for k,v in cs.items()},stats={r['advertId']:r for r in stat},config=cfg,minimums={},prices=list(prices.values()),stock=stock,observed_at=iso())
   for cid in ids:
    for zone in ['search','recommendations']:
     ns=[r['nm_id'] for r in selected if r['campaign_id']==cid and r['placement']==zone]
     if ns:fresh['minimums'].update({str(cid)+':'+str(nm):v for nm,v in wb.minimums(cid,ns,zone).items()})
  w.save(cache_key,fresh)
+ if fresh.get('prices') is not None:
+  old_prices={p['nmID']:p for p in economy.get('prices',[])}
+  changed_price={p['nmID'] for p in fresh['prices'] if p.get('sizes') and old_prices.get(p['nmID'],{}).get('sizes',[{}])[0].get('discountedPrice')!=p['sizes'][0].get('discountedPrice')}
+  selected=[r for r in selected if r['nm_id'] not in changed_price]
+  blocked += [dict(nm_id=nm,reason='Цена изменилась относительно истории; сначала сопоставимые полные дни') for nm in changed_price]
+  economy=copy.deepcopy(economy);price_map={p['nmID']:p for p in economy.get('prices',[])};price_map.update({p['nmID']:p for p in fresh['prices']});economy['prices']=list(price_map.values())
+ if fresh.get('stock') is not None:
+  from collections import Counter
+  counts=Counter(s.get('article','').casefold() for s in fresh['stock'])
+  missing={r['nm_id'] for r in selected if counts[r['article'].casefold()]!=1}
+  blocked += [dict(nm_id=nm,reason='Свежий остаток/COGS отсутствует или неоднозначен') for nm in missing]
+  selected=[r for r in selected if r['nm_id'] not in missing]
+  economy=copy.deepcopy(economy);stocks={s['article']:s for s in economy.get('stock',[])};stocks.update({s['article']:s for s in fresh['stock']});economy['stock']=list(stocks.values())
  view=copy.deepcopy(view);view['campaigns'].update(fresh['campaigns']);view['stats'].update(fresh['stats'])
  cfg=fresh['config'];step=cfg.get('cpcStep')
  if cfg.get('currency')!='CNY' or type(step)is not int or step<=0:raise ValueError('Минимальный шаг/валюта WB не подтверждены')
@@ -186,15 +201,103 @@ def prepare(w,job,nm_ids=(),raise_percent=None,count=None,refresh=None):
  if len(items)<n:lines.append('Подошло '+str(len(items))+' из запрошенных '+str(n)+': остальные не прошли историю, экономику или свежие результаты.')
  lines+=['Срез '+fresh['observed_at']+'. Экономика предварительная: собственный выкуп/COGS/историческая логистика; FX12, налог5%, обработка10₽ — допущения; общие удержания могут быть неполны. Нет гарантии ДРР5% или роста заказов.','Ответьте «делай» или «поднимай» на это сообщение. Выполню только указанные ставки, затем проверю WB. Пополнений и пауз нет.','План рекламы: '+pid]
  plan['text']='\n'.join(lines)
- if len(plan['text'])>4000:raise ValueError('План слишком длинный; запросите меньший набор')
+ freeze_plan(plan)
+ if len(plan['text'])>4000 and not plan.get('proposal_files'):raise ValueError('План слишком длинный; запросите меньший набор')
  if not w.save(P+pid,plan,insert=True):
   old=w.get(P+pid)
   if not old or old.get('plan_sha256')!=plan['plan_sha256']:raise ValueError('План для этого сообщения уже подготовлен; используйте новый запрос')
   plan=old
- return dict(status='ready',plan_id=pid,text=plan['text'],items=plan['items'],blocked=blocked[:12],wb_writes=0)
+ return dict(status='ready',plan_id=pid,text=plan.get('delivery_text',plan['text']),items=plan['items'],blocked=blocked[:12],wb_writes=0)
 def io_config(io):
  import requests
  r=requests.get('https://advert-api.wildberries.ru/api/advert/v1/config',headers={'Authorization':io.token},timeout=40)
  if not r.ok:raise RuntimeError('Конфигурация ставок WB HTTP '+str(r.status_code))
  return r.json()
+
+PNG_PREFIX='CHINA_BID_PLAN_PNG:'
+def freeze_plan(plan):
+ import base64,hashlib
+ from china_table_png import render
+ if len(plan['items'])<=5:return
+ rows=[]
+ for i in plan['items']:
+  r=i['evidence'];own=i['economics']
+  rows.append([i['article']+'\nРК '+str(i['campaign_id'])+' · '+('поиск' if i['placement']=='search' else 'рекомендации'),format(i['old_minor']/100,'.2f')+' → '+format(i['target_minor']/100,'.2f'),str(r['previous_drr'])+'%\n'+str(len(r['decision_days']))+' полных дня',str(r['today_drr'])+'%' if r['today_drr'] is not None else 'Нет заказов' if r['today'] else 'Нет данных',str(own['paid'])+'/'+str(own['finished'])+'; прогноз '+str(own['expected_cny_at5'])+' ¥/заказ'])
+ blobs=render(['Артикул / РК','Ставка, ¥','ДРР периода','ДРР сегодня','Свой выкуп / экономика'],rows,'Китай · точный план ставок')
+ plan['proposal_files']=[dict(data=base64.b64encode(b).decode(),sha256=hashlib.sha256(b).hexdigest()) for b in blobs]
+ plan['delivery_text']='\n[[ПРЕДЛОЖЕНИЯ]]\n'.join(PNG_PREFIX+plan['plan_id']+':'+str(i) for i in range(len(blobs)))
+ plan['caption']='План '+str(len(plan['items']))+' товаров, все страницы вместе. Срез '+plan['source_observed_at']+'. Экономика — предварительная, FX12/налог5%/обработка10₽ — допущения; нет гарантии ДРР5%. Ответьте «делай» или «поднимай» на любой PNG этого плана. Выполню только показанные ставки.\nПлан рекламы: '+plan['plan_id']
+def photo(w,chat,text):
+ if not text.startswith(PNG_PREFIX):return None
+ import base64,hashlib
+ from china_advertising_plans import P,digest
+ pid,index=text[len(PNG_PREFIX):].rsplit(':',1);plan=w.get(P+pid)
+ if not plan or plan['chat_id']!=chat or plan['job_id']!=getattr(w,'active_question_id',None) or plan['plan_sha256']!=digest(plan['items']):raise PermissionError('Bid PNG scope')
+ part=plan['proposal_files'][int(index)];blob=base64.b64decode(part['data'],validate=True)
+ if hashlib.sha256(blob).hexdigest()!=part['sha256']:raise ValueError('Bid PNG hash mismatch')
+ return blob,plan['caption']
+def bind_photo(w,text,message_id):
+ if not text.startswith(PNG_PREFIX):return
+ from china_advertising_plans import P,B,digest
+ pid,index=text[len(PNG_PREFIX):].rsplit(':',1);plan=w.get(P+pid)
+ if not plan or plan['plan_sha256']!=digest(plan['items']) or not 0<=int(index)<len(plan.get('proposal_files',[])):raise ValueError('Bid PNG binding mismatch')
+ if message_id not in plan['report_message_ids']:plan['report_message_ids'].append(message_id);plan.setdefault('visible_from',plan['created_at']);w.save(P+pid,plan)
+ w.save(B+str(message_id),dict(plan_id=pid,plan_sha256=plan['plan_sha256'],chat_id=plan['chat_id']),insert=True)
+def saved_shortlist(w,job,count=30):
+ """Dated diagnostic list, not an execution plan; never manufactures30 qualified bets."""
+ from china_advertising_plans import economics
+ view=sources(w);economy=w.get('china_agent:new_ad_source:v1:'+view['day']) or {}
+ labels={int(x['nmID']):x.get('vendorCode','WB '+str(x['nmID'])) for x in (w.get('china_agent:prices:v1') or {}).get('rows',[])}
+ labels.update({int(x['nm_id']):x['sa_name'] for x in economy.get('products',[])})
+ end=w.now.astimezone(MSK).date()-timedelta(days=1);dates=[str(end-timedelta(days=i)) for i in range(2,-1,-1)];rows=[];already=set()
+ for c in view['campaigns'].values():
+  if c.get('status')!=9:continue
+  raw=view['stats'].get(c['id']);zone='search' if c['settings']['placements'].get('search') else 'recommendations'
+  for n in c.get('nm_settings',[]):
+   nm=n['nm_id'];events=[x for x in view['changes'] if x.get('nm')==nm and x.get('cid') in (None,c['id']) and timestamp(x.get('at'))];events.sort(key=lambda x:timestamp(x['at']))
+   if any(timestamp(x['at']).astimezone(MSK).date()==w.now.astimezone(MSK).date() and x.get('kind')=='bid' for x in events):already.add(nm);continue
+   ds=daily(raw,nm) if raw else {};available=all(d in ds for d in dates)
+   spend=sum(ds[d]['spend'] for d in dates) if available else None;amount=sum(ds[d]['amount'] for d in dates) if available else None;orders=sum(ds[d]['orders'] for d in dates) if available else None
+   rate=spend/amount*100 if amount else None
+   full=[d for d in dates if not events or d>str(timestamp(events[-1]['at']).astimezone(MSK).date())]
+   state='Предварительный отбор'
+   if not available:state='Нет полного среза'
+   elif not full:state='Нет полного дня после изменения'
+   elif not orders:state='Нет рекламных заказов'
+   elif rate is not None and rate>5:state='ДРР выше цели; не повышать'
+   try:economics(economy,nm)
+   except (ValueError,TypeError,KeyError):state+='; экономика не подтверждает повышение'
+   rows.append(dict(nm_id=nm,article=labels.get(nm,'WB '+str(nm)),campaign_id=c['id'],drr=round(rate,2) if rate is not None else None,orders=orders,spend=round(spend,2) if spend is not None else None,status=state))
+ rows.sort(key=lambda r:(r['drr'] is None,r['drr'] if r['drr'] is not None else 1e9,-(r['orders'] or 0)))
+ unique=[];seen=set()
+ for row in rows:
+  if row['nm_id'] not in seen:unique.append(row);seen.add(row['nm_id'])
+ chosen=unique[:max(1,min(count,60))]
+ lines=['Предварительный список: '+str(len(chosen))+' товаров · '+dates[0]+' — '+dates[-1]+'. Уже повышенные сегодня не повторяю.','| Артикул | РК | ДРР3дня | Статус |','|---|---|---|---|']
+ for r in chosen:lines.append('| '+r['article']+' | '+str(r['campaign_id'])+' | '+(str(r['drr'])+'%' if r['drr'] is not None else 'Нет заказов / нет данных')+' | '+r['status']+' |')
+ lines.append('Это предварительный отбор, ставки не изменены. Сначала конкретный план и подтверждение; низкий ДРР без экономики сам по себе не основание повышения.')
+ return dict(status='diagnostic',rows=chosen,requested=count,already_changed=len(already),text='\n'.join(lines),wb_reads=0,wb_writes=0)
+
+def fresh_stock(economy,articles):
+ import requests,os
+ headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN']};base='https://api.moysklad.ru/api/remap/1.2'
+ r=requests.get(base+'/entity/store',headers=headers,params={'limit':1000},timeout=45)
+ if not r.ok:raise RuntimeError('МойСклад: склад недоступен')
+ stores=[x for x in r.json().get('rows',[]) if x.get('name')=='МСК' and not x.get('archived')]
+ if len(stores)!=1:raise ValueError('Склад МСК неоднозначен')
+ rows=[];offset=0
+ while True:
+  r=requests.get(base+'/report/stock/all',headers=headers,params={'filter':'store='+stores[0]['meta']['href'],'stockMode':'all','limit':1000,'offset':offset},timeout=50)
+  if not r.ok:raise RuntimeError('МойСклад: остаток/COGS недоступны')
+  data=r.json();part=data.get('rows',[]);rows+=part
+  if offset+len(part)>=data.get('meta',{}).get('size',offset+len(part)):break
+  if not part or offset>=5000:raise ValueError('Остатки/COGS неполны')
+  offset+=len(part)
+ wanted={a.casefold() for a in articles}
+ return [{k:r.get(k) for k in ['article','stock','reserve','price']} for r in rows if r.get('article','').casefold() in wanted]
+def shortlist(w,job,count=30,raise_percent=None):
+ # Owner requires checking first, then recommending; uncertain raw lists are not proposals.
+ result=prepare(w,job,raise_percent=raise_percent,count=count)
+ if result.get('status')!='ready':result['text']=result.get('note','Подтверждённых рекомендаций сейчас нет. Проверка не завершена — ставки не менялись.')
+ return result
 

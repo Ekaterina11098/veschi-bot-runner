@@ -1,4 +1,4 @@
-name: Apply owner approved seven growth actions27Oct
+name: Reconcile exact approved growth actions27Oct
 on:
   push:
     branches: [main]
@@ -19,7 +19,7 @@ jobs:
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 Pillow==12.3.0 > /tmp/dependencies.log 2>&1
       - name: Apply only exact7 owner-approved items and verify WB
-        run: PYTHONPATH=scripts python scripts/china_owner_growth_apply27.py
+        run: PYTHONPATH=scripts python scripts/china_owner_growth_reconcile27.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

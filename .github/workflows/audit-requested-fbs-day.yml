@@ -36,3 +36,5 @@ jobs:
         run: python scripts/audit_requested_fbs_day.py
 
 # Retry only the cabinet whose document lookup timed out.
+
+# Verify China quantities and direct linked document graph.

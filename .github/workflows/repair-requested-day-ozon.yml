@@ -33,3 +33,5 @@ jobs:
 # Use indexed counterparty scope while retaining full-history linked-document checks.
 
 # Read direct basis links and short dated collections before resuming.
+
+# Reconcile through the official direct linked-return graph.

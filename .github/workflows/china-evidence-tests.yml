@@ -2,9 +2,9 @@ name: China evidence memory and report recipe tests
 on:
   push:
     branches: [main, china-evidence-memory, china-real-dialog-eval25, china-shared-memory25]
-    paths: ['scripts/china_shared_memory.py', 'scripts/test_china_shared_memory.py', 'scripts/china_wb_evidence.py', 'scripts/test_china_wb_evidence.py', 'scripts/china_change_observation.py', 'scripts/test_china_change_observation.py', 'scripts/china_table_png.py', 'scripts/test_china_table_png.py', 'scripts/china_saved_products.py', 'scripts/china_shared_advertising.py', 'scripts/test_china_real_dialog_regressions.py', 'scripts/china_experience.py', 'scripts/china_growth_candidates.py', 'scripts/china_growth_saved.py', 'scripts/test_china_growth_saved.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/test_china_experience.py', 'scripts/test_china_growth_candidates.py', 'scripts/test_china_analytic_dialog.py', 'scripts/test_china_agent_reports.py', 'scripts/test_china_report_routing.py', 'scripts/conversion_watches.py', 'scripts/china_model_transport.py', 'scripts/china_decline_diagnostics.py', 'scripts/test_china_model_transport.py', 'scripts/test_china_checkpoint.py', 'scripts/test_china_decline_diagnostics.py', '.github/workflows/china-evidence-tests.yml']
+    paths: ['scripts/china_shared_memory.py', 'scripts/test_china_shared_memory.py', 'scripts/china_wb_evidence.py', 'scripts/test_china_wb_evidence.py', 'scripts/china_change_observation.py', 'scripts/test_china_change_observation.py', 'scripts/china_table_png.py', 'scripts/test_china_table_png.py', 'scripts/china_saved_products.py', 'scripts/china_shared_advertising.py', 'scripts/test_china_real_dialog_regressions.py', 'scripts/china_experience.py', 'scripts/china_growth_candidates.py', 'scripts/china_growth_saved.py', 'scripts/china_bid_proposals.py', 'scripts/test_china_bid_proposals.py', 'scripts/china_advertising_plans.py', 'scripts/china_loss_execute.py', 'scripts/test_china_advertising_plans.py', 'scripts/test_china_growth_saved.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/test_china_experience.py', 'scripts/test_china_growth_candidates.py', 'scripts/test_china_analytic_dialog.py', 'scripts/test_china_agent_reports.py', 'scripts/test_china_report_routing.py', 'scripts/conversion_watches.py', 'scripts/china_model_transport.py', 'scripts/china_decline_diagnostics.py', 'scripts/test_china_model_transport.py', 'scripts/test_china_checkpoint.py', 'scripts/test_china_decline_diagnostics.py', '.github/workflows/china-evidence-tests.yml']
   pull_request:
-    paths: ['scripts/china_shared_memory.py', 'scripts/test_china_shared_memory.py', 'scripts/china_wb_evidence.py', 'scripts/test_china_wb_evidence.py', 'scripts/china_change_observation.py', 'scripts/test_china_change_observation.py', 'scripts/china_table_png.py', 'scripts/test_china_table_png.py', 'scripts/china_saved_products.py', 'scripts/china_shared_advertising.py', 'scripts/test_china_real_dialog_regressions.py', 'scripts/china_experience.py', 'scripts/china_growth_candidates.py', 'scripts/china_growth_saved.py', 'scripts/test_china_growth_saved.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/test_china_experience.py', 'scripts/test_china_growth_candidates.py', 'scripts/test_china_analytic_dialog.py', 'scripts/test_china_agent_reports.py', 'scripts/test_china_report_routing.py', 'scripts/conversion_watches.py', 'scripts/china_model_transport.py', 'scripts/china_decline_diagnostics.py', 'scripts/test_china_model_transport.py', 'scripts/test_china_checkpoint.py', 'scripts/test_china_decline_diagnostics.py', '.github/workflows/china-evidence-tests.yml']
+    paths: ['scripts/china_shared_memory.py', 'scripts/test_china_shared_memory.py', 'scripts/china_wb_evidence.py', 'scripts/test_china_wb_evidence.py', 'scripts/china_change_observation.py', 'scripts/test_china_change_observation.py', 'scripts/china_table_png.py', 'scripts/test_china_table_png.py', 'scripts/china_saved_products.py', 'scripts/china_shared_advertising.py', 'scripts/test_china_real_dialog_regressions.py', 'scripts/china_experience.py', 'scripts/china_growth_candidates.py', 'scripts/china_growth_saved.py', 'scripts/china_bid_proposals.py', 'scripts/test_china_bid_proposals.py', 'scripts/china_advertising_plans.py', 'scripts/china_loss_execute.py', 'scripts/test_china_advertising_plans.py', 'scripts/test_china_growth_saved.py', 'scripts/china_analytic_dialog.py', 'scripts/china_agent_reports.py', 'scripts/test_china_experience.py', 'scripts/test_china_growth_candidates.py', 'scripts/test_china_analytic_dialog.py', 'scripts/test_china_agent_reports.py', 'scripts/test_china_report_routing.py', 'scripts/conversion_watches.py', 'scripts/china_model_transport.py', 'scripts/china_decline_diagnostics.py', 'scripts/test_china_model_transport.py', 'scripts/test_china_checkpoint.py', 'scripts/test_china_decline_diagnostics.py', '.github/workflows/china-evidence-tests.yml']
 permissions:
   contents: read
 jobs:
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install Pillow==12.3.0
+      - run: pip install Pillow==12.3.0 requests==2.32.5
       - name: Test read tools, experience and report identities without credentials
         env:
           PYTHONPATH: scripts
@@ -31,6 +31,9 @@ jobs:
           python -m unittest discover -s scripts -p test_china_analytic_dialog.py
           python -m unittest discover -s scripts -p test_china_growth_candidates.py
           python -m unittest discover -s scripts -p test_china_growth_saved.py
+          python -m unittest discover -s scripts -p test_china_advertising_plans.py
+          python -m unittest discover -s scripts -p test_china_bid_proposals.py
+          python -m unittest discover -s scripts -p test_china_group_permissions.py
           python -m unittest discover -s scripts -p test_china_agent_reports.py
           python -m unittest discover -s scripts -p test_china_report_routing.py
           python -m unittest discover -s scripts -p test_china_model_transport.py

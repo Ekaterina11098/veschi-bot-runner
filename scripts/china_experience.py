@@ -64,7 +64,7 @@ def sync(w):
  prefetched=read_rows(w,ROOT,limit=5000)
  w._experience_prefetched={r['cache_key']:r['payload'] for r in prefetched}
  count=0
- prefixes=['china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:loss_ad_execution:','china_agent:price_execution:v1:','china_agent:codex_bid_raise:','china_agent:codex_bid_revert:']
+ prefixes=['china_agent:advertising_dialog_execution:v1:','china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:loss_ad_execution:','china_agent:price_execution:v1:','china_agent:codex_bid_raise:','china_agent:codex_bid_revert:']
  for prefix in prefixes:
   for row in read_rows(w,prefix,limit=5000):
    key=row['cache_key'];p=row['payload'];actions=[]
@@ -72,6 +72,13 @@ def sync(w):
     a=p['plan'];actions.append(dict(item=a['nm_id'],nm_ids=[a['nm_id']],campaign_id=a['campaign_id'],article=a['article'],kind='bid_change',before=a['old_minor'],after=a['target_minor'],started=p.get('submitted_at'),verified=p.get('verified_at')))
    for item in p.get('items',[]):
     if item.get('status') not in ['applied','verified'] or item.get('already_done'):continue
+    bid=item.get('item') or {}
+    if bid.get('kind')=='ad_raise_bid':
+     before=item.get('before') or {};after=item.get('after') or {};nm=bid['nm_id'];cid=bid['campaign_id'];zone=bid['placement']
+     old=next((n.get('bids_kopecks',{}).get(zone) for n in before.get('nm_settings',[]) if n['nm_id']==nm),None)
+     new=next((n.get('bids_kopecks',{}).get(zone) for n in after.get('nm_settings',[]) if n['nm_id']==nm),None)
+     if old!=new and old==bid['old_minor'] and new==bid['target_minor']:actions.append(dict(item=str(cid)+':'+str(nm),nm_ids=[nm],campaign_id=cid,article=bid['article'],kind='bid_change',before=old,after=new,started=p.get('created_at'),verified=p.get('completed_at')))
+     continue
     selection=item.get('selection') or {};nm=selection.get('nm_id')
     if nm:
      actions.append(dict(item=nm,nm_ids=[int(nm)],article=selection.get('article'),kind='price_change',before=selection.get('current_cny'),after=selection.get('target_cny'),started=p.get('wb_state',{}).get('activationDate') or p.get('completed_at'),verified=p.get('completed_at')))
@@ -182,4 +189,5 @@ def observe(w,eid,before,after,source_keys,context=None):
  result=summarize_comparison(before,after);conditions=compare_conditions(before.get('conditions') or {},after.get('conditions') or {});record=dict(observed_at=stamp(),before=before,after=after,result=result,source_keys=source_keys,context=context or {},condition_comparison=conditions)
  e.setdefault('observations',[]).append(record);e.update(business_outcome=result['outcome'],last_observed_at=record['observed_at'],context=context or e.get('context',{}));save(w,ROOT+eid,e)
  return e
+
 

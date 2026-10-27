@@ -223,6 +223,8 @@ class Worker:
         receipt=self.get(RECEIPTS+key)
         if receipt and receipt.get('status') in ('sent','sending','uncertain'):
             if receipt['status']=='sent':
+                from china_bid_proposals import bind_photo
+                bind_photo(self,text,receipt['message_id'])
                 from china_ad_rule import bind
                 bind(self,text,receipt['message_id'])
                 if 'План рекламы:' in text:
@@ -245,6 +247,8 @@ class Worker:
         if message.get('chat',{}).get('id')!=chat or not isinstance(message.get('message_id'),int):
             receipt['status']='uncertain';self.save(RECEIPTS+key,receipt);return 'uncertain'
         receipt.update(status='sent',message_id=message['message_id']);self.save(RECEIPTS+key,receipt)
+        from china_bid_proposals import bind_photo
+        bind_photo(self,text,message['message_id'])
         from china_ad_rule import bind
         bind(self,text,message['message_id'])
         if 'План рекламы:' in text:
@@ -314,7 +318,7 @@ class Worker:
             note='Конверсия: заказы воронки / просмотры. Сумма заказов воронки может отличаться от заказов WB. Пропуски не равны нулю. Наблюдение и расписание не созданы.')
 
     def saved_question(self,job,history):
-        if re.match(r'\s*(?:да(?:вай)?|сделай|делай|выполни|выполняй|примени|применяй|подтверждаю|соглас|одобр|запуска|меня|повышай|увеличь|ок|хорошо|ладно)',job.get('request_text',''),re.I):
+        if re.match(r'\s*(?:да(?:вай)?|сделай|делай|выполни|выполняй|примени|применяй|подтверждаю|соглас|одобр|запуска|меня|повышай|подним|повышаем|увеличь|ок|хорошо|ладно)',job.get('request_text',''),re.I):
             from china_advertising_plans import handle as ads_handle
             ads=ads_handle(self,job,history)
             if ads is not None:return ads
@@ -711,6 +715,9 @@ def runtime():
         if frozen_photo is None:
             from china_table_png import photo as table_photo
             frozen_photo=table_photo(worker,chat,text)
+        if frozen_photo is None:
+            from china_bid_proposals import photo as bid_plan_photo
+            frozen_photo=bid_plan_photo(worker,chat,text)
         if frozen_photo is not None:
             me=session.post('https://api.telegram.org/bot'+bot+'/getMe',timeout=20).json()
             if not me.get('ok') or me['result'].get('id')!=8780468043 or chat!=-1004342917488:raise PermissionError('China photo bot/chat mismatch')
@@ -819,6 +826,7 @@ def main():
 
 
 if __name__=='__main__':main()
+
 
 
 

@@ -157,7 +157,7 @@ def execute(io,a,p):
   from types import SimpleNamespace
   from urllib.parse import urlencode
   db_adapter=lambda method,table,params:io.db(table+'?'+urlencode(params))
-  current_view=sources(SimpleNamespace(now=datetime.now(timezone.utc),get=io.get,**({'db':db_adapter} if callable(getattr(io,'db',None)) else {})))
+  current_view=sources(SimpleNamespace(now=datetime.now(timezone.utc),get=io.get,save=lambda *args,**kwargs:None,**({'db':db_adapter} if callable(getattr(io,'db',None)) else {})))
   today_msk=datetime.now(timezone.utc).astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date()
   for i in p['items']:
    if i['kind']!='ad_raise_bid':continue

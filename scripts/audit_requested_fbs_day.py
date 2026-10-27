@@ -13,6 +13,17 @@ class ReviewTransport(m.Transport):
      label="MS" if base==m.MS else "WB" if base==m.WB else "private_cache"
      raise m.Stop(str(e)+" ["+label+" "+method+" "+path+"]") from None
     time.sleep(2*(attempt+1))
+def bounded_rows(self,path,params=None):
+ rows=[];offset=0
+ while True:
+  data=self.t.request(m.MS,path,params={**(params or {}),"limit":100,"offset":offset})
+  batch=data.get("rows")
+  if not isinstance(batch,list) or not isinstance(data.get("meta",{}).get("size"),int):raise m.Stop("Incomplete collection")
+  rows+=batch
+  if len(rows)==data["meta"]["size"]:return rows
+  if not batch or len(rows)>20000:raise m.Stop("Incomplete collection pagination")
+  offset+=len(batch)
+m.Worker.ms_rows=bounded_rows
 t=ReviewTransport();db=m.Cache(t);reader=m.Worker(t,db,{})
 root=os.environ["DAY_REVIEW_ROOT"];req=db.get(root+"request:v1")
 target=os.environ.get("TARGET_CABINET");audit_key=root+"audit:"+target+":v1" if target else root+"audit:v1"
@@ -34,12 +45,12 @@ def inspect(cabinet,supply,expected,scope,worker,annotation,act=None):
  prefix=config.get("document_prefix","fbs-china");refs={}
  for typ in m.TYPES:
   candidates={}
-  for d in worker.ms_rows("entity/"+typ,{"filter":"externalCode="+prefix+":"+sid+":"+typ}):candidates[d["id"]]=d
+  for d in worker.ms_rows("entity/"+typ,{"filter":"moment>="+begin.strftime("%Y-%m-%d %H:%M:%S")+";externalCode="+prefix+":"+sid+":"+typ}):candidates[d["id"]]=d
   if state and typ in state.get("documents",{}):
    uid=state["documents"][typ]["id"];candidates[uid]=t.request(m.MS,"entity/"+typ+"/"+uid)
   if typ=="customerorder":
    if cabinet!="ozon":
-    for d in worker.ms_rows("entity/customerorder",{"filter":"name="+sid}):candidates[d["id"]]=d
+    for d in worker.ms_rows("entity/customerorder",{"filter":"moment>="+begin.strftime("%Y-%m-%d %H:%M:%S")+";name="+sid}):candidates[d["id"]]=d
    else:
     for d in recent[typ]:
      if any(n in (d.get("description") or "") for n in scope["included"]):candidates[d["id"]]=d

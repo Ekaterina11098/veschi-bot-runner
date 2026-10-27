@@ -35,6 +35,7 @@ jobs:
         run: |
           python -m unittest discover -s scripts -p test_fbs_read_retries.py -v
           python -m unittest discover -s scripts -p test_fbs_picking_scope.py -v
+          python -m unittest discover -s scripts -p 'test_fbs_ozon*.py' -v
       - name: Execute selected mode with backend-only secrets
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

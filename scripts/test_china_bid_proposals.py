@@ -52,7 +52,7 @@ class ProposalTests(unittest.TestCase):
   self.assertEqual(w.get(p.P+r['plan_id'])['decision_basis'],'completed_days_only')
  def test_low_traffic_test_has_undefined_drr_never_zero(self):
   w,j,c,stat,refresh=fixture();w.mem[q.POLICY].update(allow_small_sample_test=True,allow_low_traffic_test=True,selection_completed_days_only=True)
-  for d in stat['days']:d['apps'][0]['nms'][0].update(sum=0,sum_price=0,orders=0,clicks=0)
+  for d in stat['days']:d['apps'][0]['nms'][0].update(sum=.01,sum_price=0,orders=0,clicks=1)
   w.mem['china_agent:advertising_source:2026-10-27:v2']['batches']['0']['stats']=[stat]
   r=q.prepare(w,j,refresh=refresh);self.assertEqual(r['status'],'ready');self.assertIsNone(r['items'][0]['evidence']['previous_drr']);self.assertTrue(r['items'][0]['evidence']['traffic_test'])
  def test_auto_select_percent_rounding_and_no_write(self):

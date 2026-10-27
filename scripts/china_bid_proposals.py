@@ -101,7 +101,7 @@ def candidates(w,view,economy,nm_ids=()):
     past={k:sum(values[d][k] for d in full) for k in ['spend','amount','orders','clicks']}
     test_mode=(w.get(POLICY) or {}).get('allow_small_sample_test') is True
     policy=w.get(POLICY) or {}
-    traffic_test=test_mode and policy.get('allow_low_traffic_test') is True and past['amount']==0 and past['orders']==0 and past['clicks']<=20 and past['spend']<=min(5,.025*econ['seller_price_cny'])
+    traffic_test=test_mode and policy.get('allow_low_traffic_test') is True and past['amount']==0 and past['orders']==0 and 1<=past['clicks']<=20 and past['spend']<=min(5,.025*econ['seller_price_cny'])
     if not traffic_test and (past['amount']<=0 or past['orders']<(1 if test_mode else 3) or past['clicks']<(1 if test_mode else 20) or past['spend']<=0):raise ValueError('Недостаточная собственная рекламная выборка')
     drr=past['spend']/past['amount']*100 if past['amount'] else None
     if drr is not None and drr>4:raise ValueError('Недостаточный запас до цели ДРР5%')

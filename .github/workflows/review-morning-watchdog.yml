@@ -1,0 +1,41 @@
+name: Recover missing morning collection automatically
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-morning-watchdog.yml']
+  schedule:
+    - cron: '5,15,25,35,45,55 5-9 * * *'
+  workflow_run:
+    workflows: ['Morning reviews and safe automatic five-star replies', 'Morning question cards for three cabinets', 'Keep approved review and question publishing alive']
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: review-morning-watchdog
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: |
+            review_morning_watchdog.py
+            test_review_morning_watchdog.py
+            review-approval-preparation/review_telegram_approval.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10'
+      - run: python -m unittest test_review_morning_watchdog.py
+      - name: Resume only missing or incomplete morning delivery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PYTHONPATH: review-approval-preparation
+        run: python review_morning_watchdog.py

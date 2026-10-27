@@ -48,6 +48,18 @@ def prepare(io):
  record=dict(status='prepared',created_at=stamp(),day=DAY,message_id=MID,chat_id=CHAT,bot_id=BOT,authorization='owner_explicit_codex_request27Oct_fix_and_edit_midday',wb_writes=0,telegram_sends=0,bundle=corrected,file=dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],b64=base64.b64encode(f['bytes']).decode(),sha256=hashlib.sha256(f['bytes']).hexdigest(),plan_id=new['plan_id'],plan_sha256=new['plan_sha256'],action_count=len(actions)))
  if not io.create(ROOT,record):raise ValueError('Correction journal race')
  return record
+def refresh(io):
+ e=io.get(ROOT)
+ if not e or e.get('status')!='prepared':raise ValueError('Only an unsent correction can be refined')
+ source=io.get(SOURCE);records,context=current_report_context(io,source,DAY)
+ bundle=revise_midday_bundle(io.get(ROOT+':before_artifacts')['bundle'],source,records)
+ bundle['review_context']=e['bundle']['review_context']
+ files=render_midday(bundle)
+ if len(files)!=1 or digest(files[0]['actions'])!=e['file']['plan_sha256']:raise ValueError('Refinement changed approved action scope')
+ raw=files[0]['bytes']
+ e.update(bundle=bundle)
+ e['file'].update(b64=base64.b64encode(raw).decode(),sha256=hashlib.sha256(raw).hexdigest())
+ io.put(ROOT,e);return e
 def apply(io):
  e=io.get(ROOT)
  if not e or e.get('visual_review')!='approved':raise ValueError('Prepared reviewed image required')
@@ -91,6 +103,7 @@ def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main' or str(datetime.now(MSK).date())!=DAY:raise ValueError('Dated public main only')
  io=AdvertisingIO()
  if sys.argv[1:]==['--prepare']:e=prepare(io)
+ elif sys.argv[1:]==['--refresh']:e=refresh(io)
  elif sys.argv[1:]==['--apply']:e=apply(io)
  else:raise ValueError('Explicit mode required')
  print(json.dumps(dict(status=e['status'],message_id=MID,actions=e['file']['action_count'],wb_writes=0,telegram_sends=0)))

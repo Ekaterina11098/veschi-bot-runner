@@ -36,7 +36,15 @@ def revise_midday_bundle(bundle,source,records):
    kept.append(item)
   row['attention']=kept
   if removed and any(x['campaign_id']==row['id'] for x in removed):
-   row['post_change_note']='Тест после запуска или изменения: ждём завершения полного следующего дня МСК. Исключение и снижение пока не предлагаем.'
+   blocked=[x for x in removed if x['campaign_id']==row['id']]
+   notes=[]
+   for action in blocked:
+    dates=[datetime.fromisoformat(x['at'].replace('Z','+00:00')).astimezone(MSK).date() for x in changes if x.get('nm')==action['nm_id'] and x.get('kind') in ['bid','added','price','returned','relaunch']]
+    started=campaign.get('timestamps',{}).get('started')
+    if started:dates.append(datetime.fromisoformat(started.replace('Z','+00:00')).astimezone(MSK).date())
+    review=max(dates)+timedelta(days=2)
+    notes.append(action['article']+': сохраняем до завершения полного дня; оценка '+review.strftime('%d.%m')+'.')
+   row['post_change_note']='\\n'.join(notes)
  out['correction']=dict(rule='full_following_msk_day_v2',removed_actions=removed)
  return out
 
@@ -99,7 +107,7 @@ def prepare_midday(io,day):
      attention.append(dict(article=article,decision=decision,action=action,spend=p['spend'],clicks=p['clicks']))
    # Do not propose to empty a campaign via individual approvals.
    if len(attention)==len(c.get('nm_settings',[])):attention=[]
-   out.append(dict(id=c['id'],name=c['settings']['name'],draft=draft,today=metric,attention=attention,post_change_note=('Тест после запуска или изменения: полный следующий день МСК ещё не завершён; ставки и состав сохраняем.' if protected else None)))
+   out.append(dict(id=c['id'],name=c['settings']['name'],draft=draft,today=metric,attention=attention,post_change_note=('По товарам после запуска/изменений полный следующий день МСК ещё не завершён; повторных действий по ним нет.' if protected else None)))
  if not out:raise ValueError('Empty midday catalogue')
  return dict(day=day,observed_at=source.get('completed_at',source['observed_at']),campaigns=out,presentation='midday_green_current_day_v1',review_context=context)
 def recommendations(c):

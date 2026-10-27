@@ -26,8 +26,8 @@ jobs:
           with ThreadPoolExecutor(max_workers=5) as pool:list(pool.map(fetch,names))
           PY
       - run: pip install requests==2.32.5 pillow==11.3.0 > /tmp/dependencies.log 2>&1
-      - name: Prepare cache-only correction without Telegram edits
-        run: PYTHONPATH=scripts python scripts/china_midday_correction364.py --prepare
+      - name: Refine protected article notes before Telegram edit
+        run: PYTHONPATH=scripts python scripts/china_midday_correction364.py --refresh
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

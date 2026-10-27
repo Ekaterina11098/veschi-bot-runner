@@ -22,8 +22,8 @@ class DailyFormatTests(unittest.TestCase):
  def test_ratio_of_sums_includes_zero_order_expense(self):self.assertAlmostEqual(ratio(sums([row(10,100),row(20,0),row(1,1000)])),31/1100*100)
  def test_single_anomaly_does_not_exclude(self):
   r=self.recommendation([row(2,100),row(1,100),row(11,100)]);self.assertIsNone(r['action']);self.assertIn('Единичное',r['reason'])
- def test_rising_drr_below_period5_reduces(self):
-  r=self.recommendation([row(.98,100),row(3.47,100),row(9.66,100)]);self.assertEqual(r['action']['target_minor'],32)
+ def test_rising_drr_below_period5_keeps_observing(self):
+  r=self.recommendation([row(.98,100),row(3.47,100),row(9.66,100)]);self.assertIsNone(r['action'])
  def test_no_full_day_after_change_is_not_repeated(self):
   changes=[dict(cid=12,nm=1,kind='bid',at='2026-10-25T10:00:00+03:00')];r=self.recommendation([row(20,100)]*3,changes);self.assertIsNone(r['action']);self.assertIn('26.10',r['decision'])
  def test_improving_post_change_above5_keeps_test(self):
@@ -90,4 +90,5 @@ class DailyExecutionTests(unittest.TestCase):
    e=execute(io,dict(plan_sha256=p['plan_sha256']),p);self.assertEqual(e['wb_writes'],0);self.assertEqual(e['items'][0]['status'],'blocked');self.assertIn('composition',e['items'][0]['reason'])
 
 if __name__=='__main__':unittest.main()
+
 

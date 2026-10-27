@@ -1,7 +1,7 @@
 name: Daily China advertising PNG reports 07:30 MSK
 on:
   schedule:
-    - cron: '30,45 4 * * *'
+    - cron: '15,30,45 4 * * *'
     - cron: '0,15 5 * * *'
   workflow_dispatch:
 permissions:
@@ -13,10 +13,10 @@ jobs:
   daily:
     if: github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+        with: {persist-credentials: false, fetch-depth: 1}
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -29,9 +29,18 @@ jobs:
       - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0 > "$RUNNER_TEMP/install.log" 2>&1
       - name: Check advertising arithmetic and duplicate safeguards
         run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
-      - name: Read China and deliver frozen grouped advertising and budget pages
+      - name: Select preparation or delivery slot
+        id: slot
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          from datetime import datetime, timezone
+          t = datetime.now(timezone.utc)
+          print('prepare_only=' + ('true' if t.hour * 60 + t.minute < 270 else 'false'))
+          PY
+      - name: Prepare early or deliver frozen advertising pages at 07:30
         working-directory: source
         env:
+          CHINA_AD_PREPARE_ONLY: ${{ steps.slot.outputs.prepare_only }}
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -40,6 +49,7 @@ jobs:
         run: PYTHONPATH=../scripts:. python ../scripts/china_advertising_daily.py
 
       - name: Cache published China Finance and all-source funnel, no marketplace writes
+        if: steps.slot.outputs.prepare_only != 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -50,6 +60,7 @@ jobs:
         run: python scripts/china_wb_evidence.py
 
       - name: Observe verified price and advertising changes, no marketplace writes
+        if: steps.slot.outputs.prepare_only != 'true'
         env:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -61,6 +72,7 @@ jobs:
         run: python scripts/china_change_observation.py --budget 60
 
       - name: Deliver one attention report after the advertising pair
+        if: steps.slot.outputs.prepare_only != 'true'
         env:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

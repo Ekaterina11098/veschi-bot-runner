@@ -34,6 +34,14 @@ def stamp(value):
     return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def excluded_from_picking(status):
+    # complete records the seller's delivery handover. A later buyer refusal
+    # does not undo the physical shipment or its picking-list quantity.
+    if status.get("supplierStatus") == "complete":
+        return False
+    return status.get("supplierStatus") == "cancel" or status.get("wbStatus") in ("canceled", "canceled_by_client")
+
+
 def href(value):
     return value.get("meta", {}).get("href", "")
 
@@ -205,7 +213,7 @@ class Worker:
                 statuses[status["id"]] = status
         if set(statuses) != set(ids):
             raise Stop("Picking-list status scope incomplete")
-        cancelled = {ident for ident, status in statuses.items() if status.get("supplierStatus") == "cancel" or status.get("wbStatus") in ("canceled", "canceled_by_client")}
+        cancelled = {ident for ident, status in statuses.items() if excluded_from_picking(status)}
         self.db.put("fbs_document_chain:china:picking_scope:v1:" + ident, {
             "at": now(), "supply_id": ident, "raw_count": len(ids), "picking_count": len(ids)-len(cancelled),
             "excluded": [{"id": i, "article": found[i]["article"], "status": statuses[i]} for i in sorted(cancelled)],

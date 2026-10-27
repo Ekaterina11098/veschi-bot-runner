@@ -32,7 +32,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Verify retry and duplicate-protection tests
-        run: python -m unittest discover -s scripts -p test_fbs_read_retries.py -v
+        run: |
+          python -m unittest discover -s scripts -p test_fbs_read_retries.py -v
+          python -m unittest discover -s scripts -p test_fbs_picking_scope.py -v
       - name: Execute selected mode with backend-only secrets
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

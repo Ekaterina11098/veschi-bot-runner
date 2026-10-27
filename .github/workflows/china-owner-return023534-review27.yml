@@ -36,7 +36,7 @@ jobs:
           from china_cloud_cost_control import Cache,WB,validate_identity
           from china_bid_proposals import fresh_stock,io_config,daily
           from china_price_apply import IO
-          KEY='china_agent:owner_return023534_review:2026-10-27:v2'
+          KEY='china_agent:owner_return023534_review:2026-10-27:v3'
           MSK=ZoneInfo('Europe/Moscow')
           class ReadWB(WB):
            def req(self,path,method='GET',body=None,write=False):
@@ -49,25 +49,32 @@ jobs:
            result=dict(status='checking',created_at=datetime.now(timezone.utc).isoformat(),wb_writes=0,telegram_calls=0)
            if not c.create(KEY,result):raise ValueError('Concurrent audit')
            try:
-            wb=ReadWB();io=IO();result['stage']='identity';c.put(KEY,result);validate_identity(c,wb)
+            wb=ReadWB();io=IO();validate_identity(c,wb)
             model=c.get('china_agent:new_ad_source:v1:2026-10-27') or {}
             if not model.get('observed_at') or datetime.now(timezone.utc)-datetime.fromisoformat(model['observed_at'])>timedelta(hours=24):raise ValueError('Own economics stale')
             ids=[1473244984,1473243903];labels=['023-AlessiaBag-black','534-NoelBag-emerald']
-            result['stage']='prices';c.put(KEY,result)
-            prices=io.prices(ids)
-            result['prices']=prices;result['stage']='stock';c.put(KEY,result)
-            stock=fresh_stock(model,labels)
-            result['fresh_stock']=stock;result['stage']='campaigns';c.put(KEY,result)
-            campaigns=wb.campaigns([40933588,41055480,41298169,41332083])
-            result['campaigns']=campaigns;result['stage']='config';c.put(KEY,result)
-            cfg=io_config(io)
+            prev=c.get('china_agent:owner_return023534_review:2026-10-27:v2') or {}
+            if datetime.now(timezone.utc)-datetime.fromisoformat(prev['created_at'])>timedelta(minutes=15):raise ValueError('Recovery source too old')
+            prices=prev['prices'];stock=prev['fresh_stock'];campaigns=prev['campaigns']
+            cfg=(c.get('china_agent:advertising_midday_source:2026-10-27:v2') or {})['config']
             if cfg.get('currency')!='CNY' or type(cfg.get('cpcStep')) is not int:raise ValueError('Config missing')
             target=[v for v in campaigns.values() if v['id'] in [41298169,41332083] and v['status']==9 and v['currency']=='CNY' and v['settings']['placements']==dict(search=True,recommendations=False) and len(v['nm_settings'])<=48]
             target.sort(key=lambda v:(v['id']!=41298169,v['id']))
             if not target:raise ValueError('No active search capacity for both')
-            chosen=target[0];minimums=wb.minimums(chosen['id'],ids,'search')
-            result['stage']='completed_stats';c.put(KEY,result)
-            stats=wb.req('/adv/v3/fullstats?ids=40933588,41055480,41298169,41332083&beginDate=2026-10-24&endDate=2026-10-26')
+            chosen=target[0];minimums={};min_errors={}
+            import requests,time
+            for nm in ids:
+             time.sleep(3.1)
+             rr=requests.post('https://advert-api.wildberries.ru/api/advert/v1/bids/min',headers={'Authorization':wb.token},json=dict(advert_id=chosen['id'],nm_ids=[nm],payment_type='cpc',placement_types=['search']),timeout=45)
+             try:jj=rr.json()
+             except ValueError:jj={}
+             if not rr.ok:
+              min_errors[str(nm)]=dict(http=rr.status_code,detail=str(jj.get('detail') or jj.get('error') or '')[:500]);continue
+             bs=[v for row in jj.get('bids',[]) if row.get('nm_id')==nm for v in row.get('bids',[]) if v.get('currency')=='CNY' and v.get('type')=='search']
+             if len(bs)==1 and type(bs[0].get('value'))is int:minimums[nm]=bs[0]['value']
+             else:min_errors[str(nm)]=dict(detail='Unverified minimum response')
+            result['minimum_errors']=min_errors;result['minimums']=minimums;c.put(KEY,result)
+            stats=[] # Existing historical evidence retained; no repeated fullstats request
             if not isinstance(stats,list):raise ValueError('Missing completed-day stats')
             items=[]
             for nm,article in zip(ids,labels):
@@ -83,7 +90,7 @@ jobs:
              forecast=net_before_ads-.05*price
              own=[dict(cid=camp['id'],name=camp['settings']['name'],status=camp['status'],placements=camp['settings']['placements'],bids=n['bids_kopecks']) for camp in campaigns.values() for n in camp['nm_settings'] if n['nm_id']==nm]
              full={str(r['advertId']):daily(r,nm) for r in stats}
-             items.append(dict(nm_id=nm,article=article,price_cny=price,cogs_rub=st['price']/100,available=available,stock=st['stock'],reserve=st['reserve'],paid=paid,finished=finished,own_buyout=paid/finished,fee_pct=fee,logistics=log,preliminary_expected_cny_per_order_at5=round(forecast,2),break_even_drr_pct=round(100*net_before_ads/price,2),break_even_buyout_at5=(log['delivery_cny']+10/12+.05*price)/proceeds if proceeds>0 else None,existing_memberships=own,completed_days=full,campaign_id=chosen['id'],minimum_minor=minimums[nm],proposed_minor=max(28,minimums[nm])))
+             items.append(dict(nm_id=nm,article=article,price_cny=price,cogs_rub=st['price']/100,available=available,stock=st['stock'],reserve=st['reserve'],paid=paid,finished=finished,own_buyout=paid/finished,fee_pct=fee,logistics=log,preliminary_expected_cny_per_order_at5=round(forecast,2),break_even_drr_pct=round(100*net_before_ads/price,2),break_even_buyout_at5=(log['delivery_cny']+10/12+.05*price)/proceeds if proceeds>0 else None,existing_memberships=own,completed_days=full,campaign_id=chosen['id'],minimum_minor=minimums.get(nm),proposed_minor=max(28,minimums[nm]) if nm in minimums else None))
             result.update(status='checked',observed_at=datetime.now(timezone.utc).isoformat(),items=items,campaigns=campaigns,prices=prices,fresh_stock=stock,config=cfg,target_campaign_id=chosen['id'],target_member_count=len(chosen['nm_settings']),own_economics_source_at=model['observed_at'],own_economics_period=[model.get('period_from'),model.get('period_to')],performance_today_used=False,expires_at=(datetime.now(timezone.utc)+timedelta(hours=2)).isoformat(),assumptions='Forecast not net profit. FX12RUB/CNY,tax5%,handling10RUB. Own completed buyouts/fees, historical delivery; common unknown deductions not0. 023 finished1 has extreme uncertainty,not proven100percent.')
            except Exception as e:result.update(status='blocked',reason=str(e) if isinstance(e,(ValueError,RuntimeError,PermissionError)) else type(e).__name__,completed_at=datetime.now(timezone.utc).isoformat())
            c.put(KEY,result)

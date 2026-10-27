@@ -1,0 +1,35 @@
+name: Apply exact owner approved PNG355 bids
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-owner-apply355.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-apply355
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          python - <<'PY'
+          import os,pathlib,urllib.request,concurrent.futures
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          names=['china_owner_apply355.py','china_price_apply.py','china_cloud_cost_control.py','china_advertising_plans.py','china_bid_proposals.py','china_advertising_v2.py','china_experience.py','china_loss_control.py','china_group_permissions.py','conversion_watches.py','china_table_png.py']
+          def fetch(name):
+              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
+          with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:list(pool.map(fetch,names))
+          PY
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - name: Execute only exact thirteen approved rates and verify all campaign compositions
+        run: PYTHONPATH=scripts python scripts/china_owner_apply355.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled

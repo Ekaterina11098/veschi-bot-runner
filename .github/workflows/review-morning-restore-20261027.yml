@@ -1,0 +1,44 @@
+name: Recover missing morning reviews and questions only
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-morning-restore-20261027.yml']
+permissions: {contents: read, actions: write}
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Start only missing morning workflows in the authorized morning window
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'JS'
+          const now=new Date(),day=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
+          const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Moscow',hour:'2-digit',hourCycle:'h23'}).format(now));
+          if(day!=='2026-10-27'||hour<8||hour>=11){console.log('Outside targeted morning recovery window');process.exit(0);}
+          const base='https://api.github.com/repos/'+process.env.GITHUB_REPOSITORY;
+          const headers={Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','Content-Type':'application/json'};
+          async function api(path,method='GET',body){const r=await fetch(base+path,{method,headers,body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('Morning recovery failed HTTP '+r.status);return r.status===204?null:r.json();}
+          async function ensure(name,wait){
+            const w=await api('/actions/workflows/'+name);
+            if(w.state!=='active')throw Error('Target morning workflow is disabled');
+            const listed=await api('/actions/workflows/'+name+'/runs?per_page=30');
+            const today=listed.workflow_runs.filter(r=>r.created_at.slice(0,10)===day);
+            const active=today.find(r=>['queued','in_progress','pending','waiting','requested'].includes(r.status));
+            if(!active&&today.some(r=>r.conclusion==='success')){console.log(name+' already completed today');return;}
+            const prior=new Set(today.map(r=>r.id));
+            if(!active){await api('/actions/workflows/'+name+'/dispatches','POST',{ref:'main'});console.log(name+' dispatched once');}
+            if(!wait)return;
+            const deadline=Date.now()+20*60*1000;
+            while(Date.now()<deadline){
+              const runs=await api('/actions/workflows/'+name+'/runs?per_page=10');
+              const run=active?runs.workflow_runs.find(r=>r.id===active.id):runs.workflow_runs.find(r=>!prior.has(r.id)&&r.created_at.slice(0,10)===day);
+              if(run?.status==='completed'){console.log(name+' completed '+run.id+' '+run.conclusion);return;}
+              await new Promise(r=>setTimeout(r,20000));
+            }
+            console.log(name+' still pending; saved identities protect follow-up');
+          }
+          await ensure('reviews-morning.yml',true);
+          await ensure('questions-morning.yml',false);
+          JS

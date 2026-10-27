@@ -84,6 +84,13 @@ class OzonWorker(m.Worker):
    expected=self.c["document_prefix"]+":"+state["supply"]["id"]+":customerorder"
    if any(d.get("description")==self.comment and d.get("externalCode")!=expected for d in manual):
     raise m.Stop("Manual Ozon order already contains this act posting set")
+   if any(d.get("externalCode")!=expected for d in manual):
+    # Several acts may depart on one date; keep the date prefix while giving
+    # later acts a stable unique number. Never combine unrelated act scopes.
+    payload["name"]=self.order_name+" "+str(self.act["id"])
+    collisions=self.ms_rows("entity/customerorder",{"filter":"name="+payload["name"]})
+    if any(d.get("externalCode")!=expected for d in collisions):
+     raise m.Stop("Ozon order number collision requires reconciliation")
   return super().ensure(typ,payload,state,key)
 
 def virtual_supply(act,scope):

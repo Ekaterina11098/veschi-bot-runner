@@ -24,8 +24,8 @@ jobs:
               root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
           PY
       - run: pip install requests==2.32.5 pillow==11.3.0 > /tmp/dependencies.log 2>&1
-      - name: Prepare exact reviewed PNGs without Telegram calls
-        run: PYTHONPATH=scripts python scripts/china_morning_correction27_replace.py --prepare
+      - name: Apply only the reviewed in-place edits and third-PNG deletion
+        run: PYTHONPATH=scripts python scripts/china_morning_correction27_replace.py --apply
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

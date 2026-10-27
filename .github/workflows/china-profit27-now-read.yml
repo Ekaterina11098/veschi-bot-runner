@@ -1,8 +1,6 @@
 name: China owner current27Oct profit read-only
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/china-profit27-now-read.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -10,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
+    if: ${{ false }} # Requested read-only snapshot collected; no repeat.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

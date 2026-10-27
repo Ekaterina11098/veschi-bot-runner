@@ -1,0 +1,49 @@
+name: Reconcile one requested WB supply
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/reconcile-one-requested-wb-supply.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Locate requested supply without document writes
+        env: &credentials
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python scripts/reconcile_one_requested_wb_supply.py inspect
+  resume:
+    needs: inspect
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: fbs-document-chain-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resume approved supply and verify all documents
+        env: *credentials
+        run: python scripts/reconcile_one_requested_wb_supply.py resume

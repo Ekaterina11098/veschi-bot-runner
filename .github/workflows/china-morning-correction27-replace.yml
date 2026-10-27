@@ -1,0 +1,33 @@
+name: Owner-requested in-place morning PNG correction27Oct
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-morning-correction27-replace.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-morning-correction27
+  cancel-in-progress: false
+jobs:
+  correction:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          python - <<'PY'
+          import os,pathlib,urllib.request
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          for name in ['china_morning_correction27_replace.py','china_advertising_state.py','china_price_apply.py','china_advertising_v2.py','china_advertising_v2_png.py','china_daily_ad_actions.py','china_loss_control.py']:
+              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
+          PY
+      - run: pip install requests==2.32.5 pillow==11.3.0 > /tmp/dependencies.log 2>&1
+      - name: Prepare exact reviewed PNGs without Telegram calls
+        run: PYTHONPATH=scripts python scripts/china_morning_correction27_replace.py --prepare
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: disabled
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}

@@ -65,6 +65,11 @@ def collect(io,day,current=False):
   except (KeyError,ValueError,TypeError,ImportError):pass
  s['status']='complete';s['completed_at']=stamp();save(io,key,s);return s
 
+def never_started_draft(c):
+ # Missing launch metadata is unknown; only an explicit never-launched draft is hidden.
+ timestamps=c.get('timestamps') or {}
+ return c.get('status')==4 and 'started' in timestamps and timestamps['started'] is None
+
 def validnum(x):
  if isinstance(x,bool) or not isinstance(x,(int,float)) or not math.isfinite(x) or x<0:raise ValueError('Unknown advertising amount is not zero')
  return x
@@ -228,6 +233,7 @@ def build(s,minima=None):
  changes.sort(key=lambda x:event_time(x['at']))
  stat={c['advertId']:c for c in raw};out=[]
  for c in cs:
+  if never_started_draft(c):continue
   if c.get('currency')!='CNY':raise ValueError('Campaign currency mismatch')
   bid=c['settings']['payment_type'];zone='поиск' if c['settings']['placements'].get('search') else 'рекомендации';cp=stat.get(c['id']);byday={};byproduct={}
   if cp:

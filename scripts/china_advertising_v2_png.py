@@ -31,6 +31,7 @@ def recommendations(c):
   return ['Расход без рекламных заказов: '+money(c['period']['spend'])+' ¥; '+str(int(c['period']['clicks']))+' кликов. '+('Новый тест; полного дня после запуска ещё нет.' if c.get('new_composition') else 'Нужен контроль безрезультатного расхода; ДРР не вычисляется.')]
  return notes or ['Изменений не нужно.']
 def render(bundle):
+ bundle=dict(bundle,campaigns=[c for c in bundle['campaigns'] if not c.get('never_started')])
  W=2400;H=6500;xs=[44,355,650,870,1090,1700,2356];files=[]
  def canvas(title):
   im=Image.new('RGB',(W,H),BG);d=ImageDraw.Draw(im)

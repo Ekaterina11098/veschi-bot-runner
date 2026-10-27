@@ -2,7 +2,7 @@
 import os,json,base64,io as bio
 from datetime import datetime,timezone,timedelta,date
 from PIL import Image,ImageDraw
-from china_advertising_v2 import collect,build,http,price_map,history,daily_metrics,sums,ratio,MSK
+from china_advertising_v2 import collect,build,http,price_map,history,daily_metrics,sums,ratio,MSK,never_started_draft
 from china_advertising_v2_png import font,money,pct,color
 ZERO=dict(spend=0,amount=0,orders=0,views=0,clicks=0)
 
@@ -71,7 +71,8 @@ def prepare_midday(io,day):
  for batch in source['batches'].values():
   raw={r['advertId']:r for r in batch['stats']}
   for c in batch['campaigns'].get('adverts',[]):
-   draft=c['status']==4 and c.get('timestamps',{}).get('started') is None
+   if never_started_draft(c):continue
+   draft=False
    rec=raw.get(c['id']);d=next((x for x in (rec or {}).get('days',[]) if x['date'][:10]==day),None)
    metric=daily_metrics(d) if d else dict(ZERO) if rec else None
    skus={}
@@ -121,6 +122,7 @@ def recommendations(c):
  if ratio(p)>5:return ['ДРР выше цели. День не завершён; оснований для нового точечного действия по проверенным SKU нет.']
  return ['ДРР в пределах цели. Изменений не требуется.']
 def render_midday(b):
+ b=dict(b,campaigns=[c for c in b['campaigns'] if not c.get('draft')])
  W=2400;H=6500;xs=[44,480,780,1050,1650,2356];files=[];green='#196b44'
  def wrap(d,s,w,n=27):
   out=[]

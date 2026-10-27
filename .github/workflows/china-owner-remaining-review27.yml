@@ -1,0 +1,36 @@
+name: Owner review all remaining campaigns27Oct
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-owner-remaining-review27.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-remaining-review27
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          python - <<'PY'
+          import os,pathlib,urllib.request
+          from concurrent.futures import ThreadPoolExecutor
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          names=["china_owner_remaining_review27.py","china_cloud_cost_control.py","china_bid_proposals.py","china_price_apply.py","china_advertising_plans.py","china_loss_control.py","china_experience.py","china_advertising_v2.py"]
+          def fetch(name):
+              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
+          with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(fetch,names))
+          PY
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - name: Read remaining current campaigns and finished-day statistics, check candidate economics
+        run: PYTHONPATH=scripts python scripts/china_owner_remaining_review27.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}

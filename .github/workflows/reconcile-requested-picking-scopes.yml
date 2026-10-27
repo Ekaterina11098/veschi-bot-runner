@@ -1,0 +1,32 @@
+name: Reconcile requested picking scopes
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/reconcile-requested-picking-scopes.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fbs-document-chain-production
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconcile approved private picking scope
+        env:
+          PICKING_REVIEW_ROOT: 'picking_reconcile:20261027:'
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python scripts/audit_requested_picking_scopes.py

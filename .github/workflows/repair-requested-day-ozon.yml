@@ -29,3 +29,5 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
         run: python scripts/repair_requested_day_ozon.py
+
+# Use indexed counterparty scope while retaining full-history linked-document checks.

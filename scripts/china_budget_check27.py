@@ -2,7 +2,7 @@
 import os,json
 from datetime import datetime,timezone
 from china_cloud_cost_control import Cache,WB,validate_identity
-KEY='china_agent:owner_budget_check:2026-10-27:manual-refresh:v1'
+KEY='china_agent:owner_budget_check:2026-10-27:campaign-41332083-review:v1'
 class ReadWB(WB):
  def req(self,path,method='GET',body=None,write=False):
   if write:raise PermissionError('Budget audit read-only')
@@ -12,8 +12,7 @@ def main():
  c=Cache()
  if c.get(KEY):print('Audit exists; no repeat reads');return
  w=ReadWB();validate_identity(c,w)
- inv=w.req('/adv/v1/promotion/count')
- ids=sorted({x['advertId'] for g in inv.get('adverts',[]) if g.get('status') in [9,11] for x in g.get('advert_list',[])})
+ ids=[41332083]
  if not ids or len(ids)>50:raise ValueError('Unexpected campaign scope')
  campaigns=w.campaigns(ids);budgets=w.req('/api/advert/v2/budget','POST',dict(advertIds=ids))
  stats=w.req('/adv/v3/fullstats?ids='+','.join(map(str,ids))+'&beginDate=2026-10-24&endDate=2026-10-27')

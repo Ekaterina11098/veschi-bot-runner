@@ -33,6 +33,7 @@ def handle(w,job):
  if m.get('reply_message_id') not in p['report_message_ids']:raise ValueError('Daily reply not bound')
  if w.now>datetime.fromisoformat(p['expires_at']):return ('План устарел. Нужен свежий отчёт и подтверждение обновлённых действий.',[])
  if p.get('invalidated_at'):return ('План этого PNG отозван после проверки: '+p.get('invalidation_reason','нужен свежий план')+'. Изменения не выполняю.',[])
+ if p.get('visible_from') and datetime.fromisoformat(job['created_at'])<datetime.fromisoformat(p['visible_from']):return ('PNG обновлён после этого подтверждения. Ответьте на обновлённый отчёт ещё раз.',[])
  if not p['items']:return ('В этом PNG нет новых действий. Уже выполненное и наблюдение повторно не запускаю.',[])
  a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)
  w.save(APPROVAL+str(job['id']),a,insert=True)
@@ -41,6 +42,7 @@ def handle(w,job):
 def execute(io,a,p):
  io.validate_owner(a)
  if p.get('invalidated_at'):raise ValueError('Daily PNG plan invalidated after audit')
+ if p.get('visible_from') and (not a.get('created_at') or datetime.fromisoformat(a['created_at'])<datetime.fromisoformat(p['visible_from'])):raise ValueError('Approval predates corrected PNG')
  if p['execution_kind']!='daily_ad_actions_v2' or p['plan_sha256']!=digest(p['items']) or a['plan_sha256']!=p['plan_sha256']:raise ValueError('Daily execution scope changed')
  key=EXEC+p['plan_id'];e=io.get(key)
  if not e:

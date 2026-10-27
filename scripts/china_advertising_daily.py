@@ -33,7 +33,7 @@ def run():
  files=[]
  for f in saved['files']:
   caption='Китай · '+('реклама' if f['family']=='drr' else 'бюджеты')+' · '+day+' · '+str(f['page'])+'/'+str(f['total'])+'. Новых действий: '+str(f['action_count'])+'.'
-  caption+=(' Ответьте «Сделай всё» для новых действий только этого PNG.' if f['action_count'] else ' Новых действий для исполнения нет.')
+  caption+=(' Ответьте «Сделай всё» для новых действий только этого PNG.' if f['action_count'] else ' Готовых пополнений к исполнению нет; потребность и ограничения показаны в PNG.' if f['family']=='budgets' else ' Новых действий для исполнения нет.')
   files.append(dict(f,bytes=base64.b64decode(f['b64'],validate=True),caption=caption))
  result=deliver(io,day,files,telegram_sender(io),binder=lambda f,r:bind(io,f,r))
  print(json.dumps(dict(status=result['status'],day=day,message_ids=[x['message_id'] for x in result['parts']],wb_writes=0)))

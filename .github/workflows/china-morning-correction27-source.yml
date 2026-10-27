@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   collect:
-    if: github.run_attempt == 1
+    if: ${{ false }} # Dated owner correction completed; preserve receipts.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

@@ -11,7 +11,7 @@ def members(c):return {str(n['nm_id']):dict(subject=n['subject']['id'],bids=dict
 def economics(source,nm):
  p=next((p for p in source.get('products',[]) if int(p['nm_id'])==nm),None)
  if not p:raise ValueError('Нет собственного товарного расчёта')
- st=next((s for s in source.get('stock',[]) if s.get('article','').casefold()==p['sa_name'].casefold()),None)
+ st=next((s for s in source.get('stock',[]) if (s.get('article') or '').casefold()==p['sa_name'].casefold()),None)
  pr=next((v for v in source.get('prices',[]) if v['nmID']==nm),None)
  log=source.get('policy',{}).get('logistics_by_nm',{}).get(str(nm))
  if not st or st.get('stock') is None or st.get('reserve') is None or st['stock']-st['reserve']<=0:raise ValueError('Свободный остаток МСК не подтверждён')
@@ -155,7 +155,9 @@ def execute(io,a,p):
   # Human consent never overrides a later campaign/price change.
   from china_bid_proposals import sources,timestamp
   from types import SimpleNamespace
-  current_view=sources(SimpleNamespace(now=datetime.now(timezone.utc),get=io.get,**({'db':io.db} if callable(getattr(io,'db',None)) else {})))
+  from urllib.parse import urlencode
+  db_adapter=lambda method,table,params:io.db(table+'?'+urlencode(params))
+  current_view=sources(SimpleNamespace(now=datetime.now(timezone.utc),get=io.get,**({'db':db_adapter} if callable(getattr(io,'db',None)) else {})))
   today_msk=datetime.now(timezone.utc).astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date()
   for i in p['items']:
    if i['kind']!='ad_raise_bid':continue
@@ -175,7 +177,7 @@ def execute(io,a,p):
   stock=r.json()
   if stock.get('meta',{}).get('size',len(stock.get('rows',[])))>len(stock.get('rows',[])):raise ValueError('Остатки неполны')
   for i in p['items']:
-   pr=prices.get(str(i['nm_id']),{});st=[x for x in stock.get('rows',[]) if x.get('article','').casefold()==i['article'].casefold()]
+   pr=prices.get(str(i['nm_id']),{});st=[x for x in stock.get('rows',[]) if (x.get('article') or '').casefold()==i['article'].casefold()]
    if pr.get('sizes',[{}])[0].get('discountedPrice')!=i['economics']['seller_price_cny'] or len(st)!=1 or st[0].get('price')!=i['economics']['cogs_kopecks']:raise ValueError('Цена/себестоимость изменились; пересчитать экономику')
    if pr.get('vendorCode')!=i['article'] or pr.get('currencyIsoCode4217')!='CNY' or len(st)!=1 or st[0].get('stock') is None or st[0].get('reserve') is None or st[0]['stock']-st[0]['reserve']<=0:raise ValueError('Товар/цена/свободный остаток изменились: '+i['article'])
   for index,i in enumerate(p['items']):

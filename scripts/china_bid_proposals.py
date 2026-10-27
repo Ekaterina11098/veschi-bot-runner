@@ -36,6 +36,10 @@ def sources(w):
   if len(prices)>=100 and (timestamp(prices[-1].get('updated_at')) or w.now)>=cutoff:raise ValueError('Недавняя история цен обрезана; сначала уточнить последние изменения')
   prices=[r for r in prices if (timestamp(r.get('updated_at')) or w.now)>=cutoff]
   records+=prices
+  since=(w.now-timedelta(days=4)).isoformat()
+  recent=w.db('GET','telegram_api_cache',params={'or':'(cache_key.like.china_agent:owner_*:execution,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:advertising_dialog_execution:v1:*,cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:hourly_cloud:execution:*,cache_key.like.china_agent:daily_ad_execution:v2:*)','updated_at':'gte.'+since,'select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':500}) or []
+  if len(recent)>=500:raise ValueError('Недавняя история рекламы обрезана; сначала завершить сверку')
+  records+=recent
  for cid,key in (w.get('china_agent:verified_campaign_state:v1') or {}).items():
   r=w.get(key) or {};after=r.get('after') or {}
   if r.get('status')=='verified' and str(after.get('id'))==str(cid):
@@ -92,17 +96,18 @@ def candidates(w,view,economy,nm_ids=()):
     values=daily(view['stats'].get(c['id']),nm)
     if any(d not in values for d in full):raise ValueError('Рекламная статистика полных дней неполна')
     past={k:sum(values[d][k] for d in full) for k in ['spend','amount','orders','clicks']}
-    if past['amount']<=0 or past['orders']<3 or past['clicks']<20 or past['spend']<=0:raise ValueError('Недостаточная собственная рекламная выборка')
+    test_mode=(w.get(POLICY) or {}).get('allow_small_sample_test') is True
+    if past['amount']<=0 or past['orders']<(1 if test_mode else 3) or past['clicks']<(1 if test_mode else 20) or past['spend']<=0:raise ValueError('Недостаточная собственная рекламная выборка')
     drr=past['spend']/past['amount']*100
     if drr>=4:raise ValueError('Недостаточный запас до цели ДРР5%')
-    if econ['finished']<5:raise ValueError('Малая завершённая выборка выкупа')
+    if econ['finished']<(3 if test_mode else 5):raise ValueError('Малая завершённая выборка выкупа')
     today=values.get(view['day']);tdrr=today['spend']/today['amount']*100 if today and today['amount'] else None
     if tdrr is not None and tdrr>5:raise ValueError('Сегодня ДРР выше5%')
     if today and not today['amount'] and today['spend']>=econ['seller_price_cny']*.05:raise ValueError('Сегодня существенный расход без рекламных заказов')
     if changes and changes[-1]['kind']=='bid' and changes[-1].get('old',0)>changes[-1].get('target',0) and len(full)<3:raise ValueError('После снижения ставки сначала три полных дня проверки, не повторять прежнее повышение')
     old=n.get('bids_kopecks',{}).get(zone)
     if type(old)is not int or old<=0:raise ValueError('Текущая ставка неизвестна')
-    rows.append(dict(campaign_id=c['id'],nm_id=nm,article=econ['article'],placement=zone,current_minor=old,economics=econ,previous_full_days=past,previous_drr=round(drr,2),today=today,today_drr=round(tdrr,2) if tdrr is not None else None,decision_days=full,last_change=changes[-1] if changes else None))
+    rows.append(dict(campaign_id=c['id'],nm_id=nm,article=econ['article'],placement=zone,current_minor=old,economics=econ,previous_full_days=past,previous_drr=round(drr,2),today=today,today_drr=round(tdrr,2) if tdrr is not None else None,decision_days=full,last_change=changes[-1] if changes else None,small_sample=past['orders']<3 or past['clicks']<20 or econ['finished']<5))
    except (ValueError,KeyError,TypeError) as ex:
     blocked.append(dict(nm_id=nm,article=labels.get(nm,'WB '+str(nm)),reason=str(ex)))
  rows.sort(key=lambda r:(-r['previous_full_days']['orders'],r['previous_drr']))
@@ -173,7 +178,7 @@ def prepare(w,job,nm_ids=(),raise_percent=None,count=None,refresh=None):
   economy=copy.deepcopy(economy);price_map={p['nmID']:p for p in economy.get('prices',[])};price_map.update({p['nmID']:p for p in fresh['prices']});economy['prices']=list(price_map.values())
  if fresh.get('stock') is not None:
   from collections import Counter
-  counts=Counter(s.get('article','').casefold() for s in fresh['stock'])
+  counts=Counter((s.get('article') or '').casefold() for s in fresh['stock'])
   missing={r['nm_id'] for r in selected if counts[r['article'].casefold()]!=1}
   blocked += [dict(nm_id=nm,reason='Свежий остаток/COGS отсутствует или неоднозначен') for nm in missing]
   selected=[r for r in selected if r['nm_id'] not in missing]
@@ -197,7 +202,7 @@ def prepare(w,job,nm_ids=(),raise_percent=None,count=None,refresh=None):
  lines=['Предлагаю повысить ставки на '+format(percent,'g')+'% (округление по шагу WB):']
  for i in items:
   r=i['evidence'];past=r['previous_full_days'];today=r['today'];t='нет заказов' if r['today_drr'] is None and today else 'нет свежих данных' if today is None else str(r['today_drr'])+'%'
-  lines.append(i['article']+' · РК'+str(i['campaign_id'])+' '+('поиск' if i['placement']=='search' else 'рекомендации')+': '+format(i['old_minor']/100,'.2f')+' → '+format(i['target_minor']/100,'.2f')+' ¥; полных дней '+str(len(r['decision_days']))+': '+str(past['orders'])+' заказов, ДРР '+str(r['previous_drr'])+'%; сегодня '+t+'.')
+  lines.append(i['article']+' · РК'+str(i['campaign_id'])+' '+('поиск' if i['placement']=='search' else 'рекомендации')+': '+format(i['old_minor']/100,'.2f')+' → '+format(i['target_minor']/100,'.2f')+' ¥; полных дней '+str(len(r['decision_days']))+': '+str(past['orders'])+' заказов, ДРР '+str(r['previous_drr'])+'%; сегодня '+t+('. Тест: малая выборка.' if r.get('small_sample') else '.'))
  if len(items)<n:lines.append('Подошло '+str(len(items))+' из запрошенных '+str(n)+': остальные не прошли историю, экономику или свежие результаты.')
  lines+=['Срез '+fresh['observed_at']+'. Экономика предварительная: собственный выкуп/COGS/историческая логистика; FX12, налог5%, обработка10₽ — допущения; общие удержания могут быть неполны. Нет гарантии ДРР5% или роста заказов.','Ответьте «делай» или «поднимай» на это сообщение. Выполню только указанные ставки, затем проверю WB. Пополнений и пауз нет.','План рекламы: '+pid]
  plan['text']='\n'.join(lines)
@@ -294,7 +299,7 @@ def fresh_stock(economy,articles):
   if not part or offset>=5000:raise ValueError('Остатки/COGS неполны')
   offset+=len(part)
  wanted={a.casefold() for a in articles}
- return [{k:r.get(k) for k in ['article','stock','reserve','price']} for r in rows if r.get('article','').casefold() in wanted]
+ return [{k:r.get(k) for k in ['article','stock','reserve','price']} for r in rows if (r.get('article') or '').casefold() in wanted]
 def shortlist(w,job,count=30,raise_percent=None):
  # Owner requires checking first, then recommending; uncertain raw lists are not proposals.
  result=prepare(w,job,raise_percent=raise_percent,count=count)

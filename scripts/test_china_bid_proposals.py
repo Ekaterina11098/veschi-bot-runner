@@ -29,6 +29,16 @@ def fixture():
   w.calls.append(kind);return dict(campaigns={10:copy.deepcopy(c)},stats={10:copy.deepcopy(stat)},config=dict(currency='CNY',cpcStep=1,cpcMaxBid=1000),minimums={'10:100':28},observed_at=w.now.isoformat())
  return w,j,c,stat,refresh
 class ProposalTests(unittest.TestCase):
+ def test_small_sample_is_explicit_test_not_proven_scaling(self):
+  w,j,c,stat,refresh=fixture();w.mem[q.POLICY]['allow_small_sample_test']=True
+  for d in stat['days']:d['apps'][0]['nms'][0].update(orders=0,clicks=0,sum=0,sum_price=0)
+  stat['days'][2]['apps'][0]['nms'][0].update(orders=1,clicks=4,sum=1,sum_price=100)
+  w.mem['china_agent:advertising_source:2026-10-27:v2']['batches']['0']['stats']=[stat]
+  r=q.prepare(w,j,refresh=refresh);self.assertEqual(r['status'],'ready');self.assertIn('малая выборка',r['text'])
+  self.assertTrue(r['items'][0]['evidence']['small_sample'])
+ def test_blank_article_in_stock_does_not_crash_economics(self):
+  w,j,c,stat,refresh=fixture();w.mem['china_agent:new_ad_source:v1:2026-10-27']['stock'].insert(0,dict(article=None))
+  self.assertEqual(q.prepare(w,j,refresh=refresh)['status'],'ready')
  def test_auto_select_percent_rounding_and_no_write(self):
   w,j,c,stat,refresh=fixture();r=q.prepare(w,j,refresh=refresh)
   self.assertEqual(r['status'],'ready');self.assertEqual(r['items'][0]['target_minor'],36);self.assertEqual(r['wb_writes'],0)

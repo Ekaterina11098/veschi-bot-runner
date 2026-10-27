@@ -4,14 +4,12 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 import requests
 from china_cloud_cost_control import Cache,WB,validate_identity,counts,drr,stamp
+from china_budget_context import read_context,decision as budget_decision
 ROOT='china_agent:budget_watch:v1:'
 def assess(balance,today,period,hour,horizon):
  rate=today['spend']/max(hour,1)
  needed=rate*horizon
  return dict(risk=rate>0 and balance<needed,rate_per_hour=rate,until_next=needed,proposed=max(0,math.ceil((needed-balance)/50)*50),drr_today=drr(today),drr_3days=drr(period))
-def continuation_ok(today,previous):
- a=drr(today);b=drr(previous) if previous else None
- return a is not None and (a<=5 or a<=5.5 and b is not None and a<=b*.8 and today['orders']>=3)
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise RuntimeError('Public main only')
  c=Cache();w=WB();validate_identity(c,w)
@@ -34,6 +32,7 @@ def run():
  balances={str(x['advertId']):x['total'] for x in bud};hour=t.hour+t.minute/60
  nextcheck=t.replace(hour=15,minute=0,second=0,microsecond=0) if hour<15 else (t+timedelta(days=1)).replace(hour=7,minute=30,second=0,microsecond=0)
  horizon=max(.5,(nextcheck-t).total_seconds()/3600);rows=[]
+ funding_context=read_context(c.get,t)
  for cid,camp in cs.items():
   if cid not in today or cid not in balances:rows.append(dict(campaign_id=cid,status='missing_stats'));continue
   a=assess(balances[cid],today[cid],period.get(cid,dict(spend=0,amount=0)),hour,horizon)
@@ -46,8 +45,7 @@ def run():
   if c.get(nk):continue
   dr='не определена' if a['drr_today'] is None else f"{a['drr_today']:.2f}%"
   ec=(c.get('china_agent:hourly_economics:v1') or {}).get(cid,{})
-  viable=ec.get('all_costs_confirmed') is True and ec.get('expected_total_profit_cny',-1)>0 and continuation_ok(today[cid],period.get(cid))
-  decision=f"Предлагаемая сумма: {a['proposed']:.0f} CNY до следующего среза." if viable else "Пополнение пока не рекомендовано: "+("ДРР выше цели либо заказов нет." if not continuation_ok(today[cid],period.get(cid)) else "полная экономика оставшихся товаров не подтверждена.")
+  decision=budget_decision(cid,a,ec,funding_context,balances[cid])
   text=f"Бюджет РК {cid}\nОстаток: {balances[cid]:.2f} CNY\nРасход сегодня: {today[cid]['spend']:.2f} CNY\nДРР сегодня: {dr}\nПри текущем темпе остатка может не хватить до {nextcheck.strftime('%d.%m %H:%M')} МСК.\n{decision}\nСрез {t.strftime('%d.%m %H:%M')} МСК. Прогноз предварительный; автопополнения нет."
   if not c.create(nk,dict(status='preparing',text=text)):continue
   bot=os.environ['CHINA_TELEGRAM_BOT_TOKEN'];me=requests.get('https://api.telegram.org/bot'+bot+'/getMe',timeout=20).json()

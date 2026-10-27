@@ -1,33 +1,11 @@
-name: Owner requested budget refresh after manual funding27Oct
+name: Completed owner requested budget audit27Oct
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/china-budget-check27.yml']
+  workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: china-budget-check27
-  cancel-in-progress: false
 jobs:
-  reply:
+  archived:
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 6
     steps:
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - run: |
-          python - <<'PY'
-          import os,pathlib,urllib.request
-          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
-          for name in ['china_budget_check27.py','china_cloud_cost_control.py','china_price_apply.py']:
-              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
-          PY
-      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
-      - name: Read current campaign budgets and statistics only
-        run: PYTHONPATH=scripts python scripts/china_budget_check27.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          CHINA_TELEGRAM_BOT_TOKEN: disabled
+      - run: echo 'Read-only budget audit complete; original snapshot preserved.'

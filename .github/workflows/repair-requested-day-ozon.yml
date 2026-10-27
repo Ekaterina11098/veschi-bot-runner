@@ -1,0 +1,31 @@
+name: Repair requested day Ozon
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/repair-requested-day-ozon.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: fbs-document-chain-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconcile and resume incomplete acts with private diagnostics
+        env:
+          DAY_REVIEW_ROOT: 'fbs_day_review:20261027:'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: python scripts/repair_requested_day_ozon.py

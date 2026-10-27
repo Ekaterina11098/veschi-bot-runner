@@ -182,7 +182,7 @@ def prepare(w,job,nm_ids=(),raise_percent=None,count=None,refresh=None):
   missing={r['nm_id'] for r in selected if counts[r['article'].casefold()]!=1}
   blocked += [dict(nm_id=nm,reason='Свежий остаток/COGS отсутствует или неоднозначен') for nm in missing]
   selected=[r for r in selected if r['nm_id'] not in missing]
-  economy=copy.deepcopy(economy);stocks={s['article']:s for s in economy.get('stock',[])};stocks.update({s['article']:s for s in fresh['stock']});economy['stock']=list(stocks.values())
+  economy=copy.deepcopy(economy);stocks={s['article']:s for s in economy.get('stock',[]) if s.get('article')};stocks.update({s['article']:s for s in fresh['stock']});economy['stock']=list(stocks.values())
  view=copy.deepcopy(view);view['campaigns'].update(fresh['campaigns']);view['stats'].update(fresh['stats'])
  cfg=fresh['config'];step=cfg.get('cpcStep')
  if cfg.get('currency')!='CNY' or type(step)is not int or step<=0:raise ValueError('Минимальный шаг/валюта WB не подтверждены')

@@ -39,6 +39,11 @@ class ProposalTests(unittest.TestCase):
  def test_blank_article_in_stock_does_not_crash_economics(self):
   w,j,c,stat,refresh=fixture();w.mem['china_agent:new_ad_source:v1:2026-10-27']['stock'].insert(0,dict(article=None))
   self.assertEqual(q.prepare(w,j,refresh=refresh)['status'],'ready')
+ def test_stock_without_article_skipped_during_fresh_merge(self):
+  w,j,c,stat,refresh=fixture();w.mem['china_agent:new_ad_source:v1:2026-10-27']['stock'].insert(0,dict(stock=0,reserve=0))
+  def fresh(*a):
+   r=refresh(*a);r['stock']=[dict(article='one-bag',stock=10,reserve=0,price=1000)];return r
+  self.assertEqual(q.prepare(w,j,refresh=fresh)['status'],'ready')
  def test_auto_select_percent_rounding_and_no_write(self):
   w,j,c,stat,refresh=fixture();r=q.prepare(w,j,refresh=refresh)
   self.assertEqual(r['status'],'ready');self.assertEqual(r['items'][0]['target_minor'],36);self.assertEqual(r['wb_writes'],0)

@@ -1,0 +1,130 @@
+name: Owner approved return023534 at capped028
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-owner-return023534-apply27.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-return023534-review27
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          python - <<'PY'
+          import os,pathlib,urllib.request
+          from concurrent.futures import ThreadPoolExecutor
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          names=["china_cloud_cost_control.py","china_bid_proposals.py","china_price_apply.py"]
+          def fetch(name):
+              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
+          with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(fetch,names))
+          PY
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - name: Apply exactly two approved returns and verify capped bids
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import os,json,copy
+          from datetime import datetime,timezone,timedelta
+          from zoneinfo import ZoneInfo
+          from china_price_apply import IO
+          from china_cloud_cost_control import Cache,WB,validate_identity
+          from china_bid_proposals import fresh_stock
+          ROOT='china_agent:owner_return023534_apply:2026-10-27:v1'
+          PLAN='china_agent:owner_return023534_plan:2026-10-27:v1'
+          CID=41298169
+          IDS=[1473244984,1473243903]
+          ART={1473244984:'023-AlessiaBag-black',1473243903:'534-NoelBag-emerald'}
+          def stamp():return datetime.now(timezone.utc).isoformat()
+          def members(c):return {n['nm_id']:dict(subject=n['subject'],bids=n['bids_kopecks']) for n in c['nm_settings']}
+          def same_settings(a,b):return all(a[k]==b[k] for k in ['id','status','currency','bid_type','settings'])
+          def main():
+           if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main' or str(datetime.now(ZoneInfo('Europe/Moscow')).date())!='2026-10-27':raise ValueError('Only dated public main')
+           io=IO();wb=WB();validate_identity(Cache(),wb)
+           a=io.get(ROOT+':approval');p=io.get(PLAN)
+           if not a or a.get('status')!='approved' or a.get('source_channel')!='codex' or a.get('owner_user_id')!=5122667182 or a.get('campaign_id')!=CID or a.get('nm_ids')!=IDS or a.get('target_minor')!=28 or a.get('maximum_minor')!=28 or a.get('rollback_if_minimum_exceeds')is not True:raise PermissionError('Exact owner approval missing')
+           if not p or p.get('status')!='proposed_pending_owner_approval' or p.get('campaign_id')!=CID or sorted(i['nm_id'] for i in p['items'])!=sorted(IDS) or any(i['target_minor']!=28 for i in p['items']) or datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']):raise ValueError('Plan mismatch or expired')
+           if io.get(ROOT+':execution'):print('Existing execution, no repeat');return
+           e=dict(status='preflight',created_at=stamp(),approval_key=ROOT+':approval',plan_key=PLAN,items=[],steps={},wb_writes=0,telegram_calls=0)
+           if not io.create(ROOT+':execution',e):raise ValueError('Concurrent execution')
+           def persist():io.put(ROOT+':execution',e)
+           def write(name,path,body):
+            if name in e['steps']:raise ValueError('Attempt already recorded')
+            e['steps'][name]=dict(status='submitting',path=path,body=body,submitted_at=stamp());persist()
+            try:
+             response=wb.req(path,'PATCH',body,write=True);e['wb_writes']+=1
+             e['steps'][name].update(status='accepted',response=response);persist()
+            except Exception:
+             e['steps'][name]['status']='uncertain';persist();raise
+           added=[];before=None
+           try:
+            inv=wb.req('/adv/v1/promotion/count')
+            active=sorted({x['advertId'] for g in inv.get('adverts',[]) if g.get('status')==9 for x in g.get('advert_list',[])})
+            if CID not in active or len(active)>50:raise ValueError('Target not active or inventory incomplete')
+            cs=wb.campaigns(active);before=cs[str(CID)];e['before']=before;persist()
+            if before['currency']!='CNY' or before['bid_type']!='manual' or before['settings']['payment_type']!='cpc' or before['settings']['placements']!=dict(search=True,recommendations=False) or {n['subject']['id'] for n in before['nm_settings']}!={50}:raise ValueError('Campaign settings changed')
+            old=members(before)
+            if any(nm in members(c) for c in cs.values() if c['settings']['placements'].get('search') for nm in IDS):raise ValueError('Product already in active search; do not duplicate')
+            if len(old)+2>50:raise ValueError('Not enough target capacity')
+            prices=io.prices(IDS);stock=fresh_stock({},list(ART.values()))
+            e['fresh_prices']=prices;e['fresh_stock']=stock;e['preflight_at']=stamp();persist()
+            for nm in IDS:
+             pr=prices[str(nm)];ss=[s for s in stock if s.get('article')==ART[nm]]
+             expected=120 if nm==1473244984 else 183
+             if len(ss)!=1 or ss[0]['stock']-ss[0]['reserve']<=0 or pr.get('vendorCode')!=ART[nm] or pr.get('currencyIsoCode4217')!='CNY' or pr['sizes'][0]['discountedPrice']!=expected:raise ValueError('Price or availability changed')
+            # Record the exact new members before crossing WB; never touch old members on cleanup.
+            added=IDS[:];e['new_ids']=added;e['status']='adding';persist()
+            write('add','/adv/v0/auction/nms',dict(nms=[dict(advert_id=CID,nms=dict(add=added,delete=[]))]))
+            interim=wb.campaigns([CID])[str(CID)];e['after_add']=interim;persist()
+            mi=members(interim)
+            if set(mi)!=set(old)|set(added) or any(mi[k]!=v for k,v in old.items()) or not same_settings(before,interim):raise ValueError('Unexpected membership or old bid change')
+            try:
+             minimums=wb.minimums(CID,added,'search');e['minimums']={str(k):v for k,v in minimums.items()};persist()
+            except Exception:
+             e['minimum_check_failed']=True;persist();raise
+            remove=[nm for nm in added if minimums[nm]>28]
+            keep=[nm for nm in added if nm not in remove]
+            if remove:
+             write('rollback_minimum','/adv/v0/auction/nms',dict(nms=[dict(advert_id=CID,nms=dict(add=[],delete=remove))]))
+            need=[nm for nm in keep if mi[nm]['bids']['search']!=28]
+            if need:write('set_bid','/api/advert/v1/bids',dict(bids=[dict(advert_id=CID,nm_bids=[dict(nm_id=nm,bid_kopecks=28,placement='search') for nm in need])]))
+            after=wb.campaigns([CID])[str(CID)];e['after']=after;mf=members(after)
+            expected_members=dict(old)
+            for nm in keep:expected_members[nm]=dict(subject=mi[nm]['subject'],bids=dict(search=28,recommendations=0))
+            if mf!=expected_members or not same_settings(before,after):raise ValueError('Final WB readback mismatch')
+            e.update(status='verified',verified_at=stamp(),completed_at=stamp(),items=[dict(kind='ad_add_sku',article=ART[nm],nm_id=nm,campaign_id=CID,placement='search',old_minor=None,target_minor=28,status='verified' if nm in keep else 'rolled_back_verified',minimum_minor=minimums[nm]) for nm in IDS])
+            for s in e['steps'].values():s['status']='verified'
+            persist()
+            child=ROOT+':41298169:execution';receipt=dict(status='verified',verified_at=e['verified_at'],before=before,after=after,items=[i for i in e['items'] if i['status']=='verified'],rolled_back_items=[i for i in e['items'] if i['status']!='verified'],parent=ROOT+':execution',approval_key=ROOT+':approval')
+            if not io.create(child,receipt):raise ValueError('Child receipt already exists')
+            reg=io.get('china_agent:verified_campaign_state:v1') or {};reg[str(CID)]=child
+            if io.get('china_agent:verified_campaign_state:v1')is None:io.create('china_agent:verified_campaign_state:v1',reg)
+            else:io.put('china_agent:verified_campaign_state:v1',reg)
+            io.put(PLAN,dict(p,status='executed',execution_key=ROOT+':execution',completed_at=e['completed_at']))
+           except Exception as error:
+            # On any failed post-add check, remove only new items actually present; no higher bid is left deliberately.
+            e['reason']=str(error) if isinstance(error,(ValueError,RuntimeError)) else type(error).__name__
+            if added and before is not None and 'add' in e['steps']:
+             try:
+              current=wb.campaigns([CID])[str(CID)];present=[nm for nm in added if nm in members(current) and nm not in members(before)]
+              if present:write('rollback_failure','/adv/v0/auction/nms',dict(nms=[dict(advert_id=CID,nms=dict(add=[],delete=present))]))
+              final=wb.campaigns([CID])[str(CID)];e['after_cleanup']=final
+              e['cleanup_verified']=all(nm not in members(final) for nm in added)
+             except Exception as cleanup_error:e['cleanup_error']=type(cleanup_error).__name__
+            e['status']='attention' if e['steps'] else 'blocked';e['completed_at']=stamp();persist()
+           print(json.dumps(dict(status=e['status'],items=[{k:i[k] for k in ['article','status','minimum_minor']} for i in e['items']],reason=e.get('reason'),cleanup_verified=e.get('cleanup_verified'),wb_writes=e['wb_writes'])))
+          main()
+          
+          PY
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}

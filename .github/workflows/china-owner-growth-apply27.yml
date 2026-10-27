@@ -1,4 +1,4 @@
-name: Reconcile exact approved growth actions27Oct
+name: Reconcile exact semantic state and approved growth actions27Oct
 on:
   push:
     branches: [main]
@@ -13,11 +13,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install requests==2.32.5 Pillow==12.3.0 > /tmp/dependencies.log 2>&1
+      - run: |
+          python - <<'PY'
+          import os,pathlib,urllib.request,concurrent.futures
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          names=['china_owner_growth_reconcile27.py','china_owner_growth_apply27.py','china_price_apply.py','china_cloud_cost_control.py','china_advertising_plans.py','china_bid_proposals.py','china_loss_control.py']
+          def fetch(name):
+              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
+          with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:list(pool.map(fetch,names))
+          PY
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
       - name: Apply only exact7 owner-approved items and verify WB
         run: PYTHONPATH=scripts python scripts/china_owner_growth_reconcile27.py
         env:

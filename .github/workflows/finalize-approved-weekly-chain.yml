@@ -28,3 +28,5 @@ jobs:
         run: python scripts/finalize_approved_weekly_chain.py
 
 # Preserve existing tax settings on approved price reset.
+
+# Finalize sole active linked demand after replacement reconciliation.

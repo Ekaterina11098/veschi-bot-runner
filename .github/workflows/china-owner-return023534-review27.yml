@@ -36,7 +36,7 @@ jobs:
           from china_cloud_cost_control import Cache,WB,validate_identity
           from china_bid_proposals import fresh_stock,io_config,daily
           from china_price_apply import IO
-          KEY='china_agent:owner_return023534_review:2026-10-27:v1'
+          KEY='china_agent:owner_return023534_review:2026-10-27:v2'
           MSK=ZoneInfo('Europe/Moscow')
           class ReadWB(WB):
            def req(self,path,method='GET',body=None,write=False):
@@ -49,19 +49,24 @@ jobs:
            result=dict(status='checking',created_at=datetime.now(timezone.utc).isoformat(),wb_writes=0,telegram_calls=0)
            if not c.create(KEY,result):raise ValueError('Concurrent audit')
            try:
-            wb=ReadWB();io=IO();validate_identity(c,wb)
+            wb=ReadWB();io=IO();result['stage']='identity';c.put(KEY,result);validate_identity(c,wb)
             model=c.get('china_agent:new_ad_source:v1:2026-10-27') or {}
             if not model.get('observed_at') or datetime.now(timezone.utc)-datetime.fromisoformat(model['observed_at'])>timedelta(hours=24):raise ValueError('Own economics stale')
             ids=[1473244984,1473243903];labels=['023-AlessiaBag-black','534-NoelBag-emerald']
+            result['stage']='prices';c.put(KEY,result)
             prices=io.prices(ids)
+            result['prices']=prices;result['stage']='stock';c.put(KEY,result)
             stock=fresh_stock(model,labels)
+            result['fresh_stock']=stock;result['stage']='campaigns';c.put(KEY,result)
             campaigns=wb.campaigns([40933588,41055480,41298169,41332083])
+            result['campaigns']=campaigns;result['stage']='config';c.put(KEY,result)
             cfg=io_config(io)
             if cfg.get('currency')!='CNY' or type(cfg.get('cpcStep')) is not int:raise ValueError('Config missing')
             target=[v for v in campaigns.values() if v['id'] in [41298169,41332083] and v['status']==9 and v['currency']=='CNY' and v['settings']['placements']==dict(search=True,recommendations=False) and len(v['nm_settings'])<=48]
             target.sort(key=lambda v:(v['id']!=41298169,v['id']))
             if not target:raise ValueError('No active search capacity for both')
             chosen=target[0];minimums=wb.minimums(chosen['id'],ids,'search')
+            result['stage']='completed_stats';c.put(KEY,result)
             stats=wb.req('/adv/v3/fullstats?ids=40933588,41055480,41298169,41332083&beginDate=2026-10-24&endDate=2026-10-26')
             if not isinstance(stats,list):raise ValueError('Missing completed-day stats')
             items=[]

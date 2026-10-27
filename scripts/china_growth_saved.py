@@ -7,9 +7,11 @@ def metric(raw):
 def rate(v):return round(v['spend']/v['amount']*100,2) if v['amount'] else None
 def saved(w,kind,days):
  day=str(w.now.astimezone(MSK).date())
+ historical=w.get('china_agent:advertising_source:'+day+':v2') or {}
  current=w.get('china_agent:advertising_midday_source:'+day+':v2') or {}
  if current.get('status')!='complete':current=w.get('china_agent:advertising_intraday:'+day+':v1') or {}
- historical=w.get('china_agent:advertising_source:'+day+':v2') or {}
+ # Morning evidence remains usable before the first intraday snapshot exists.
+ if not current.get('batches') and not current.get('campaigns'):current=historical
  if current.get('batches'):
   camps=[c for b in current['batches'].values() for c in b.get('campaigns',{}).get('adverts',[])]
   stats=[r for b in current['batches'].values() for r in b.get('stats',[])]
@@ -26,9 +28,11 @@ def saved(w,kind,days):
   return dict(status='diagnostic',available=True,rows=[],requires_confirmation=True,wb_reads=0,wb_writes=0,limitations=['Сохранённый актуальный состав не найден; предварительный расчёт недоступен. Не обращаться к WB повторно без необходимости.'])
  observed=current.get('completed_at') or current.get('observed_at')
  try:age=(w.now-datetime.fromisoformat(observed.replace('Z','+00:00'))).total_seconds()/3600
- except (ValueError,TypeError):age=None
+ except (AttributeError,ValueError,TypeError):age=None
  if age is None or age>24:return dict(status='diagnostic',available=True,rows=[],observed_at=observed,wb_reads=0,wb_writes=0,limitations=['Сохранённый состав старше24часов или дата не подтверждена. Нужна узкая свежая проверка; это не отсутствие всей истории.'])
- labels={int(x['nmID']):x.get('vendorCode','WB '+str(x['nmID'])) for x in (current.get('catalogue') or {}).get('rows',[])}
+ catalogue=current.get('catalogue') or {}
+ catalogue=catalogue if isinstance(catalogue,list) else catalogue.get('rows',[])
+ labels={int(x['nmID']):x.get('vendorCode','WB '+str(x['nmID'])) for x in catalogue}
  if not labels:labels={int(x['nmID']):x.get('vendorCode','WB '+str(x['nmID'])) for x in (w.get('china_agent:prices:v1') or {}).get('rows',[])}
  def aggregate(raw,dates):
   out={}

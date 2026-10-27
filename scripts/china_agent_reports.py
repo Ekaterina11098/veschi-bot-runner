@@ -10,14 +10,14 @@ MSK=ZoneInfo('Europe/Moscow');PREFIX='CHINA_AGENT_REPORT:'
 RECIPES={
  'advertising':dict(title='ДРР и расходы',schedule='07:30 МСК',generator='china_advertising_daily',formats=['png'],period='3 полных дня; группировка по РК'),
  'budgets':dict(title='Бюджеты РК',schedule='07:30 МСК',generator='china_advertising_daily',formats=['png'],period='срез с фактическим временем'),
- 'loss':dict(title='Товары, требующие внимания',schedule='после подтверждённой утренней рекламной пары',generator='china_agent_reports',formats=['png'],period='30 полных дней; динамика с даты оценки'),
+ 'loss':dict(title='Товары, требующие внимания',schedule='по запросу; автоматический третий PNG отключён владельцем27.10',generator='china_agent_reports',formats=['png'],period='30 полных дней; динамика с даты оценки'),
  'price_morning':dict(title='Утренние предложения по ценам',schedule='10:30 МСК',generator='china_morning_pair',formats=['text','png'],period='действующая методика 4 полных дней'),
  'price_control':dict(title='Контроль изменений цен',schedule='10:30 МСК',generator='china_morning_pair',formats=['text','png'],period='равные полные периоды до/после'),
  'price_day':dict(title='Дневные предложения по ценам',schedule='15:00 МСК',generator='china_coverage_worker',formats=['text','png'],period='3 полных дня + неполный сегодня'),
  'growth':dict(title='Кандидаты в РК / повышение ставок',schedule='по запросу; без автоматического применения',generator='china_growth_candidates',formats=['png'],period='2–14 полных дней'),
  'ad_trend':dict(title='Последовательный рост стоимости заказа',schedule='по запросу',generator='china_ad_cost_png',formats=['png'],period='2–90 полных дней')}
 RECIPES['actions']=dict(title='Выполненные изменения',schedule='по запросу',generator='china_experience',formats=['png'],period='фактические даты проверенного исполнения')
-RECIPES['outcomes']=dict(title='Результаты изменений цен и рекламы',schedule='в существующем ежедневном отчёте; отдельно по запросу',generator='china_change_observation',formats=['png'],period='равные полные периоды; прогноз и закрытая прибыль раздельно')
+RECIPES['outcomes']=dict(title='Результаты изменений цен и рекламы',schedule='по запросу; отдельный автоматический PNG отключён владельцем27.10',generator='china_change_observation',formats=['png'],period='равные полные периоды; прогноз и закрытая прибыль раздельно')
 
 def catalog():return dict(reports=RECIPES,timezone='Europe/Moscow',schedules_unchanged=True,repeat='Явная просьба создаёт отдельный request identity; плановые квитанции не сбрасываются',changes='Только подтверждённый конкретный план, не сам отчёт')
 
@@ -262,6 +262,8 @@ def loss_dynamics(w,source,cohort,nm_ids=()):
 
 def daily_loss():
  """Run after actual advertising pair delivery; share the existing daily receipt."""
+ from china_price_apply import IO
+ if (IO().get('china_agent:advertising_format:v2') or {}).get('morning_attention_png') is False:return 'disabled_by_owner'
  from conversion_watches import runtime,saved_network_guard
  from china_analytic_dialog import reading
  from china_price_apply import IO

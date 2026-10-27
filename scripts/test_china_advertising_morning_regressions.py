@@ -146,3 +146,20 @@ class LaunchDayTests(unittest.TestCase):
 
 if __name__=='__main__':unittest.main()
 
+class BudgetClarityTests(unittest.TestCase):
+ def test_missing_economics_does_not_hide_budget_shortage(self):
+  c=dict(id=12,name='Test',period=row(100,4000),last=row(40,2000),current_period=row(90,3500),attention=[],notes=[],member_count=2,balance=10,budget_reference_need=120,budget_review_required=True,budget_recommendation='Пополнение не готово: нет свежей экономики.')
+  bundle=dict(days=['2026-10-24','2026-10-25','2026-10-26'],source_observed_at='27.10 08:40',campaigns=[c])
+  original=ImageDraw.ImageDraw.text;calls=[]
+  def capture(draw,xy,text,*args,**kwargs):
+   calls.append(text);return original(draw,xy,text,*args,**kwargs)
+  with patch.object(ImageDraw.ImageDraw,'text',capture):files=render(bundle)
+  self.assertTrue(any('нехватка' in s for s in calls))
+  self.assertTrue(any('нет свежей экономики' in s for s in calls))
+  self.assertFalse(files[-1]['actions'])
+ def test_disabled_third_png_returns_before_data_generation(self):
+  import china_agent_reports
+  policy=type('Policy',(),{'get':lambda self,key:{'morning_attention_png':False}})()
+  with patch('china_price_apply.IO',return_value=policy):
+   self.assertEqual(china_agent_reports.daily_loss(),'disabled_by_owner')
+

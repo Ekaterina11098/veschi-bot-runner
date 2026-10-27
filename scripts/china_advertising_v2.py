@@ -189,6 +189,7 @@ def recommend(c,n,ds,days,changes,minimum,price):
     action=dict(kind='ad_exclude_sku',campaign_id=c['id'],nm_id=nm,placement=zone,old_minor=old);decision='Исключить SKU из этой РК.'
    else:decision='Предложение паузы всей РК — в отчёте бюджетов.'
    reason=(f'После изменения, за {len(postdays)} полн. дн.: ' if latest else 'За 3 дня: ')+f'расход {decision_period["spend"]:.2f} ¥; рекламных заказов {decision_period["orders"]:g}.'
+   if decision_period['orders']>0:reason+=f' ДРР {drr:.2f}%; превышение повторяется, ставка на минимуме WB.'
   elif drr is not None and drr>5 and (sustained or rising):
    if minimum and old>minimum:
     target=max(minimum,int(old*.8));action=dict(kind='ad_set_bid',campaign_id=c['id'],nm_id=nm,placement=zone,old_minor=old,target_minor=target);decision=f'Снизить {old/100:g} → {target/100:g} ¥.'
@@ -305,7 +306,7 @@ def build(s,minima=None):
    funding_steps(payload)
   recent_funds=[f for f in funds if f[0][:10]>=days[-1]]
   funding_done='; '.join('+'+str(f[1])+' ¥ · '+datetime.fromisoformat(f[0].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M') for f in sorted(set(recent_funds))) or 'Нет новых подтверждённых пополнений'
-  out.append(dict(funding_done=funding_done,id=c['id'],name=c['settings']['name'],zone=zone,payment=bid,status=c['status'],period=period,last=last,drr=bdrr,focus=focus,balance=balance['total'],forecast=forecast,coverage=balance['total']/rate if rate and not incomplete_composition else None,budget_recommendation=recommendation,budget_action=action,new_composition=incomplete_composition,missing_stats=cp is None,created=created))
+  out.append(dict(budget_reference_need=rate*3 if rate is not None else None,budget_review_required=bool(c['status']==9 and rate is not None and rate*3>balance['total']),minimum_topup_cny=s['config']['minTopUp']/100,funding_done=funding_done,id=c['id'],name=c['settings']['name'],zone=zone,payment=bid,status=c['status'],period=period,last=last,drr=bdrr,focus=focus,balance=balance['total'],forecast=forecast,coverage=balance['total']/rate if rate and not incomplete_composition else None,budget_recommendation=recommendation,budget_action=action,new_composition=incomplete_composition,missing_stats=cp is None,created=created))
  return dict(version=VERSION,day=str(end+timedelta(days=1)),days=days,source_observed_at=datetime.fromisoformat(s['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m.%Y %H:%M МСК'),campaigns=out,wb_writes=0)
 
 def prepare(io,day):

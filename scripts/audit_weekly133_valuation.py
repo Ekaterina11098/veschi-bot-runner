@@ -33,6 +33,13 @@ for ref in prior["documents"]:
   record["rounded_total_kopecks"]=str(sum(Decimal(p["rounded_unit_kopecks"])*Decimal(str(p["quantity"])) for p in pp))
   record["stock_total_kopecks"]=str(sum(Decimal(p["stock_cost"]) for p in pp))
   record["prior_comparison"]=[{"article":p["article"],"old":old.get(p["article"]),"current":p} for p in pp if str(old.get(p["article"],{}).get("stock_cost"))!=p["stock_cost"]]
+ record["deleted"]=doc.get("deleted")
+ record["linked_demands"]=doc.get("demands")
+ record["linked_returns"]=doc.get("returns")
  out["documents"].append(record)
+order_ref=next(x for x in prior["documents"] if x["type"]=="customerorder")
+order_href=m.MS+"entity/customerorder/"+order_ref["id"]
+recent=w.ms_rows("entity/demand",{"filter":"moment>=2026-10-25 00:00:00","order":"moment,desc"})
+out["replacement_candidates"]=[{"id":d["id"],"name":d["name"],"moment":d["moment"],"posted":d.get("applicable"),"sum":d.get("sum"),"description":d.get("description"),"deleted":d.get("deleted"),"customerOrder":d.get("customerOrder")} for d in recent if m.href(d.get("customerOrder",{}))==order_href or plan["name"] in (d.get("description") or "")]
 out["status"]="read_verified";db.put(root+"valuation_audit:20261026:v1",out)
 print(json.dumps({"status":out["status"],"documents":len(out["documents"])}))

@@ -37,7 +37,7 @@ def sources(w):
   prices=[r for r in prices if (timestamp(r.get('updated_at')) or w.now)>=cutoff]
   records+=prices
   since=(w.now-timedelta(days=4)).isoformat()
-  recent=w.db('GET','telegram_api_cache',params={'or':'(cache_key.like.china_agent:owner_*:execution,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:advertising_dialog_execution:v1:*,cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:hourly_cloud:execution:*,cache_key.like.china_agent:daily_ad_execution:v2:*)','updated_at':'gte.'+since,'select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':500}) or []
+  recent=w.db('GET','telegram_api_cache',params={'or':'(cache_key.like.china_agent:owner_*:execution,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:advertising_dialog_execution:v1:*,cache_key.like.china_agent:bid_resume:*,cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:hourly_cloud:execution:*,cache_key.like.china_agent:daily_ad_execution:v2:*)','updated_at':'gte.'+since,'select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':500}) or []
   if len(recent)>=500:raise ValueError('Недавняя история рекламы обрезана; сначала завершить сверку')
   records+=recent
  for cid,key in (w.get('china_agent:verified_campaign_state:v1') or {}).items():

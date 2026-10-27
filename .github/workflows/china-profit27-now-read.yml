@@ -1,0 +1,60 @@
+name: China owner current27Oct profit read-only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-profit27-now-read.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-profit27-now-read
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          python - <<'PY'
+          import os,pathlib,urllib.request
+          root=pathlib.Path('scripts');root.mkdir(exist_ok=True)
+          for name in ['china_cloud_cost_control.py']:
+              root.joinpath(name).write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name,timeout=40).read())
+          PY
+      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - run: |
+          PYTHONPATH=scripts python - <<'PY'
+          """Owner requested current order-profit comparison. Read-only, private snapshots."""
+          import os
+          from datetime import datetime,timezone,timedelta
+          import requests
+          from china_cloud_cost_control import Cache,WB,stamp,validate_identity
+          KEY='china_agent:profit_now:2026-10-27:2115:v1'
+          def main():
+           assert os.environ['GITHUB_REPOSITORY']=='Ekaterina11098/veschi-bot-runner' and os.environ['GITHUB_REF']=='refs/heads/main'
+           c=Cache();w=WB();validate_identity(c,w)
+           if c.get(KEY):print('Existing report; no repeated collection');return
+           out=dict(status='collecting',observed_at=stamp(),cutoff_msk=datetime.now(timezone(timedelta(hours=3))).isoformat(),wb_writes=0,telegram_sends=0)
+           c.put(KEY,out)
+           r=requests.get('https://statistics-api.wildberries.ru/api/v1/supplier/orders',params=dict(dateFrom='2026-10-27T00:00:00',flag=0),headers={'Authorization':os.environ['WB_TOKEN_3']},timeout=80)
+           if not r.ok:out.update(status='blocked',error='WB orders HTTP '+str(r.status_code));c.put(KEY,out);return
+           raw=r.json();assert isinstance(raw,list) and len(raw)<80000
+           fields=['date','lastChangeDate','supplierArticle','nmId','srid','isCancel','cancelDate','totalPrice','discountPercent','spp','finishedPrice','priceWithDisc','currency','currencyName','currencyCode','orderType']
+           selected=[{k:o[k] for k in fields if k in o} for o in raw if o.get('date','')[:10] in ['2026-10-27']]
+           c.put(KEY+':orders',dict(observed_at=stamp(),rows=selected,raw_count=len(raw),available_fields=sorted({k for o in raw for k in o}),selection='order date27Oct from lastChangeDate>=27Oct flag0'))
+           inv=w.req('/adv/v1/promotion/count')
+           ids=sorted({x['advertId'] for g in inv.get('adverts',[]) for x in g.get('advert_list',[])})
+           stats=[]
+           for start in range(0,len(ids),50):
+            stats+=w.req('/adv/v3/fullstats?ids='+','.join(map(str,ids[start:start+50]))+'&beginDate=2026-10-27&endDate=2026-10-27')
+           c.put(KEY+':ads',dict(observed_at=stamp(),rows=stats,ids=ids,basis='all campaign statuses day totals once, not SKU/app sum'))
+           out.update(status='complete',completed_at=stamp(),orders=len(selected),campaigns=len(ids));c.put(KEY,out)
+           print('Private comparison snapshots saved; no external writes')
+          if __name__=='__main__':main()
+          
+          PY
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

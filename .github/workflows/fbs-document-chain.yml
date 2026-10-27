@@ -14,11 +14,11 @@ on:
     - cron: '2-59/5 * * * *'
 permissions:
   contents: read
-concurrency:
-  group: fbs-document-chain-production
-  cancel-in-progress: false
 jobs:
   chain:
+    concurrency:
+      group: fbs-document-chain-production
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -65,8 +65,24 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
         run: python scripts/fbs_ozon_chain.py run
+  audit_comments:
+    needs: chain
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.mode == 'run') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: fbs-document-comments
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Verify and restore comments on completed WB and Ozon chains
-        if: ${{ always() && steps.python.outcome == 'success' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'run') }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

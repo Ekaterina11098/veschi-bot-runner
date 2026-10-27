@@ -1,28 +1,11 @@
-name: Finish read-only proposal with owner category rates
+name: Completed owner growth proposal27Oct
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/china-owner-growth-plan27.yml']
+  workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: china-owner-growth-plan27
-  cancel-in-progress: false
 jobs:
-  prepare:
+  archived:
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - run: pip install requests==2.32.5 Pillow==12.3.0 > /tmp/dependencies.log 2>&1
-      - name: Select completed-day candidates and verify fresh rates minima and economics
-        run: PYTHONPATH=scripts python scripts/china_owner_growth_plan27.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          CHINA_TELEGRAM_BOT_TOKEN: disabled
+      - run: echo 'Proposal prepared; requires separate owner approval. No WB changes.'

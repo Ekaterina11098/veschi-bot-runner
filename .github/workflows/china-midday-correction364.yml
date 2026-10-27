@@ -26,8 +26,8 @@ jobs:
           with ThreadPoolExecutor(max_workers=5) as pool:list(pool.map(fetch,names))
           PY
       - run: pip install requests==2.32.5 pillow==11.3.0 > /tmp/dependencies.log 2>&1
-      - name: Prepare final article-scoped notes for visual check
-        run: PYTHONPATH=scripts python scripts/china_midday_correction364.py --refresh
+      - name: Edit only reviewed existing Telegram PNG364
+        run: PYTHONPATH=scripts python scripts/china_midday_correction364.py --apply
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

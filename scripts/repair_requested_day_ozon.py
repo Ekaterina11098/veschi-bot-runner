@@ -44,7 +44,8 @@ for act in acts():
      if not isinstance(return_refs,list):raise m.Stop("Unexpected parent return-link representation")
      linked=[t.request(m.MS,"entity/salesreturn/"+m.href(ref).rsplit("/",1)[-1]) for ref in return_refs if ref.get("meta",{}).get("type")=="salesreturn"]
      since=(dt.date.fromisoformat(req["date"])-dt.timedelta(days=1)).strftime("%Y-%m-%d")+" 00:00:00"
-     linked += [d for d in worker.ms_rows("entity/salesreturn",{"filter":"moment>="+since}) if m.href(d.get("demand",{}))==parent]
+     # Direct demand.returns is the authoritative associated-return graph.
+     db.put(root+"ozon_return_link_check:v1",{"at":m.now(),"demand_id":parent_doc["id"],"return_count":len(linked)})
      if linked:raise m.Stop("Existing linked manual return requires reconciliation")
     elif inflight=="demand":
      parent=m.href(state["documents"]["customerorder"])

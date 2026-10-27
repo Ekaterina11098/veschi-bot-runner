@@ -14,7 +14,7 @@ def run():
  if (datetime.now(timezone.utc)-datetime.fromisoformat(e['steps']['membership']['submitted_at'])).total_seconds()>600:raise ValueError('Preflight older than10min; need narrow new validation')
  ids=sorted({i['campaign_id'] for i in p['items']});current=wb.campaigns(ids)
  # No intervening unrelated changes may be overwritten.
- if any(current[str(cid)]!=e['after_membership'][str(cid)] for cid in ids):raise ValueError('Intervening state change; review recovery')
+ if any(not exact(e['after_membership'][str(cid)],current[str(cid)],[]) for cid in ids):raise ValueError('Intervening state change; review recovery')
  z=next(i for i in p['items'] if i['nm_id']==1556488181)
  minimum=wb.minimums(z['campaign_id'],[z['nm_id']],'search')[z['nm_id']]
  r=dict(status='running',created_at=stamp(),source_execution=EXEC,approval_key=APP,before=current,umbrella_minimum_minor=minimum,steps={},wb_writes=0)

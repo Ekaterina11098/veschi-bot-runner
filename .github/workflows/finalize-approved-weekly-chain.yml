@@ -26,3 +26,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: python scripts/finalize_approved_weekly_chain.py
+
+# Preserve existing tax settings on approved price reset.

@@ -27,6 +27,11 @@ assert len(refs)==5
 ref=next(x for x in refs if x["type"]=="demand")
 path="entity/demand/"+ref["id"]
 doc=t.request(m.MS,path)
+assert not doc.get("deleted")
+prep=db.get(root+"prepare:v1")
+assert all(m.href(doc[k])==m.href(prep[k]) for k in ("organization","agent","store"))
+order_ref=next(x for x in refs if x["type"]=="customerorder")
+assert m.href(doc.get("customerOrder",{}))==m.MS+"entity/customerorder/"+order_ref["id"]
 ps=w.ms_rows(path+"/positions",{"expand":"assortment","fields":"stock"})
 actual=Counter()
 for p in ps:

@@ -31,3 +31,5 @@ jobs:
         run: python scripts/repair_requested_day_ozon.py
 
 # Use indexed counterparty scope while retaining full-history linked-document checks.
+
+# Read direct basis links and short dated collections before resuming.

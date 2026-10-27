@@ -1,13 +1,38 @@
 """15:00 MSK current-day-only report; read-only collection, explicit page approvals."""
 import os,json,base64,io as bio
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta,date
 from PIL import Image,ImageDraw
 from china_advertising_v2 import collect,build,http,price_map,history,daily_metrics,sums,ratio,MSK
 from china_advertising_v2_png import font,money,pct,color
 ZERO=dict(spend=0,amount=0,orders=0,views=0,clicks=0)
+
+def post_change_pending(changes,cid,nm,day):
+ # The following MSK day must finish before its evidence can drive another action.
+ return any(x['nm']==nm and x['kind'] in ['bid','added','price']
+            and (x['cid'] in [None,cid] or x['kind']=='bid')
+            and date.fromisoformat(day)<=datetime.fromisoformat(x['at'].replace('Z','+00:00')).astimezone(MSK).date()+timedelta(days=1)
+            for x in changes)
+
+def current_report_context(io,source,day):
+ # Read the canonical journal even when a resumable source froze its older history.
+ records=list(source.get('executions',[]));seen={r.get('cache_key') for r in records}
+ registry=io.get('china_agent:verified_campaign_state:v1') or {}
+ if not isinstance(registry,dict):raise ValueError('Campaign registry malformed')
+ pointers={}
+ for cid,key in registry.items():
+  if not isinstance(key,str):continue
+  receipt=io.get(key) or {};after=receipt.get('after')
+  if receipt.get('status')!='verified' or not isinstance(after,dict) or str(after.get('id'))!=str(cid):raise ValueError('Canonical campaign receipt not verified: '+str(cid))
+  pointers[str(cid)]=key
+  if key not in seen:records.append(dict(cache_key=key,payload=receipt));seen.add(key)
+ from china_budget_context import read_context
+ manual=read_context(io.get,datetime.now(timezone.utc))
+ return records,dict(verified_registry=pointers,manual_funding=manual,wb_writes=0)
+
 def prepare_midday(io,day):
  source=collect(io,day,current=True)
- labels=price_map(source['catalogue']);changes=history(source.get('executions',[]));out=[]
+ records,context=current_report_context(io,source,day)
+ labels=price_map(source['catalogue']);changes=history(records);out=[]
  for batch in source['batches'].values():
   raw={r['advertId']:r for r in batch['stats']}
   for c in batch['campaigns'].get('adverts',[]):
@@ -25,7 +50,7 @@ def prepare_midday(io,day):
     nm=n['nm_id'];p=skus.get(nm);label=labels.get(nm,{});price=label.get('price');old=n.get('bids_kopecks',{}).get(placement)
     if c['status']!=9 or not p or not isinstance(price,(int,float)) or price<=0 or type(old)is not int:continue
     # A bid change/addition today invalidates whole-day spend as a post-change exposure.
-    if any(x['cid']==c['id'] and x['nm']==nm and datetime.fromisoformat(x['at'].replace('Z','+00:00')).astimezone(MSK).date().isoformat()==day for x in changes):continue
+    if post_change_pending(changes,c['id'],nm,day):continue
     if p['orders']!=0 or p['spend']<price*.05 or p['clicks']<30:continue
     article=label.get('article','')
     if not article or article.startswith('WB '):continue
@@ -48,7 +73,7 @@ def prepare_midday(io,day):
    if len(attention)==len(c.get('nm_settings',[])):attention=[]
    out.append(dict(id=c['id'],name=c['settings']['name'],draft=draft,today=metric,attention=attention))
  if not out:raise ValueError('Empty midday catalogue')
- return dict(day=day,observed_at=source.get('completed_at',source['observed_at']),campaigns=out,presentation='midday_green_current_day_v1')
+ return dict(day=day,observed_at=source.get('completed_at',source['observed_at']),campaigns=out,presentation='midday_green_current_day_v1',review_context=context)
 def recommendations(c):
  p=c['today']
  if c['draft']:return ['Черновик: не запускалась.']

@@ -29,6 +29,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-        run: python scripts/apply_requested_picking_scopes.py
+        run: python scripts/repair_requested_ozon_act.py
 
 # Apply the private approved picking sheets after read-only audit.
+
+# Reconcile remaining act and retain validation details privately.

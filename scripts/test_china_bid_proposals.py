@@ -44,6 +44,17 @@ class ProposalTests(unittest.TestCase):
   def fresh(*a):
    r=refresh(*a);r['stock']=[dict(article='one-bag',stock=10,reserve=0,price=1000)];return r
   self.assertEqual(q.prepare(w,j,refresh=fresh)['status'],'ready')
+ def test_completed_day_selection_ignores_bad_incomplete_today(self):
+  w,j,c,stat,refresh=fixture();w.mem[q.POLICY]['selection_completed_days_only']=True
+  stat['days'][-1]['apps'][0]['nms'][0].update(sum=500,sum_price=0,orders=0,clicks=1000)
+  w.mem['china_agent:advertising_source:2026-10-27:v2']['batches']['0']['stats']=[stat]
+  r=q.prepare(w,j,refresh=refresh);self.assertEqual(r['status'],'ready');self.assertIsNone(r['items'][0]['evidence']['today'])
+  self.assertEqual(w.get(p.P+r['plan_id'])['decision_basis'],'completed_days_only')
+ def test_low_traffic_test_has_undefined_drr_never_zero(self):
+  w,j,c,stat,refresh=fixture();w.mem[q.POLICY].update(allow_small_sample_test=True,allow_low_traffic_test=True,selection_completed_days_only=True)
+  for d in stat['days']:d['apps'][0]['nms'][0].update(sum=0,sum_price=0,orders=0,clicks=0)
+  w.mem['china_agent:advertising_source:2026-10-27:v2']['batches']['0']['stats']=[stat]
+  r=q.prepare(w,j,refresh=refresh);self.assertEqual(r['status'],'ready');self.assertIsNone(r['items'][0]['evidence']['previous_drr']);self.assertTrue(r['items'][0]['evidence']['traffic_test'])
  def test_auto_select_percent_rounding_and_no_write(self):
   w,j,c,stat,refresh=fixture();r=q.prepare(w,j,refresh=refresh)
   self.assertEqual(r['status'],'ready');self.assertEqual(r['items'][0]['target_minor'],36);self.assertEqual(r['wb_writes'],0)

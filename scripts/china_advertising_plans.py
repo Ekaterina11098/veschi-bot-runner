@@ -195,12 +195,13 @@ def execute(io,a,p):
       old=ns[i['nm_id']]['bids_kopecks'][i['placement']]
       if old==i['target_minor']:state.update(status='verified',already_done=True,after=before);save();continue
       if old!=i['old_minor']:raise ValueError('Ставка изменилась; нужен новый план')
-      day=datetime.now().astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date().isoformat()
-      stats=w.req('/adv/v3/fullstats?ids='+str(cid)+'&beginDate='+day+'&endDate='+day)
-      nsr=[n for c in stats for d in c.get('days',[]) for app in d.get('apps',[]) for n in app.get('nms',[]) if n['nmId']==i['nm_id']]
-      spend=sum(n['sum'] for n in nsr);amount=sum(n['sum_price'] for n in nsr)
-      if amount and spend/amount>.05:raise ValueError('Свежая ДРР выше5%')
-      if not amount and (not i.get('economics',{}).get('seller_price_cny') or spend>=i['economics']['seller_price_cny']*.05):raise ValueError('Сегодня существенный расход без рекламных заказов')
+      if p.get('decision_basis')!='completed_days_only':
+       day=datetime.now().astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date().isoformat()
+       stats=w.req('/adv/v3/fullstats?ids='+str(cid)+'&beginDate='+day+'&endDate='+day)
+       nsr=[n for c in stats for d in c.get('days',[]) for app in d.get('apps',[]) for n in app.get('nms',[]) if n['nmId']==i['nm_id']]
+       spend=sum(n['sum'] for n in nsr);amount=sum(n['sum_price'] for n in nsr)
+       if amount and spend/amount>.05:raise ValueError('Свежая ДРР выше5%')
+       if not amount and (not i.get('economics',{}).get('seller_price_cny') or spend>=i['economics']['seller_price_cny']*.05):raise ValueError('Сегодня существенный расход без рекламных заказов')
      elif i['kind']=='ad_add_sku':
       if i['nm_id'] in ns:state.update(status='verified',already_done=True,after=before);save();continue
       if {n['subject']['id'] for n in ns.values()}!={i['subject_id']} or len(ns)>=50:raise ValueError('Категория/число SKU изменились')
@@ -239,7 +240,11 @@ def execute(io,a,p):
   for state in e['items']:
    if state.get('status')=='verified':
     cid=str(state['after']['id']);k=E+p['plan_id']+':'+str(state['index'])
-    io.put(k,dict(status='verified',before=state.get('before'),after=state['after'],items=[state['item']],verified_at=e['completed_at'],parent=key));registry[cid]=k
+    child=dict(status='verified',before=state.get('before'),after=state['after'],items=[state['item']],verified_at=e['completed_at'],parent=key)
+    if io.get(k) is None:
+     if not io.create(k,child):raise RuntimeError('Concurrent execution receipt')
+    else:io.put(k,child)
+    registry[cid]=k
   io.put('china_agent:verified_campaign_state:v1',registry)
  return e
 def process(io):
@@ -254,11 +259,16 @@ def process(io):
   if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']) and not io.get(E+p['plan_id']):
    io.put(A+p['plan_id'],dict(a,status='expired'));continue
   try:e=execute(io,a,p)
-  except (ValueError,RuntimeError) as error:e=dict(status='blocked',items=[],reason=str(error))
+  except (ValueError,RuntimeError) as error:
+   e=io.get(E+p['plan_id']) or dict(status='blocked',items=[])
+   e=dict(e,post_execution_error=str(error))
+   if not e.get('items'):e['reason']=str(error)
+  if e.get('status')=='running':continue
   lines=['Результат рекламного плана:']
   for s in e.get('items',[]):
    i=s['item'];label=i['article']+' · РК '+str(s.get('campaign_id') or i.get('campaign_id'))
    lines.append(label+(': '+format(i['old_minor']/100,'.2f')+' → '+format(i['target_minor']/100,'.2f')+' ¥ — ' if i['kind']=='ad_raise_bid' else ': ')+('уже выполнено, повтор не нужен' if s.get('already_done') else 'создан поисковый черновик; без пополнения/запуска' if s['status']=='verified' and i['kind']=='ad_create_search_draft' else 'выполнено, проверено WB' if s['status']=='verified' else 'не завершено: '+s.get('reason',s['status'])))
+  if e.get('post_execution_error'):lines.append('Ошибка сохранения журнала: '+e['post_execution_error'])
   if e.get('reason'):lines.append('Блокер: '+e['reason'])
   if len(e.get('items',[]))<len(p['items']):lines.append('Оставшиеся действия не выполнялись.')
   text='\n'.join(lines)

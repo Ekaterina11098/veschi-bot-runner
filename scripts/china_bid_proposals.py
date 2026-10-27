@@ -81,6 +81,9 @@ def candidates(w,view,economy,nm_ids=()):
    nm=n['nm_id']
    if wanted and nm not in wanted:continue
    try:
+    protected=(w.get(POLICY) or {}).get('protected_pending_nm_ids',[])
+    if nm in protected and (not (w.get(POLICY) or {}).get('protected_pending_until') or w.now<timestamp(w.get(POLICY)['protected_pending_until'])):raise ValueError('Уже есть подтверждаемый план; не дублировать товар')
+    if any(x.get('nm')==nm and x.get('kind')=='bid' and x.get('cid')!=c['id'] and timestamp(x.get('at')) and timestamp(x['at']).astimezone(MSK).date()==w.now.astimezone(MSK).date() for x in view['changes']):raise ValueError('Сегодня ставку товара уже изменяли; не повторять в другой РК')
     econ=economics(economy,nm)
     from china_experience import assess_candidate
     context=economy.get('experience') or {}
@@ -97,20 +100,22 @@ def candidates(w,view,economy,nm_ids=()):
     if any(d not in values for d in full):raise ValueError('Рекламная статистика полных дней неполна')
     past={k:sum(values[d][k] for d in full) for k in ['spend','amount','orders','clicks']}
     test_mode=(w.get(POLICY) or {}).get('allow_small_sample_test') is True
-    if past['amount']<=0 or past['orders']<(1 if test_mode else 3) or past['clicks']<(1 if test_mode else 20) or past['spend']<=0:raise ValueError('Недостаточная собственная рекламная выборка')
-    drr=past['spend']/past['amount']*100
-    if drr>=4:raise ValueError('Недостаточный запас до цели ДРР5%')
+    policy=w.get(POLICY) or {}
+    traffic_test=test_mode and policy.get('allow_low_traffic_test') is True and past['amount']==0 and past['orders']==0 and past['clicks']<=20 and past['spend']<=min(5,.025*econ['seller_price_cny'])
+    if not traffic_test and (past['amount']<=0 or past['orders']<(1 if test_mode else 3) or past['clicks']<(1 if test_mode else 20) or past['spend']<=0):raise ValueError('Недостаточная собственная рекламная выборка')
+    drr=past['spend']/past['amount']*100 if past['amount'] else None
+    if drr is not None and drr>4:raise ValueError('Недостаточный запас до цели ДРР5%')
     if econ['finished']<(3 if test_mode else 5):raise ValueError('Малая завершённая выборка выкупа')
-    today=values.get(view['day']);tdrr=today['spend']/today['amount']*100 if today and today['amount'] else None
+    today=None if policy.get('selection_completed_days_only') is True else values.get(view['day']);tdrr=today['spend']/today['amount']*100 if today and today['amount'] else None
     if tdrr is not None and tdrr>5:raise ValueError('Сегодня ДРР выше5%')
     if today and not today['amount'] and today['spend']>=econ['seller_price_cny']*.05:raise ValueError('Сегодня существенный расход без рекламных заказов')
     if changes and changes[-1]['kind']=='bid' and changes[-1].get('old',0)>changes[-1].get('target',0) and len(full)<3:raise ValueError('После снижения ставки сначала три полных дня проверки, не повторять прежнее повышение')
     old=n.get('bids_kopecks',{}).get(zone)
     if type(old)is not int or old<=0:raise ValueError('Текущая ставка неизвестна')
-    rows.append(dict(campaign_id=c['id'],nm_id=nm,article=econ['article'],placement=zone,current_minor=old,economics=econ,previous_full_days=past,previous_drr=round(drr,2),today=today,today_drr=round(tdrr,2) if tdrr is not None else None,decision_days=full,last_change=changes[-1] if changes else None,small_sample=past['orders']<3 or past['clicks']<20 or econ['finished']<5))
+    rows.append(dict(campaign_id=c['id'],nm_id=nm,article=econ['article'],placement=zone,current_minor=old,economics=econ,previous_full_days=past,previous_drr=round(drr,2) if drr is not None else None,today=today,today_drr=round(tdrr,2) if tdrr is not None else None,decision_days=full,three_day_metrics={k:sum(values[d][k] for d in dates if d in values) for k in ['spend','amount','orders','clicks']},three_day_available=[d for d in dates if d in values],last_change=changes[-1] if changes else None,small_sample=past['orders']<3 or past['clicks']<20 or econ['finished']<5,traffic_test=traffic_test))
    except (ValueError,KeyError,TypeError) as ex:
     blocked.append(dict(nm_id=nm,article=labels.get(nm,'WB '+str(nm)),reason=str(ex)))
- rows.sort(key=lambda r:(-r['previous_full_days']['orders'],r['previous_drr']))
+ rows.sort(key=lambda r:(-r['previous_full_days']['orders'],r['previous_drr'] if r['previous_drr'] is not None else 1000))
  # A product may be in search and recommendations. Propose one placement per product.
  unique=[];seen=set()
  for r in rows:
@@ -160,7 +165,7 @@ def prepare(w,job,nm_ids=(),raise_percent=None,count=None,refresh=None):
   from china_cloud_cost_control import WB
   io=IO();wb=WB()
   cs=wb.campaigns(ids)
-  stat=wb.req('/adv/v3/fullstats?ids='+','.join(map(str,ids))+'&beginDate='+str(w.now.astimezone(MSK).date()-timedelta(days=3))+'&endDate='+view['day'])
+  stat=wb.req('/adv/v3/fullstats?ids='+','.join(map(str,ids))+'&beginDate='+str(w.now.astimezone(MSK).date()-timedelta(days=3))+'&endDate='+(str(w.now.astimezone(MSK).date()-timedelta(days=1)) if policy.get('selection_completed_days_only') is True else view['day']))
   cfg=io_config(io)
   prices=io.prices([str(r['nm_id']) for r in selected])
   stock=fresh_stock(economy,[r['article'] for r in selected])
@@ -198,11 +203,13 @@ def prepare(w,job,nm_ids=(),raise_percent=None,count=None,refresh=None):
   items.append(dict(kind='ad_raise_bid',campaign_id=r['campaign_id'],nm_id=r['nm_id'],article=r['article'],placement=r['placement'],old_minor=old,target_minor=target,minimum_minor=minimum,economics=r['economics'],evidence=r,test_additional_cny=20))
  if not items:return dict(status='blocked',items=[],blocked=blocked[:12],note='После свежей проверки готовых повышений нет')
  pid='dialog-ads-'+str(job['id'])+'-raise';created=iso()
- plan=dict(plan_id=pid,execution_kind='advertising_dialog_v1',job_id=job['id'],sender_id=job['sender_id'],chat_id=job['chat_id'],bot_id=8780468043,items=items,plan_sha256=digest(items),created_at=created,expires_at=(datetime.now(timezone.utc)+timedelta(hours=2)).isoformat(),report_message_ids=[],blocked=blocked[:12],source_observed_at=fresh['observed_at'],price_changes=False,budget_writes=False,raise_percent=percent)
+ plan=dict(plan_id=pid,execution_kind='advertising_dialog_v1',job_id=job['id'],sender_id=job['sender_id'],chat_id=job['chat_id'],bot_id=8780468043,items=items,plan_sha256=digest(items),created_at=created,expires_at=(datetime.now(timezone.utc)+timedelta(hours=2)).isoformat(),report_message_ids=[],blocked=blocked[:12],source_observed_at=fresh['observed_at'],price_changes=False,budget_writes=False,raise_percent=percent,decision_basis='completed_days_only' if policy.get('selection_completed_days_only') is True else 'completed_days_plus_current_observation')
  lines=['Предлагаю повысить ставки на '+format(percent,'g')+'% (округление по шагу WB):']
  for i in items:
   r=i['evidence'];past=r['previous_full_days'];today=r['today'];t='нет заказов' if r['today_drr'] is None and today else 'нет свежих данных' if today is None else str(r['today_drr'])+'%'
-  lines.append(i['article']+' · РК'+str(i['campaign_id'])+' '+('поиск' if i['placement']=='search' else 'рекомендации')+': '+format(i['old_minor']/100,'.2f')+' → '+format(i['target_minor']/100,'.2f')+' ¥; полных дней '+str(len(r['decision_days']))+': '+str(past['orders'])+' заказов, ДРР '+str(r['previous_drr'])+'%; сегодня '+t+('. Тест: малая выборка.' if r.get('small_sample') else '.'))
+  metric=(str(r['previous_drr'])+'%' if r['previous_drr'] is not None else 'нет заказов, не определена')
+  today_note='' if policy.get('selection_completed_days_only') is True else '; сегодня '+t
+  lines.append(i['article']+' · РК'+str(i['campaign_id'])+' '+('поиск' if i['placement']=='search' else 'рекомендации')+': '+format(i['old_minor']/100,'.2f')+' → '+format(i['target_minor']/100,'.2f')+' ¥; полных дней '+str(len(r['decision_days']))+': '+str(past['orders'])+' заказов, ДРР '+metric+today_note+('. Тест получения трафика.' if r.get('traffic_test') else '. Тест: малая выборка.' if r.get('small_sample') else '.'))
  if len(items)<n:lines.append('Подошло '+str(len(items))+' из запрошенных '+str(n)+': остальные не прошли историю, экономику или свежие результаты.')
  lines+=['Срез '+fresh['observed_at']+'. Экономика предварительная: собственный выкуп/COGS/историческая логистика; FX12, налог5%, обработка10₽ — допущения; общие удержания могут быть неполны. Нет гарантии ДРР5% или роста заказов.','Ответьте «делай» или «поднимай» на это сообщение. Выполню только указанные ставки, затем проверю WB. Пополнений и пауз нет.','План рекламы: '+pid]
  plan['text']='\n'.join(lines)
@@ -227,11 +234,14 @@ def freeze_plan(plan):
  rows=[]
  for i in plan['items']:
   r=i['evidence'];own=i['economics']
-  rows.append([i['article']+'\nРК '+str(i['campaign_id'])+' · '+('поиск' if i['placement']=='search' else 'рекомендации'),format(i['old_minor']/100,'.2f')+' → '+format(i['target_minor']/100,'.2f'),str(r['previous_drr'])+'%\n'+str(len(r['decision_days']))+' полных дня',str(r['today_drr'])+'%' if r['today_drr'] is not None else 'Нет заказов' if r['today'] else 'Нет данных',str(own['paid'])+'/'+str(own['finished'])+'; прогноз '+str(own['expected_cny_at5'])+' ¥/заказ'])
- blobs=render(['Артикул / РК','Ставка, ¥','ДРР периода','ДРР сегодня','Свой выкуп / экономика'],rows,'Китай · точный план ставок')
+  metrics=r.get('three_day_metrics') or r['previous_full_days'];days=r.get('three_day_available') or r['decision_days']
+  drr=str(round(100*metrics['spend']/metrics['amount'],2))+'%' if metrics['amount'] else 'Нет заказов'
+  period=days[0][5:]+'–'+days[-1][5:]+(' (не все3дня)' if len(days)<3 else '')
+  rows.append([i['article']+'\nРК '+str(i['campaign_id'])+' · '+('поиск' if i['placement']=='search' else 'рекомендации'),format(i['old_minor']/100,'.2f')+' → '+format(i['target_minor']/100,'.2f'),period+'\n'+format(metrics['spend'],'.2f')+' ¥ / '+str(metrics['orders'])+' зак. / '+str(metrics['clicks'])+' кл.\nДРР '+drr,('Тест трафика' if r.get('traffic_test') else 'Малая выборка' if r.get('small_sample') else 'Заказы есть')+'\nПосле изменения: '+str(len(r['decision_days']))+' полн. дня; ДРР '+(str(r['previous_drr'])+'%' if r['previous_drr'] is not None else 'не определена'),str(own['paid'])+'/'+str(own['finished'])+'; прогноз '+str(own['expected_cny_at5'])+' ¥/заказ'])
+ blobs=render(['Артикул / РК','Ставка, ¥','Завершённый период','Основание теста','Свой выкуп / экономика'],rows,'Китай · точный план ставок · без данных сегодня')
  plan['proposal_files']=[dict(data=base64.b64encode(b).decode(),sha256=hashlib.sha256(b).hexdigest()) for b in blobs]
  plan['delivery_text']='\n[[ПРЕДЛОЖЕНИЯ]]\n'.join(PNG_PREFIX+plan['plan_id']+':'+str(i) for i in range(len(blobs)))
- plan['caption']='План '+str(len(plan['items']))+' товаров, все страницы вместе. Срез '+plan['source_observed_at']+'. Экономика — предварительная, FX12/налог5%/обработка10₽ — допущения; нет гарантии ДРР5%. Ответьте «делай» или «поднимай» на любой PNG этого плана. Выполню только показанные ставки.\nПлан рекламы: '+plan['plan_id']
+ plan['caption']='План '+str(len(plan['items']))+' товаров, все страницы вместе. Срез '+plan['source_observed_at']+'. Только полные дни; сегодня не используется. Нет заказов ≠ ДРР0%. Тесты трафика не доказали эффективность. Экономика — предварительная, FX12/налог5%/обработка10₽ — допущения; нет гарантии ДРР5%. Ответьте «делай» или «поднимай» на любой PNG этого плана. Выполню только показанные ставки.\nПлан рекламы: '+plan['plan_id']
 def photo(w,chat,text):
  if not text.startswith(PNG_PREFIX):return None
  import base64,hashlib

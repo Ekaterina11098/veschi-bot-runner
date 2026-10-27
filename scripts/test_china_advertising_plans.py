@@ -65,7 +65,11 @@ class ExecTests(unittest.TestCase):
  def setup_io(self):
   w=W();v=plan(w);v['expires_at']='2036-10-26T16:00:00+00:00';v['items'][0]['economics']=dict(seller_price_cny=100,cogs_kopecks=1000);v['plan_sha256']=digest(v['items']);w.mem[p.P+v['plan_id']]=v;p.bind(w,v['text'],71)
   w.validate_owner=lambda a:None
-  w.put=lambda k,x:w.save(k,x)
+  def put(k,x):
+   if k not in w.mem:raise RuntimeError('State readback mismatch')
+   return w.save(k,x)
+  w.mem['china_agent:verified_campaign_state:v1']={}
+  w.put=put
   w.create=lambda k,x:w.save(k,x,insert=True)
   w.prices=lambda ids:{'100':dict(vendorCode='one-bag',currencyIsoCode4217='CNY',sizes=[dict(discountedPrice=100)])}
   a=dict(plan_id=v['plan_id'],plan_sha256=v['plan_sha256'],reply_message_id=71)
@@ -99,3 +103,4 @@ class ExecTests(unittest.TestCase):
   self.assertEqual(result['items'][0]['after']['nm_settings'][1]['bids_kopecks']['recommendations'],40)
 
 if __name__=='__main__':unittest.main()
+

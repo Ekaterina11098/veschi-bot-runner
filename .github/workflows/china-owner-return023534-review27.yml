@@ -1,8 +1,5 @@
 name: Owner read-only return023534 review27Oct
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/china-owner-return023534-review27.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   review:
+    if: ${{ false }} # Requested read-only check completed; preserve audit.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

@@ -14,6 +14,7 @@ def run():
  if (io.get('china_agent:advertising_delivery:'+day+':v1') or {}).get('status')=='delivered':
   print(json.dumps(dict(status='already_delivered',day=day,telegram_calls=0,wb_writes=0)));return
  key='china_agent:advertising_artifacts:'+day+':v2';saved=io.get(key)
+ if not saved and os.environ.get('CHINA_AD_FROZEN_ONLY')=='true':raise ValueError('Morning preparation missing; delivery stage cannot collect WB data')
  if not saved:
   from china_advertising_v2 import prepare,VERSION
   from china_advertising_v2_png import render as render_grouped
@@ -25,9 +26,9 @@ def run():
    images.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))
   saved=dict(day=day,status='frozen',presentation=bundle.get('presentation'),bundle=bundle,files=images,wb_writes=0)
   if not io.create(key,saved):saved=io.get(key)
+ if saved.get('day')!=day or saved.get('status')!='frozen':raise ValueError('Frozen image scope invalid')
  if prepare_only:
   print(json.dumps(dict(status='prepared',day=day,telegram_calls=0,wb_writes=0)));return
- if saved.get('day')!=day or saved.get('status')!='frozen':raise ValueError('Frozen image scope invalid')
  from china_daily_ad_actions import bind
  files=[]
  for f in saved['files']:

@@ -120,5 +120,16 @@ class InvalidatedPlanTests(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'invalidated'):
    execute(cache,{},dict(invalidated_at='2026-10-27T05:00:00Z'))
 
+class FrozenDeliveryTests(unittest.TestCase):
+ def test_delivery_stage_cannot_fall_back_to_marketplace_collection(self):
+  import os,china_advertising_daily as daily
+  from test_china_advertising_v2 import Fake
+  class Clock(datetime):
+   @classmethod
+   def now(cls,tz=None):return datetime(2026,10,28,7,30,tzinfo=__import__('zoneinfo').ZoneInfo('Europe/Moscow'))
+  with patch.dict(os.environ,{'GITHUB_REPOSITORY':'Ekaterina11098/veschi-bot-runner','GITHUB_REF':'refs/heads/main','CHINA_AD_FROZEN_ONLY':'true'}),patch.object(daily,'datetime',Clock),patch.object(daily,'IO',return_value=Fake()),patch('china_advertising_v2.prepare') as collect,patch.object(daily,'telegram_sender') as send:
+   with self.assertRaisesRegex(ValueError,'preparation missing'):daily.run()
+   collect.assert_not_called();send.assert_not_called()
+
 if __name__=='__main__':unittest.main()
 

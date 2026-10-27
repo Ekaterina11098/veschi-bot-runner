@@ -2,7 +2,7 @@
 import os,json
 from datetime import datetime,timezone
 from china_cloud_cost_control import Cache,WB,validate_identity
-KEY='china_agent:owner_budget_check:2026-10-27:1233:v1'
+KEY='china_agent:owner_budget_check:2026-10-27:manual-refresh:v1'
 class ReadWB(WB):
  def req(self,path,method='GET',body=None,write=False):
   if write:raise PermissionError('Budget audit read-only')

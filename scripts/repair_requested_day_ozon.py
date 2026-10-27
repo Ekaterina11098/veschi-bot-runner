@@ -38,11 +38,11 @@ for act in acts():
    if not existing:
     if inflight=="salesreturn":
      parent=m.href(state["documents"]["demand"])
-     linked=[d for d in worker.ms_rows("entity/salesreturn") if m.href(d.get("demand",{}))==parent]
+     linked=[d for d in worker.ms_rows("entity/salesreturn",{"filter":"agent="+m.href(config["templates"]["salesreturn"]["agent"])}) if m.href(d.get("demand",{}))==parent]
      if linked:raise m.Stop("Existing linked manual return requires reconciliation")
     elif inflight=="demand":
      parent=m.href(state["documents"]["customerorder"])
-     linked=[d for d in worker.ms_rows("entity/demand") if m.href(d.get("customerOrder",{}))==parent]
+     linked=[d for d in worker.ms_rows("entity/demand",{"filter":"agent="+m.href(config["templates"]["demand"]["agent"])}) if m.href(d.get("customerOrder",{}))==parent]
      if linked:raise m.Stop("Existing linked manual demand requires reconciliation")
     else:
      for name in [worker.order_name,worker.order_name+" "+str(act["id"])]:

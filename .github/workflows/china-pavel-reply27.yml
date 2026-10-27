@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   reply:
+    if: ${{ false }} # Owner reply326 confirmed; dated one-off closed.
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:

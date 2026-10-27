@@ -44,7 +44,7 @@ def revise_midday_bundle(bundle,source,records):
     if started:dates.append(datetime.fromisoformat(started.replace('Z','+00:00')).astimezone(MSK).date())
     review=max(dates)+timedelta(days=2)
     notes.append(action['article']+': сохраняем до завершения полного дня; оценка '+review.strftime('%d.%m')+'.')
-   row['post_change_note']='\\n'.join(notes)
+   row['post_change_note']=' '.join(notes)
  out['correction']=dict(rule='full_following_msk_day_v2',removed_actions=removed)
  return out
 

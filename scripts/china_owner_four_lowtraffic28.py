@@ -4,15 +4,20 @@ from datetime import datetime,timezone
 import requests
 _original_get=requests.get
 def read_get(*args,**kwargs):
+ if args and str(args[0]).startswith('https://api.moysklad.ru/'):
+  kwargs['headers']=dict(kwargs.get('headers') or {},**{'Accept-Encoding':'gzip'})
  for attempt in range(3):
-  try:return _original_get(*args,**kwargs)
+  try:
+   result=_original_get(*args,**kwargs)
+   if args and str(args[0]).startswith('https://api.moysklad.ru/') and not result.ok:raise ValueError('MoySklad HTTP '+str(result.status_code))
+   return result
   except (requests.exceptions.ConnectionError,requests.exceptions.Timeout):
    if attempt==2:raise
    time.sleep(2*(attempt+1))
 requests.get=read_get
 from china_cloud_cost_control import Cache,WB,validate_identity,projection,stamp,counts
 from china_bid_proposals import fresh_stock
-ROOT='china_agent:owner_four_lowtraffic28:2026-10-28:v1'
+ROOT='china_agent:owner_four_lowtraffic28:2026-10-28:v2'
 PLAN=ROOT+':plan'
 SCOPE=[dict(campaign_id=41296359,nm_id=1473245515,article='154-ReginaBag-green',placement='recommendations',old_minor=28,target_minor=34),dict(campaign_id=41296359,nm_id=1473246048,article='642-MelanieBag-beige',placement='recommendations',old_minor=28,target_minor=34),dict(campaign_id=41155824,nm_id=1473244996,article='560-HelgaBag-ginger',placement='recommendations',old_minor=28,target_minor=31),dict(campaign_id=41155824,nm_id=1473244997,article='568-HelgaBag-black',placement='recommendations',old_minor=28,target_minor=31)]
 HASH='1974df9239b4f19dec9ef2fca0366c11cb9991280e3bd40c350c69d117cb20d8'
@@ -43,6 +48,8 @@ def run():
   if aa.get('status')!='approved' or aa.get('owner_user_id')!=5122667182 or aa.get('source_channel')!='codex' or aa.get('plan_key')!=PLAN:raise ValueError('Exact current human approval missing')
   if (c.get(PLAN) or {}).get('status')!='approved':raise ValueError('Plan not executable')
  auth()
+ previous=c.get('china_agent:owner_four_lowtraffic28:2026-10-28:v1:execution') or {}
+ if previous.get('status')!='blocked' or previous.get('wb_writes')!=0 or previous.get('steps'):raise ValueError('Recovery not safe: original write unresolved')
  if hashlib.sha256(json.dumps(SCOPE,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()!=HASH:raise ValueError('Internal scope hash changed')
  old=c.get(ROOT+':execution')
  if old:print(json.dumps(dict(status=old.get('status'),existing=True)));return

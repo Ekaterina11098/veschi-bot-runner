@@ -1,1 +1,1 @@
-{"date":"2026-10-28","scope":[41296359,41155824],"purpose":"Owner requested each-SKU diagnostic, reads only","wb_writes":0,"telegram_sends":0}
+{"date":"2026-10-28","scope":[41296359,41155824],"purpose":"Fill budget and minimum read stages only; keep original snapshot","attempt":2,"wb_writes":0}

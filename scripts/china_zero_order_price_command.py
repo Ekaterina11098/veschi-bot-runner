@@ -53,7 +53,7 @@ def validate_command(io,a,j):
 
 def status_answer(w,job,history):
  text=job.get('request_text','')
- clarification=bool(re.search(r'^(?:не понимаю|что значит проверено|что именно проверено)[?!. ]* and any(re.search(r'цен|zero_order_price',str(x.get('request_text',''))+str(x.get('tool_trace',[])),re.I) for x in history[-2:])
+ clarification=bool(re.fullmatch(r'(?:не понимаю|что значит проверено|что именно проверено)[?!. ]*',text.strip(),re.I)) and any(re.search(r'цен|zero_order_price',str(x.get('request_text',''))+str(x.get('tool_trace',[])),re.I) for x in history[-2:])
  if not (re.search(r'цен',text,re.I) and re.search(r'поднял|повысил|изменил|выполн|готов|сделал',text,re.I) or clarification):return None
  rows=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+ROOT+'*','select':'cache_key,payload->status,payload->approval_key,payload->execution_key,payload->cohort,payload->rows','order':'updated_at.desc','limit':20}) or []
  rows=[r for r in rows if re.fullmatch(re.escape(ROOT)+r'\d+',r['cache_key'])]

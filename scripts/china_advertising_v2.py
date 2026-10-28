@@ -224,9 +224,10 @@ def guard_sku_exclusion(row, evidence, context, report_day):
   except (ValueError,TypeError,KeyError):return False
  if not evidence or not fresh(evidence.get('observed_at')):blockers.append('нет свежей собственной экономики')
  if evidence.get('stock_free') is None or not fresh(evidence.get('stock_observed_at')):blockers.append('нет свежего остатка за вычетом резерва')
- if evidence.get('expected_margin_before_ads_cny') is None: blockеr='не рассчитан запас маржи до рекламы';blockers.append(blockеr)
+ if evidence.get('expected_margin_before_ads_cny') is None:blockers.append('не рассчитан запас маржи до рекламы')
  if evidence.get('sample_reliable') is not True:blockers.append('малая или отсутствующая выкупная выборка')
  post=(row.get('comparison') or {}).get('after') or row['period']
+ if isinstance(evidence.get('expected_margin_before_ads_cny'),(int,float)) and evidence['expected_margin_before_ads_cny']>0 and post.get('spend',0)<evidence['expected_margin_before_ads_cny']:blockers.append('расход ещё меньше предварительной маржи одного заказа')
  if post.get('clicks',0)<100:blockers.append('мало кликов для автоматического исключения')
  if context.get('other_sku_orders',0)>0 and evidence.get('entry_sku_attribution_verified') is not True:
   blockers.append('заказы других товаров нельзя распределить между входными SKU')

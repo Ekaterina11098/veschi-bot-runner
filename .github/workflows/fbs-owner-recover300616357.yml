@@ -1,0 +1,28 @@
+name: Owner recover FBS WB-GI-300616357
+on:
+  push:
+    branches: [main]
+    paths: ['ops/fbs-owner-recover300616357.json']
+permissions:
+  contents: read
+jobs:
+  recover:
+    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    concurrency:
+      group: fbs-document-chain-production
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m py_compile scripts/fbs_owner_recover300616357.py
+      - name: Reconcile and complete only owner-selected supply
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python scripts/fbs_owner_recover300616357.py

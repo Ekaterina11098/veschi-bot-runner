@@ -1,0 +1,30 @@
+name: Preview returned stock addition to China FBS
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/preview-returns-fbs-china-20261028.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-stock
+  cancel-in-progress: false
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read corrected transfer and live China FBS stock
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_STOCK_WAREHOUSE_3: ${{ vars.WB_STOCK_WAREHOUSE_3 }}
+        run: python scripts/preview_returns_fbs_china_20261028.py

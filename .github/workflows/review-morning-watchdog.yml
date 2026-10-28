@@ -39,3 +39,5 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           PYTHONPATH: review-approval-preparation
         run: python review_morning_watchdog.py
+
+# Resume missing morning delivery on 2026-10-28; durable state and active-run checks apply.

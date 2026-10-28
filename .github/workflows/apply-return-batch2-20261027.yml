@@ -1,0 +1,28 @@
+name: Create posted returns from verified source warehouses
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/apply-return-batch2-20261027.yml']
+permissions:
+  contents: read
+concurrency:
+  group: returns-transfer-batch2-write
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check free stock, create unique transfers, and verify posted documents
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python scripts/apply_return_batch2_20261027.py

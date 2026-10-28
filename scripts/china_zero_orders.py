@@ -6,6 +6,11 @@ MSK=ZoneInfo('Europe/Moscow');PREFIX='china_agent:zero_orders:v1:'
 def recognizes(text):
  return bool(re.search(r'без\s+заказ|не\s+имеют\s+заказ|нет\s+заказ|не\s+было\s+заказ',text,re.I))
 def period(text,now):
+ explicit=re.search(r'(\d{1,2})\s*[-–—]\s*(\d{1,2})\s*октябр',text,re.I)
+ if explicit:
+  first=date(now.astimezone(MSK).year,10,int(explicit[1]));last=date(first.year,10,int(explicit[2]))
+  if not 0<=(last-first).days<31 or last>=now.astimezone(MSK).date():raise ValueError('Нужен завершённый период 1–31 день')
+  return str(first),str(last)
  m=re.search(r'(\d+)\s*дн',text,re.I);n=int(m[1]) if m else 14
  if not 1<=n<=31:raise ValueError('Для этого отчёта нужен период 1–31 полный день')
  last=now.astimezone(MSK).date()-timedelta(days=1);return str(last-timedelta(days=n-1)),str(last)

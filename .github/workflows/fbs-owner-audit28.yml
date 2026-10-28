@@ -1,0 +1,27 @@
+name: Owner full read-only FBS audit28
+on:
+  push:
+    paths: ['ops/fbs-owner-audit28.json']
+permissions:
+  contents: read
+concurrency:
+  group: owner-fbs-read-only28
+  cancel-in-progress: false
+jobs:
+  audit:
+    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m py_compile scripts/fbs_owner_read_audit28.py
+      - name: Inspect registered documents without operational writes or notifications
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: python scripts/fbs_owner_read_audit28.py

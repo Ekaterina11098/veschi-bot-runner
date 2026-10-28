@@ -1,0 +1,28 @@
+name: Owner China sales and advertising review28
+on:
+  push:
+    branches: [main]
+    paths: ['ops/china-owner-sales-ads28.json']
+permissions:
+  contents: read
+concurrency:
+  group: owner-china-sales-ads28
+  cancel-in-progress: false
+jobs:
+  review:
+    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - run: python -m py_compile scripts/china_owner_sales_ads28.py
+      - name: Read China orders buyouts and advertising without mutations
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python scripts/china_owner_sales_ads28.py

@@ -1,0 +1,47 @@
+name: Owner Panama17 search bid28
+on:
+  push:
+    paths: ['ops/china-owner-panama17-apply28.json']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-advertising-write
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - run: python -m py_compile scripts/china_owner_panama17_apply28.py
+      - name: Check mutation scope without credentials
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          from china_owner_panama17_apply28 import validate_body
+          valid={'bids':[{'advert_id':41325622,'nm_bids':[{'nm_id':1535337780,'bid_kopecks':14,'placement':'search'}]}]}
+          validate_body(valid)
+          for field,bad in [('advert_id',41055480)]:
+              import copy
+              b=copy.deepcopy(valid);b['bids'][0][field]=bad
+              try:validate_body(b)
+              except ValueError:pass
+              else:raise AssertionError('Wrong campaign accepted')
+          for field,bad in [('nm_id',1),('bid_kopecks',35),('placement','recommendations')]:
+              b=copy.deepcopy(valid);b['bids'][0]['nm_bids'][0][field]=bad
+              try:validate_body(b)
+              except ValueError:pass
+              else:raise AssertionError('Wrong mutation accepted')
+          print('Mutation isolation checks passed')
+          PY
+      - name: Apply only approved Panama bid and verify WB before after
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: python scripts/china_owner_panama17_apply28.py

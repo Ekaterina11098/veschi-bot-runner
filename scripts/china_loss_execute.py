@@ -26,6 +26,9 @@ class IO(BaseIO):
   j=self.db('business_agent_jobs?id=eq.'+str(a['job_id'])+'&agent_id=eq.china&select=id,request_text,sender_id,chat_id,tool_trace')
   from china_advertising_plans import bid_confirmation
   confirmation=bool(j) and (is_all(j[0]['request_text']) or a.get('execution_kind')=='advertising_dialog_v1' and bid_confirmation(j[0]['request_text']))
+  if a.get('execution_kind')=='daily_selected_v1' and len(j)==1:
+   from china_daily_selected import validate
+   confirmation=bool(validate(self,a,j[0]))
   if len(j)!=1 or j[0]['sender_id']!=a['sender_id'] or j[0]['chat_id']!=CHAT or not confirmation:raise ValueError('Original command missing')
   if marker(j[0]).get('reply_message_id')!=a['reply_message_id']:raise ValueError('Reply changed')
   member=self.tg('getChatMember',dict(chat_id=CHAT,user_id=a['sender_id']))
@@ -83,6 +86,7 @@ def run():
   except Exception:io.put(delivery,dict(status='uncertain',text=body,chat_id=CHAT))
   print(json.dumps(dict(plan_id=a['plan_id'],status=e['status'],items=[dict(id=x['id'],status=x['status']) for x in e['items']]),ensure_ascii=False))
 if __name__=='__main__':run()
+
 
 
 

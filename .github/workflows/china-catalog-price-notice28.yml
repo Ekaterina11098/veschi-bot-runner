@@ -1,29 +1,11 @@
-name: Owner-requested catalog price notice28
+name: Owner-requested catalog price notice28 (closed)
 on:
-  push:
-    branches: [main]
-    paths: [.github/workflows/china-catalog-price-notice28.yml]
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: china-owner-catalog-notice
-  cancel-in-progress: false
 jobs:
-  notify:
-    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main'
+  closed:
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false, sparse-checkout: scripts}
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - run: pip install requests==2.32.5
-      - run: python -m unittest discover -s scripts -p 'test_china_catalog_price_*.py'
-      - name: Replay current agent route and send one exact verified correction
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: python scripts/china_catalog_price_notice28.py
+      - run: echo 'Requested correction delivered and receipt verified; no repeat'

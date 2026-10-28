@@ -33,13 +33,48 @@ def compute(catalogue,source,first,last):
   row['orders']=count
   (zero if count==0 else positive).append(row)
  return dict(period_from=first,period_to=last,scope='all_sources',source='WB sales funnel',source_key=source.get('source_key'),observed_at=source.get('observed_at'),collection_complete=complete,zero=zero,positive=positive,unknown=unknown,total_products=len(labels),zero_count=len(zero),positive_count=len(positive),unknown_count=len(unknown),total_orders=sum(r['orders'] for r in positive),wb_writes=0)
+def created_counts(w,first,last):
+ import os,requests,time
+ key=PREFIX+'created:'+first+':'+last;old=w.get(key)
+ if old and old.get('complete') and (datetime.now(timezone.utc)-datetime.fromisoformat(old['observed_at'])).total_seconds()<3600:return old
+ begin=datetime.combine(date.fromisoformat(first),datetime.min.time(),MSK);end=datetime.combine(date.fromisoformat(last)+timedelta(days=1),datetime.min.time(),MSK)
+ cursor=0;seen={};pages=0
+ while True:
+  response=requests.get('https://marketplace-api.wildberries.ru/api/v3/orders',params=dict(limit=1000,next=cursor,dateFrom=int(begin.timestamp()),dateTo=int(end.timestamp())),headers={'Authorization':os.environ['WB_TOKEN_3']},timeout=60)
+  if not response.ok:raise ValueError('Created orders HTTP '+str(response.status_code))
+  data=response.json();rows=data.get('orders')
+  if not isinstance(rows,list):raise ValueError('Created-order page missing')
+  pages+=1
+  for row in rows:
+   if type(row.get('nmId')) is not int or not row.get('id') or not row.get('createdAt'):raise ValueError('Created-order identity missing')
+   at=datetime.fromisoformat(row['createdAt'].replace('Z','+00:00')).astimezone(MSK)
+   if begin<=at<end:seen[row['id']]=row['nmId']
+  nxt=data.get('next')
+  if not rows or not nxt:break
+  if nxt==cursor or pages>=40:raise ValueError('Created-order pagination incomplete')
+  cursor=nxt;time.sleep(1)
+ counts={}
+ for nm in seen.values():counts[str(nm)]=counts.get(str(nm),0)+1
+ result=dict(complete=True,cabinet='token_3',scope='all_created_FBS',source='WB Marketplace created orders',source_key=key,period_from=first,period_to=last,observed_at=datetime.now(timezone.utc).isoformat(),counts=counts,total_orders=len(seen),pages=pages,includes_cancelled_created_orders=True,wb_writes=0)
+ w.save(key,result);return result
+
+def reconcile_created(report,created):
+ if not created.get('complete') or created.get('period_from')!=report['period_from'] or created.get('period_to')!=report['period_to'] or created.get('cabinet')!='token_3':raise ValueError('Created-order coverage incomplete')
+ kept=[]
+ for row in report['zero']:
+  n=created['counts'].get(str(row['nm_id']),0)
+  if n>0:report['unknown'].append(dict(nm_id=row['nm_id'],article=row['article'],orders=None,reason='В воронке 0, но созданных FBS-заказов '+str(n)))
+  else:kept.append(row)
+ report['zero']=kept;report.update(zero_count=len(kept),unknown_count=len(report['unknown']),created_orders_crosscheck=dict(source_key=created['source_key'],observed_at=created['observed_at'],total_created_orders=created['total_orders'],pages=created['pages']))
+ return report
+
 def collect(w,first,last):
  from china_wb_evidence import Reports
  source=Reports(w).funnel(first,last)
- report=compute(w.catalog(),source,first,last);w.save(PREFIX+first+':'+last,report);return report
+ report=reconcile_created(compute(w.catalog(),source,first,last),created_counts(w,first,last));w.save(PREFIX+first+':'+last,report);return report
 
 def text_report(report):
- a,b=report['period_from'],report['period_to'];lines=[f'Все заказы за {a}—{b}, 14 полных дней МСК.' if (date.fromisoformat(b)-date.fromisoformat(a)).days==13 else f'Все заказы за {a}—{b}, полные дни МСК.',f"Товаров без заказов: {report['zero_count']}. С заказами: {report['positive_count']}. Неполные данные: {report['unknown_count']}.",'Счётчик общей воронки WB: все источники, включая рекламу и органику; не только рекламные заказы и не выкупы.']
+ a,b=report['period_from'],report['period_to'];lines=[f'Все заказы за {a}—{b}, 14 полных дней МСК.' if (date.fromisoformat(b)-date.fromisoformat(a)).days==13 else f'Все заказы за {a}—{b}, полные дни МСК.',f"Товаров без заказов: {report['zero_count']}. С заказами: {report['positive_count']}. Неполные данные: {report['unknown_count']}.",'Общая воронка WB и сверка созданных FBS-заказов: реклама и органика; источники не складываются, заказы не заменяются выкупами.']
  if report['zero']:
   lines+=['','Подтверждено 0 заказов за весь период:','| Артикул | Все заказы |','|---|---|']+[f"| {r['article']} | 0 |" for r in report['zero']]
  else:lines+=['','Подтверждённых товаров с нулём заказов нет.']
@@ -77,7 +112,7 @@ def render(report):
    for i,r in enumerate(group):
     y=245+i*70;d.rounded_rectangle((20,y-3,1880,y+59),8,fill='white');d.text((35,y+9),r['article'],font=font(25),fill='#111111');d.text((950,y+9),'0' if family=='zero' else r['reason'],font=font(23),fill='#111111')
    y=260+len(group)*70
-   for i,line in enumerate([f"Без заказов: {report['zero_count']} · С заказами: {report['positive_count']} · Неполные данные: {report['unknown_count']}",'Общая воронка WB: реклама + органика; заказы не заменены выкупами.', 'Отсутствующий товар/счётчик/день не считается нулём. Изменений WB нет.', 'Срез: '+str(report['observed_at'])]):d.text((35,y+35*i),line,font=font(22),fill='#455568')
+   for i,line in enumerate([f"Без заказов: {report['zero_count']} · С заказами: {report['positive_count']} · Неполные данные: {report['unknown_count']}",'Все источники WB + сверка созданных FBS-заказов; не выкупы.', 'Отсутствующий товар/счётчик/день не считается нулём. Изменений WB нет.', 'Срез: '+str(report['observed_at'])]):d.text((35,y+35*i),line,font=font(22),fill='#455568')
    b=io.BytesIO();im.save(b,format='PNG');files.append(dict(family=family,page=page,total=len(groups),bytes=b.getvalue()))
  return files
 

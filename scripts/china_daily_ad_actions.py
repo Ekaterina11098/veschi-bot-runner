@@ -65,7 +65,7 @@ def execute(io,a,p):
   if len(j)!=1 or j[0]['advertId']!=cid or j[0]['currency']!='CNY':raise ValueError('Budget readback missing')
   return j[0]['total']
  def verified(item,state):
-  cid=item['campaign_id'];after=campaign(cid);before=state['before'];kind=item['kind']
+  cid=item['campaign_id'];after=campaign(cid);state['after']=after;before=state['before'];kind=item['kind']
   if kind=='topup_campaign':
    b=budget(cid);state['after_budget']=b
    return after['settings']==before['settings'] and after['status']==9 and b>=state['before_budget']+item['amount_cny']-2
@@ -94,10 +94,10 @@ def execute(io,a,p):
    if kind in ['topup_campaign','pause_campaign'] and sorted(n['nm_id'] for n in before['nm_settings'])!=item['nm_ids']:raise ValueError('Campaign composition changed since PNG')
    if kind in ['ad_set_bid','ad_exclude_sku']:
     selected=next((n for n in before['nm_settings'] if n['nm_id']==item['nm_id']),None)
-    if kind=='ad_exclude_sku' and selected is None:state.update(status='verified',already_done=True);save();continue
+    if kind=='ad_exclude_sku' and selected is None:state.update(status='verified',already_done=True,after=before);save();continue
     if not selected or before['settings']['payment_type']!='cpc' or before['bid_type']!='manual':raise ValueError('Product/model changed')
     zone=item['placement'];old=selected['bids_kopecks'].get(zone)
-    if kind=='ad_set_bid' and old==item['target_minor']:state.update(status='verified',already_done=True);save();continue
+    if kind=='ad_set_bid' and old==item['target_minor']:state.update(status='verified',already_done=True,after=before);save();continue
     if old!=item['old_minor']:raise ValueError('Bid changed since PNG')
     if kind=='ad_set_bid':
      if not 0<item['target_minor']<old:raise ValueError('Only exact approved bid reduction')
@@ -109,8 +109,8 @@ def execute(io,a,p):
      path='/adv/v0/auction/nms';body=dict(nms=[dict(advert_id=cid,nms=dict(add=[],delete=[item['nm_id']]))])
    elif kind=='pause_campaign':path='/adv/v0/pause?id='+str(cid);method='GET';body=None
    elif kind=='topup_campaign':
-    b=budget(cid);state['before_budget']=b;save()
-    if b>=item['target_balance']:state.update(status='verified',already_done=True);save();continue
+    b=budget(cid);state['before_budget']=b;state['after_budget']=b;save()
+    if b>=item['target_balance']:state.update(status='verified',already_done=True,after=before);save();continue
     if b>item['balance_before']+2:raise ValueError('Budget was funded after PNG; refresh plan')
     cfg=req('/api/advert/v1/config')
     if cfg['currency']!='CNY' or cfg['minTopUp']>item['amount_cny']*100:raise ValueError('Minimum topup changed')
@@ -126,23 +126,12 @@ def execute(io,a,p):
    save()
   except Exception as ex:
    state.update(status='uncertain' if state['status']=='submitting' else state['status'] if state['status']=='accepted' else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__);save()
- e['status']='done' if all(x['status'] in ['verified','blocked'] for x in e['items']) else 'attention';save();return e
-
-def process_and_deliver(io,a,p):
- e=execute(io,a,p)
- if any(x['status']=='accepted' for x in e['items']):return e
- key='china_agent:daily_ad_result:v2:'+p['plan_id'];old=io.get(key)
- if old:return e
- lines=['Результат действий по PNG:']
- for x in e['items']:
-  item=next(i for i in p['items'] if i['id']==x['id']);label=item.get('article','РК '+str(item['campaign_id']))
-  lines.append(label+': '+('уже выполнено; повтор не нужен' if x.get('already_done') else 'выполнено, проверено WB' if x['status']=='verified' else 'не выполнено: '+x.get('reason',x['status'])))
- text='\n'.join(lines)
- if not io.create(key,dict(status='sending',text=text)):return e
- try:
-  r=io.tg('sendMessage',dict(chat_id=CHAT,text=text,reply_parameters=dict(message_id=a['input_message_id'],allow_sending_without_reply=True)));io.put(key,dict(status='sent',message_id=r['message_id'],text=text))
- except Exception:io.put(key,dict(status='uncertain',text=text))
+ e['status']='done' if all(x['status'] in ['verified','blocked'] for x in e['items']) else 'attention';save()
+ from china_execution_notice import deliver_result
+ deliver_result(io,a,p,e)
  return e
 
-
+def process_and_deliver(io,a,p):
+ # execute always journals and delivers its own result, including direct recovery calls.
+ return execute(io,a,p)
 

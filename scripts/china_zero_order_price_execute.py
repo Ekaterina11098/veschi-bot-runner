@@ -124,7 +124,9 @@ def main():
    if (io.get(row['cache_key']) or {}).get('manual_review_required'):continue
    job_id=int(row['cache_key'][len(ROOT):]);prepare(io,job_id);apply(io,job_id);break
   return
- cfg=json.load(open('ops/china-price155-trigger.json'));job_id=cfg['job_id'];e=prepare(io,job_id,refresh=cfg['mode']=='refresh') if cfg['mode'] in ['prepare','refresh'] else apply(io,job_id,review=True)
+ cfg=json.load(open('ops/china-price155-trigger.json'))
+ if cfg['mode']=='verify':print('Final tests only; no marketplace or Telegram calls');return
+ job_id=cfg['job_id'];e=prepare(io,job_id,refresh=cfg['mode']=='refresh') if cfg['mode'] in ['prepare','refresh'] else apply(io,job_id,review=True)
  print(json.dumps(dict(status=e['status'],ready=len(e['selections']),blocked=[dict(article=r['selection']['article'],reason=r.get('reason')) for r in e['rows'] if r['status']=='blocked']),ensure_ascii=False))
 if __name__=='__main__':main()
 

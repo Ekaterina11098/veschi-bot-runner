@@ -1,7 +1,6 @@
 name: Owner full read-only FBS audit28
 on:
-  push:
-    paths: ['ops/fbs-owner-audit28.json']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -9,7 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   audit:
-    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

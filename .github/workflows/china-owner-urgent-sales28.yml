@@ -1,7 +1,5 @@
 name: Owner urgent sales diagnosis and usage checks28
 on:
-  push:
-    paths: ['ops/china-owner-urgent-sales28.json']
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   review:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

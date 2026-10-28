@@ -1,0 +1,107 @@
+name: Recover owner-selected positive review cards without duplicates
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-positive-recover-20261028.yml']
+permissions: {contents: read}
+concurrency:
+  group: review-positive-recover-20261028
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 18649db15489c3dc77edc22bec5a4ddc5ed6a410
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' requests==2.32.5 python-dotenv==1.1.1
+      - run: python -m unittest test_review_auto_five_star.py test_review_morning.py
+      - name: Enqueue only exact saved eligible reviews; no WB or Telegram calls
+        env:
+          PYTHONPATH: private-source:review-approval-preparation
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python - <<'PY'
+          import os,json,time,hmac,hashlib,psycopg
+          from review_telegram_approval import Approval,Repository,sha,identity
+          from review_approval_bridge import SQLSource,DurableBridge,reply_key
+          from review_auto_five_star import CONFIG_KEY,enqueue,classify
+          from review_durable_workflow import DurableReviews
+          from review_queue import _request
+          root=os.environ['SUPABASE_SECRET_KEY'].encode()
+          pw=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
+          with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=pw,sslmode='require',autocommit=True,connect_timeout=15) as conn:
+              repo=Repository(conn,postgres=True);source=SQLSource(conn)
+              cfg=source.read('reviews:telegram-approval:config:v1')
+              app=Approval(repo,'automatic-policy-only',str(cfg['owner_id']),str(cfg['chat_id']),str(cfg['bot_id']),enabled=True)
+              app.chat=app.delivery_chat();bridge=DurableBridge(app,source);store=DurableReviews(_request)
+              policy=source.read(CONFIG_KEY);report=[]
+              deadline=time.monotonic()+1800
+              while time.monotonic()<deadline:
+                  health=repo.get('events','approved-worker:health:v1') or {}
+                  if all((repo.get('events','approved-worker:health:v1:'+cab) or {}).get('auto_policy_code_version')=='positive-descriptions-20261028' for cab in ('token_1','token_2','token_3')) and (repo.get('events','reviews-morning:2026-10-28') or {}).get('status')=='complete':break
+                  time.sleep(5)
+              else:raise RuntimeError('Fixed publisher not yet active; no intents created')
+              from review_telegram_runtime import TelegramTransport
+              plan=repo.get('events','positive-auto-recovery:20261028:v1:plan')
+              if plan is None:
+                  state=repo.get('events','reviews-morning:2026-10-28') or {}
+                  targets=[]
+                  for card_id,card_payload in repo.execute('SELECT id,payload FROM {p}cards').fetchall():
+                      card=json.loads(card_payload)
+                      if not card.get('version','').startswith('morning-2026-10-28-') or card.get('status')!='awaiting' or card.get('kind')!='feedbacks':continue
+                      cabinet=card['cabinet'];scope=state.get('scopes',{}).get(cabinet,{})
+                      raw=next((x for x in scope.get('items',[]) if str(x.get('id'))==card['item_id']),None)
+                      if raw and classify(raw)['eligible']:
+                          targets.append({k:card[k] for k in ('cabinet','item_id','version','source','chat_id','message_id')} | {'card_token':card_id})
+                  plan=dict(authorization_ref='owner-chat-auto-positive-cleanup:20261028:v1',targets=targets,created_at=time.time())
+                  with repo.transaction():repo.put('events','positive-auto-recovery:20261028:v1:plan',plan)
+              if plan.get('authorization_ref')!='owner-chat-auto-positive-cleanup:20261028:v1':raise RuntimeError('Owner selection required')
+              tg=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN'])
+              for target in plan['targets']:
+                  cabinet=target['cabinet'];ident=target['item_id']
+                  entry=dict(cabinet=cabinet,item_id=ident,card_token=target['card_token'])
+                  try:
+                      old=repo.get('cards',target['card_token'])
+                      if not old or any(old.get(k)!=target.get(k) for k in ('version','source','chat_id','message_id')):raise RuntimeError('Selected card changed')
+                      state=repo.get('events','reviews-morning:2026-10-28') or {}
+                      scope=state.get('scopes',{}).get(cabinet,{})
+                      item=next((x for x in scope.get('items',[]) if x.get('id')==ident),None)
+                      if not item or time.time()-scope.get('observed_at',0)>4*3600 or not classify(item)['eligible']:raise RuntimeError('Fresh eligible source required')
+                      if old.get('status')=='awaiting':
+                          result=enqueue(app,bridge,store,item,cabinet,'positive-cleanup-20261028-'+sha([cabinet,ident])[:12],scope['observed_at'],policy,adopt_existing=True)
+                          entry.update(result)
+                      else:entry['status']='existing'
+                      old=repo.get('cards',target['card_token'])
+                      replacement=repo.get('cards',old.get('superseded_by','')) or {}
+                      current=repo.get('items',old['ref']) or {}
+                      if old.get('status')=='superseded' and replacement.get('delivery_mode')=='automatic_policy' and current.get('token')==old.get('superseded_by') and current.get('status') in ('approved','sent'):
+                          key='telegram-cleanup:'+str(target['chat_id'])+':'+str(target['message_id'])
+                          receipt=repo.get('events',key) or {}
+                          if receipt.get('status')!='confirmed':
+                              response=tg.call('deleteMessage',dict(chat_id=target['chat_id'],message_id=target['message_id']))
+                              if response is not True and not (isinstance(response,dict) and response.get('ok') is True):raise RuntimeError('Deletion unconfirmed')
+                              receipt=dict(status='confirmed',chat_id=target['chat_id'],message_id=target['message_id'],checked_at=time.time(),authorization_ref=plan['authorization_ref'],run_id=os.getenv('GITHUB_RUN_ID'))
+                              with repo.transaction():
+                                  repo.put('events',key,receipt);old['telegram_card_removal']=receipt;repo.put('cards',target['card_token'],old)
+                          entry['telegram_removed']=True
+                  except Exception as exc:entry.update(error=type(exc).__name__,status='needs_inspection')
+                  report.append(entry)
+                  with repo.transaction():repo.put('events','positive-auto-recovery:20261028:v1:result',dict(results=report,checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),wb_writes=0))
+              print(json.dumps(dict(queued=sum(x.get('status')=='queued' for x in report),removed=sum(x.get('telegram_removed') is True for x in report),errors=sum(bool(x.get('error')) for x in report))))
+              if any(x.get('error') for x in report):raise RuntimeError('Some selected cards require inspection')
+          PY

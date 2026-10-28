@@ -1,0 +1,39 @@
+name: Owner urgent sales diagnosis and usage checks28
+on:
+  push:
+    paths: ['ops/china-owner-urgent-sales28.json']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: owner-china-urgent-sales28
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - run: python -m py_compile scripts/china_analytic_dialog.py scripts/conversion_watches.py scripts/china_model_usage.py
+      - run: PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_model_usage.py -v
+      - name: Verify private usage persistence without calling model
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          from china_model_usage import record,persist
+          v=record({'model':'fixture-no-api-call','input':[]},{'id':'usage_smoke_20261028','status':'test','usage':{'input_tokens':0,'output_tokens':0,'total_tokens':0}},{'synthetic':True,'stage':'storage_smoke','task_type':'test'},0)
+          assert persist(v),'Usage ledger storage failed'
+          print('Private synthetic usage receipt stored; no model, WB or Telegram calls')
+          PY
+      - name: Read urgent China sales and advertising
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python scripts/china_owner_urgent_sales28.py

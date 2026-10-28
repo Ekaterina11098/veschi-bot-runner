@@ -64,7 +64,14 @@ def status_text(p):
 def handle(w,job,history):
  text=job.get('request_text','');parsed=resolve(text,history)
  today=w.now.astimezone(ZoneInfo('Europe/Moscow')).date().isoformat();key=ROOT+today;p=w.get(key)
+ if parsed is not None and parse(text) is None and not p:
+  return 'Для этого уточнения нет текущего ценового плана. Старое повышение автоматически не повторяю.',[dict(name='catalog_price_command',status='missing_current_plan')]
+ if parsed is not None and re.fullmatch(r'все\s+товары\s*\+\s*\d+(?:[.,]\d+)?\s*%',text.strip(),re.I) and not p and not any(re.search(r'цен',h.get('request_text',''),re.I) and parse(h.get('request_text','')) for h in history):
+  return 'Уточни, речь о ценах товаров или о рекламных ставках?',[dict(name='catalog_price_command',status='ambiguous_price_scope')]
  if parsed is None:
+  if not p and re.search(r'поднял.*цен|цен.*поднял|статус.*цен',text,re.I) and hasattr(w,'db'):
+   recent=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+ROOT+'*','select':'payload','order':'updated_at.desc','limit':3}) or []
+   if recent:p=recent[0]['payload']
   if p and re.search(r'как\s+там.*задач|поднял.*цен|цен.*поднял|статус.*цен',text,re.I):return status_text(p),[dict(name='catalog_price_status',command_key=key,status=p['status'])]
   return None
  if not w.authorized(job):return 'Изменять цены могут только действующие участники этой группы.',[dict(name='catalog_price_command',status='unauthorized')]

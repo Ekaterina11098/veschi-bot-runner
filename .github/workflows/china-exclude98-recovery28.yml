@@ -28,3 +28,5 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           PYTHONPATH: scripts
         run: python scripts/china_owner_exclude98_28.py
+
+# Recovery revision2: include the original command timestamp; no WB write occurred in revision1.

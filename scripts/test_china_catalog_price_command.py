@@ -17,6 +17,10 @@ class Tests(unittest.TestCase):
  def test_real_full_request(self):self.assertEqual(parse(FULL),dict(kind='catalog',percent='5'))
  def test_short(self):self.assertEqual(parse('Все товары +5%')['percent'],'5')
  def test_override(self):self.assertEqual(parse(NOEL),dict(kind='contains',fragment='noelbag',percent='10'))
+ def test_noel_family_alias_does_not_become_catalog_raise(self):
+  for t in ['Подними цену всем ноэль на 10%','Подними цены всем товарам NoelBag на 10%']:
+   self.assertEqual(parse(t),dict(kind='contains',fragment='noelbag',percent='10'))
+  self.assertIsNone(parse('Подними цену 529-NoelBag-lpink на 10%'))
  def test_exclusion(self):self.assertEqual(parse(EXCLUDE),dict(kind='exclude_earlier',percent='30'))
  def test_no_action_for_questions_negation_and_bids(self):
   for t in ['Не поднимай все цены на 5%','Можно поднять все цены на 5%','Может поднять все цены на 5%?','Если поднять все цены на 5%','Рассчитай повышение всех цен на 5%','Подними ставки всем товарам на 5%','Подними все рекламные бюджеты на 5%','Подними цены на 30% всем товарам без заказов']:

@@ -2,7 +2,28 @@
 import os,json,collections,uuid,datetime,time
 from decimal import Decimal,ROUND_FLOOR,ROUND_HALF_UP
 import fbs_document_chain as m
-t=m.Transport();db=m.Cache(t);w=m.Worker(t,db,{})
+import urllib.request,urllib.error,urllib.parse,gzip
+class PrivateDiagnosticTransport(m.Transport):
+ def _request_once(self,base,path,method="GET",body=None,params=None):
+  if base!=m.MS or method!="POST":return super()._request_once(base,path,method,body,params)
+  assert not path.startswith(("http:","https:"))
+  time.sleep(max(0,.3-(time.monotonic()-self.last)));self.last=time.monotonic()
+  url=base+path+("?"+urllib.parse.urlencode(params) if params else "")
+  req=urllib.request.Request(url,data=json.dumps(body,ensure_ascii=False).encode("utf-8"),headers={"Accept":"application/json;charset=utf-8","Content-Type":"application/json","Accept-Encoding":"gzip","Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"]},method=method)
+  try:
+   with urllib.request.urlopen(req,timeout=45) as response:
+    raw=response.read()
+    if response.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+    return json.loads(raw) if raw else None
+  except urllib.error.HTTPError as error:
+   raw=error.read()
+   if error.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+   try:detail=json.loads(raw)
+   except Exception:detail={"message":raw.decode("utf-8",errors="replace")[:4000]}
+   db.put(root+"api_error:v1",{"at":m.now(),"status":error.code,"method":method,"path":path,"detail":detail})
+   raise m.Stop("HTTP_"+str(error.code)+" "+method+" "+path) from None
+  except Exception:raise m.Stop("API transport outcome uncertain") from None
+t=PrivateDiagnosticTransport();db=m.Cache(t);w=m.Worker(t,db,{})
 root=os.environ["WEEKLY_REVIEW_ROOT"];plan=db.get(root+"plan:v1");prep=db.get(root+"prepare:v1");request=db.get(root+"request:v1")
 assert plan and plan["authorized"] is True and request["writes_authorized"] is True
 assert plan["excel_verified"] is True and prep["status"]=="prepared"
@@ -22,11 +43,18 @@ for a in set(plan["sales"])|set(plan["returns"]):assert len(products.get(a,[]))=
 common={k:m.meta(prep[k]) for k in ("organization","agent","store")};common["applicable"]=True
 common["rate"]={"currency":m.meta(prep["rate"]["currency"])}
 def same_scope(doc):return doc.get("applicable") is True and all(normalized(doc[k])==normalized(common[k]) for k in ("organization","agent","store"))
-stock=rows("report/stock/all",{"filter":"store="+normalized(common["store"]),"stockMode":"all","quantityMode":"all"})
-byid={normalized(r):r for r in stock};exceptions=[]
-for a,q in plan["sales"].items():
- r=byid.get(normalized(products[a][0]),{})
- if r.get("stock",0)<q or r.get("price",0)<=0:exceptions.append({"article":a,"wanted":q,"stock":r.get("stock",0),"cost":r.get("price",0)})
+existing=next((e for e in result["documents"] if e["type"]=="demand"),None)
+exceptions=[]
+if existing:
+ prior=getdoc("demand",existing["id"]);prior_positions=positions("demand",prior["id"])
+ assert same_scope(prior) and counter(prior_positions)==plan["sales"] and prior["sum"]==0 and all(p["price"]==0 for p in prior_positions)
+ result["stock_preflight"]="existing posted demand verified; no second deduction"
+else:
+ stock=rows("report/stock/all",{"filter":"store="+normalized(common["store"]),"stockMode":"all","quantityMode":"all"})
+ byid={normalized(r):r for r in stock}
+ for a,q in plan["sales"].items():
+  r=byid.get(normalized(products[a][0]),{})
+  if r.get("stock",0)<q or r.get("price",0)<=0:exceptions.append({"article":a,"wanted":q,"stock":r.get("stock",0),"cost":r.get("price",0)})
 result["stock_exceptions"]=exceptions;save()
 if exceptions:raise m.Stop("Actual stock or cost requires clarification; no inventory fabricated")
 state=[s for s in t.request(m.MS,"entity/customerorder/metadata").get("states",[]) if s.get("name")=="Доставлен"]
@@ -85,7 +113,15 @@ comment="Опт: "+money(opt_rub)+" руб. = "+money(opt_foreign)+" сом − 
 t.request(m.MS,"entity/demand/"+demand["id"],"PUT",{"description":comment,"applicable":True})
 result["demand_comment"]=comment;result["net_KGS"]=str(net);save()
 for ident,items in groups.items():
- ensure("salesreturn","return-"+ident,{**common,"description":"рыжие возвраты из "+plan["comment"],"demand":m.meta(getdoc("demand",ident)),"positions":[make_position(a,q) for a,q in items.items()]},items)
+ basis=getdoc("demand",ident)
+ template=t.request(m.MS,"entity/salesreturn/new","PUT",{"demand":m.meta(basis)})
+ template_positions=template["positions"]["rows"];return_positions=[]
+ for a,q in items.items():
+  matched=[p for p in template_positions if normalized(p["assortment"])==normalized(products[a][0])]
+  assert len(matched)==1 and matched[0]["quantity"]>=q and matched[0]["price"]==0
+  source=matched[0]
+  return_positions.append({**make_position(a,q),"vat":source.get("vat",0),"vatEnabled":source.get("vatEnabled",template.get("vatEnabled",False))})
+ ensure("salesreturn","return-"+ident,{**common,"vatEnabled":template.get("vatEnabled",False),"vatIncluded":template.get("vatIncluded",True),"description":"рыжие возвраты из "+plan["comment"],"demand":m.meta(basis),"positions":return_positions},items)
 checks=[];returns=collections.Counter()
 for e in result["documents"]:
  kind=e["type"];doc=getdoc(kind,e["id"]);ps=positions(kind,doc["id"]);items=counter(ps)

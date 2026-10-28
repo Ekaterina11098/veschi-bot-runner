@@ -1,12 +1,11 @@
 name: Owner repair Pavel price command155
 on:
-  push:
-    paths: ['ops/china-price155-trigger.json']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   repair:
-    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:

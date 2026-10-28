@@ -5,6 +5,7 @@ No generic queue, historical approvals, RUB writes or blind POST retries.
 import argparse,base64,hashlib,json,os,re,time
 from datetime import datetime,timedelta,timezone
 from decimal import Decimal
+from china_price_minimum import POLICY as MINIMUM_POLICY, attach as attach_minimums, note as minimum_note
 from urllib.parse import quote
 import requests
 
@@ -154,7 +155,7 @@ def process(io,key,polls=45,pause=time.sleep):
     if e and e.get('status') in ['done','blocked','uncertain','failed']:return e
     io.validate(a);io.capability()
     if not e:
-        e=dict(status='preflight',approval_key=key,actor_user_id=a['actor_user_id'],created_at=now().isoformat(),items=[])
+        e=dict(status='preflight',approval_key=key,actor_user_id=a['actor_user_id'],created_at=now().isoformat(),items=[],minimum_price_policy=MINIMUM_POLICY)
         if not io.create(execution,e):return io.get(execution)
     if e['status']=='submitting':
         e['status']='uncertain';e['reason']='Отправка WB могла пройти, квитанция не сохранена. Автоповтор заблокирован.'
@@ -224,7 +225,7 @@ def process(io,key,polls=45,pause=time.sleep):
                         x['status']='applied' if applied else 'failed'
                         x['readback']=p;x['errors']=errors
                         io.put(x['lock'],dict(execution=execution,status='done' if applied else 'uncertain',upload_id=e['upload_id'],readback=p))
-                    e['status']='done';e['completed_at']=now().isoformat();io.put(execution,e);return e
+                    e['status']='done';e['completed_at']=now().isoformat();attach_minimums(e);io.put(execution,e);return e
             except Exception:e['last_check']='WB readback temporarily unavailable';io.put(execution,e)
             pause(15)
         e['reason']='WB ещё обрабатывает загрузку или сверка недоступна. Новая запись не отправлялась.'
@@ -238,7 +239,7 @@ def notify(io,key,e):
     for x in e.get('items',[]):
         s=x['selection'];status={'applied':'применено и проверено','already_at_target':'уже установлена','blocked':'не изменено: '+x.get('reason',''),'failed':'не подтверждено WB, требуется сверка','ready':'ожидает проверки WB'}[x['status']]
         lines.append(s['article']+': '+s['current_cny'].replace('.',',')+' → '+s['target_cny'].replace('.',',')+' ¥ — '+status)
-    text='Результат подтверждения цен\n'+'\n'.join(lines)
+    text='Результат подтверждения цен\n'+(minimum_note(e)+'\n' if minimum_note(e) else '')+'\n'.join(lines)
     if e.get('reason'):text+='\n'+e['reason']
     # bound maximum output: a single result message to avoid partial retries.
     if len(text)>3900:text=text[:3500]+'\nПолный результат сохранён в журнале; список сокращён.'

@@ -82,4 +82,26 @@ class Tests(unittest.TestCase):
   w=W();w.mem={}
   w.db=lambda *a,**k:[dict(cache_key=KEY+':route_replay',payload=dict(status='verified'))]
   self.assertIsNone(status_answer(w,job('Ты цены поднял?',6,None),[]))
+class ArticleTopicTests(unittest.TestCase):
+ def test_price_mention_in_traffic_diagnosis_is_not_catalog_execution_status(self):
+  self.assertIsNone(status_answer(W(),job('test-bag нет показов после того как ты поднял цены',8,None),[]))
+ def test_prepared_article_diagnostic_is_not_replaced_by_catalog_status(self):
+  j=job('Почему test-bag не продаётся после того как ты поднял цены?',8,None)
+  self.assertEqual(reconcile(W(),j,[],'Рекомендация: Нет',[dict(name='article_diagnostic')]),('Рекомендация: Нет',[dict(name='article_diagnostic')]))
+class ReplyLineageTopicTests(unittest.TestCase):
+ def test_article_question_reply_to_price_command_stays_on_article_topic(self):
+  j=job('test-bag нет показов после того как ты поднял цены',8,3)
+  self.assertEqual(reconcile(W(),j,[dict(id=3)],'Диагностика артикула',[]),('Диагностика артикула',[]))
+ def test_raw_counts_reply_to_price_command_are_not_a_price_confirmation(self):
+  self.assertEqual(reconcile(W(),job('Сколько заказов?',8,3),[dict(id=3)],'Два заказа',[]),('Два заказа',[]))
+class MinimumReplyTests(unittest.TestCase):
+ def test_price_success_does_not_claim_minimum_completed(self):
+  w=W()
+  for k in w.mem[KEY]['executions']:
+   w.mem[k]['minimum_price_policy']='seller_discounted_floor_preserve_blocks_v1'
+   w.mem[k]['minimum_prices']=dict(status='required_not_verified')
+  answer,_=reconcile(w,job('Ты цены поднял?',6,None),[],'old',[])
+  self.assertIn('WB подтвердил 2 из 3',answer)
+  self.assertIn('Минимальные цены для автоакций ещё не подтверждены',answer)
+
 if __name__=='__main__':unittest.main()

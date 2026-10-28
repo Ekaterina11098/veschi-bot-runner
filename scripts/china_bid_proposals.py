@@ -295,17 +295,21 @@ def saved_shortlist(w,job,count=30):
 
 def fresh_stock(economy,articles):
  import requests,os
- headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN']};base='https://api.moysklad.ru/api/remap/1.2'
+ headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN'],'Accept-Encoding':'gzip'};base='https://api.moysklad.ru/api/remap/1.2'
  r=requests.get(base+'/entity/store',headers=headers,params={'limit':1000},timeout=45)
  if not r.ok:raise RuntimeError('МойСклад: склад недоступен')
- stores=[x for x in r.json().get('rows',[]) if x.get('name')=='МСК' and not x.get('archived')]
+ store_data=r.json()
+ if type(store_data.get('meta',{}).get('size')) is not int or store_data['meta']['size']>len(store_data.get('rows',[])):raise ValueError('Список складов МойСклад неполон')
+ stores=[x for x in store_data['rows'] if x.get('name')=='МСК' and not x.get('archived')]
  if len(stores)!=1:raise ValueError('Склад МСК неоднозначен')
  rows=[];offset=0
  while True:
-  r=requests.get(base+'/report/stock/all',headers=headers,params={'filter':'store='+stores[0]['meta']['href'],'stockMode':'all','limit':1000,'offset':offset},timeout=50)
+  r=requests.get(base+'/report/stock/all',headers=headers,params={'filter':'store='+stores[0]['meta']['href']+';stockMode=all;quantityMode=all','limit':1000,'offset':offset},timeout=50)
   if not r.ok:raise RuntimeError('МойСклад: остаток/COGS недоступны')
-  data=r.json();part=data.get('rows',[]);rows+=part
-  if offset+len(part)>=data.get('meta',{}).get('size',offset+len(part)):break
+  data=r.json();part=data.get('rows');size=data.get('meta',{}).get('size')
+  if not isinstance(part,list) or type(size)is not int:raise ValueError('Полнота остатков/COGS не подтверждена')
+  rows+=part
+  if offset+len(part)>=size:break
   if not part or offset>=5000:raise ValueError('Остатки/COGS неполны')
   offset+=len(part)
  wanted={a.casefold() for a in articles}

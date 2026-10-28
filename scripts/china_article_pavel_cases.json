@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "source": "Work dialogue patterns adapted from Pavel/owner conversations; all product names and financial fixtures are synthetic.",
+  "cases": [
+    {
+      "id": "no_impressions",
+      "request": "test-bag — совсем нет показов",
+      "variant": "baseline",
+      "expected_stage": "limited_traffic_test"
+    },
+    {
+      "id": "what_to_do",
+      "request": "Что мы можем сейчас сделать по этим арт?",
+      "variant": "baseline",
+      "expected_stage": "limited_traffic_test"
+    },
+    {
+      "id": "why_not_raise",
+      "request": "А почему не повысить ставки test-bag?",
+      "variant": "baseline",
+      "expected_stage": "limited_traffic_test"
+    },
+    {
+      "id": "zero_spend_is_not_zero_views",
+      "request": "test-bag нет кликов, что предложишь?",
+      "variant": "views",
+      "expected_stage": "impressions_without_clicks"
+    },
+    {
+      "id": "stock_return_wait",
+      "request": "test-bag нет показов, остаток только вернули, что предложишь?",
+      "variant": "restock",
+      "expected_stage": "observe_change"
+    },
+    {
+      "id": "price_changed_today",
+      "request": "test-bag нет показов, сегодня подняли цену, что предложишь?",
+      "variant": "price",
+      "expected_stage": "observe_change"
+    },
+    {
+      "id": "already_raised_elsewhere",
+      "request": "test-bag нет показов в другой РК, что предложишь?",
+      "variant": "recent",
+      "expected_stage": "observe_change"
+    },
+    {
+      "id": "reserve",
+      "request": "test-bag нет показов, что делать?",
+      "variant": "reserve",
+      "expected_stage": "stockout"
+    },
+    {
+      "id": "budget",
+      "request": "test-bag нет показов, что делать?",
+      "variant": "budget",
+      "expected_stage": "empty_budget"
+    },
+    {
+      "id": "bad_rating",
+      "request": "test-bag нет показов, что предложишь?",
+      "variant": "rating",
+      "expected_stage": "low_rating"
+    },
+    {
+      "id": "no_reviews",
+      "request": "test-bag нет показов, что предложишь?",
+      "variant": "unrated",
+      "expected_stage": "limited_traffic_test"
+    },
+    {
+      "id": "unknown_reviews",
+      "request": "test-bag нет показов, что предложишь?",
+      "variant": "unknown_rating",
+      "expected_stage": "incomplete"
+    },
+    {
+      "id": "missing_sku",
+      "request": "test-bag нет показов, что предложишь?",
+      "variant": "missing",
+      "expected_stage": "incomplete"
+    },
+    {
+      "id": "unknown_logistics",
+      "request": "test-bag нет показов, что предложишь?",
+      "variant": "shipping",
+      "expected_stage": "economics_limit"
+    },
+    {
+      "id": "today_drr",
+      "request": "test-bag нет показов, что предложишь?",
+      "variant": "today",
+      "expected_stage": "limited_traffic_test"
+    },
+    {
+      "id": "clicks_no_baskets",
+      "request": "test-bag почему нет заказов?",
+      "variant": "clicks",
+      "expected_stage": "clicks_without_baskets"
+    },
+    {
+      "id": "baskets_no_orders",
+      "request": "test-bag почему нет заказов?",
+      "variant": "baskets",
+      "expected_stage": "baskets_without_orders"
+    },
+    {
+      "id": "explicit_confirm",
+      "request": "Согласен. Делай",
+      "variant": "baseline",
+      "expected_stage": null
+    },
+    {
+      "id": "all_do",
+      "request": "Сделай всё",
+      "variant": "baseline",
+      "expected_stage": null
+    },
+    {
+      "id": "price_command",
+      "request": "Подними цены на 5% на все товары",
+      "variant": "baseline",
+      "expected_stage": null
+    },
+    {
+      "id": "bid_command",
+      "request": "Давай поднимем ставки на test-bag",
+      "variant": "baseline",
+      "expected_stage": null
+    },
+    {
+      "id": "raw_orders",
+      "request": "Сколько заказов test-bag сегодня?",
+      "variant": "baseline",
+      "expected_stage": null
+    },
+    {
+      "id": "price_history",
+      "request": "Когда меняли цену test-bag?",
+      "variant": "baseline",
+      "expected_stage": null
+    },
+    {
+      "id": "thanks",
+      "request": "Спасибо",
+      "variant": "baseline",
+      "expected_stage": null
+    },
+    {
+      "id": "specific_ordinal_action",
+      "request": "Выполни только 3 по списку, test-bag",
+      "variant": "baseline",
+      "expected_stage": null
+    },
+    {
+      "id": "monitor_request",
+      "request": "Следи за test-bag и присылай отчёты",
+      "variant": "baseline",
+      "expected_stage": null
+    }
+  ]
+}

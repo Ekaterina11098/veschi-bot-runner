@@ -21,6 +21,13 @@ def percent_matches(p,text):
  return bool({Decimal(x.replace(',','.')) for x in explicit}&wanted)
 def choose(w,job,history,trace=(),allow_command=False):
  text=job.get('request_text','');status=bool(STATUS.search(text));clarify=bool(CLARIFY.fullmatch(text.strip()))
+ from china_catalog_price_command import parse as parse_command
+ try:command=parse_command(text) is not None
+ except (ValueError,TypeError):command=False
+ command=command or bool(re.fullmatch(r'(?:просто\s+)?(?:подними|поднимай|повысь|повышай)(?:\s+все)?\s+цен[уы][.! ]*',text.strip(),re.I))
+ confirmation=bool(re.fullmatch(r'(?:согласен[.! ]*|да[.! ]*)?(?:делай|сделай|давай|поднимай|применяй|подтверждаю)[.! ]*',text.strip(),re.I))
+ if re.search(r'показ|клик|корзин|диагност|проанализ|почему.*прода|что.*сделать',text,re.I) and not re.search(r'ответь.*да.*или.*нет',text,re.I) and not command:return None
+ if allow_command and not(status or clarify or command or confirmation):return None
  if not(status or clarify or allow_command):return None
  current=ROOT+w.now.astimezone(ZoneInfo('Europe/Moscow')).date().isoformat()
  candidates=keys(trace)+keys(job.get('tool_trace'))
@@ -81,6 +88,8 @@ def render(w,key,p,text):
  if n:answer=('Да. ' if n==total else 'Да, частично. ')+answer
  if CLARIFY.fullmatch(text.strip()):
   answer+=' «Проверено» означает: WB вернул цену, совпавшую с точной целевой ценой и сохранёнными скидками; регистрация команды сама по себе этого не подтверждает.'
+ if n and any((w.get(k) or {}).get('minimum_price_policy')=='seller_discounted_floor_preserve_blocks_v1' and (w.get(k) or {}).get('minimum_prices',{}).get('status')!='verified' for k in p.get('executions',[])):
+  answer+=' Минимальные цены для автоакций ещё не подтверждены; это отдельный обязательный шаг с сохранением блокировок.'
  if n and mismatch:answer+=' Счётчик плана расходится с квитанциями; показываю только подтверждённое WB.'
  return answer,[dict(name='catalog_price_status',command_key=key,status=view['status'],wb_verified=n,total=total,receipt_mismatch=mismatch,wb_writes=0,telegram_sends=0)]
 def status_answer(w,job,history):

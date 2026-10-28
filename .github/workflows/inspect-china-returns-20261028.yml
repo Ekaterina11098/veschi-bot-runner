@@ -1,0 +1,46 @@
+name: Inspect China returns transfer 20261028
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/inspect-china-returns-20261028.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read warehouses and matching products
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,json,urllib.request,urllib.parse,gzip,time
+          BASE="https://api.moysklad.ru/api/remap/1.2/"
+          def get(path,params=None):
+           url=BASE+path+("?" + urllib.parse.urlencode(params) if params else "")
+           req=urllib.request.Request(url,headers={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept-Encoding":"gzip"})
+           with urllib.request.urlopen(req,timeout=60) as r:
+            b=r.read()
+            return json.loads(gzip.decompress(b) if r.headers.get("Content-Encoding")=="gzip" else b)
+          def rows(path,params=None):
+           out=[];offset=0
+           while True:
+            d=get(path,{**(params or {}),"limit":1000,"offset":offset});a=d["rows"];out+=a
+            if len(out)==d["meta"]["size"]:return out
+            assert a and len(out)<30000
+            offset+=len(a);time.sleep(.3)
+          stores=rows("entity/store")
+          print("STORES",json.dumps([{"id":x["id"],"name":x["name"]} for x in stores],ensure_ascii=False))
+          print("ORGS",json.dumps([{"id":x["id"],"name":x["name"]} for x in rows("entity/organization")],ensure_ascii=False))
+          ps=rows("entity/product")
+          sel=[x for x in ps if any(t in (x.get("article","")+" "+x["name"]).casefold() for t in ["панама","маниш","шарф","ремень","зонт"]) or x.get("article","") in ["61","538","00","531","511"]]
+          print("PRODUCTS",json.dumps([{"id":x["id"],"name":x["name"],"article":x.get("article"),"code":x.get("code"),"archived":x.get("archived")} for x in sel],ensure_ascii=False))
+          print("PRODUCT_TOTAL",len(ps))
+          print("RECENT_MOVES",json.dumps([{k:x.get(k) for k in ["id","name","description","organization","sourceStore","targetStore"]} for x in rows("entity/move",{"order":"moment,desc","limit":5})][:5],ensure_ascii=False))
+          
+          PY

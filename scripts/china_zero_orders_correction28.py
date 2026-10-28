@@ -20,13 +20,14 @@ class W:
 def run(mode):
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
  io=AdvertisingIO();e=io.get(ROOT)
- if mode=='prepare':
-  if e and e.get('status') in ['prepared','sent']:print(json.dumps(dict(status=e['status'],duplicate_prevented=True)));return
+ if mode in ['prepare','refresh']:
+  if e and (e.get('status')=='sent' or e.get('status')=='prepared' and mode!='refresh'):print(json.dumps(dict(status=e['status'],duplicate_prevented=True)));return
   report=collect(W(io),'2026-10-14','2026-10-27')
   if not report['collection_complete']:raise ValueError('Source incomplete; do not send a zero-order assertion')
   files=render(report)
   e=dict(status='prepared',report=report,files=[dict(family=f['family'],page=f['page'],total=f['total'],b64=base64.b64encode(f['bytes']).decode(),sha256=hashlib.sha256(f['bytes']).hexdigest()) for f in files],created_at=datetime.now(timezone.utc).isoformat(),wb_writes=0)
-  if not io.create(ROOT,e):raise ValueError('Build race')
+  if mode=='refresh':io.put(ROOT,e)
+  elif not io.create(ROOT,e):raise ValueError('Build race')
   print(json.dumps(dict(status=e['status'],zero=report['zero_count'],unknown=report['unknown_count'],pages=len(files))));return
  if mode!='apply' or not e or e.get('visual_review')!='approved':raise ValueError('Reviewed exact source report required')
  if e['status']=='sent':print(json.dumps(dict(status='sent',duplicate_prevented=True)));return

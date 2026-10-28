@@ -108,3 +108,27 @@ jobs:
 
 
 
+
+  explicit_cohort_prices:
+    needs: watches
+    if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.action == 'dialog')
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    concurrency:
+      group: china-confirmed-wb-price-writes
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 Pillow==11.3.0
+      - run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_zero_order_price_command.py'
+      - name: Execute only exact human percent commands bound to delivered reports
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          PYTHONPATH: scripts
+        run: python scripts/china_zero_order_price_execute.py --drain

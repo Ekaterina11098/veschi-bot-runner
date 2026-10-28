@@ -56,7 +56,9 @@ def prepare(io,job_id,refresh=False):
   p=prices.get(row['nm_id']);s=dict(row,action='Повышение');x=dict(selection=s,status='blocked')
   try:
    if not p or not p.get('sizes'):raise ValueError('Текущая карточка/цена WB отсутствует')
-   old=Decimal(str(p['sizes'][0]['discountedPrice']));target=old*(1+Decimal(e['percent'])/100)
+   old=Decimal(str(p['sizes'][0]['discountedPrice']))
+   if old<=0:raise ValueError('Положительная цена продавца WB не подтверждена')
+   target=old*(1+Decimal(e['percent'])/100)
    s.update(current_cny=str(old),target_cny=str(target),base_cny=str(p['sizes'][0]['price']),seller_discount=p['discount'],club_discount=p.get('clubDiscount'))
    s['nominal_target_cny']=str(target)
    try:

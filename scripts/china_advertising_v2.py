@@ -235,7 +235,7 @@ def guard_sku_exclusion(row, evidence, context, report_day):
  if blockers:
   row['candidate_for_manual_review']=True;row['action']=None
   row['decision']='Продолжить тест без повышения; исключение требует проверки.'
-  row['reason']='; '.join(blockers)+'. Прямые заказы 0 не равны нулевой пользе РК.'
+  row['reason']='; '.join(blockers)+'. Прямые заказы SKU не отражают весь результат РК.'
  return row
 
 def build(s,minima=None):

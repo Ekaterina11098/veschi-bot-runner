@@ -4,6 +4,7 @@ from datetime import datetime,timedelta,date,timezone
 from zoneinfo import ZoneInfo
 MSK=ZoneInfo('Europe/Moscow');PREFIX='china_agent:zero_orders:v1:'
 def recognizes(text):
+ if re.search(r'(?:цен[ауые]|ставк|бюджет|реклам|исключ|удал|повы[сш]|подним|увелич|сниз|уменьш|измени)',text,re.I):return False
  return bool(re.search(r'без\s+заказ|не\s+имеют\s+заказ|нет\s+заказ|не\s+было\s+заказ',text,re.I))
 def period(text,now):
  explicit=re.search(r'(\d{1,2})\s*[-–—]\s*(\d{1,2})\s*октябр',text,re.I)

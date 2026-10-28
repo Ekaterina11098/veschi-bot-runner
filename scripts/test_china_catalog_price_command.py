@@ -34,6 +34,19 @@ class Tests(unittest.TestCase):
  def test_no_amendment_after_freeze(self):
   w=W();handle(w,job(166,FULL),[]);k=ROOT+'2026-10-28';w.mem[k]['status']='prepared';before=w.get(k)
   handle(w,job(171,NOEL),[]);self.assertEqual(w.get(k),before)
+ def test_bound_done_confirmation_does_not_repeat(self):
+  w=W();handle(w,job(166,FULL),[]);k=ROOT+'2026-10-28'
+  w.mem[k].update(status='partial',verified_count=243,total_count=245,source_refs=[dict(job_id=172)])
+  before=w.get(k);j=job(173,'Согласен. Делай');j['tool_trace']=[dict(name='china_saved_question',parent_job_id=172)]
+  answer,trace=handle(w,j,[])
+  self.assertIn('243',answer);self.assertTrue(trace[0]['duplicate_prevented']);self.assertEqual(w.get(k),before)
+ def test_old_followup_cannot_create_next_day_price_write(self):
+  w=W();w.now=datetime(2026,10,29,8,tzinfo=timezone.utc)
+  answer,trace=handle(w,job(200,'Просто подними цену'),[dict(request_text=FULL)])
+  self.assertFalse(w.mem);self.assertEqual(trace[0]['status'],'missing_current_plan')
+ def test_bare_percent_without_price_context_cannot_change_prices(self):
+  w=W();answer,trace=handle(w,job(10,'Все товары +5%'),[dict(request_text='Подними ставки всем товарам на 5%')])
+  self.assertFalse(w.mem);self.assertEqual(trace[0]['status'],'ambiguous_price_scope')
  def test_permission(self):
   w=W();w.allowed=False;handle(w,job(166,FULL),[]);self.assertEqual(w.mem,{})
  def test_target_preserves_discounts(self):

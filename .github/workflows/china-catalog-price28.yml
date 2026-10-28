@@ -1,0 +1,35 @@
+name: Owner catalog price command28
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/china-catalog-price28.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-confirmed-wb-price-writes
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Check command routing, exclusions and write scope without credentials
+        run: |
+          python -m unittest discover -s scripts -p 'test_china_catalog_price_*.py' -v
+          python -m unittest discover -s scripts -p 'test_china_price_apply.py' -v
+          python -m unittest discover -s scripts -p 'test_china_zero_order_price_command.py' -v
+          python -m py_compile scripts/conversion_watches.py scripts/china_catalog_price_execute.py
+      - name: Apply exact current owner command and verify WB prices
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: python scripts/china_catalog_price_execute.py --drain

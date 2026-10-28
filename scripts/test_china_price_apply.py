@@ -81,3 +81,14 @@ class Tests(unittest.TestCase):
         f.cache[ek]=dict(status='preflight',items=[dict(selection=f.s,request=dict(nmID=1,price=220,discount=50),status='ready',lock='lock')])
         f.p['sizes'][0]['discountedPrice']=101;self.runio(f);self.assertEqual(f.writes,0)
 if __name__=='__main__':unittest.main()
+
+class BulkReadTests(unittest.TestCase):
+    def test_bulk_read_once_and_only_requested(self):
+        io=IO.__new__(IO);calls=[]
+        def wb(path):calls.append(path);return dict(listGoods=[dict(nmID=n) for n in range(1,14)])
+        io.wb=wb
+        self.assertEqual(set(io.prices([str(n) for n in range(1,12)])),{str(n) for n in range(1,12)})
+        self.assertEqual(len(calls),1)
+    def test_missing_bulk_card_fails(self):
+        io=IO.__new__(IO);io.wb=lambda path:dict(listGoods=[])
+        with self.assertRaises(ValueError):io.prices([str(n) for n in range(11)])

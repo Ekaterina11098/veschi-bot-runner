@@ -2,7 +2,7 @@
 import math,os
 from datetime import datetime,timezone
 from zoneinfo import ZoneInfo
-KEY='china_agent:zero_orders:v1:stock:'
+KEY='china_agent:zero_orders:v1:stock:all_modes:v2:'
 def collect_stock(w):
  import requests
  now=datetime.now(timezone.utc);key=KEY+now.astimezone(ZoneInfo('Europe/Moscow')).date().isoformat();old=w.get(key)
@@ -18,7 +18,7 @@ def collect_stock(w):
  if len(selected)!=1:raise ValueError('Warehouse identity ambiguous')
  rows=[];offset=0
  while True:
-  j=get('/report/stock/all',{'filter':'store='+selected[0]['meta']['href'],'stockMode':'all','limit':1000,'offset':offset});part=j.get('rows');size=j.get('meta',{}).get('size')
+  j=get('/report/stock/all',{'filter':'store='+selected[0]['meta']['href']+';stockMode=all;quantityMode=all','limit':1000,'offset':offset});part=j.get('rows');size=j.get('meta',{}).get('size')
   if not isinstance(part,list) or type(size) is not int:raise ValueError('Stock coverage unknown')
   rows+=part
   if len(rows)>=size:break

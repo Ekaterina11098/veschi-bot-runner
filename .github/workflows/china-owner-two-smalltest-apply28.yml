@@ -1,7 +1,5 @@
 name: Owner three small traffic bid tests28
 on:
-  push:
-    paths: ['ops/china-owner-two-smalltest-apply28.json']
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

@@ -20,6 +20,7 @@ assert pre and pre["status"] in ("ready","needs_review")
 assert len(pre["sources"])==4 and sum(s["quantity"] for s in pre["sources"])==183
 orgs=w.ms_rows("entity/organization");assert len(orgs)==1
 org=orgs[0];target=pre["target"]
+all_moves=w.ms_rows("entity/move")
 summary={"status":"processing","sources":[],"at":m.now()}
 def totals(ps):
  out=collections.Counter()
@@ -40,7 +41,7 @@ for s in pre["sources"]:
   else:
    assert not previous or previous.get("status") not in ("inflight","created"),"Prior creation outcome must be reconciled"
    # Same comment can legitimately contain the earlier, different return batch.
-   candidates=w.ms_rows("entity/move",{"filter":"sourceStore="+m.href(s["store"])+";targetStore="+m.href(target)})
+   candidates=[d for d in all_moves if m.href(d.get("sourceStore",{}))==m.href(s["store"]) and m.href(d.get("targetStore",{}))==m.href(target)]
    same=[]
    for d in candidates:
     if d.get("deleted") or d["id"] in req.get("exclude_existing_ids",[]):continue

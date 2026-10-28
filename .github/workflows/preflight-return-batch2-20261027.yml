@@ -1,4 +1,5 @@
 name: Check available stock for new returns batch
+# Resolve leading-zero bag codes and tolerate slow stock reports
 on:
   push:
     branches: [main]

@@ -27,5 +27,20 @@ class T(unittest.TestCase):
  def test_changed_original_command_rejected(self):
   io,a,j,e=self.data();j['request_text']=TEXT.replace('30','50')
   with self.assertRaises(ValueError):validate_command(io,a,j)
+class StatusTests(unittest.TestCase):
+ def worker(self,execution):
+  return type('W',(),{'db':lambda *a,**k:[dict(cache_key=ROOT+'155',execution_key='exec',cohort=[{},{}])],'get':lambda _,k:execution})()
+ def test_status_uses_verified_readback(self):
+  from china_zero_order_price_command import status_answer
+  x=dict(status='applied',selection=dict(article='a',target_cny='130'),readback=dict(currencyIsoCode4217='CNY',vendorCode='a',sizes=[dict(discountedPrice=130)]))
+  answer,trace=status_answer(self.worker(dict(items=[x])),dict(request_text='Ты цены поднял?'),[])
+  self.assertEqual(trace[0]['wb_verified'],1)
+ def test_green_flag_without_matching_price_not_success(self):
+  from china_zero_order_price_command import status_answer
+  x=dict(status='applied',selection=dict(article='a',target_cny='130'),readback=dict(currencyIsoCode4217='CNY',vendorCode='a',sizes=[dict(discountedPrice=100)]))
+  self.assertEqual(status_answer(self.worker(dict(items=[x])),dict(request_text='Ты цены поднял?'),[])[1][0]['wb_verified'],0)
+ def test_unrelated_clarification_not_intercepted(self):
+  from china_zero_order_price_command import status_answer
+  self.assertIsNone(status_answer(self.worker({}),dict(request_text='Не понимаю'),[dict(request_text='Расскажи про остатки')]))
 if __name__=='__main__':unittest.main()
 

@@ -45,6 +45,8 @@ class Notices(unittest.TestCase):
   io,a,p,e=fixture();io.data[PREFIX+'p']=dict(status='sent',message_id=388);deliver_result(io,a,p,e);self.assertEqual(io.sent,[])
  def test_verified_flag_without_readbacks_is_not_success(self):
   io,a,p,e=fixture();del e['items'][0]['after'];deliver_result(io,a,p,e);self.assertNotIn('проверено WB',io.sent[0][1]['text'])
+ def test_missing_original_command_does_not_send(self):
+  io,a,p,e=fixture();a.pop('job_id');self.assertIsNone(deliver_result(io,a,p,e));self.assertEqual(io.sent,[])
  def test_blocked_is_explicit(self):
   io,a,p,e=fixture();e['items'][0].update(status='blocked',reason='Bid changed');deliver_result(io,a,p,e);self.assertIn('не выполнено: Bid changed',io.sent[0][1]['text'])
 if __name__=='__main__':unittest.main()

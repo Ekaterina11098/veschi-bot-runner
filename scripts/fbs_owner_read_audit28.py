@@ -36,7 +36,7 @@ def audit(t,db,cab,state,config,states):
    if expected and not check['comment_matches']:out['errors'].append(typ+': comment mismatch');check.update(expected_comment=expected,actual_comment=doc.get('description'))
    if doc.get('externalCode')!=ext:out['errors'].append(typ+': externalCode mismatch')
    if typ=='customerorder':
-    duplicates=w.ms_rows('entity/customerorder',{'filter':'name='+supply});check['same_name_ids']=[x['id'] for x in duplicates]
+    duplicates=w.ms_rows('entity/customerorder',{'filter':'name='+registered.get('name',supply)});check['same_name_ids']=[x['id'] for x in duplicates]
     if len(duplicates)!=1 or duplicates[0]['id']!=doc['id']:out['errors'].append('customerorder: ambiguous supply name')
     want=(config.get('order_annotation') or {}).get('state_name')
     if want:

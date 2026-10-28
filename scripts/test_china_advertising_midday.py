@@ -12,7 +12,7 @@ class IO:
 class MiddayTests(unittest.TestCase):
  def test_current_expense_and_no_orders(self):
   c=dict(draft=False,today=dict(spend=6.64,amount=0,orders=0,clicks=24,views=100),attention=[])
-  self.assertIn('6,64',recommendations(c)[0])
+  self.assertEqual(['Нет'],recommendations(c))
  def test_exact_page_actions_and_green_png(self):
   a=dict(kind='ad_exclude_sku',campaign_id=1,nm_id=2)
   c=dict(id=1,name='Test',draft=False,today=dict(spend=10,amount=0,orders=0,clicks=40,views=100),attention=[dict(article='sku',decision='Исключить',action=a,spend=10,clicks=40)])

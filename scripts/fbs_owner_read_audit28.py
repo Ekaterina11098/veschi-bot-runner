@@ -49,9 +49,32 @@ def audit(t,db,cab,state,config,states):
  if state.get('status')!='complete':out['errors'].append('Ledger incomplete: '+str(state.get('error') or state.get('status')))
  out['status']='attention' if out['errors'] else 'verified';return out
 
+def finish_names(t,db):
+ for _ in range(60):
+  report=db.get(REPORT)
+  if report and report.get('status') in ['verified','attention']:break
+  time.sleep(15)
+ else:raise Stop('Full diagnostic has not completed')
+ if report.get('registered_names_verified'):print('Names already verified');return
+ config=db.get('fbs_document_chain:ozon:config:v1');w=Worker(t,db,config)
+ for row in report['results']:
+  if row['cabinet']!='ozon':continue
+  check=next((x for x in row['checks'] if x['type']=='customerorder'),None)
+  if not check or not check.get('id') or not check.get('name'):raise Stop('Ozon order evidence missing')
+  found=w.ms_rows('entity/customerorder',{'filter':'name='+check['name']})
+  check['same_name_ids']=[x['id'] for x in found]
+  row['errors']=[x for x in row['errors'] if x!='customerorder: ambiguous supply name']
+  if len(found)!=1 or found[0]['id']!=check['id']:row['errors'].append('customerorder: ambiguous registered name')
+  row['status']='attention' if row['errors'] else 'verified'
+ report.update(registered_names_verified=True,name_check_completed_at=now(),additional_ms_reads=t.reads,status='attention' if any(x['errors'] for x in report['results']) else 'verified')
+ report['attention']=[dict(cabinet=x['cabinet'],supply_id=x['supply_id'],errors=x['errors']) for x in report['results'] if x['errors']]
+ db.put(REPORT,report);print(json.dumps(dict(status=report['status'],attention=report['attention'],operational_writes=0)))
+
 def main():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise Stop('Public main only')
- t=ReadOnly();db=Cache(t);prior=db.get(REPORT)
+ t=ReadOnly();db=Cache(t)
+ if os.environ.get('OWNER_FBS_NAMES_ONLY')=='true':finish_names(t,db);return
+ prior=db.get(REPORT)
  if prior and prior.get('status') in ['verified','attention']:print('Existing completed diagnostic; no repeat');return
  report=dict(status='running',started_at=now(),operational_writes=0,telegram_sends=0,results=[],configuration=[],ms_reads=0)
  jobs=[]

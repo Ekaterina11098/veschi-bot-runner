@@ -1,29 +1,11 @@
-name: Owner current profit snapshot28
+name: Owner current profit snapshot28 (closed)
 on:
-  push:
-    branches: [main]
-    paths: [.github/workflows/china-profit-now28.yml]
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: china-owner-profit-now28
-  cancel-in-progress: false
 jobs:
-  snapshot:
-    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main'
+  closed:
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false, sparse-checkout: scripts}
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - run: pip install requests==2.32.5
-      - name: Read owner-requested current orders, advertising and own COGS
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-        run: python scripts/china_profit_now28_read.py
+      - run: echo 'Requested private snapshot completed; no repeated collection'

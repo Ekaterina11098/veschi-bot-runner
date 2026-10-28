@@ -18,7 +18,7 @@ jobs:
         with: {persist-credentials: false, sparse-checkout: scripts}
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: python -m py_compile scripts/fbs_owner_coverage28.py
+      - run: python -m py_compile scripts/fbs_owner_coverage_unmatched28.py
       - name: Read marketplace lists and all matching MoySklad documents
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -27,4 +27,4 @@ jobs:
           WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
           WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-        run: python scripts/fbs_owner_coverage28.py
+        run: python scripts/fbs_owner_coverage_unmatched28.py

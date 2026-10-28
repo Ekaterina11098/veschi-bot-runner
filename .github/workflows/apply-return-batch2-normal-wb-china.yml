@@ -1,4 +1,5 @@
 name: Add normal return batch to China WB FBS
+# User approved skipping unmatched normal article units
 on:
   push:
     branches: [main]

@@ -19,10 +19,11 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5
-      - run: python -m py_compile scripts/china_owner_sales_ads28.py
+      - run: python -m py_compile scripts/china_owner_weekday_growth28.py
       - name: Read China orders buyouts and advertising without mutations
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-        run: python scripts/china_owner_sales_ads28.py
+        run: python scripts/china_owner_weekday_growth28.py

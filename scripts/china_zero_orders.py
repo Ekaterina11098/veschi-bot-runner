@@ -76,7 +76,9 @@ def reconcile_created(report,created):
 def collect(w,first,last):
  from china_wb_evidence import Reports
  source=Reports(w).funnel(first,last)
- report=reconcile_created(compute(w.catalog(),source,first,last),created_counts(w,first,last));w.save(PREFIX+first+':'+last,report);return report
+ report=reconcile_created(compute(w.catalog(),source,first,last),created_counts(w,first,last))
+ from china_zero_orders_stock import enrich
+ report=enrich(w,report);w.save(PREFIX+first+':'+last,report);return report
 
 def text_report(report):
  a,b=report['period_from'],report['period_to'];lines=[f'Все заказы за {a}—{b}, 14 полных дней МСК.' if (date.fromisoformat(b)-date.fromisoformat(a)).days==13 else f'Все заказы за {a}—{b}, полные дни МСК.',f"Товаров без заказов: {report['zero_count']}. С заказами: {report['positive_count']}. Неполные данные: {report['unknown_count']}.",'Общая воронка WB и сверка созданных FBS-заказов: реклама и органика; источники не складываются, заказы не заменяются выкупами.']
@@ -86,7 +88,8 @@ def text_report(report):
  if report['unknown']:
   lines+=['','Неполные данные — это не ноль заказов:','| Артикул | Причина |','|---|---|']+[f"| {r['article']} | {r['reason']} |" for r in report['unknown']]
  lines+=['', 'Срез: '+str(report['observed_at'])+'. Список не является рекомендацией выключать рекламу или менять товар.']
- return '\n'.join(lines)
+ from china_zero_orders_stock import text as stock_text
+ return '\n'.join(lines)+stock_text(report)
 def answer(w,job,history):
  if not recognizes(job.get('request_text','')):return None
  first,last=period(job['request_text'],w.now)

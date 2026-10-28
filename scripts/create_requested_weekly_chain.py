@@ -28,6 +28,18 @@ root=os.environ["WEEKLY_REVIEW_ROOT"];plan=db.get(root+"plan:v1");prep=db.get(ro
 assert plan and plan["authorized"] is True and request["writes_authorized"] is True
 assert plan["excel_verified"] is True and prep["status"]=="prepared"
 assert datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date().isoformat()==plan["prepared_on"]
+rules=db.get("weekly_report_review:rules:all:v1")
+rule=rules["demand"]["cabinet_overrides"]["ooo"]
+assert rule["fx_factor_rounding"]["status"]=="confirmed"
+stock_source=db.get(root+"stock:v1");assert stock_source["status"]=="read_verified"
+returns_rub=Decimal(0)
+for article,quantity in plan["returns"].items():
+ snapshots=stock_source["return_cost_stock"][article];assert len(snapshots)==1
+ unit_rub=Decimal(str(snapshots[0]["price"]))/100;assert unit_rub>0
+ override=rules["excel"]["CK"].get("manual_overrides_rub",{}).get(article)
+ if override is not None:unit_rub=Decimal(str(override["value"]))
+ returns_rub+=unit_rub.to_integral_value(rounding=ROUND_FLOOR)*Decimal(str(quantity))
+
 result=db.get(root+"documents:v1") or {"status":"preflight","documents":[],"at":m.now()}
 def save():db.put(root+"documents:v1",result)
 def rows(path,params=None):return w.ms_rows(path,params)
@@ -106,10 +118,11 @@ for attempt in range(3):
 result.update(valuation_positions=proof,valuation_kopecks=str(valuation),zero_or_negative_cost_articles=bad);save()
 if bad:raise m.Stop("Document cost requires clarification; all prices remain zero")
 fx=plan["fx"];opt_rub=valuation/100
-opt_foreign=(opt_rub*Decimal(str(fx["nominal"]))/Decimal(str(fx["rub"]))).quantize(Decimal(".01"),rounding=ROUND_HALF_UP)
-ck=Decimal(str(plan["CK_sum"]));net=opt_foreign-ck
+factor=(Decimal(str(fx["nominal"]))/Decimal(str(fx["rub"]))).quantize(Decimal(".01"),rounding=ROUND_HALF_UP)
+net_rub=opt_rub-returns_rub
+net=(net_rub*factor).quantize(Decimal(".01"),rounding=ROUND_HALF_UP)
 def money(x):return format(Decimal(x),",.2f").replace(","," ").replace(".",",")
-comment="Опт: "+money(opt_rub)+" руб. = "+money(opt_foreign)+" сом − рыжие возвраты "+money(ck)+" сом = "+money(net)+" сом. Курс ЦБ на "+plan["fx_date_label"]+": 100 сом = "+str(fx["rub"]).replace(".",",")+" руб."
+comment="Опт: "+money(opt_rub)+" руб − рыжие возвраты "+money(returns_rub)+" руб = "+money(net_rub)+" руб = "+money(net)+" сом"
 t.request(m.MS,"entity/demand/"+demand["id"],"PUT",{"description":comment,"applicable":True})
 result["demand_comment"]=comment;result["net_KGS"]=str(net);save()
 for ident,items in groups.items():

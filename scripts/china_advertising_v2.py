@@ -212,6 +212,31 @@ def recommend(c,n,ds,days,changes,minimum,price):
  if action:action['id']=str(c['id'])+':'+str(nm);action['article']=''
  return dict(nm=nm,daily=rows,period=period,period_drr=ratio(period),decision=decision,reason=reason,action=action,changed=changed,comparison=comparison,pending_first_day=pending_first_day)
 
+def guard_sku_exclusion(row, evidence, context, report_day):
+ """Zero direct orders alone do not establish a loss or identify the entry click."""
+ if not row or (row.get('action') or {}).get('kind')!='ad_exclude_sku':return row
+ review=dict(context);review['economics']=evidence;row['exclusion_review']=review
+ blockers=[]
+ def fresh(value):
+  try:
+   at=event_time(value);end=datetime.combine(date.fromisoformat(report_day)+timedelta(days=1),datetime.min.time(),MSK)
+   return 0<=(end-at.astimezone(MSK)).total_seconds()<=48*3600
+  except (ValueError,TypeError,KeyError):return False
+ if not evidence or not fresh(evidence.get('observed_at')):blockers.append('нет свежей собственной экономики')
+ if evidence.get('stock_free') is None or not fresh(evidence.get('stock_observed_at')):blockers.append('нет свежего остатка за вычетом резерва')
+ if evidence.get('expected_margin_before_ads_cny') is None: blockеr='не рассчитан запас маржи до рекламы';blockers.append(blockеr)
+ if evidence.get('sample_reliable') is not True:blockers.append('малая или отсутствующая выкупная выборка')
+ post=(row.get('comparison') or {}).get('after') or row['period']
+ if post.get('clicks',0)<100:blockers.append('мало кликов для автоматического исключения')
+ if context.get('other_sku_orders',0)>0 and evidence.get('entry_sku_attribution_verified') is not True:
+  blockers.append('заказы других товаров нельзя распределить между входными SKU')
+ if context.get('orders_on_this_sku_other_campaigns',0)>0:blockers.append('товар получает заказы из других РК')
+ if blockers:
+  row['candidate_for_manual_review']=True;row['action']=None
+  row['decision']='Продолжить тест без повышения; исключение требует проверки.'
+  row['reason']='; '.join(blockers)+'. Прямые заказы 0 не равны нулевой пользе РК.'
+ return row
+
 def build(s,minima=None):
  minima=minima or {};end=date.fromisoformat(s['period_to']);days=[str(end-timedelta(days=i)) for i in [2,1,0]];labels=price_map(s['catalogue']);changes=history(s['executions']);cs=[];budgets={};raw=[]
  for b in s['batches'].values():cs+=b['campaigns'].get('adverts',[]);raw+=b['stats'];budgets.update({x['advertId']:x for x in b['budgets'].get('adverts',[]) if x is not None})
@@ -264,6 +289,18 @@ def build(s,minima=None):
     if r['action']:
      if r['article'].startswith('WB '):r['action']=None;r['decision']='Нет точного артикула: действие не готово.'
      else:r['action']['article']=r['article']
+    if (r.get('action') or {}).get('kind')=='ad_exclude_sku':
+     members={m['nm_id'] for m in c['nm_settings']}
+     external=sum(sums(ds0.get(d,zeros) for d in days)['orders'] for key,ds0 in byproduct.items() if key not in members)
+     elsewhere=0
+     for other in raw:
+      if other['advertId']==c['id']:continue
+      for day0 in other.get('days',[]):
+       if day0['date'][:10] not in days:continue
+       elsewhere+=sum(x.get('orders',0) for app in day0.get('apps',[]) for x in app.get('nms',[]) if x['nmId']==nm)
+     evidence=(s.get('economics',{}).get('rows',{}).get(str(nm)) or {}).copy()
+     evidence.setdefault('observed_at',s.get('economics',{}).get('observed_at'))
+     r=guard_sku_exclusion(r,evidence,dict(other_sku_orders=external,orders_on_this_sku_other_campaigns=elsewhere,attribution='campaign_totals_only'),s['period_to'])
     focus.append(r)
   # Show recent confirmed exclusions without proposing to exclude them again.
   for x in changes:
@@ -338,6 +375,7 @@ def prepare(io,day):
   if returned!=set(ids):raise ValueError('Incomplete campaign minima')
  from china_advertising_cards import enhance
  return enhance(build(s,minimums),s)
+
 
 
 

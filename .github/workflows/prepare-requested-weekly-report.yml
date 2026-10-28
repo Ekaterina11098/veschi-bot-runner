@@ -25,4 +25,4 @@ jobs:
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: python scripts/prepare_requested_weekly_plan.py
+        run: python scripts/inspect_requested_weekly_stock.py

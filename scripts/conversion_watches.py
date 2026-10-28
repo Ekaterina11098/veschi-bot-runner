@@ -318,6 +318,10 @@ class Worker:
             note='Конверсия: заказы воронки / просмотры. Сумма заказов воронки может отличаться от заказов WB. Пропуски не равны нулю. Наблюдение и расписание не созданы.')
 
     def saved_question(self,job,history):
+        # Explicit price commands precede read-only analysis and ad approvals.
+        from china_catalog_price_command import handle as catalog_price_handle
+        catalog_price=catalog_price_handle(self,job,history)
+        if catalog_price is not None:return catalog_price
         if re.match(r'\s*(?:да(?:вай)?|сделай|делай|выполни|выполняй|примени|применяй|подтверждаю|соглас|одобр|запуска|меня|повышай|подним|повышаем|увеличь|ок|хорошо|ладно)',job.get('request_text',''),re.I):
             from china_advertising_plans import handle as ads_handle
             ads=ads_handle(self,job,history)

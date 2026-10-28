@@ -1,0 +1,30 @@
+name: Owner exact exclusion98 recovery 28Oct
+on:
+  push:
+    paths: ['.github/workflows/china-exclude98-recovery28.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  execute:
+    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Test one-item selection, forged context and stale plans
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_daily_selected.py'
+      - name: Execute only the original approved exclusion and verify complete remaining membership
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          PYTHONPATH: scripts
+        run: python scripts/china_owner_exclude98_28.py

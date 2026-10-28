@@ -53,7 +53,7 @@ def run():
   mins=wb.minimums(CID,[i['nm_id'] for i in ITEMS],'recommendations')
   rr=requests.get('https://advert-api.wildberries.ru/api/advert/v1/config',headers={'Authorization':wb.token},timeout=45)
   if not rr.ok:raise ValueError('WB bid config unavailable')
-  cfg=rr.json();e.update(stock=stock,minimums=mins,config=cfg,economics=[])
+  cfg=rr.json();e.update(stock=stock,minimums={str(k):v for k,v in mins.items()},config=cfg,economics=[])
   need=[]
   for i in ITEMS:
    ns=[n for n in before['nm_settings'] if n['nm_id']==i['nm_id']]

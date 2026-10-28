@@ -1,11 +1,19 @@
 """Exact owner-authorized Panama search raise; one PATCH, full campaign readback."""
 import os,copy,json
 from datetime import datetime,timezone
-import requests
+import requests,time
+_original_get=requests.get
+def resilient_get(*args,**kwargs):
+ for attempt in range(3):
+  try:return _original_get(*args,**kwargs)
+  except requests.exceptions.ConnectionError:
+   if attempt==2:raise
+   time.sleep(2*(attempt+1))
+requests.get=resilient_get
 from china_cloud_cost_control import Cache,WB,validate_identity,projection,stamp
 from china_bid_proposals import fresh_stock
 from china_advertising_plans import economics
-ROOT='china_agent:owner_panama17_apply28:2026-10-28:v2'
+ROOT='china_agent:owner_panama17_apply28:2026-10-28:v3'
 PLAN='china_agent:owner_panama17_plan28:2026-10-28:v1'
 CID=41325622
 ITEMS=[dict(nm_id=1535337780,article='17-FurPanama-leo',old_minor=11,target_minor=14)]
@@ -40,7 +48,9 @@ def run():
  try:
   before=wb.campaigns([CID])[str(CID)];e['before']=before
   if before['status']!=9 or before['currency']!='CNY' or before['bid_type']!='manual' or before['settings']['payment_type']!='cpc' or before['settings']['placements']!=dict(search=True,recommendations=False):raise ValueError('Campaign scope changed')
+  e['stage']='MoySklad stock preflight';save()
   stock=fresh_stock({},[i['article'] for i in ITEMS])
+  e['stage']='WB price preflight';save()
   r=requests.get('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter',params=dict(limit=1000,offset=0),headers={'Authorization':wb.token},timeout=60)
   if not r.ok:raise ValueError('Price preflight HTTP '+str(r.status_code))
   goods=r.json().get('data',{}).get('listGoods',[])
@@ -49,6 +59,7 @@ def run():
   if (datetime.now(timezone.utc)-datetime.fromisoformat(model['observed_at'].replace('Z','+00:00'))).total_seconds()>86400:raise ValueError('Economic source stale')
   model.update(stock=stock,prices=goods)
   old_econ={1535337780:dict(seller_price_cny=126,cogs_kopecks=22419)}
+  e['stage']='WB minimum preflight';save()
   mins=wb.minimums(CID,[i['nm_id'] for i in ITEMS],'search')
   rr=requests.get('https://advert-api.wildberries.ru/api/advert/v1/config',headers={'Authorization':wb.token},timeout=45)
   if not rr.ok:raise ValueError('WB bid config unavailable')
@@ -83,6 +94,6 @@ def run():
   registry=c.get('china_agent:verified_campaign_state:v1') or {};registry[str(CID)]=child;c.put('china_agent:verified_campaign_state:v1',registry)
   p.update(status='executed',execution_key=ROOT+':execution',executed_at=e['verified_at']);c.put(PLAN,p)
  except Exception as ex:
-  e.update(status='uncertain' if e['steps'] else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__,completed_at=stamp());save()
+  e.update(status='uncertain' if e['steps'] else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__+' at '+e.get('stage','preflight'),completed_at=stamp());save()
  print(json.dumps({k:e.get(k) for k in ['status','wb_writes','price_writes','budget_writes','reason','verified_at']}))
 if __name__=='__main__':run()

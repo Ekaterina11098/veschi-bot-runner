@@ -69,6 +69,10 @@ def handle(w,job,history):
  if parsed is not None and re.fullmatch(r'все\s+товары\s*\+\s*\d+(?:[.,]\d+)?\s*%',text.strip(),re.I) and not p and not any(re.search(r'цен',h.get('request_text',''),re.I) and parse(h.get('request_text','')) for h in history):
   return 'Уточни, речь о ценах товаров или о рекламных ставках?',[dict(name='catalog_price_command',status='ambiguous_price_scope')]
  if parsed is None:
+  marker=next((t for t in job.get('tool_trace',[]) if t.get('name')=='china_saved_question'),{})
+  source_jobs={r.get('job_id') for r in (p or {}).get('source_refs',[]) if r.get('job_id') is not None}
+  if p and marker.get('parent_job_id') in source_jobs and re.fullmatch(r'(?:согласен[.! ]*|да[.! ]*)?(?:делай|сделай|давай|применяй|подтверждаю)[.! ]*',text.strip(),re.I):
+   return status_text(p)+' Это подтверждение сохранённого плана, не повторное повышение.',[dict(name='catalog_price_confirmation',command_key=key,duplicate_prevented=True,wb_writes=0)]
   if not p and re.search(r'поднял.*цен|цен.*поднял|статус.*цен',text,re.I) and hasattr(w,'db'):
    recent=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+ROOT+'*','select':'payload','order':'updated_at.desc','limit':3}) or []
    if recent:p=recent[0]['payload']

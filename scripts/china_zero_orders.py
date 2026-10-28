@@ -82,9 +82,9 @@ def collect(w,first,last):
 
 def text_report(report):
  a,b=report['period_from'],report['period_to'];lines=[f'Все заказы за {a}—{b}, 14 полных дней МСК.' if (date.fromisoformat(b)-date.fromisoformat(a)).days==13 else f'Все заказы за {a}—{b}, полные дни МСК.',f"Товаров без заказов: {report['zero_count']}. С заказами: {report['positive_count']}. Неполные данные: {report['unknown_count']}.",'Общая воронка WB и сверка созданных FBS-заказов: реклама и органика; источники не складываются, заказы не заменяются выкупами.']
- if report['zero']:
+ if report['zero'] and 'stock_groups' not in report:
   lines+=['','Подтверждено 0 заказов за весь период:','| Артикул | Все заказы |','|---|---|']+[f"| {r['article']} | 0 |" for r in report['zero']]
- else:lines+=['','Подтверждённых товаров с нулём заказов нет.']
+ elif not report['zero']:lines+=['','Подтверждённых товаров с нулём заказов нет.']
  if report['unknown']:
   lines+=['','Неполные данные — это не ноль заказов:','| Артикул | Причина |','|---|---|']+[f"| {r['article']} | {r['reason']} |" for r in report['unknown']]
  lines+=['', 'Срез: '+str(report['observed_at'])+'. Список не является рекомендацией выключать рекламу или менять товар.']

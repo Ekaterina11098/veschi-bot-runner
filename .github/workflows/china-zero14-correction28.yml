@@ -1,0 +1,71 @@
+name: Owner all-source zero-order report correction28
+on:
+  push:
+    paths: ['ops/china-zero14-trigger.json']
+permissions:
+  contents: read
+concurrency:
+  group: china-zero14-correction28
+  cancel-in-progress: false
+jobs:
+  clarify:
+    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,json,requests
+          from datetime import datetime,timezone,timedelta
+          from urllib.parse import quote
+          if (datetime.now(timezone.utc)+timedelta(hours=3)).date().isoformat()!='2026-10-28':raise ValueError('Dated only')
+          key='china_agent:zero_orders_correction:2026-10-28:job151:v1:working'
+          url=os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache'
+          secret=os.environ['SUPABASE_SECRET_KEY']
+          h={'apikey':secret,'Content-Type':'application/json','Prefer':'return=representation'}
+          if not secret.startswith('sb_secret_'):h['Authorization']='Bearer '+secret
+          def db(method,suffix,body=None):
+              r=requests.request(method,url+suffix,headers=h,json=body,timeout=30)
+              if not r.ok:raise ValueError('State HTTP '+str(r.status_code))
+              return r.json() if r.content else []
+          suffix='?cache_key=eq.'+quote(key,safe='')
+          old=db('GET',suffix+'&select=payload')
+          if old:
+              print(json.dumps({'status':old[0]['payload']['status'],'duplicate_prevented':True}));raise SystemExit()
+          bot='https://api.telegram.org/bot'+os.environ['BOT_TOKEN']+'/'
+          me=requests.post(bot+'getMe',json={},timeout=25).json()
+          if not me.get('ok') or me['result']['id']!=8780468043:raise ValueError('Bot identity')
+          text='Павел, список товаров без заказов за 14–27 октября в работе. Проверяю все заказы, включая органические; товары с неполными данными отмечу отдельно.'
+          e={'status':'submitting','text':text,'chat_id':-1004342917488,'bot_id':8780468043,'created_at':datetime.now(timezone.utc).isoformat(),'authorization':'explicit_owner_codex28Oct_working_status_zero_orders','wb_writes':0}
+          if not db('POST','?on_conflict=cache_key',{'cache_key':key,'payload':e,'expires_at':'2036-10-28T00:00:00Z'}):raise ValueError('Journal race')
+          try:
+              answer=requests.post(bot+'sendMessage',json={'chat_id':e['chat_id'],'text':text,'reply_parameters':{'message_id':389,'allow_sending_without_reply':False}},timeout=40).json()
+          except Exception:raise RuntimeError('Delivery uncertain; no retry') from None
+          if not answer.get('ok'):raise ValueError('Telegram rejected '+str(answer.get('error_code')))
+          receipt=answer['result']
+          if receipt['chat']['id']!=e['chat_id'] or receipt['from']['id']!=e['bot_id']:raise ValueError('Receipt identity')
+          e.update(status='sent',receipt=receipt,message_id=receipt['message_id'],sent_at=datetime.now(timezone.utc).isoformat())
+          db('PATCH',suffix,{'payload':e,'updated_at':e['sent_at']})
+          print(json.dumps({'status':'sent','message_id':e['message_id'],'wb_writes':0}))
+          PY
+
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - run: pip install pillow==11.3.0
+      - name: Test all-source counts and incomplete-data handling
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_zero_orders.py'
+      - name: Prepare or deliver exact owner-reviewed all-source report
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          PYTHONPATH: scripts
+        run: python scripts/china_zero_orders_correction28.py

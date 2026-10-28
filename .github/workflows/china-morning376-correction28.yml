@@ -1,7 +1,6 @@
 name: Owner morning PNG376 correction 28Oct
 on:
-  push:
-    paths: ['ops/china-morning376-trigger.json']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -9,7 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   correction:
-    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main'
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

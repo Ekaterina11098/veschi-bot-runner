@@ -94,6 +94,9 @@ def deliver(io,key,e):
   r=r['result']
   if r['chat']['id']!=CHAT or r['from']['id']!=BOT:raise ValueError('Receipt mismatch')
   io.put(k,dict(status='sent',message_id=r['message_id'],receipt=r,sha256=f['sha256']))
+ execution=io.get(e.get('execution_key','')) or {}
+ standard='china_agent:price_execution_notice:v1:'+sha(e['approval_key']+':'+execution.get('status','done'))
+ if not io.get(standard):io.create(standard,dict(status='sent',delivery_owner=key,notice_parts=len(e['files']),duplicate_legacy_notice_prevented=True))
  e['notice_status']='sent';io.put(key,e)
 
 def apply(io,job_id,review=False):

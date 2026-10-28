@@ -1,7 +1,7 @@
 """Prepare/apply exact cohort percent prices via existing verified price engine."""
 import base64,hashlib,json,os,sys,requests
 from datetime import datetime,timezone
-from decimal import Decimal
+from decimal import Decimal,ROUND_HALF_UP
 from china_price_apply import IO,plan,process,PREFIX,POLICY,day,sha
 from china_zero_order_price_command import ROOT,handle
 from china_zero_orders_correction28 import W
@@ -23,7 +23,7 @@ def render(rows,title,percent):
    status={'ready':'Готово к применению','applied':'Проверено в WB','already_at_target':'Уже установлена','blocked':'Не изменено','failed':'Не подтверждено','unavailable':'Не изменено'}.get(r.get('status'),str(r.get('status')))
    if r.get('reason'):d.text((35,y+43),r['reason'][:140],font=font(17),fill='#9b3434')
    for x,t in [(35,s['article']),(900,str(s.get('current_cny','?'))),(1130,str(s.get('target_cny','?'))),(1380,status)]:d.text((x,y+12),t,font=font(23),fill='#111111')
-  y=255+len(part)*75;d.text((35,y),'Ровно запрошенный процент, без округления. Прочие товары не затрагиваются.',font=font(22),fill='#455568');d.text((35,y+35),'Неподтвержденные значения не считаются выполнением; результат по WB в журнале.',font=font(22),fill='#455568')
+  y=255+len(part)*75;d.text((35,y),'+процент; при необходимости округление до шага WB с сохранением скидки.',font=font(22),fill='#455568');d.text((35,y+35),'Неподтвержденные значения не считаются выполнением; результат по WB в журнале.',font=font(22),fill='#455568')
   b=io.BytesIO();im.save(b,format='PNG');out.append(dict(b64=base64.b64encode(b.getvalue()).decode(),sha256=hashlib.sha256(b.getvalue()).hexdigest(),page=page,total=len(parts)))
  return out
 
@@ -35,10 +35,14 @@ def working(io,key):
  if r['chat']['id']!=CHAT or r['from']['id']!=BOT:raise ValueError('Telegram identity')
  io.put(k,dict(status='sent',message_id=r['message_id'],receipt=r))
 
-def prepare(io,job_id):
+def prepare(io,job_id,refresh=False):
  job=io.db('business_agent_jobs?id=eq.'+str(job_id)+'&agent_id=eq.china&chat_id=eq.'+str(CHAT)+'&select=id,sender_id,request_text,created_at,tool_trace')[0]
  handle(W(io),job,[]);key=ROOT+str(job_id);e=io.get(key)
  if not e:raise ValueError('No exact price command')
+ if refresh:
+  if e.get('execution_key') or io.get('china_agent:price_execution:v1:'+e.get('approval_key','')[len(PREFIX):]):raise ValueError('Existing execution; no replan')
+  if not io.get(key+':before_rounding'):io.create(key+':before_rounding',e)
+  e['status']='requested'
  if e['status']!='requested':return e
  e['input_message_id']=next(t['message_id'] for t in job['tool_trace'] if t.get('name')=='china_saved_question' and t.get('bot_id')==BOT)
  if io.tg('getMe',{}).get('id')!=BOT:raise ValueError('Bot mismatch')
@@ -54,8 +58,17 @@ def prepare(io,job_id):
    if not p or not p.get('sizes'):raise ValueError('Текущая карточка/цена WB отсутствует')
    old=Decimal(str(p['sizes'][0]['discountedPrice']));target=old*(1+Decimal(e['percent'])/100)
    s.update(current_cny=str(old),target_cny=str(target),base_cny=str(p['sizes'][0]['price']),seller_discount=p['discount'],club_discount=p.get('clubDiscount'))
-   if target!=target.quantize(Decimal('.01')):raise ValueError('Точный процент требует долей копейки; округление не согласовано')
-   req=plan(s,p);ss.append(s);x.update(status='ready',request=req)
+   s['nominal_target_cny']=str(target)
+   try:
+    if target!=target.quantize(Decimal('.01')):raise ValueError('Currency precision')
+    req=plan(s,p)
+   except ValueError:
+    if p.get('currencyIsoCode4217')!='CNY' or p.get('vendorCode')!=row['article'] or p.get('editableSizePrice') is not False:raise
+    base=(Decimal(str(p['sizes'][0]['price']))*(1+Decimal(e['percent'])/100)).quantize(Decimal('1'),rounding=ROUND_HALF_UP)
+    legal=base*Decimal(100-p['discount'])/100
+    s.update(target_cny=str(legal),rounding_policy='nearest_WB_base_unit_preserve_discount',rounding_delta_cny=str(legal-target))
+    req=plan(s,p)
+   ss.append(s);x.update(status='ready',request=req)
   except ValueError as ex:x['reason']=str(ex)
   rows.append(x)
  keyhash=sha(json.dumps(dict(command=e['signature'],selections=ss),sort_keys=True));ak=PREFIX+str(CHAT)+':'+str(job_id)+':'+str(e['actor_user_id'])+':'+keyhash
@@ -106,7 +119,7 @@ def main():
    if (io.get(row['cache_key']) or {}).get('manual_review_required'):continue
    job_id=int(row['cache_key'][len(ROOT):]);prepare(io,job_id);apply(io,job_id);break
   return
- cfg=json.load(open('ops/china-price155-trigger.json'));job_id=cfg['job_id'];e=prepare(io,job_id) if cfg['mode']=='prepare' else apply(io,job_id,review=True)
+ cfg=json.load(open('ops/china-price155-trigger.json'));job_id=cfg['job_id'];e=prepare(io,job_id,refresh=cfg['mode']=='refresh') if cfg['mode'] in ['prepare','refresh'] else apply(io,job_id,review=True)
  print(json.dumps(dict(status=e['status'],ready=len(e['selections']),blocked=[dict(article=r['selection']['article'],reason=r.get('reason')) for r in e['rows'] if r['status']=='blocked']),ensure_ascii=False))
 if __name__=='__main__':main()
 

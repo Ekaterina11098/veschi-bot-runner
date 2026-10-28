@@ -19,6 +19,11 @@ class T(unittest.TestCase):
  def test_cohort_expansion_rejected(self):
   io,a,j,e=self.data();e['cohort'].append(dict(nm_id='2',article='b'))
   with self.assertRaises(ValueError):validate_command(io,a,j)
+ def test_declared_legal_step(self):
+  io,a,j,e=self.data();s=a['selections'][0];s.update(current_cny='188',target_cny='244.5',base_cny='376',seller_discount=50,nominal_target_cny='244.4',rounding_policy='nearest_WB_base_unit_preserve_discount');validate_command(io,a,j)
+ def test_wrong_step_rejected(self):
+  io,a,j,e=self.data();s=a['selections'][0];s.update(current_cny='188',target_cny='245',base_cny='376',seller_discount=50,nominal_target_cny='244.4',rounding_policy='nearest_WB_base_unit_preserve_discount')
+  with self.assertRaises(ValueError):validate_command(io,a,j)
  def test_changed_original_command_rejected(self):
   io,a,j,e=self.data();j['request_text']=TEXT.replace('30','50')
   with self.assertRaises(ValueError):validate_command(io,a,j)

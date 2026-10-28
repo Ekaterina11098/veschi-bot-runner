@@ -1,0 +1,30 @@
+name: Owner full FBS source coverage28
+on:
+  push:
+    branches: [main]
+    paths: ['ops/fbs-owner-coverage28.json']
+permissions:
+  contents: read
+concurrency:
+  group: owner-fbs-source-coverage28
+  cancel-in-progress: false
+jobs:
+  audit:
+    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m py_compile scripts/fbs_owner_coverage28.py
+      - name: Read marketplace lists and all matching MoySklad documents
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python scripts/fbs_owner_coverage28.py

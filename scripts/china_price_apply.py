@@ -108,6 +108,9 @@ class IO:
         rows=self.db('business_agent_jobs?id=eq.'+str(int(a['report_job_id']))+'&agent_id=eq.china&chat_id=eq.'+str(CHAT)+'&status=eq.done&select=answer,request_text,tool_trace')
         if len(rows)!=1:raise ValueError('Отчёт не найден')
         j=rows[0]
+        if a.get('basis')=='explicit_zero_order_percent':
+            from china_zero_order_price_command import validate_command
+            validate_command(self,a,j);return
         if j['request_text'] not in ['/china_morning_pair_candidates','/china_price_intraday_raise'] or sha(j['answer'])!=a['report_sha256']:raise ValueError('Отчёт изменился')
         if not any(t.get('name')=='china_price_daily_report' and t.get('report_date')==a['report_date'] for t in j['tool_trace']):raise ValueError('Дата отчёта не подтверждена')
         for s in a['selections']:

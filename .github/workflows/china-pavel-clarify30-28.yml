@@ -26,7 +26,7 @@ jobs:
           from datetime import datetime,timezone,timedelta
           from urllib.parse import quote
           if (datetime.now(timezone.utc)+timedelta(hours=3)).date().isoformat()!='2026-10-28':raise ValueError('Dated only')
-          key='china_agent:pavel_clarify30:2026-10-28:v1'
+          key='china_agent:pavel_clarify30:2026-10-28:v2'
           url=os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache'
           secret=os.environ['SUPABASE_SECRET_KEY']
           h={'apikey':secret,'Content-Type':'application/json','Prefer':'return=representation'}
@@ -42,15 +42,15 @@ jobs:
           bot='https://api.telegram.org/bot'+os.environ['BOT_TOKEN']+'/'
           me=requests.post(bot+'getMe',json={},timeout=25).json()
           if not me.get('ok') or me['result']['id']!=8780468043:raise ValueError('Bot identity')
-          text='Павел, уточни, пожалуйста: ты хочешь выполнить 30% предложенных действий или выбрать 30% товаров для изменений?'
+          text='Павел, сейчас у нас всего 4 предложения. Ты имеешь в виду выполнить 30% из этих четырёх предложений или выбрать 30% товаров?'
           e={'status':'submitting','text':text,'chat_id':-1004342917488,'bot_id':8780468043,'created_at':datetime.now(timezone.utc).isoformat(),'authorization':'explicit_owner_codex28Oct_clarify_two_options_only','wb_writes':0}
           if not db('POST','?on_conflict=cache_key',{'cache_key':key,'payload':e,'expires_at':'2036-10-28T00:00:00Z'}):raise ValueError('Journal race')
           try:
-              answer=requests.post(bot+'sendMessage',json={'chat_id':e['chat_id'],'text':text},timeout=40).json()
+              answer=requests.post(bot+'editMessageText',json={'chat_id':e['chat_id'],'message_id':381,'text':text},timeout=40).json()
           except Exception:raise RuntimeError('Delivery uncertain; no retry') from None
           if not answer.get('ok'):raise ValueError('Telegram rejected '+str(answer.get('error_code')))
           receipt=answer['result']
-          if receipt['chat']['id']!=e['chat_id'] or receipt['from']['id']!=e['bot_id']:raise ValueError('Receipt identity')
+          if receipt['message_id']!=381 or not receipt.get('edit_date') or receipt['chat']['id']!=e['chat_id'] or receipt['from']['id']!=e['bot_id']:raise ValueError('Receipt identity')
           e.update(status='sent',receipt=receipt,message_id=receipt['message_id'],sent_at=datetime.now(timezone.utc).isoformat())
           db('PATCH',suffix,{'payload':e,'updated_at':e['sent_at']})
           print(json.dumps({'status':'sent','message_id':e['message_id'],'wb_writes':0}))

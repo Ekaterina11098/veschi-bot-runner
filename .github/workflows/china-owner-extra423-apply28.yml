@@ -1,7 +1,5 @@
 name: Owner Andrea423 bid raise28
 on:
-  push:
-    paths: ['ops/china-owner-extra423-apply28.json']
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

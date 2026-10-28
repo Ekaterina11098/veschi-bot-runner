@@ -275,6 +275,9 @@ def answer(w,job,history):
  from china_zero_order_price_command import handle as zero_price_handle
  command_result=zero_price_handle(w,job,history)
  if command_result is not None:return command_result
+ from china_zero_order_price_command import status_answer as zero_price_status
+ status_result=zero_price_status(w,job,history)
+ if status_result is not None:return status_result
  from china_zero_orders import answer as zero_orders_answer
  zero_result=zero_orders_answer(w,job,history)
  if zero_result is not None:return zero_result

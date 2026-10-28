@@ -53,7 +53,29 @@ def validate_command(io,a,j):
 
 def status_answer(w,job,history):
  text=job.get('request_text','')
- clarification=text.strip().lower().rstrip('?!.,')=='не понимаю' and any(re.search(r'цен|zero_order_price',str(x.get('request_text',''))+str(x.get('tool_trace',[])),re.I) for x in history[-2:])
+ clarification=bool(re.search(r'^(?:не понимаю|что значит проверено|что именно проверено)[?!. ]* and any(re.search(r'цен|zero_order_price',str(x.get('request_text',''))+str(x.get('tool_trace',[])),re.I) for x in history[-2:])
+ if not (re.search(r'цен',text,re.I) and re.search(r'поднял|повысил|изменил|выполн|готов|сделал',text,re.I) or clarification):return None
+ rows=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+ROOT+'*','select':'cache_key,payload->status,payload->approval_key,payload->execution_key,payload->cohort,payload->rows','order':'updated_at.desc','limit':20}) or []
+ rows=[r for r in rows if re.fullmatch(re.escape(ROOT)+r'\d+',r['cache_key'])]
+ if not rows:return None
+ r=rows[0];ak=r.get('approval_key');ek=r.get('execution_key')
+ if not ek and ak:
+  from china_price_apply import PREFIX
+  ek='china_agent:price_execution:v1:'+ak[len(PREFIX):]
+ execution=w.get(ek) if ek else None;items=(execution or {}).get('items',[]);verified=[]
+ for x in items:
+  p=x.get('readback') or {};s=x.get('selection') or {}
+  if x.get('status')=='applied' and p.get('currencyIsoCode4217')=='CNY' and p.get('vendorCode')==s.get('article') and p.get('sizes') and all(Decimal(str(z.get('discountedPrice')))==Decimal(s['target_cny']) for z in p['sizes']):verified.append(x)
+ total=len(r.get('cohort') or []);n=len(verified)
+ if n:
+  answer='Да. Цены подняты у '+str(n)+' из '+str(total)+' товаров.'
+  remaining=total-n;blocked=sum(x.get('status')=='blocked' for x in r.get('rows') or [])
+  if remaining and blocked==remaining:answer+=' У остальных '+str(remaining)+' цены не менялись: '+('нет подтверждённой исходной цены.' if all('цен' in str(x.get('reason','')).lower() for x in (r.get('rows') or []) if x.get('status')=='blocked') else 'есть блокер выполнения.')
+  elif remaining:answer+=' По остальным '+str(remaining)+' результат ещё не подтверждён.'
+ elif (execution or {}).get('status') in ['submitted','submitting','uncertain']:answer='Пока не могу подтвердить повышение: ожидаю результат WB. Повторно цены не меняю.'
+ else:answer='Нет, цены ещё не подняты. Команда зарегистрирована, выполнение пока не подтверждено.'
+ return answer,[dict(name='zero_order_price_status',command_key=r['cache_key'],execution_key=ek,wb_verified=n,total=total,wb_writes=0)]
+,text.strip(),re.I)) and any(re.search(r'цен|zero_order_price',str(x.get('request_text',''))+str(x.get('tool_trace',[])),re.I) for x in history[-2:])
  if not (re.search(r'цен',text,re.I) and re.search(r'поднял|повысил|изменил|выполн|готов|сделал',text,re.I) or clarification):return None
  rows=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+ROOT+'*','select':'cache_key,payload->status,payload->approval_key,payload->execution_key,payload->cohort','order':'updated_at.desc','limit':20}) or []
  rows=[r for r in rows if re.fullmatch(re.escape(ROOT)+r'\d+',r['cache_key'])]

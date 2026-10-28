@@ -55,7 +55,7 @@ def finish_names(t,db):
   if report and report.get('status') in ['verified','attention']:break
   time.sleep(15)
  else:raise Stop('Full diagnostic has not completed')
- if report.get('registered_names_verified'):print('Names already verified');return
+ if report.get('registered_names_verified') and report.get('position_diffs_verified'):print('Names already verified');return
  config=db.get('fbs_document_chain:ozon:config:v1');w=Worker(t,db,config)
  for row in report['results']:
   if row['cabinet']!='ozon':continue
@@ -82,7 +82,7 @@ def finish_names(t,db):
    check['position_diff']=[dict(assortment=h,name=names.get(h),expected=expected.get(h,0),actual=actual.get(h,0)) for h in sorted(set(expected)|set(actual)) if expected.get(h,0)!=actual.get(h,0)]
    check['total_expected_quantity']=sum(expected.values());check['total_actual_quantity']=sum(actual.values())
 
- report.update(registered_names_verified=True,name_check_completed_at=now(),additional_ms_reads=t.reads,status='attention' if any(x['errors'] for x in report['results']) else 'verified')
+ report.update(registered_names_verified=True,position_diffs_verified=True,name_check_completed_at=now(),additional_ms_reads=t.reads,status='attention' if any(x['errors'] for x in report['results']) else 'verified')
  report['attention']=[dict(cabinet=x['cabinet'],supply_id=x['supply_id'],errors=x['errors']) for x in report['results'] if x['errors']]
  db.put(REPORT,report);print(json.dumps(dict(status=report['status'],attention=report['attention'],operational_writes=0)))
 

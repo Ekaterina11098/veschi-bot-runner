@@ -1,0 +1,20 @@
+name: Remove temporary inspection logs
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/cleanup-returns-inspection-20261028.yml']
+permissions:
+  actions: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove temporary inventory diagnostics
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import os,urllib.request
+          req=urllib.request.Request("https://api.github.com/repos/Ekaterina11098/veschi-bot-runner/actions/runs/40643545270/logs",method="DELETE",headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],"Accept":"application/vnd.github+json"})
+          with urllib.request.urlopen(req) as r: print("Temporary diagnostic logs removed",r.status)
+          PY

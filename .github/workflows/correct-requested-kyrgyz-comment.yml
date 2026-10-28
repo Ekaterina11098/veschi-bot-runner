@@ -23,3 +23,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: python scripts/correct_requested_kyrgyz_comment.py
+
+# Preserve all accounting fields while changing description only.

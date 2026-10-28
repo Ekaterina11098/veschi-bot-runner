@@ -8,7 +8,7 @@ KEY='china_agent:owner_funnel36_review:2026-10-28:v1'
 CIDS=[41296359,41155824]
 class ReadWB(WB):
  def req(self,path,method='GET',body=None,write=False):
-  if method!='GET' or write:raise ValueError('Read only')
+  if write or (method!='GET' and not (method=='POST' and path.split('?')[0] in {'/api/advert/v1/bids/min','/api/advert/v2/budget'})):raise ValueError('Read only')
   return super().req(path,method,body,False)
 class History:
  def __init__(self,c):self.c=c;self.now=datetime.now(timezone.utc)
@@ -19,7 +19,17 @@ class History:
 def main():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main' or datetime.now(ZoneInfo('Europe/Moscow')).date().isoformat()!='2026-10-28':raise ValueError('Dated public main only')
  c=Cache()
- if c.get(KEY):print('Existing diagnostic; no repeat');return
+ prior=c.get(KEY)
+ if prior:
+  extra_key=KEY+':read_supplement:v1'
+  if c.get(extra_key):print('Existing supplement; no repeat');return
+  w=ReadWB();validate_identity(c,w);supp=dict(status='collecting',wb_writes=0,telegram_sends=0,errors=[],source_key=KEY)
+  if not c.create(extra_key,supp):return
+  try:supp['budgets']=w.req('/api/advert/v2/budget','POST',{'advertIds':CIDS}).get('adverts',[]);supp['budgets_at']=stamp()
+  except Exception as e:supp['errors'].append(dict(stage='budgets',error=type(e).__name__))
+  try:supp['minimums']={str(cid):w.minimums(cid,[n['nm_id'] for n in cp['nm_settings']],'recommendations') for cid,cp in prior['campaigns'].items()};supp['minimums_at']=stamp()
+  except Exception as e:supp['errors'].append(dict(stage='minimums',error=type(e).__name__))
+  supp.update(status='complete' if not supp['errors'] else 'partial',observed_at=stamp());c.put(extra_key,supp);print(json.dumps(dict(status=supp['status'],errors=supp['errors'],wb_writes=0)));return
  w=ReadWB();validate_identity(c,w)
  out=dict(status='collecting',started_at=stamp(),wb_writes=0,telegram_sends=0,model_calls=0,errors=[])
  if not c.create(KEY,out):return
@@ -46,7 +56,7 @@ def main():
  if len(ids)!=36 or len(products)!=36:out['status']='blocked_scope_changed';save();return
  out['identity']=[dict(nm_id=n,article=p['sa_name']) for n,p in products.items()];save()
  stage('stats',lambda:w.req('/adv/v3/fullstats?ids=41296359,41155824&beginDate=2026-10-25&endDate=2026-10-28'))
- stage('budgets',lambda:{str(cid):w.req('/adv/v1/budget?id='+str(cid)) for cid in CIDS})
+ stage('budgets',lambda:w.req('/api/advert/v2/budget','POST',{'advertIds':CIDS}).get('adverts',[]))
  stage('minimums',lambda:{str(cid):w.minimums(cid,[n['nm_id'] for n in cp['nm_settings']],'recommendations') for cid,cp in out['campaigns'].items()})
  def prices():
   rows=req('discounts-prices-api.wildberries.ru','/api/v2/list/goods/filter',params=dict(limit=1000,offset=0)).get('data',{}).get('listGoods',[])

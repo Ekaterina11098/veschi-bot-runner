@@ -22,10 +22,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Create and verify authorized weekly documents
+      - name: Read return template for prior basis
         env:
           WEEKLY_REVIEW_ROOT: 'weekly_report_review:ooo:883046423:'
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: python scripts/create_requested_weekly_chain.py
+        run: python scripts/inspect_requested_weekly_return_template.py

@@ -1,4 +1,5 @@
 name: Add authorized returns to China FBS
+# Execute after adjustment script commit
 on:
   push:
     branches: [main]

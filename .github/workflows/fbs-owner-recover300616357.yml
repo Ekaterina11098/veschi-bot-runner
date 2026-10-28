@@ -1,13 +1,11 @@
 name: Owner recover FBS WB-GI-300616357
 on:
-  push:
-    branches: [main]
-    paths: ['ops/fbs-owner-recover300616357.json']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   recover:
-    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    if: ${{ false }}
     concurrency:
       group: fbs-document-chain-production
       cancel-in-progress: false

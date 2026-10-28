@@ -131,4 +131,7 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           PYTHONPATH: scripts
-        run: python scripts/china_zero_order_price_execute.py --drain
+        run: |
+          python -m unittest discover -s scripts -p 'test_china_catalog_price_*.py'
+          python scripts/china_zero_order_price_execute.py --drain
+          python scripts/china_catalog_price_execute.py --drain

@@ -24,7 +24,11 @@ def handle(w,job,history):
   return 'Не удалось привязать команду к полному доставленному списку без заказов. Цены не менялись; нужен точный список.',[dict(name='zero_order_price_command',status='blocked')]
  report=p['report'];rows=report['zero']
  if not 1<=len(rows)<=100 or len({r['nm_id'] for r in rows})!=len(rows):raise ValueError('Неоднозначный список товаров')
- key=ROOT+str(job['id']);entry=dict(status='requested',job_id=job['id'],actor_user_id=job['sender_id'],request_text=job['request_text'],source_key=source,source_sent_at=p['sent_at'],percent=percent,cohort=[dict(nm_id=str(r['nm_id']),article=r['article']) for r in rows],created_at=datetime.now(timezone.utc).isoformat())
+ key=ROOT+str(job['id'])
+ same=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+ROOT+'*','payload->>source_key':'eq.'+source,'payload->>percent':'eq.'+percent,'select':'cache_key,payload->status,payload->job_id','limit':20}) or []
+ prior=[x for x in same if x['cache_key']!=key]
+ if prior:return 'Такая команда для этого доставленного списка уже зарегистрирована. Повторные +'+percent+'% не отправляю. Проверяю результат исходной команды; неизвестное выполнение не повторяю.',[dict(name='zero_order_price_command',duplicate_prevented=True,command_key=prior[0]['cache_key'])]
+ entry=dict(status='requested',job_id=job['id'],actor_user_id=job['sender_id'],request_text=job['request_text'],source_key=source,source_sent_at=p['sent_at'],percent=percent,cohort=[dict(nm_id=str(r['nm_id']),article=r['article']) for r in rows],created_at=datetime.now(timezone.utc).isoformat())
  entry['signature']=signature(job,source,percent)
  entry['manual_review_required']=job['id']==155
  old=w.get(key)
@@ -33,6 +37,7 @@ def handle(w,job,history):
  return 'Команда принята: повысить цену продавца на '+percent+'% для '+str(len(rows))+' товаров из доставленного списка без заказов, включая товары без остатка. Готовлю точные старые → новые цены. Выполнение подтвержу после проверки WB; остальные товары не затрагиваются.',[dict(name='zero_order_price_command',status=(old or entry)['status'],command_key=key)]
 def validate_command(io,a,j):
  entry=io.get(ROOT+str(a['report_job_id'])) or {};source=io.get(entry.get('source_key','')) or {};job=dict(id=a['report_job_id'],sender_id=a['actor_user_id'],request_text=j['request_text'])
+ if j.get('sender_id',a['actor_user_id'])!=a['actor_user_id']:raise ValueError('Original sender changed')
  if parse(j['request_text'])!=entry.get('percent') or entry.get('actor_user_id')!=a['actor_user_id'] or entry.get('signature')!=signature(job,entry.get('source_key'),entry.get('percent')):raise ValueError('Exact percent command identity changed')
  if entry.get('approval_key')!=a['approval_key'] or entry.get('selections')!=a['selections'] or source.get('status')!='sent':raise ValueError('Price command binding changed')
  expected={(str(r['nm_id']),r['article']) for r in source['report']['zero']}

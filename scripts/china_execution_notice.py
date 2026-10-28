@@ -26,6 +26,8 @@ def proven(item,state):
  return sorted(expected,key=lambda x:x['nm_id'])==sorted(after.get('nm_settings',[]),key=lambda x:x['nm_id'])
 
 def deliver_result(io,a,p,e):
+ # A notice must be tied to an actual command, even for legacy callers/test adapters.
+ if type(a.get('job_id')) is not int or type(a.get('input_message_id')) is not int:return None
  states=e.get('items',[]);items=p['items']
  if not states or len(states)!=len(items):return None
  byid={x['id']:x for x in items}

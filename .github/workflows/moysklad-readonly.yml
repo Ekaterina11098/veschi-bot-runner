@@ -20,7 +20,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         shell: python
         run: |
-          import os,json,re,urllib.request,urllib.error,datetime,sys
+          import os,json,re,urllib.request,urllib.error,datetime,sys,gzip
           from decimal import Decimal
           MS="https://api.moysklad.ru/api/remap/1.2/"
           SB=os.environ["SUPABASE_URL"].rstrip("/")
@@ -31,12 +31,14 @@ jobs:
           def call(url,headers,method="GET",body=None):
            req=urllib.request.Request(url,headers=headers,method=method,data=None if body is None else json.dumps(body).encode())
            try:
-            with opener.open(req,timeout=60) as r:return json.load(r)
+            with opener.open(req,timeout=60) as r:
+            raw=r.read()
+            return json.loads(gzip.decompress(raw) if r.headers.get("Content-Encoding")=="gzip" else raw)
            except urllib.error.HTTPError as e: raise RuntimeError("Remote HTTP "+str(e.code)) from None
           sh={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json"}
           mh={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept-Encoding":"gzip","Accept":"application/json;charset=utf-8"}
           # urllib does not decompress gzip automatically.
-          mh.pop("Accept-Encoding")
+          # Keep gzip required by MoySklad.
           def ms_get(path,method="GET"):
            if method!="GET":raise ValueError("Only GET allowed")
            if not re.fullmatch(r"entity/(customerorder|demand|salesreturn)/[0-9a-f-]{36}(/positions\?limit=1000&offset=[0-9]+)?",path):raise ValueError("Path rejected")

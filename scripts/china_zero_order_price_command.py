@@ -26,7 +26,7 @@ def handle(w,job,history):
  if not 1<=len(rows)<=100 or len({r['nm_id'] for r in rows})!=len(rows):raise ValueError('Неоднозначный список товаров')
  key=ROOT+str(job['id'])
  same=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+ROOT+'*','payload->>source_key':'eq.'+source,'payload->>percent':'eq.'+percent,'select':'cache_key,payload->status,payload->job_id','limit':20}) or []
- prior=[x for x in same if x['cache_key']!=key]
+ prior=[x for x in same if x['cache_key']!=key and re.fullmatch(re.escape(ROOT)+r'\d+',x['cache_key'])]
  if prior:return 'Такая команда для этого доставленного списка уже зарегистрирована. Повторные +'+percent+'% не отправляю. Проверяю результат исходной команды; неизвестное выполнение не повторяю.',[dict(name='zero_order_price_command',duplicate_prevented=True,command_key=prior[0]['cache_key'])]
  entry=dict(status='requested',job_id=job['id'],actor_user_id=job['sender_id'],request_text=job['request_text'],source_key=source,source_sent_at=p['sent_at'],percent=percent,cohort=[dict(nm_id=str(r['nm_id']),article=r['article']) for r in rows],created_at=datetime.now(timezone.utc).isoformat())
  entry['signature']=signature(job,source,percent)
@@ -44,7 +44,7 @@ def validate_command(io,a,j):
  if {(r['nm_id'],r['article']) for r in entry['cohort']}!=expected:raise ValueError('Delivered cohort changed')
  for s in a['selections']:
   nominal=Decimal(s['current_cny'])*(1+Decimal(entry['percent'])/100)
-  legal=(Decimal(s['base_cny'])*(1+Decimal(entry['percent'])/100)).quantize(Decimal('1'),rounding=ROUND_HALF_UP)*Decimal(100-s['seller_discount'])/100
+  legal=(Decimal(s['base_cny'])*(1+Decimal(entry['percent'])/100)).quantize(Decimal('1'),rounding=ROUND_HALF_UP)*Decimal(100-s['seller_discount'])/100 if s.get('rounding_policy')=='nearest_WB_base_unit_preserve_discount' else None
   exact=Decimal(s['target_cny'])==nominal
   rounded=s.get('rounding_policy')=='nearest_WB_base_unit_preserve_discount' and Decimal(s['target_cny'])==legal and s.get('nominal_target_cny')==str(nominal)
   if (s['nm_id'],s['article']) not in expected or not (exact or rounded):raise ValueError('Target is not the requested percent or its declared legal WB step')

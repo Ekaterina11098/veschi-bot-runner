@@ -1,7 +1,7 @@
 """Exact percent price commands bound to a delivered zero-order cohort."""
 import re,json,hashlib
 from datetime import datetime,timezone
-from decimal import Decimal
+from decimal import Decimal,ROUND_HALF_UP
 ROOT='china_agent:zero_order_price_command:v1:'
 def parse(text):
  if re.search(r'может|стоит ли|можно ли|предлож|рассчита|если|\?',text,re.I):return None
@@ -43,6 +43,10 @@ def validate_command(io,a,j):
  expected={(str(r['nm_id']),r['article']) for r in source['report']['zero']}
  if {(r['nm_id'],r['article']) for r in entry['cohort']}!=expected:raise ValueError('Delivered cohort changed')
  for s in a['selections']:
-  if (s['nm_id'],s['article']) not in expected or Decimal(s['target_cny'])!=Decimal(s['current_cny'])*(1+Decimal(entry['percent'])/100):raise ValueError('Target is not the exact requested percent')
+  nominal=Decimal(s['current_cny'])*(1+Decimal(entry['percent'])/100)
+  legal=(Decimal(s['base_cny'])*(1+Decimal(entry['percent'])/100)).quantize(Decimal('1'),rounding=ROUND_HALF_UP)*Decimal(100-s['seller_discount'])/100
+  exact=Decimal(s['target_cny'])==nominal
+  rounded=s.get('rounding_policy')=='nearest_WB_base_unit_preserve_discount' and Decimal(s['target_cny'])==legal and s.get('nominal_target_cny')==str(nominal)
+  if (s['nm_id'],s['article']) not in expected or not (exact or rounded):raise ValueError('Target is not the requested percent or its declared legal WB step')
  if a['report_sha256']!=hashlib.sha256(j['request_text'].encode()).hexdigest():raise ValueError('Original command changed')
 

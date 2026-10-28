@@ -26,7 +26,7 @@ def choose(w,job,history,trace=(),allow_command=False):
  candidates=keys(trace)+keys(job.get('tool_trace'))
  # Explicit reply lineage outranks recency; a morning cohort is a different operation.
  parent=marker(job).get('parent_job_id')
- context=[h for h in history if h.get('id')==parent] if parent else history[-2:]
+ context=[h for h in history if h.get('id')==parent] if parent else history[-1:]
  for h in reversed(context):
   found=keys(h.get('tool_trace'))
   if found:candidates+=found;break

@@ -66,6 +66,11 @@ class Tests(unittest.TestCase):
  def test_unrelated_or_ambiguous_questions_not_hijacked(self):
   for text in ['Спасибо','Как дела?','Сколько корзин сегодня?','Ответь да или нет']:
    j=job(text,9,None);self.assertEqual(reconcile(W(),j,[],'normal',[]),('normal',[]))
+ def test_clarification_does_not_jump_over_latest_advertising_topic(self):
+  h=[dict(id=3,tool_trace=[dict(name='catalog_price_status',command_key=KEY)]),dict(id=8,request_text='Сколько кликов?',tool_trace=[dict(name='advertising_status')])]
+  self.assertEqual(reconcile(W(),job('Не понимаю',9,None),h,'Клики и корзины',[]),('Клики и корзины',[]))
+ def test_generic_task_status_requires_current_topic_binding(self):
+  self.assertEqual(reconcile(W(),job('Как там задача?',9,None),[],'ad result',[]),('ad result',[]))
  def test_missing_job_id_does_not_bind_none_parent(self):
   w=W();w.mem[KEY].pop('job_id')
   self.assertEqual(reconcile(w,job('Спасибо',9,None),[],'normal',[]),('normal',[]))

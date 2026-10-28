@@ -42,7 +42,7 @@ def prepare(io,job_id,refresh=False):
  if refresh:
   if e.get('execution_key') or io.get('china_agent:price_execution:v1:'+e.get('approval_key','')[len(PREFIX):]):raise ValueError('Existing execution; no replan')
   if not io.get(key+':before_rounding'):io.create(key+':before_rounding',e)
-  e['status']='requested'
+  e['status']='requested';e.pop('visual_review',None)
  if e['status']!='requested':return e
  e['input_message_id']=next(t['message_id'] for t in job['tool_trace'] if t.get('name')=='china_saved_question' and t.get('bot_id')==BOT)
  if io.tg('getMe',{}).get('id')!=BOT:raise ValueError('Bot mismatch')

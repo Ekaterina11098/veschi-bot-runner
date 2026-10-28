@@ -75,6 +75,21 @@ class IO:
         if j.get('error'):raise RuntimeError('WB rejected request')
         return j.get('data',j)
     def prices(self,ids):
+        if len(ids)>10:
+            wanted={str(n) for n in ids};found={};offset=0
+            while True:
+                data=self.wb('/api/v2/list/goods/filter?limit=1000&offset='+str(offset));rows=data.get('listGoods')
+                if not isinstance(rows,list):raise ValueError('Price page missing')
+                for p in rows:
+                    nm=str(p.get('nmID'))
+                    if nm not in wanted:continue
+                    if nm in found:raise ValueError('Duplicate price identity')
+                    found[nm]=p
+                if len(rows)<1000:break
+                offset+=1000
+                if offset>20000:raise ValueError('Price pagination incomplete')
+            if set(found)!=wanted:raise ValueError('One or more exact WB cards missing')
+            return found
         rows=[]
         for nm in ids:
             data=self.wb('/api/v2/list/goods/filter?limit=1000&offset=0&filterNmID='+str(nm))

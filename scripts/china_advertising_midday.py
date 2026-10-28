@@ -112,15 +112,10 @@ def prepare_midday(io,day):
  if not out:raise ValueError('Empty midday catalogue')
  return dict(day=day,observed_at=source.get('completed_at',source['observed_at']),campaigns=out,presentation='midday_green_current_day_v1',review_context=context)
 def recommendations(c):
- p=c['today']
- if c['draft']:return ['Черновик: не запускалась.']
- if p is None:return ['Статистика отсутствует; вывод не подтверждён.']
- if c.get('post_change_note') and not c['attention']:return [c['post_change_note']]
- if c['attention']:return ([r['article']+': за сегодня '+money(r['spend'])+' ¥, '+str(int(r['clicks']))+' кликов, 0 рекламных заказов. '+r['decision'] for r in c['attention']]+([c['post_change_note']] if c.get('post_change_note') else []))
- if not p['spend']:return ['Расхода нет. Изменений не требуется.']
- if p['amount']==0:return ['За сегодня потрачено '+money(p['spend'])+' ¥; рекламных заказов нет. Подтверждённых новых действий по SKU нет.']
- if ratio(p)>5:return ['ДРР выше цели. День не завершён; оснований для нового точечного действия по проверенным SKU нет.']
- return ['ДРР в пределах цели. Изменений не требуется.']
+ # Only actionable recommendations belong in this column; metrics/unknown data stay in their own cells.
+ if c['attention']:
+  return [r['article']+': за сегодня '+money(r['spend'])+' ¥, '+str(int(r['clicks']))+' кликов, 0 рекламных заказов. '+r['decision'] for r in c['attention']]
+ return ['Нет']
 def render_midday(b):
  b=dict(b,campaigns=[c for c in b['campaigns'] if not c.get('draft')])
  W=2400;H=6500;xs=[44,480,780,1050,1650,2356];files=[];green='#196b44'

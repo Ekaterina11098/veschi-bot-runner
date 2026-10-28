@@ -16,7 +16,7 @@ for p in w.ms_rows("entity/product",{"filter":"archived=false"}):
  if a in wanted:out["products"].setdefault(a,[]).append({k:p.get(k) for k in ("id","article","name","meta","buyPrice")})
 db.put(root+"prepare:v1",out)
 stock=w.ms_rows("report/stock/all",{"filter":"store="+m.href(store),"stockMode":"all","quantityMode":"all"})
-out["stock"]=[r for r in stock if any(m.href(p)==m.href(r) for ps in out["products"].values() for p in ps)]
+out["stock"]=[r for r in stock if any(m.href(p).split("?")[0]==m.href(r).split("?")[0] for ps in out["products"].values() for p in ps)]
 out["stock_count"]=len(stock);db.put(root+"prepare:v1",out)
 remaining=set(inp["returns"])
 for old in scope["orders"]:

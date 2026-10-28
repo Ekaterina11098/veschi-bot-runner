@@ -1,0 +1,30 @@
+name: Owner zero-order stock supplement28
+on:
+  push:
+    paths: ['ops/china-zero14-stock-trigger.json']
+permissions:
+  contents: read
+concurrency:
+  group: china-zero14-stock28
+  cancel-in-progress: false
+jobs:
+  report:
+    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_zero_orders*.py'
+      - name: Prepare or deliver stock supplement
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: python scripts/china_zero_orders_stock28.py

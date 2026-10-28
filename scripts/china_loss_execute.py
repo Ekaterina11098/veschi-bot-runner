@@ -23,7 +23,7 @@ class IO(BaseIO):
   if type(a.get('sender_id')) is not int or a['sender_id']<=0 or a['chat_id']!=CHAT or a['bot_id']!=BOT:raise ValueError('Owner mismatch')
   cfg=self.db('business_agent_config?agent_id=eq.china&select=active,chat_id,bot_id,owner_user_id')
   if len(cfg)!=1 or cfg[0]!=dict(active=True,chat_id=CHAT,bot_id=BOT,owner_user_id=OWNER):raise ValueError('Registration changed')
-  j=self.db('business_agent_jobs?id=eq.'+str(a['job_id'])+'&agent_id=eq.china&select=id,request_text,sender_id,chat_id,tool_trace')
+  j=self.db('business_agent_jobs?id=eq.'+str(a['job_id'])+'&agent_id=eq.china&select=id,request_text,sender_id,chat_id,created_at,tool_trace')
   from china_advertising_plans import bid_confirmation
   confirmation=bool(j) and (is_all(j[0]['request_text']) or a.get('execution_kind')=='advertising_dialog_v1' and bid_confirmation(j[0]['request_text']))
   if a.get('execution_kind')=='daily_selected_v1' and len(j)==1:

@@ -1,4 +1,5 @@
 name: Create posted returns from verified source warehouses
+# All four source checks completed and captured
 on:
   push:
     branches: [main]

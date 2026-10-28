@@ -17,11 +17,13 @@ def parse(text):
  action=bool(re.search(r'подним|поднят|повысь|повыс|повыш|увелич|добавь',head,re.I))
  all_scope=bool(re.search(r'\bвс[еёехм]+\b',head,re.I) and re.search(r'товар|ассортимент|цен',head,re.I))
  fragment=re.search(r'(?:в\s+которых\s+есть|содержащ\w*|содержат)\s+([a-z0-9][a-z0-9_-]{1,60})',head,re.I)
+ family=bool(re.search(r'\bвс[еёехм]+\s+(?:(?:товар|сумк|артикул)\w*\s+)?(?:noelbag|noel|ноэль|ноель)\b',head,re.I))
  if re.search(r'ставк|реклам|бюджет|пополн',head,re.I) and not re.search(r'цен',head,re.I):return None
  if not nums or not (action or re.fullmatch(r'все\s+товары\s*\+\s*\d+(?:[.,]\d+)?\s*%',head,re.I)):return None
  if len(nums)>1 and not re.search(r'не\s+на\s+\d.*\bа\s+на',head,re.I):raise ValueError('В команде неоднозначный процент')
  percent=Decimal(nums[-1].replace(',','.'))
  if not 0<percent<=100:raise ValueError('Процент должен быть от 0 до 100')
+ if family and action:return dict(kind='contains',fragment='noelbag',percent=format(percent.normalize(),'f'))
  if fragment and action:return dict(kind='contains',fragment=fragment[1].casefold(),percent=format(percent.normalize(),'f'))
  if all_scope and (re.search(r'цен',head,re.I) or re.fullmatch(r'все\s+товары\s*\+\s*\d+(?:[.,]\d+)?\s*%',head,re.I)):return dict(kind='catalog',percent=format(percent.normalize(),'f'))
  return None

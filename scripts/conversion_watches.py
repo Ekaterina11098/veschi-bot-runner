@@ -436,7 +436,8 @@ class Worker:
             request=question_request
         trace=list(search_trace)
         for turn in range(6):
-            out=request({'model':os.getenv('BUSINESS_AI_MODEL') or 'gpt-4o-mini','input':messages,'tools':allowed,'parallel_tool_calls':False,'tool_choice':'required' if turn==0 else ('none' if turn==5 else 'auto'),'max_output_tokens':1800,'store':False}).get('output') or []
+            from china_model_usage import metered_request,task_type
+            out=metered_request(request,{'model':os.getenv('BUSINESS_AI_MODEL') or 'gpt-4o-mini','input':messages,'tools':allowed,'parallel_tool_calls':False,'tool_choice':'required' if turn==0 else ('none' if turn==5 else 'auto'),'max_output_tokens':1800,'store':False},job_id=job.get('id'),agent_id='china',task_type=task_type(job['request_text']),stage='saved_question',turn=turn).get('output') or []
             calls=[x for x in out if x.get('type')=='function_call']
             if not calls:
                 answer='\n'.join(p.get('text','') for x in out if x.get('type')=='message' for p in x.get('content') or [] if p.get('type')=='output_text').strip()
@@ -591,7 +592,8 @@ class Worker:
         def enriched_request(payload):
             if search_context:
                 payload=dict(payload,input=[{'role':'developer','content':search_context}]+list(payload['input']))
-            return base_request(payload)
+            from china_model_usage import metered_request,task_type
+            return metered_request(base_request,payload,job_id=job.get('id'),agent_id='china',task_type=task_type(job['request_text']),stage='legacy_dialog')
         try:
             answer,trace=c.run_dialog(job,request=enriched_request,read=lambda t,p:self.db('GET',t,params=p),previous=history,db=self.db)
             return answer,search_trace+trace

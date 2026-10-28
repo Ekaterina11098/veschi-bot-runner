@@ -101,9 +101,10 @@ def main():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
  io=IO();args=sys.argv[1:]
  if args==['--drain']:
-  pending=io.db('telegram_api_cache?cache_key=like.'+ROOT+'*&payload->>status=eq.requested&select=cache_key&limit=5')
+  pending=io.db('telegram_api_cache?cache_key=like.'+ROOT+'*&payload->>status=in.(requested,prepared)&select=cache_key&limit=5')
   for row in pending:
-   job_id=int(row['cache_key'][len(ROOT):]);prepare(io,job_id);apply(io,job_id)
+   if (io.get(row['cache_key']) or {}).get('manual_review_required'):continue
+   job_id=int(row['cache_key'][len(ROOT):]);prepare(io,job_id);apply(io,job_id);break
   return
  cfg=json.load(open('ops/china-price155-trigger.json'));job_id=cfg['job_id'];e=prepare(io,job_id) if cfg['mode']=='prepare' else apply(io,job_id,review=True)
  print(json.dumps(dict(status=e['status'],ready=len(e['selections']),blocked=[dict(article=r['selection']['article'],reason=r.get('reason')) for r in e['rows'] if r['status']=='blocked']),ensure_ascii=False))

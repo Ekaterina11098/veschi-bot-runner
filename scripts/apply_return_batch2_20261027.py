@@ -1,8 +1,19 @@
 """Create only requested source transfers whose full available stock was verified."""
-import collections,json,datetime as dt,math
+import collections,json,datetime as dt,math,os,urllib.request,urllib.parse,urllib.error,gzip,time
 import fbs_document_chain as m
 ROOT="returns_transfer:multi:20261027:batch2:"
-t=m.Transport();db=m.Cache(t);w=m.Worker(t,db,{})
+class StockTransport(m.Transport):
+ def _request_once(self,base,path,method="GET",body=None,params=None):
+  if base!=m.MS or path!="report/stock/all" or method!="GET":
+   return super()._request_once(base,path,method,body,params)
+  request=urllib.request.Request(base+path+"?"+urllib.parse.urlencode(params or {}),headers={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept":"application/json;charset=utf-8","Accept-Encoding":"gzip"})
+  try:
+   with urllib.request.urlopen(request,timeout=120) as r:
+    raw=r.read()
+    return json.loads(gzip.decompress(raw) if r.headers.get("Content-Encoding")=="gzip" else raw)
+  except urllib.error.HTTPError as e:raise m.Stop("HTTP_"+str(e.code)+" GET report/stock/all") from None
+  except (TimeoutError,urllib.error.URLError):raise m.Stop("API transport outcome uncertain") from None
+t=StockTransport();db=m.Cache(t);w=m.Worker(t,db,{})
 req=db.get(ROOT+"request:v1");pre=db.get(ROOT+"preflight:v1")
 assert req["writes_enabled"] is True
 assert pre and pre["status"] in ("ready","needs_review")

@@ -5,7 +5,7 @@ import requests
 from china_cloud_cost_control import Cache,WB,validate_identity,projection,stamp
 from china_bid_proposals import fresh_stock
 from china_advertising_plans import economics
-ROOT='china_agent:owner_panama17_apply28:2026-10-28:v1'
+ROOT='china_agent:owner_panama17_apply28:2026-10-28:v2'
 PLAN='china_agent:owner_panama17_plan28:2026-10-28:v1'
 CID=41325622
 ITEMS=[dict(nm_id=1535337780,article='17-FurPanama-leo',old_minor=11,target_minor=14)]

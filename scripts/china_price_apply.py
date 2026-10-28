@@ -105,7 +105,7 @@ class IO:
         if (member.get('user',{}).get('id')!=a['actor_user_id'] or member['user'].get('is_bot') or
             not (member.get('status') in ['member','administrator','creator'] or member.get('status')=='restricted' and member.get('is_member') is True)):
             raise ValueError('Подтвердивший больше не участник группы')
-        rows=self.db('business_agent_jobs?id=eq.'+str(int(a['report_job_id']))+'&agent_id=eq.china&chat_id=eq.'+str(CHAT)+'&status=eq.done&select=answer,request_text,tool_trace')
+        rows=self.db('business_agent_jobs?id=eq.'+str(int(a['report_job_id']))+'&agent_id=eq.china&chat_id=eq.'+str(CHAT)+'&status=eq.done&select=answer,request_text,tool_trace,sender_id')
         if len(rows)!=1:raise ValueError('Отчёт не найден')
         j=rows[0]
         if a.get('basis')=='explicit_zero_order_percent':

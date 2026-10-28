@@ -1,7 +1,5 @@
 name: Owner two campaign all-source orders28
 on:
-  push:
-    paths: ['ops/china-owner-two-campaign-orders28.json']
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   review:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

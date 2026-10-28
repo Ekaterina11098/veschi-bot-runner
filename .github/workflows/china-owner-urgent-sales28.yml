@@ -36,4 +36,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-        run: python scripts/china_owner_urgent_sales28.py
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: python scripts/china_owner_urgent_stock28.py

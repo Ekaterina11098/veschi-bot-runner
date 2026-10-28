@@ -50,3 +50,24 @@ def validate_command(io,a,j):
   if (s['nm_id'],s['article']) not in expected or not (exact or rounded):raise ValueError('Target is not the requested percent or its declared legal WB step')
  if a['report_sha256']!=hashlib.sha256(j['request_text'].encode()).hexdigest():raise ValueError('Original command changed')
 
+
+def status_answer(w,job,history):
+ text=job.get('request_text','')
+ if not (re.search(r'цен',text,re.I) and re.search(r'поднял|повысил|изменил|выполн|готов|сделал',text,re.I) or text.strip().lower().rstrip('?!.,')=='не понимаю'):return None
+ rows=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+ROOT+'*','select':'cache_key,payload->status,payload->approval_key,payload->execution_key,payload->cohort','order':'updated_at.desc','limit':20}) or []
+ rows=[r for r in rows if re.fullmatch(re.escape(ROOT)+r'\d+',r['cache_key'])]
+ if not rows:return None
+ r=rows[0];ak=r.get('approval_key');ek=r.get('execution_key')
+ if not ek and ak:
+  from china_price_apply import PREFIX
+  ek='china_agent:price_execution:v1:'+ak[len(PREFIX):]
+ execution=w.get(ek) if ek else None;items=(execution or {}).get('items',[]);verified=[]
+ for x in items:
+  p=x.get('readback') or {};s=x.get('selection') or {}
+  if x.get('status')=='applied' and p.get('currencyIsoCode4217')=='CNY' and p.get('vendorCode')==s.get('article') and p.get('sizes') and all(Decimal(str(z.get('discountedPrice')))==Decimal(s['target_cny']) for z in p['sizes']):verified.append(x)
+ total=len(r.get('cohort') or []);n=len(verified)
+ if n:
+  answer='По последней команде +30%: изменение цены проверено в WB у '+str(n)+' из '+str(total)+' товаров.'
+  if n<total:answer+=' По остальным '+str(total-n)+' выполнение не подтверждено или есть конкретный блокер; повторное повышение не отправляется.'
+ else:answer='Команда повышения цен зарегистрирована. Подтверждённого результата WB пока нет; повторную запись не отправляю. Предыдущий повтор списка не был выполнением команды.'
+ return answer,[dict(name='zero_order_price_status',command_key=r['cache_key'],execution_key=ek,wb_verified=n,total=total,wb_writes=0)]

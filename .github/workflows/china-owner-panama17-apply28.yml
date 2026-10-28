@@ -1,5 +1,7 @@
 name: Owner Panama17 search bid28
 on:
+  push:
+    paths: ['ops/china-owner-panama17-apply28.json']
   workflow_dispatch:
 permissions:
   contents: read
@@ -8,7 +10,6 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
-    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

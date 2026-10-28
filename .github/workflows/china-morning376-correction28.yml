@@ -1,0 +1,43 @@
+name: Owner morning PNG376 correction 28Oct
+on:
+  push:
+    paths: ['ops/china-morning376-trigger.json']
+permissions:
+  contents: read
+concurrency:
+  group: china-morning376-correction
+  cancel-in-progress: false
+jobs:
+  correction:
+    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Test exclusion safeguards
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_exclusion_review.py'
+      - name: Edit only the owner-authorized existing message, no WB transport
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import json,sys
+          from china_morning_correction376 import prepare,apply
+          from china_advertising_state import AdvertisingIO
+          from datetime import datetime
+          from china_advertising_v2 import MSK
+          if str(datetime.now(MSK).date())!='2026-10-28':raise ValueError('Dated only')
+          trigger=json.load(open('ops/china-morning376-trigger.json'))
+          io=AdvertisingIO()
+          if trigger['mode']=='prepare':e=prepare(io)
+          elif trigger['mode']=='apply':e=apply(io)
+          else:raise ValueError('Explicit mode required')
+          print(json.dumps(dict(status=e['status'],actions=e['file']['action_count'],wb_writes=0,message_id=376)))
+          PY

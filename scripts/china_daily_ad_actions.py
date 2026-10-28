@@ -129,6 +129,10 @@ def execute(io,a,p):
  e['status']='done' if all(x['status'] in ['verified','blocked'] for x in e['items']) else 'attention';save()
  from china_execution_notice import deliver_result
  deliver_result(io,a,p,e)
+ notice=io.get('china_agent:daily_ad_result:v2:'+p['plan_id'])
+ if e['status']=='done' and notice and notice.get('status')=='sent':
+  completed=dict(a,status='completed',result_status=e['status'],execution_key=key,result_message_id=notice.get('message_id'))
+  io.put(APPROVAL+str(a['job_id']),completed)
  return e
 
 def process_and_deliver(io,a,p):

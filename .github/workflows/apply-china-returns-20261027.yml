@@ -1,4 +1,5 @@
 name: Apply requested China returns transfer
+# Handle documents with empty comments during duplicate checks
 on:
   push:
     branches: [main]

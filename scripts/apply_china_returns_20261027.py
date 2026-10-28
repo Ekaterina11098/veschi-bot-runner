@@ -30,7 +30,7 @@ try:
  assert not source.get("archived") and not target.get("archived")
  documents=w.ms_rows("entity/move")
  existing=[d for d in documents if d.get("externalCode")==req["externalCode"]]
- similar=[d for d in documents if d.get("description","").strip().casefold()==req["description"].strip().casefold() and d.get("externalCode")!=req["externalCode"]]
+ similar=[d for d in documents if (d.get("description") or "").strip().casefold()==req["description"].strip().casefold() and d.get("externalCode")!=req["externalCode"]]
  assert not similar,"Matching comment already exists; reconcile before creating"
  assert len(existing)<=1,"Duplicate external identity"
  payload={"organization":m.meta(org),"sourceStore":m.meta(source),"targetStore":m.meta(target),"description":req["description"],"externalCode":req["externalCode"],"applicable":True,"moment":dt.datetime.now(dt.timezone(dt.timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S"),"positions":[{"assortment":x["assortment"],"quantity":x["quantity"],"price":0} for x in mapping]}

@@ -66,6 +66,22 @@ def finish_names(t,db):
   row['errors']=[x for x in row['errors'] if x!='customerorder: ambiguous supply name']
   if len(found)!=1 or found[0]['id']!=check['id']:row['errors'].append('customerorder: ambiguous registered name')
   row['status']='attention' if row['errors'] else 'verified'
+
+ for row in report['results']:
+  if not any('Document positions mismatch' in x for x in row['errors']):continue
+  state=db.get('fbs_document_chain:'+row['cabinet']+':supply:v1:'+row['supply_id'])
+  config=db.get('fbs_document_chain:'+row['cabinet']+':config:v1');w=Worker(t,db,config)
+  expected={}
+  for p in state['positions']:
+   h=href(p['assortment']);expected[h]=expected.get(h,0)+float(p['quantity'])
+  for check in row['checks']:
+   if check.get('error')!='Document positions mismatch':continue
+   actual={};names={}
+   for p in w.ms_rows('entity/'+check['type']+'/'+check['id']+'/positions'):
+    h=href(p['assortment']);actual[h]=actual.get(h,0)+float(p['quantity']);names[h]=p['assortment'].get('name')
+   check['position_diff']=[dict(assortment=h,name=names.get(h),expected=expected.get(h,0),actual=actual.get(h,0)) for h in sorted(set(expected)|set(actual)) if expected.get(h,0)!=actual.get(h,0)]
+   check['total_expected_quantity']=sum(expected.values());check['total_actual_quantity']=sum(actual.values())
+
  report.update(registered_names_verified=True,name_check_completed_at=now(),additional_ms_reads=t.reads,status='attention' if any(x['errors'] for x in report['results']) else 'verified')
  report['attention']=[dict(cabinet=x['cabinet'],supply_id=x['supply_id'],errors=x['errors']) for x in report['results'] if x['errors']]
  db.put(REPORT,report);print(json.dumps(dict(status=report['status'],attention=report['attention'],operational_writes=0)))

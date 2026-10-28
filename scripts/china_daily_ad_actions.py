@@ -24,6 +24,9 @@ def bind(io,f,receipt):
  if not old and not io.create(BIND+str(mid),b):raise ValueError('Concurrent daily binding')
 
 def handle(w,job):
+ from china_daily_selected import handle as selected_handle
+ selected_result=selected_handle(w,job)
+ if selected_result is not None:return selected_result
  m=marker(job);b=w.get(BIND+str(m.get('reply_message_id')))
  if not b or not is_all(job.get('request_text','')):return None
  from china_group_permissions import allowed
@@ -140,5 +143,6 @@ def process_and_deliver(io,a,p):
   r=io.tg('sendMessage',dict(chat_id=CHAT,text=text,reply_parameters=dict(message_id=a['input_message_id'],allow_sending_without_reply=True)));io.put(key,dict(status='sent',message_id=r['message_id'],text=text))
  except Exception:io.put(key,dict(status='uncertain',text=text))
  return e
+
 
 

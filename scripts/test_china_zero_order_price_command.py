@@ -35,10 +35,17 @@ class StatusTests(unittest.TestCase):
   x=dict(status='applied',selection=dict(article='a',target_cny='130'),readback=dict(currencyIsoCode4217='CNY',vendorCode='a',sizes=[dict(discountedPrice=130)]))
   answer,trace=status_answer(self.worker(dict(items=[x])),dict(request_text='Ты цены поднял?'),[])
   self.assertEqual(trace[0]['wb_verified'],1)
+  self.assertTrue(answer.startswith('Да. Цены подняты у 1 из 2 товаров.'))
  def test_green_flag_without_matching_price_not_success(self):
   from china_zero_order_price_command import status_answer
   x=dict(status='applied',selection=dict(article='a',target_cny='130'),readback=dict(currencyIsoCode4217='CNY',vendorCode='a',sizes=[dict(discountedPrice=100)]))
   self.assertEqual(status_answer(self.worker(dict(items=[x])),dict(request_text='Ты цены поднял?'),[])[1][0]['wb_verified'],0)
+ def test_pending_says_not_yet(self):
+  from china_zero_order_price_command import status_answer
+  self.assertTrue(status_answer(self.worker({}),dict(request_text='Ты цены поднял?'),[])[0].startswith('Нет, цены ещё не подняты.'))
+ def test_uncertain_does_not_claim_no_write(self):
+  from china_zero_order_price_command import status_answer
+  self.assertTrue(status_answer(self.worker(dict(status='uncertain')),dict(request_text='Ты цены поднял?'),[])[0].startswith('Пока не могу подтвердить'))
  def test_unrelated_clarification_not_intercepted(self):
   from china_zero_order_price_command import status_answer
   self.assertIsNone(status_answer(self.worker({}),dict(request_text='Не понимаю'),[dict(request_text='Расскажи про остатки')]))

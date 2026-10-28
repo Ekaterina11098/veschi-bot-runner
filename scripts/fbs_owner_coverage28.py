@@ -25,6 +25,9 @@ def coverage(cab,supply,c,ledger,docs):
    if len(by_id)==1 and not candidates:candidates=by_id
   if not candidates and typ=='customerorder' and ident.startswith('WB-GI-'):
    candidates=[d for d in docs[typ] if ident in re.findall(r'WB-GI-\d+',str(d.get('name',''))+' '+str(d.get('description','')))]
+  if not candidates and typ=='customerorder' and ident.startswith('OZON-ACT-') and supply.get('posting_numbers'):
+   wanted=set(supply['posting_numbers'])
+   candidates=[d for d in docs[typ] if set(re.findall(r'\d{4,}-\d+-\d+',str(d.get('description',''))))==wanted]
   if not candidates and typ=='demand' and 'customerorder' in selected:
    candidates=[d for d in docs[typ] if href(d.get('customerOrder') or {})==MS+'entity/customerorder/'+selected['customerorder']['id']]
   if not candidates and typ=='salesreturn' and 'demand' in selected:
@@ -76,11 +79,16 @@ def main():
   for act in acts.values():
    ident='OZON-ACT-'+str(act['id']);state=ledgers['ozon'].get(ident)
    if state or act.get('status')=='closed':
-    source['ozon'][ident]={'id':ident,'closedAt':(state or {}).get('supply',{}).get('closedAt') or act.get('departure_date'),'name':'Ozon','act_status':act.get('status')}
+    source['ozon'][ident]={'id':ident,'closedAt':(state or {}).get('supply',{}).get('closedAt') or act.get('created_at'),'name':'Ozon','act_status':act.get('status')}
    else:
     scope=snapshot(act)
     if scope['ready']:source['ozon'][ident]={'id':ident,'closedAt':scope['movement_at'],'name':'Ozon','act_status':act.get('status')}
     else:waiting.append(dict(id=ident,status=act.get('status'),included=len(scope['included']),excluded=len(scope['excluded'])))
+  for ident,supply in source['ozon'].items():
+   if ident not in ledgers['ozon']:
+    rows=ozon('/v2/posting/fbs/act/get-postings',{'id':int(ident.split('-')[-1])}).get('result')
+    if not isinstance(rows,list):raise Stop('Historical Ozon posting scope incomplete')
+    supply['posting_numbers']=[x['posting_number'] for x in rows]
   report['source'].append(dict(cabinet='ozon',observed_at=now(),listed_acts=len(acts),eligible_or_historical=len(source['ozon']),waiting_delivery=waiting,date_from=str(stamp(ozbase['activated_at']).date()-dt.timedelta(days=7)),date_to=str(end),activated_at=ozbase['activated_at'],baseline_count=len(ozbase.get('baseline_delivering_act_ids',[]))))
   for cab in source:
    for ident,state in ledgers[cab].items():

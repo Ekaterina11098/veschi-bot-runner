@@ -1,4 +1,4 @@
-name: Owner four low-traffic CPC tests28
+name: Owner four low-traffic CPC tests28 recovery
 on:
   push:
     branches: [main]

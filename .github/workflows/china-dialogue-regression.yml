@@ -1,0 +1,37 @@
+name: China dialogue regression checks
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/china_reply_evidence.py
+      - scripts/china_reply_quality.py
+      - scripts/china_catalog_price_command.py
+      - scripts/china_zero_orders.py
+      - scripts/china_zero_orders_stock.py
+      - scripts/conversion_watches.py
+      - scripts/test_china_reply_*.py
+      - scripts/test_china_catalog_price_command.py
+      - scripts/test_china_zero_orders*.py
+      - .github/workflows/china-dialogue-regression.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Synthetic persistence and transport only; no credentials or live API calls
+        run: |
+          python -m unittest discover -s scripts -p 'test_china_reply_*.py'
+          python -m unittest discover -s scripts -p test_china_catalog_price_command.py
+          python -m unittest discover -s scripts -p test_china_zero_orders.py
+          python -m unittest discover -s scripts -p test_china_zero_orders_stock.py
+          python -m py_compile scripts/conversion_watches.py scripts/china_reply_evidence.py scripts/china_reply_quality.py scripts/china_catalog_price_command.py scripts/china_zero_orders_stock.py

@@ -7,7 +7,7 @@ def collect_stock(w):
  import requests
  now=datetime.now(timezone.utc);key=KEY+now.astimezone(ZoneInfo('Europe/Moscow')).date().isoformat();old=w.get(key)
  if old and old.get('complete') and (now-datetime.fromisoformat(old['observed_at'])).total_seconds()<900:return old
- base='https://api.moysklad.ru/api/remap/1.2';headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN']}
+ base='https://api.moysklad.ru/api/remap/1.2';headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN'],'Accept-Encoding':'gzip'}
  def get(path,params):
   r=requests.get(base+path,params=params,headers=headers,timeout=60)
   if not r.ok:raise ValueError('MoySklad HTTP '+str(r.status_code))

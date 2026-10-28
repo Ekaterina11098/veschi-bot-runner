@@ -510,6 +510,11 @@ class Worker:
                 answer=normalize_answer(answer)
                 trace=[marker]+trace
                 patch({'answer':answer,'tool_trace':trace})
+            from china_reply_evidence import reconcile
+            checked_answer,checked_trace=reconcile(self,job,history,answer,trace)
+            if checked_answer!=answer or checked_trace!=trace:
+                answer,trace=checked_answer,checked_trace
+                patch({'answer':answer,'tool_trace':trace})
             from china_shared_memory import record_turn
             try:record_turn(self,job,answer,trace)
             except Exception:

@@ -75,11 +75,8 @@ def handle(w,job,history):
   source_jobs={r.get('job_id') for r in (p or {}).get('source_refs',[]) if r.get('job_id') is not None}
   if p and marker.get('parent_job_id') in source_jobs and re.fullmatch(r'(?:согласен[.! ]*|да[.! ]*)?(?:делай|сделай|давай|применяй|подтверждаю)[.! ]*',text.strip(),re.I):
    return status_text(p)+' Это подтверждение сохранённого плана, не повторное повышение.',[dict(name='catalog_price_confirmation',command_key=key,duplicate_prevented=True,wb_writes=0)]
-  if not p and re.search(r'поднял.*цен|цен.*поднял|статус.*цен',text,re.I) and hasattr(w,'db'):
-   recent=w.db('GET','telegram_api_cache',params={'cache_key':'like.'+ROOT+'*','select':'payload','order':'updated_at.desc','limit':3}) or []
-   if recent:p=recent[0]['payload']
-  if p and re.search(r'как\s+там.*задач|поднял.*цен|цен.*поднял|статус.*цен',text,re.I):return status_text(p),[dict(name='catalog_price_status',command_key=key,status=p['status'])]
-  return None
+  from china_reply_evidence import status_answer
+  return status_answer(w,job,history)
  if not w.authorized(job):return 'Изменять цены могут только действующие участники этой группы.',[dict(name='catalog_price_command',status='unauthorized')]
  if p:
   if job['id']<=p.get('last_human_job_id',0) or (parsed['kind']=='catalog' and parsed['percent']==p['rules']['default_percent']):

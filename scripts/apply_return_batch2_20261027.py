@@ -14,9 +14,10 @@ class StockTransport(m.Transport):
   except urllib.error.HTTPError as e:raise m.Stop("HTTP_"+str(e.code)+" GET report/stock/all") from None
   except (TimeoutError,urllib.error.URLError):raise m.Stop("API transport outcome uncertain") from None
 t=StockTransport();db=m.Cache(t);w=m.Worker(t,db,{})
-req=db.get(ROOT+"request:v1");pre=db.get(ROOT+"preflight:v1")
+req=db.get(ROOT+"request:v1");pre=db.get(ROOT+"preflight_fast:v1")
 assert req["writes_enabled"] is True
 assert pre and pre["status"] in ("ready","needs_review")
+assert len(pre["sources"])==4 and sum(s["quantity"] for s in pre["sources"])==183
 orgs=w.ms_rows("entity/organization");assert len(orgs)==1
 org=orgs[0];target=pre["target"]
 summary={"status":"processing","sources":[],"at":m.now()}
@@ -49,16 +50,19 @@ for s in pre["sources"]:
    assert len(same)<=1,"Multiple matching manual documents"
    if same:doc=same[0]
    else:
-    live=w.ms_rows("report/stock/all",{"filter":"store="+m.href(s["store"])+";stockMode=all;quantityMode=all"})
-    by=collections.defaultdict(list)
-    for r in live:by[(r.get("article") or "").strip().casefold()].append(r)
+    live=t.request(m.MS,"report/stock/bystore/current",params={"stockType":"freeStock","include":"zeroLines"})
+    assert isinstance(live,list),"Short availability report incomplete"
+    by={}
+    for row in live:
+     pair=(row["storeId"],row["assortmentId"])
+     assert pair not in by,"Duplicate availability row"
+     by[pair]=row["freeStock"]
     shortages=[]
     for p in s["mapping"]:
-     rows=by[(p["article"] or "").strip().casefold()]
-     if len(rows)!=1:raise m.Stop("Fresh available stock unknown")
-     r=rows[0];a=r.get("stock");v=r.get("reserve")
-     assert all(type(x) in (int,float) and math.isfinite(x) for x in (a,v)) and v>=0
-     if a-v<p["quantity"]:shortages.append({"code":p["code"],"article":p["article"],"required":p["quantity"],"available":a-v})
+     pair=(s["store"]["id"],p["id"])
+     assert pair in by,"Fresh available stock unknown"
+     a=by[pair];assert type(a) in (int,float) and math.isfinite(a)
+     if a<p["quantity"]:shortages.append({"code":p["code"],"article":p["article"],"required":p["quantity"],"available":a})
     if shortages:
      record.update(status="blocked",issues=shortages);db.put(key,record);summary["sources"].append(record);db.put(ROOT+"result:v1",summary);continue
     payload={"organization":m.meta(org),"sourceStore":m.meta(s["store"]),"targetStore":m.meta(target),"description":s["description"],"externalCode":ext,"applicable":True,"moment":dt.datetime.now(dt.timezone(dt.timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S"),"positions":[{"assortment":p["assortment"],"quantity":p["quantity"],"price":0} for p in s["mapping"]]}

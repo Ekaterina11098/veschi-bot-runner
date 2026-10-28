@@ -58,7 +58,13 @@ try:
    (normal if row["category"]==req["included_category"] else held)[article.casefold()]+=1
  assert sum(normal.values())==req["expected_normal_quantity"]==180
  assert sum(held.values())==req["expected_held_quantity"]==3
- save({"status":"mapping","write_attempted":False,"normal_quantity":180,"held_quantity":3,"moves":observed})
+ skipped=collections.Counter()
+ for article in req.get("skipped_normal_articles",[]):
+  key=article.strip().casefold();assert key in normal
+  skipped[key]=normal.pop(key)
+ assert sum(skipped.values())==req["expected_skipped_normal_quantity"]==2
+ assert sum(normal.values())==req["expected_added_quantity"]==178
+ save({"status":"mapping","write_attempted":False,"requested_normal_quantity":180,"normal_quantity":178,"skipped_normal_quantity":2,"held_quantity":3,"moves":observed})
  warehouses=wb("marketplace-api.wildberries.ru","/api/v3/warehouses")["body"]
  chosen=[x for x in warehouses if x["id"]==req["warehouse_id"] and x["name"]==req["warehouse_name"] and not x.get("isDeleting")]
  assert len(chosen)==1,"Wrong WB seller warehouse"
@@ -82,7 +88,7 @@ try:
   found=byarticle[article]
   held_cards.append({"article":metadata[article],"quantity_not_added":quantity,"also_has_normal_units":article in normal})
  if issues:
-  save({"status":"needs_mapping","write_attempted":False,"issues":issues,"mapped":mapping,"held":held_cards,"normal_quantity":180});raise m.Stop("WB cards missing or ambiguous")
+  save({"status":"needs_mapping","write_attempted":False,"issues":issues,"mapped":mapping,"held":held_cards,"skipped_normal":[{"article":metadata[a],"quantity":q} for a,q in skipped.items()],"requested_normal_quantity":180,"normal_quantity":178,"skipped_normal_quantity":2});raise m.Stop("WB cards missing or ambiguous")
  ids=[p["chrtId"] for p in mapping];assert len(set(ids))==len(ids)
  for d in observed:
   current=t.request(m.MS,"entity/move/"+d["id"])
@@ -90,7 +96,7 @@ try:
  # Read fresh quantities only after all source verification and card mapping.
  before=stocks(ids)
  changes=[{**p,"before":before[p["chrtId"]],"after":before[p["chrtId"]]+p["delta"]} for p in mapping]
- result={"status":"prepared","write_attempted":False,"warehouse":chosen[0],"moves":observed,"changes":changes,"held":held_cards,"normal_quantity":180,"held_quantity":3,"positions":len(changes),"prepared_at":m.now()}
+ result={"status":"prepared","write_attempted":False,"warehouse":chosen[0],"moves":observed,"changes":changes,"held":held_cards,"skipped_normal":[{"article":metadata[a],"quantity":q} for a,q in skipped.items()],"requested_normal_quantity":180,"normal_quantity":178,"skipped_normal_quantity":2,"held_quantity":3,"positions":len(changes),"prepared_at":m.now()}
  save(result)
  assert stocks(ids)==before,"Stock changed during preflight; recompute before writing"
  result.update(status="inflight",write_attempted=True,write_started_at=m.now());save(result)
@@ -99,10 +105,10 @@ try:
  result.update(status="accepted",write_http_status=204);save(result)
  after=stocks(ids)
  for p in result["changes"]:p["verified_amount"]=after[p["chrtId"]]
- checks={"all_amounts_verified":all(after[p["chrtId"]]==p["after"] for p in changes),"added_only_normal":sum(p["delta"] for p in changes)==180,"held_units_excluded":sum(held.values())==3,"correct_warehouse":True,"all_four_source_moves_verified":len(observed)==4}
+ checks={"all_amounts_verified":all(after[p["chrtId"]]==p["after"] for p in changes),"added_only_normal":sum(p["delta"] for p in changes)==178,"held_units_excluded":sum(held.values())==3,"correct_warehouse":True,"all_four_source_moves_verified":len(observed)==4}
  result.update(status="verified" if all(checks.values()) else "readback_mismatch",checks=checks,verified_at=m.now());save(result)
  assert all(checks.values()),"Stock readback mismatch; no blind retry"
- print(json.dumps({"status":"verified","normal_added":180,"positions":len(changes),"held":3}))
+ print(json.dumps({"status":"verified","normal_added":178,"positions":len(changes),"held":3}))
 except Exception as e:
  prior=db.get(ROOT+"fbs_result:v1") or {}
  attempted=prior.get("write_attempted",False)

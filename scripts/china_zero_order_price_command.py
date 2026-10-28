@@ -26,6 +26,7 @@ def handle(w,job,history):
  if not 1<=len(rows)<=100 or len({r['nm_id'] for r in rows})!=len(rows):raise ValueError('Неоднозначный список товаров')
  key=ROOT+str(job['id']);entry=dict(status='requested',job_id=job['id'],actor_user_id=job['sender_id'],request_text=job['request_text'],source_key=source,source_sent_at=p['sent_at'],percent=percent,cohort=[dict(nm_id=str(r['nm_id']),article=r['article']) for r in rows],created_at=datetime.now(timezone.utc).isoformat())
  entry['signature']=signature(job,source,percent)
+ entry['manual_review_required']=job['id']==155
  old=w.get(key)
  if not old:w.save(key,entry)
  elif old.get('signature')!=entry['signature']:raise ValueError('Команда изменилась')

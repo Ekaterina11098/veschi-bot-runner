@@ -1,0 +1,32 @@
+name: Read five China campaign diagnostics
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/china_five_campaigns29.py','.github/workflows/china-five-campaigns29.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-five-campaigns29
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Owner scoped second CPM operation
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CPM_STAGE: diagnostic
+        run: PYTHONPATH=scripts python scripts/china_five_campaigns29.py

@@ -3,7 +3,7 @@ import os,json,requests
 from datetime import datetime,timezone,timedelta
 from china_advertising_state import AdvertisingIO
 from china_advertising_v2 import http,stamp
-KEY='china_agent:budget_inputs:2026-10-29:v1'
+KEY='china_agent:budget_inputs:2026-10-29:v2'
 IDS=[40933588,41055480,41270309,41298169,41325637,41332083]
 class ReadIO(AdvertisingIO):
  def wb(self,path,method='GET',body=None):
@@ -21,7 +21,8 @@ def main():
   rows=data.get('adverts',[])
   if {c['id'] for c in rows}!=set(IDS) or any(c.get('currency')!='CNY' for c in rows):raise ValueError('Campaign identities/currency incomplete')
   io.create(KEY+':campaigns',dict(observed_at=stamp(),rows=rows))
- campaigns=io.get(KEY+':campaigns')['rows'];nms=sorted({n['nm_id'] for c in campaigns for n in c['nm_settings']})
+ campaigns=io.get(KEY+':campaigns')['rows'];catalog=io.get('china_agent:prices:v1') or {};assert catalog.get('cabinet')=='token_3'
+ nms=sorted({int(p['nmID']) for p in catalog['rows']})
  if io.get(KEY+':budgets') is None:io.create(KEY+':budgets',dict(observed_at=stamp(),data=http(io,'/api/advert/v2/budget','POST',dict(advertIds=IDS))))
  if io.get(KEY+':prices') is None:
   prices=io.prices(nms)

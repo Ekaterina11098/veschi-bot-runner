@@ -1,0 +1,29 @@
+name: WB minimum current export read only29Oct
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/china_minimum_export29_read.py','.github/workflows/china-minimum-export29.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-minimum-browser-export29
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 playwright==1.55.0
+      - name: Read official minimum export only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TINYFISH_API_KEY: ${{ secrets.TINYFISH_API_KEY }}
+        run: PYTHONPATH=scripts python scripts/china_minimum_export29_read.py

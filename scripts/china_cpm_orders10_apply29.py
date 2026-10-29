@@ -25,7 +25,34 @@ def main():
    step['status']='failed';step['response']=r.text[:1500];persist();raise ValueError('WB mutation rejected; inspect private receipt')
   step['response']=r.json() if r.content else None;step['status']='submitted';persist();return step['response']
  try:
-  if STAGE=='create':
+  if STAGE=='prepare_existing':
+   assert e['status']=='needs_review' and e.get('new_campaign_id')==41415271 and len(e.get('steps',[]))==1,'Unexpected recovery state'
+   cid=int(e['new_campaign_id'])
+   new=w.campaigns([cid])[str(cid)]
+   e['preparation_readback']=new;persist()
+   assert new['currency']=='CNY','Created currency not CNY'
+   assert new['bid_type']=='unified','Created bid mode not unified'
+   assert new['settings']['payment_type']=='cpm','Created payment model not CPM'
+   assert {int(n['nm_id']) for n in new['nm_settings']}==set(ns),'Created membership differs'
+   if new['settings']['name']!=a['name']:
+    mutate('owner_requested_name','/adv/v0/rename','POST',dict(advertId=cid,name=a['name']))
+   for _ in range(12):
+    new=w.campaigns([cid])[str(cid)]
+    if new['settings']['name']==a['name']:break
+    time.sleep(5)
+   assert new['settings']['name']==a['name'],'Name readback mismatch'
+   e['created_readback']=new
+   j=w.req('/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=ns,payment_type='cpm',placement_types=['combined']))
+   rates={}
+   for row in j.get('bids',[]):
+    vals=[v for v in row['bids'] if v.get('currency')=='CNY' and v.get('type')=='combined']
+    assert len(vals)==1 and type(vals[0]['value']) is int and vals[0]['value']>0,'Minimum bid invalid'
+    rates[str(row['nm_id'])]=vals[0]['value']
+   assert set(rates)=={str(n) for n in ns},'Minimum coverage incomplete'
+   e.update(minimums=rates,minimums_readback=j,minimums_at=stamp(),phase='minimums_ready',status='prepared')
+   e['recovered_error']=e.pop('error',None);persist()
+   print('Existing created campaign prepared, renamed, and minima verified without funding')
+  elif STAGE=='create':
    inv=w.req('/adv/v1/promotion/count');ids=sorted({x['advertId'] for g in inv.get('adverts',[]) for x in g.get('advert_list',[])})
    camps=w.campaigns(ids);before=c.get(ROOT+':before');assert before
    fresh=[x for cid,x in camps.items() if cid not in before['campaigns'] and x['settings']['payment_type']=='cpm']

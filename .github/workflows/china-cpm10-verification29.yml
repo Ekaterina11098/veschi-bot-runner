@@ -1,8 +1,5 @@
 name: Owner authorized minimum CPM test execution
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/china_cpm10_apply29.py','.github/workflows/china-cpm10-verification29.yml']
   workflow_dispatch:
 permissions:
   contents: read

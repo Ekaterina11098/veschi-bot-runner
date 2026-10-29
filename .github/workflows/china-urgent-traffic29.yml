@@ -1,8 +1,5 @@
 name: Owner urgent sales and traffic29Oct read only
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/china_urgent_traffic29_read.py','.github/workflows/china-urgent-traffic29.yml']
   workflow_dispatch:
 permissions:
   contents: read

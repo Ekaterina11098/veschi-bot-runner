@@ -28,3 +28,9 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
         run: PYTHONPATH=scripts python scripts/china_zero30_orders29_read.py
+      - name: Read current status of found cohort orders only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: PYTHONPATH=scripts python scripts/china_zero30_orders29_read.py --statuses

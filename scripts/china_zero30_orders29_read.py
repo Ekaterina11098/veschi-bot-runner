@@ -63,4 +63,24 @@ def main():
  except Exception as ex:
   state.update(status='blocked',error=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__,completed_at=stamp());c.put(ROOT,state)
   raise RuntimeError('Orders review incomplete; inspect private state') from None
-if __name__=='__main__':main()
+def statuses():
+ assert os.environ.get('GITHUB_REPOSITORY')=='Ekaterina11098/veschi-bot-runner' and os.environ.get('GITHUB_REF')=='refs/heads/main' and datetime.now(MSK).date().isoformat()==DAY
+ c=Cache();w=WB();validate_identity(c,w)
+ key=ROOT+':statuses'
+ if c.get(key):print('Existing status read; no repeated request');return
+ f=c.get(ROOT+':fbs');root=c.get(ROOT)
+ if not f or not f.get('complete') or not root or root.get('status')!='complete':raise ValueError('Completed orders review required')
+ ids=sorted({o['id'] for o in f['rows']})
+ if len(ids)>1000:raise ValueError('Narrow status scope exceeded')
+ result=[]
+ if ids:
+  # POST is the documented read-only batch status method, not a marketplace change.
+  r=requests.post('https://marketplace-api.wildberries.ru/api/v3/orders/status',json={'orders':ids},headers={'Authorization':w.token},timeout=60)
+  if not r.ok:raise RuntimeError('WB status read HTTP '+str(r.status_code))
+  result=r.json().get('orders')
+  if not isinstance(result,list) or {x.get('id') for x in result}!=set(ids):raise ValueError('Order status coverage incomplete')
+ c.put(key,dict(observed_at=stamp(),complete=True,rows=result,wb_writes=0,scope='read_only_status_for_cohort_orders'))
+ print('Cohort order statuses read; no WB writes')
+if __name__=='__main__':
+ import sys
+ statuses() if sys.argv[1:]==['--statuses'] else main()

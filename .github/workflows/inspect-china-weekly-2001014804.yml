@@ -32,7 +32,8 @@ jobs:
             return super().request(base,path,method,body,params)
           t=ReadOnly();db=m.Cache(t);w=m.Worker(t,db,{})
           root="weekly_report_review:china:20261005:"
-          source=db.get(root+"source_rows:0")
+          source=[]
+          for chunk in db.get(root+"source_proof:v1")["chunks"]:source.extend(db.get(chunk["key"]))
           sales=collections.Counter()
           for r in source:
            if r["docTypeName"]=="销售" and r["sellerOperName"]=="销售":

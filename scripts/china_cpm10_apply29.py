@@ -58,8 +58,14 @@ def main():
    assert set(rates)=={str(n) for n in ns}
    e['minimums']=rates;e['minimums_readback']=j;e['minimums_at']=stamp();e['phase']='minimums_ready';e['status']='prepared';persist()
    print('Created/adopted unfunded campaign; exact private minimums ready')
-  elif STAGE=='apply':
-   assert e['status']=='prepared' and e['phase']=='minimums_ready' and e.get('autofund_ui_off_verified_at')
+  elif STAGE in ['apply','resume_funded']:
+   if STAGE=='apply':assert e['status']=='prepared' and e['phase']=='minimums_ready'
+   else:
+    assert e['status']=='needs_review' and e.get('error')=='Funding response mismatch'
+    funds=[s for s in e['steps'] if s['label']=='fund_exact_owner_budget']
+    assert len(funds)==1 and funds[0]['http_status']==200 and funds[0]['request']['sum']==a['budget_cny'] and funds[0]['response']==dict(total=a['budget_cny'])
+    e['recovered_error']=e['error'];e['recovery_stage']='readback_existing_funding_no_repeat'
+   assert e.get('autofund_ui_off_verified_at')
    cid=int(e['new_campaign_id']);assert cid>0
    before=c.get(ROOT+':before')
    inv=w.req('/adv/v1/promotion/count');allids=sorted({x['advertId'] for g in inv.get('adverts',[]) for x in g.get('advert_list',[])})
@@ -96,10 +102,15 @@ def main():
     time.sleep(6)
    assert checked_new(new),'Minimum bids readback mismatch'
    bd=w.req('/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts']
-   assert len(bd)==1 and bd[0]['currency']=='CNY' and bd[0]['total']==0,'Campaign already funded: no blind repeat'
-   e['budget_before']=bd[0];persist()
-   paid=mutate('fund_exact_owner_budget','/adv/v1/budget/deposit?id='+str(cid),'POST',dict(sum=a['budget_cny'],type=1,**{'return':True}))
-   assert paid and paid.get('currency')=='CNY' and paid.get('total')==a['budget_cny'],'Funding response mismatch'
+   assert len(bd)==1 and bd[0]['currency']=='CNY'
+   if STAGE=='resume_funded':
+    assert bd[0]['total']==a['budget_cny'],'Existing funding not confirmed; do not retry'
+    e['funding_reconciled_at']=stamp();persist()
+   else:
+    assert bd[0]['total']==0,'Campaign already funded: no blind repeat'
+    e['budget_before']=bd[0];persist()
+    paid=mutate('fund_exact_owner_budget','/adv/v1/budget/deposit?id='+str(cid),'POST',dict(sum=a['budget_cny'],type=1,**{'return':True}))
+    assert paid and paid.get('total')==a['budget_cny'],'Funding response mismatch'
    for _ in range(12):
     bd=w.req('/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts']
     if len(bd)==1 and bd[0].get('currency')=='CNY' and bd[0].get('total')==a['budget_cny']:break
@@ -133,7 +144,7 @@ def main():
     if k==str(cid):continue
     exp=expected.get(k,v)
     assert projection(final[k])==projection(exp),'Other campaign projection changed'
-   e['after']={**actual,str(cid):new};e['verified_at']=stamp();e['phase']='all_WB_verified';e['status']='verified'
+   e['after']={**actual,str(cid):new};e['verified_at']=stamp();e['phase']='all_WB_verified';e['status']='verified';e.pop('error',None)
    for step in e['steps']:
     if step.get('status')=='submitted':step['status']='verified_by_final_readback'
    save(c,ROOT+':'+str(cid)+':execution',dict(status='verified',verified_at=e['verified_at'],before=None,created_readback=e['created_readback'],after=new,minimums=rates,budget_before=e['budget_before'],budget_funded_verified=e['budget_funded_verified'],approval_key=ROOT+':approval',parent=ROOT+':execution'))

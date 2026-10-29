@@ -1,5 +1,5 @@
 import unittest,copy
-from china_advertising_v2 import history,collect,compact_execution_records
+from china_advertising_v2 import history,collect,compact_execution_records,prepare
 class VerifiedPriceHistoryTests(unittest.TestCase):
  def receipt(self,status='done'):
   return {'status':status,'completed_at':'2026-10-28T18:31:00+00:00','items':[{
@@ -20,6 +20,21 @@ class VerifiedPriceHistoryTests(unittest.TestCase):
  def test_missing_or_different_target_not_proof(self):
   r=self.receipt();r['items'][0]['selection']['target_cny']='106';self.assertEqual(history([r]),[])
   r=self.receipt();r['items'][0].pop('request');self.assertEqual(history([r]),[])
+class MinimumReadScopeTests(unittest.TestCase):
+ def run_prepare(self,pending):
+  import types,sys
+  from unittest.mock import patch
+  io=types.SimpleNamespace(get=lambda key:None)
+  row={'nm':123,'decision':'Сохранить ставку','pending_first_day':pending}
+  bundle={'campaigns':[{'id':1,'status':9,'payment':'cpc','zone':'поиск','focus':[row]}]}
+  response={'bids':[{'nm_id':123,'bids':[{'type':'search','currency':'CNY','value':28}]}]}
+  with patch('china_advertising_v2.collect',return_value={}),patch('china_advertising_v2.build',return_value=bundle),patch('china_advertising_v2.http',return_value=response) as transport,patch.dict(sys.modules,{'china_advertising_cards':types.SimpleNamespace(enhance=lambda b,s:b)}):
+   prepare(io,'2026-10-29');return transport
+ def test_waiting_for_first_full_day_does_not_poll_minimum(self):
+  self.run_prepare(True).assert_not_called()
+ def test_eligible_row_still_requires_actual_minimum(self):
+  self.assertEqual(self.run_prepare(False).call_count,1)
+
 class ReceiptCompactionTests(unittest.TestCase):
  def test_price_history_and_identity_preserved_without_raw_journals(self):
   import json

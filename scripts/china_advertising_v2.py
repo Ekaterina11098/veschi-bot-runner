@@ -396,7 +396,7 @@ def prepare(io,day):
  # Query minima only for existing products with a meaningful signal, on their actual campaign/placement.
  rough=build(s)
  for c in rough['campaigns']:
-  ids=[r['nm'] for r in c['focus'] if 'Выполнено.' not in r['decision']]
+  ids=[r['nm'] for r in c['focus'] if not r.get('pending_first_day') and 'Выполнено.' not in r['decision']]
   if not ids or c['status']!=9 or c['payment']!='cpc':continue
   zone='search' if c['zone']=='поиск' else 'recommendation'
   j=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=c['id'],nm_ids=ids,payment_type='cpc',placement_types=[zone]))

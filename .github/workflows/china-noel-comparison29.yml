@@ -28,3 +28,9 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
         run: PYTHONPATH=scripts python scripts/china_noel_comparison29_read.py
+      - name: Read CNY bid minimums for Noel only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: PYTHONPATH=scripts python scripts/china_noel_technical29_read.py

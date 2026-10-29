@@ -28,5 +28,5 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          CPM_STAGE: prepare_existing
+          CPM_STAGE: apply
         run: PYTHONPATH=scripts python scripts/china_cpm_orders10_apply29.py

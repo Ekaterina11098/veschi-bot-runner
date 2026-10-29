@@ -1,0 +1,78 @@
+name: Read requested China weekly report October 5-11
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/read-china-weekly-20261005.yml']
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: china-weekly-20261005-read
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Read finance report into private storage
+        shell: python
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import os,json,gzip,urllib.request,urllib.error,time,datetime
+          ROOT="weekly_report_review:china:20261005:"
+          SB=os.environ["SUPABASE_URL"].rstrip("/")
+          def now():return datetime.datetime.now(datetime.timezone.utc).isoformat()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*args,**kwargs):raise RuntimeError("Redirect blocked")
+          op=urllib.request.build_opener(NoRedirect)
+          def http(url,headers,body=None):
+           req=urllib.request.Request(url,headers=headers,method="GET" if body is None else "POST",data=None if body is None else json.dumps(body).encode())
+           try:
+            with op.open(req,timeout=90) as r:
+             raw=r.read()
+             if r.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+             return r.status,json.loads(raw) if raw else []
+           except urllib.error.HTTPError as e:return e.code,None
+          def put(key,payload):
+           h={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"}
+           req=urllib.request.Request(SB+"/rest/v1/telegram_api_cache?on_conflict=cache_key",headers=h,method="POST",data=json.dumps({"cache_key":ROOT+key,"payload":payload,"updated_at":now(),"expires_at":"2099-01-01T00:00:00Z"}).encode())
+           with op.open(req,timeout=60) as r:assert r.status in (200,201,204)
+          H={"Authorization":os.environ["WB_TOKEN_3"],"Content-Type":"application/json","Accept-Encoding":"gzip"}
+          BASE="https://finance-api.wildberries.cn/api/finance/v1/sales-reports/"
+          status,reports=http(BASE+"list",H,{"dateFrom":"2026-10-05","dateTo":"2026-10-11","period":"weekly","limit":1000,"offset":0})
+          proof={"run_id":os.environ["GITHUB_RUN_ID"],"at":now(),"status":"reading","list_http":status,"reports":reports,"chunks":[],"rows":0}
+          put("source_proof:v1",proof)
+          if status not in (200,204):raise RuntimeError("Report list HTTP "+str(status))
+          if status==204:proof["status"]="no_data";put("source_proof:v1",proof);raise SystemExit()
+          if not isinstance(reports,list):raise RuntimeError("Unexpected list shape")
+          reports=[r for r in reports if r["dateFrom"][:10]=="2026-10-05" and r["dateTo"][:10]=="2026-10-11"]
+          if not reports:proof["status"]="no_matching_report";put("source_proof:v1",proof);raise SystemExit()
+          proof["reports"]=reports
+          seen=set()
+          for rep in reports:
+           cursor=0
+           while True:
+            time.sleep(62)
+            status,rows=http(BASE+"detailed/"+str(rep["reportId"]),H,{"limit":100000,"rrdId":cursor})
+            if status==204 or (status==200 and rows==[]):break
+            if status==404 and cursor:
+             proof["terminal_http"]=404
+             break
+            if status!=200:
+             proof.update(status="source_error",http_status=status);put("source_proof:v1",proof);raise RuntimeError("Detail HTTP "+str(status))
+            if not isinstance(rows,list) or not rows:raise RuntimeError("Unexpected detail shape")
+            for r in rows:
+             rid=str(r["rrdId"])
+             if rid in seen:raise RuntimeError("Duplicate row")
+             seen.add(rid)
+            for off in range(0,len(rows),100):
+             key="source_rows:"+str(proof["rows"]+off)
+             put(key,rows[off:off+100]);proof["chunks"].append({"key":ROOT+key,"rows":len(rows[off:off+100])})
+            proof["rows"]+=len(rows);cursor=rows[-1]["rrdId"]
+            put("source_proof:v1",proof)
+          proof.update(status="downloaded",completed_at=now(),pagination_exhausted=proof.get("terminal_http")!=404)
+          put("source_proof:v1",proof)
+          print("Requested report retrieval finished; results stored privately.")
+          

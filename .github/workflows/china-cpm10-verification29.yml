@@ -26,6 +26,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          CPM_STAGE: create
+          CPM_STAGE: apply
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
         run: PYTHONPATH=scripts python scripts/china_cpm10_apply29.py

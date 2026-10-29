@@ -1,8 +1,5 @@
 name: Owner private profit pair29
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/china-owner-profit-pair29.yml']
   workflow_dispatch:
 permissions: {contents: read}
 concurrency:

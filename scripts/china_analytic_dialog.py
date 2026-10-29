@@ -278,7 +278,7 @@ def answer(w,job,history):
  policy=w.get(POLICY) or {}
  if policy.get('enabled') is not True:return None
  from china_conversion_context import handle as conversion_handle
- conversion_reply=conversion_handle(w,job)
+ conversion_reply=conversion_handle(w,job,history)
  if conversion_reply is not None:return conversion_reply
  from china_zero_order_price_command import handle as zero_price_handle
  command_result=zero_price_handle(w,job,history)

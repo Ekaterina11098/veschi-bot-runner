@@ -11,6 +11,10 @@ class Tests(unittest.TestCase):
  def test_route_and_completed_week(self):
   x=p('Сколько заказов за неделю?')
   self.assertEqual(x['topic'],'orders');self.assertEqual(x['period_from'],'2026-10-22');self.assertEqual(x['period_to'],'2026-10-28')
+ def test_invalid_dates_do_not_crash_dialog(self):
+  self.assertIsNone(p('Сколько заказов 2026-99-29?'))
+ def test_empty_advice_does_not_replace_available_numbers(self):
+  self.assertTrue(g.review('Давайте подождём.',trace({'total_orders':5}),p('Сколько заказов сегодня?')))
  def test_context_keeps_exact_article(self):
   x=p('А за неделю?',[{'request_text':'Сколько показов у 111-ExampleBag-black?'}])
   self.assertEqual(x['topic'],'advertising');self.assertEqual(x['arguments']['nm_ids'],[100])

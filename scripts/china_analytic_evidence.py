@@ -48,7 +48,8 @@ def plan(w,job,history):
  if explicit:
   if len(explicit)>2:return None
   from datetime import date
-  first=date.fromisoformat(explicit[0]);last=date.fromisoformat(explicit[-1])
+  try:first=date.fromisoformat(explicit[0]);last=date.fromisoformat(explicit[-1])
+  except ValueError:return None
   if first>last or last>day or (last-first).days>30:return None
  catalog=[(int(n),a) for n,a in w.catalog()]
  ids=sorted({n for n,a in catalog if a.casefold() in context.casefold() or re.search(r'(?<!\d)'+str(n)+r'(?!\d)',context)})
@@ -108,6 +109,7 @@ def review(text,trace,p,question=''):
   pool+=numeric_values(t.get('result',{}))
  unknown=[n for n in numbers(text) if not supported(n,pool)]
  issues=[]
+ if not numbers(text) and numeric_values(facts):issues.append('The source contains numeric facts. Answer the metric question with the relevant supported values, or name the exact missing field; do not return an empty acknowledgement.')
  if p.get('intraday') and re.search(r'упал|сниз|хуже|лучше|вырос|увелич',text,re.I) and not re.search(r'предвар|ориентир|неполн|догруж|до того же часа|сопоставим',text,re.I) and not any(f.get('matched_clock') is True or f.get('yesterday_same_clock') is not None for f in facts):issues.append('Incomplete-day comparison needs matched-clock evidence or an explicit preliminary benchmark limitation.')
  if unknown:issues.append('Unsupported numeric claims: '+','.join(str(n) for n in sorted(set(unknown))[:12])+'. Read evidence or calculate from grounded operands.')
  if re.search(r'(?:инструмент|доступ).{0,30}(?:нет|отсутств)|нет.{0,25}инструмент',text,re.I):issues.append('Do not claim no tools: a metric source has been attempted; report its actual outcome.')

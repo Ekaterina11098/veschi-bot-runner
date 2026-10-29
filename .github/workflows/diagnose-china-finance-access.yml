@@ -72,3 +72,5 @@ jobs:
           req=urllib.request.Request(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",headers=headers,method="POST",data=json.dumps(data).encode())
           with op.open(req,timeout=60) as r:assert r.status in (200,201,204)
           print("Read-only diagnostics completed; sanitized evidence stored privately.")
+
+# Recheck after owner replaced China token.

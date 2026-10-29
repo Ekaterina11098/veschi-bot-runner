@@ -1,8 +1,5 @@
 name: Owner exact conversion reply
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/china-owner-conversion-reply29.yml']
   workflow_dispatch:
 permissions: {contents: read}
 concurrency:

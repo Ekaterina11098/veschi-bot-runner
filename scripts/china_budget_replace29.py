@@ -9,8 +9,8 @@ from china_advertising_delivery import deliver,telegram_sender,CHAT,BOT
 from china_daily_ad_actions import plan,bind,BIND
 from china_loss_control import PLAN,digest
 DAY='2026-10-29'
-ROOT='china_agent:budget_format_revision:'+DAY+':v1'
-INPUT=ROOT+':input'
+ROOT='china_agent:budget_format_revision:'+DAY+':v2'
+INPUT='china_agent:budget_format_revision:'+DAY+':v1:input'
 ART='china_agent:advertising_artifacts:'+DAY+':v2'
 DEL='china_agent:advertising_delivery:'+DAY+':v1'
 OLD=485
@@ -58,7 +58,7 @@ def prepare(io):
  files=[]
  for i,f in enumerate(render(bundle)):
   if f['family']!='budgets':continue
-  p=plan(io,DAY,f,i,slot='budget-format-v1')
+  p=plan(io,DAY,f,i,slot='budget-format-v2')
   files.append(dict(kind=f['kind'],family='budgets',page=f['page'],total=f['total'],b64=base64.b64encode(f['bytes']).decode(),sha256=hashlib.sha256(f['bytes']).hexdigest(),plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items'])))
  if not files:raise ValueError('Budget replacement missing')
  e=dict(status='prepared',day=DAY,created_at=stamp(),files=files,bundle=bundle,delete=dict(message_id=OLD,status='ready'),wb_writes=0)

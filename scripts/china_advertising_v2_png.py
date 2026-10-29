@@ -40,13 +40,13 @@ def render(bundle):
   d.text((44,100),'День: '+bundle['days'][-1]+' · 3 дня: '+bundle['days'][0]+'—'+bundle['days'][-1]+' · цель ДРР 5%',font=font(29,True),fill='white')
   d.text((44,150),'Срез: '+(str(bundle['source_observed_at'])+(' · остатки: '+bundle['budget_balance_observed_at'] if 'бюджеты' in title and bundle.get('budget_balance_observed_at') else '')),font=font(24),fill='#dce9f0')
   return im,d
- def wrap(d,s,w,n=27):
+ def wrap(d,s,w,n=27,bold=False):
   out=[]
   for p in str(s).split('\n'):
    line=''
    for word in p.split():
     test=(line+' '+word).strip()
-    if line and d.textlength(test,font=font(n))>w:out.append(line);line=word
+    if line and d.textlength(test,font=font(n,bold))>w:out.append(line);line=word
     else:line=test
    out.append(line)
   return out
@@ -97,7 +97,7 @@ def render(bundle):
  selected=[c for c in bundle['campaigns'] if c.get('budget_review_required')]
  for c in selected:
   need=c.get('budget_reference_need');gap=c.get('budget_cash_gap')
-  title=wrap(d,'РК '+str(c['id'])+' · '+c['name'],730,29)
+  title=wrap(d,'РК '+str(c['id'])+' · '+c['name'],730,29,True)
   decision=c.get('budget_short_note') or c['budget_recommendation']
   advice=[]
   for index,line in enumerate(decision.splitlines()):advice+=wrap(d,line,714,31 if index==0 else 27)

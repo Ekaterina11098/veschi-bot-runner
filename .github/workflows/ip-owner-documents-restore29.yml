@@ -1,9 +1,6 @@
 name: Owner private IP document restore29
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - .github/workflows/ip-owner-documents-restore29.yml
 permissions: {contents: read}
 concurrency:
   group: owner-ip-documents-restore29

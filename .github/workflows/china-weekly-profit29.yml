@@ -1,8 +1,5 @@
 name: Owner weekly profit advertising read
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/china_weekly_profit29_read.py','.github/workflows/china-weekly-profit29.yml']
   workflow_dispatch:
 permissions:
   contents: read

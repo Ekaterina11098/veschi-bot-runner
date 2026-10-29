@@ -1,0 +1,32 @@
+name: Owner private IP document restore29-v2
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/ip-owner-documents-restore29.yml
+permissions: {contents: read}
+concurrency:
+  group: owner-ip-documents-restore29
+  cancel-in-progress: false
+jobs:
+  audit:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ip_owner_documents_restore29_v2.py
+            scripts/china_cloud_cost_control.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Apply exact owner-approved missing documents, preserve card data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+        run: python scripts/ip_owner_documents_restore29.py

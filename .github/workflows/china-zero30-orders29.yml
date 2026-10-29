@@ -1,8 +1,5 @@
 name: Owner verified30 percent cohort orders29Oct
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/china_zero30_orders29_read.py','.github/workflows/china-zero30-orders29.yml']
   workflow_dispatch:
 permissions:
   contents: read

@@ -12,6 +12,7 @@ RULES=('Для числового рабочего ответа сначала �
 MEMORY={'read_shared_memory','read_agreements','remember_work_note','remember_preference','search_chat_history','experience_context','free_analytic_dialog'}
 NUMBER=re.compile(r'(?<![\w])[-+]?(?:\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)(?:[.,]\d+)?')
 def numbers(text):
+ text=re.sub(r'\b\d+-[A-Za-z][\w-]+',' ',str(text))
  text=re.sub(r'\b\d{4}-\d{2}-\d{2}(?:T[\d:.+Z-]+)?|\b\d{1,2}\.\d{1,2}\.\d{2,4}|\b\d{1,2}:\d{2}\b',' ',str(text))
  return [float(re.sub(r'[ \u00a0\u202f]','',m[0]).replace(',','.')) for m in NUMBER.finditer(text)]
 def topic(text):
@@ -70,7 +71,7 @@ def evidence(trace):
  for t in trace:
   r=t.get('result')
   if t.get('name') in MEMORY or t.get('name')=='calculate' or not isinstance(r,dict):continue
-  if r.get('available') is False or r.get('complete') is False or r.get('error'):continue
+  if r.get('available') is False or r.get('complete') is False or r.get('error') or r.get('cabinet') not in (None,'token_3'):continue
   if r.get('source') or r.get('source_key') or r.get('observed_at'):result.append(r)
  return result
 def numeric_values(value):
@@ -107,6 +108,7 @@ def review(text,trace,p,question=''):
   pool+=numeric_values(t.get('result',{}))
  unknown=[n for n in numbers(text) if not supported(n,pool)]
  issues=[]
+ if p.get('intraday') and re.search(r'упал|сниз|хуже|лучше|вырос|увелич',text,re.I) and not re.search(r'предвар|ориентир|неполн|догруж|до того же часа|сопоставим',text,re.I) and not any(f.get('matched_clock') is True or f.get('yesterday_same_clock') is not None for f in facts):issues.append('Incomplete-day comparison needs matched-clock evidence or an explicit preliminary benchmark limitation.')
  if unknown:issues.append('Unsupported numeric claims: '+','.join(str(n) for n in sorted(set(unknown))[:12])+'. Read evidence or calculate from grounded operands.')
  if re.search(r'(?:инструмент|доступ).{0,30}(?:нет|отсутств)|нет.{0,25}инструмент',text,re.I):issues.append('Do not claim no tools: a metric source has been attempted; report its actual outcome.')
  if re.search(r'дрр\s*(?:=|—|:)?\s*0(?:[.,]0+)?\s*%',text,re.I) and not zero_drr(facts):issues.append('DRR zero requires positive order amount and measured zero spend; otherwise unknown. Show operands.')

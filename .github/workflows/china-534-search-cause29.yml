@@ -1,8 +1,5 @@
 name: Owner534 search cause diagnosis
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/china_534_search_cause29_read.py','.github/workflows/china-534-search-cause29.yml']
   workflow_dispatch:
 permissions:
   contents: read

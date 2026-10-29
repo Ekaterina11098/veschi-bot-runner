@@ -1,8 +1,5 @@
 name: Owner OOO same clock order comparison
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/china_ooo_orders29_read.py','.github/workflows/china-ooo-orders29.yml']
   workflow_dispatch:
 permissions:
   contents: read

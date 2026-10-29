@@ -61,14 +61,13 @@ jobs:
           check("china_finance_ping","https://finance-api.wildberries.cn/ping")
           check("china_statistics_ping","https://statistics-api.wildberries.cn/ping")
           check("china_marketplace_ping","https://marketplace-api.wildberries.cn/ping")
-          body={"dateFrom":"2026-09-07","dateTo":"2026-09-13","period":"weekly","limit":1000,"offset":0}
+          body={"dateFrom":"2026-10-01","dateTo":"2026-10-04","period":"weekly","limit":1000,"offset":0}
           time.sleep(31)
           check("china_finance_report_list","https://finance-api.wildberries.cn/api/finance/v1/sales-reports/list",body)
-          check("ru_finance_report_list_comparison","https://finance-api.wildberries.ru/api/finance/v1/sales-reports/list",body)
           sb=os.environ["SUPABASE_URL"].rstrip("/")
           key=os.environ["SUPABASE_SECRET_KEY"]
           headers={"apikey":key,"Authorization":"Bearer "+key,"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"}
-          data={"cache_key":"weekly_report_review:china:finance_access_diagnostic:v1","payload":result,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2099-01-01T00:00:00Z"}
+          data={"cache_key":"weekly_report_review:china:finance_access_oct01_04:v1","payload":result,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2099-01-01T00:00:00Z"}
           req=urllib.request.Request(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",headers=headers,method="POST",data=json.dumps(data).encode())
           with op.open(req,timeout=60) as r:assert r.status in (200,201,204)
           print("Read-only diagnostics completed; sanitized evidence stored privately.")

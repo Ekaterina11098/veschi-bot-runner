@@ -1,8 +1,5 @@
 name: Owner second CPM test
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/china_cpm_orders10_apply29.py','.github/workflows/china-cpm-orders10-29.yml']
   workflow_dispatch:
 permissions:
   contents: read

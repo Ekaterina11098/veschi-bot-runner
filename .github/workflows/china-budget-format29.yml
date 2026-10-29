@@ -1,8 +1,5 @@
 name: Owner budget format29Oct replacement
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/china_budget_reserve.py','scripts/china_budget_replace29.py','scripts/test_china_advertising_budget_format29.py','scripts/test_china_advertising_morning_regressions.py','scripts/china_advertising_cards.py','scripts/china_advertising_v2_png.py','.github/workflows/china-budget-format29.yml','china-budget-format29-apply.json']
   workflow_dispatch:
 permissions:
   contents: read

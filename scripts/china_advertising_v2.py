@@ -1,5 +1,6 @@
 """Owner-approved daily format: live China readbacks, ratio-of-sums and exact new actions."""
 import copy,json,math,statistics,time
+from decimal import Decimal,InvalidOperation
 from datetime import date,datetime,timedelta,timezone
 from zoneinfo import ZoneInfo
 from urllib.parse import quote
@@ -134,6 +135,19 @@ def history(records):
     a=prices(before);b=prices(price_after)
     if len(a)==len(b)==1 and None not in a|b and a!=b:
      found.append(dict(cid=None,nm=nm,kind='price',at=at,text=f'Цена {next(iter(a)):g} → {next(iter(b)):g} ¥'))
+  # Current price worker keeps the approved before value in selection and an exact WB readback.
+  if status=='applied' and root.get('status') in verified|{'done','partial'} and at and before is None and isinstance(price_after,dict):
+   selection=x.get('selection') or {};request=x.get('request') or {};nm=request.get('nmID')
+   try:
+    old=Decimal(str(selection['current_cny']));target=Decimal(str(selection['target_cny']))
+    sizes=price_after.get('sizes') or []
+    actual={Decimal(str(v['discountedPrice'])) for v in sizes}
+    exact=bool(sizes) and all(Decimal(str(v['price']))==Decimal(str(request['price'])) for v in sizes)
+    if (type(nm)is int and str(selection.get('nm_id'))==str(nm) and price_after.get('nmID')==nm
+        and price_after.get('currencyIsoCode4217')=='CNY' and price_after.get('discount')==request.get('discount')
+        and actual=={target} and exact and old.is_finite() and target.is_finite() and old>0 and target>0 and old!=target):
+     found.append(dict(cid=None,nm=nm,kind='price',at=at,text=f'Цена {old:g} → {target:g} ¥'))
+   except (KeyError,TypeError,ValueError,InvalidOperation):pass
   for key in ['items','groups','campaigns']:walk(x.get(key,[]),root)
   if not any(k in x for k in ['status','before','after']):
    for v in x.values():

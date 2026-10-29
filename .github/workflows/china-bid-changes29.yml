@@ -1,8 +1,5 @@
 name: Owner all bid changes27and28 review
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/china_bid_changes29_read.py','.github/workflows/china-bid-changes29.yml']
   workflow_dispatch:
 permissions:
   contents: read

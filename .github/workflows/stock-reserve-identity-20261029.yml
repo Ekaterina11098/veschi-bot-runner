@@ -28,7 +28,7 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
         run: |
           python - <<'PY'
-          import os,json
+          import os,json,hashlib
           from types import SimpleNamespace
           from stock_current_order_reserve import ledger_key
           from stock_operation_store import digest
@@ -37,5 +37,5 @@ jobs:
           g=SimpleNamespace(cabinet_tokens=lambda:[os.environ['WB_TOKEN_'+str(i)] for i in (1,2,3)],STOCK_APPROVED_WAREHOUSES=[[1863255],[854652],[2126188]])
           key=ledger_key(g,{'warehouses':g.STOCK_APPROVED_WAREHOUSES,'ozon':{}})
           s=load_scope();a=mapping()
-          print(json.dumps({'expected_row':'technical:stock-shared:v1:'+digest(key),'working_count':sum(is_working_article(o,s) for o in s['known_articles'].values()),'helena_working':is_working_article('510-HelenaBag-brown',s)}))
+          print(json.dumps({'expected_row':'technical:stock-shared:v1:'+digest(key),'working_count':sum(is_working_article(o,s) for o in s['known_articles'].values()),'helena_working':is_working_article('510-HelenaBag-brown',s),'token_hashes':[hashlib.sha256(t.encode()).hexdigest() for t in g.cabinet_tokens()],'working':[article(o,a) for o in s['known_articles'].values() if is_working_article(o,s)]}))
           PY

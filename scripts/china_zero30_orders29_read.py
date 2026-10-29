@@ -21,7 +21,7 @@ def main():
   cohort[nm]=dict(article=s['article'],before_cny=s['current_cny'],after_cny=s['target_cny'])
  if len(cohort)!=70:raise ValueError('Cohort duplicated')
  start=datetime.fromisoformat(e['completed_at'].replace('Z','+00:00'));cutoff=datetime.now(timezone.utc)
- state=dict(status='collecting',observed_at=stamp(),cutoff_msk=cutoff.astimezone(MSK).isoformat(),cohort=cohort,cohort_count=70,price_verified_at=start.isoformat(),execution_key=EXEC,wb_writes=0,telegram_sends=0,scope='orders_only')
+ state=dict(status='collecting',observed_at=stamp(),cutoff_msk=cutoff.astimezone(MSK).isoformat(),cohort={str(k):v for k,v in cohort.items()},cohort_count=70,price_verified_at=start.isoformat(),execution_key=EXEC,wb_writes=0,telegram_sends=0,scope='orders_only')
  if not c.create(ROOT,state):raise RuntimeError('Concurrent review')
  def get(url,params):
   r=requests.get(url,params=params,headers={'Authorization':w.token},timeout=80)

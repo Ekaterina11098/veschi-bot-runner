@@ -23,7 +23,8 @@ def main():
  assert c.create(ROOT+':'+STAGE+':guard',dict(at=stamp())),'Existing stage guard: inspect canonical state; no blind repeat'
  e=c.get(ROOT+':execution') or dict(status='preflight',created_at=stamp(),steps=[],approval_key=ROOT+':approval',WBwrites=0,TelegramSends=0)
  try:
-  if STAGE=='preflight':
+  if STAGE in ['preflight','preflight_retry']:
+   e['status']='preflight';save(c,e)
    current=w.campaigns([CID,REC]);before=current[str(CID)];rec=current[str(REC)]
    assert before['status']==9 and before['currency']=='CNY' and before['bid_type']=='manual' and before['settings']['payment_type']=='cpc' and before['settings']['placements']==dict(search=True,recommendations=False),'Destination settings changed'
    assert all(any(n['nm_id']==nm for n in rec['nm_settings']) for nm in ns),'Source recommendation membership missing'
@@ -39,16 +40,23 @@ def main():
    e['prices']=prices;e['prices_at']=stamp()
    headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN'],'Accept-Encoding':'gzip'}
    def get(path,params):
-    r=requests.get('https://api.moysklad.ru/api/remap/1.2'+path,params=params,headers=headers,timeout=30)
+    for attempt in range(2):
+     try:
+      r=requests.get('https://api.moysklad.ru/api/remap/1.2'+path,params=params,headers=headers,timeout=35)
+      break
+     except requests.exceptions.RequestException:
+      if attempt:raise
+      time.sleep(2)
     assert r.ok,'MoySklad read HTTP '+str(r.status_code)
     return r.json()
    stores=get('/entity/store',dict(limit=1000));assert stores['meta']['size']<=len(stores['rows'])
    stores=[s for s in stores['rows'] if s.get('name')=='МСК' and not s.get('archived')];assert len(stores)==1
    names={x['article'] for x in a['items']};rows=[];offset=0
    while True:
-    j=get('/report/stock/all',dict(filter='store='+stores[0]['meta']['href']+';stockMode=all;quantityMode=all',limit=250,offset=offset))
+    j=get('/report/stock/all',dict(filter='store='+stores[0]['meta']['href']+';stockMode=all;quantityMode=all',limit=100,offset=offset))
     part=j['rows'];rows.extend({k:r.get(k) for k in ['article','stock','reserve','price']} for r in part if r.get('article') in names)
     offset+=len(part)
+    c.put(ROOT+':stock_progress',dict(offset=offset,total=j['meta']['size'],at=stamp()))
     if offset>=j['meta']['size']:break
     assert part and offset<50000
    assert len(rows)==2 and {r['article'] for r in rows}==names,'Stock article ambiguity'

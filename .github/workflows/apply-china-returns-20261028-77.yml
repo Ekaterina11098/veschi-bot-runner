@@ -1,0 +1,28 @@
+name: Post China returns from 28 October
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/apply-china-returns-20261028-77.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-returns-20261028-77
+  cancel-in-progress: false
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify stock and create posted zero-price return move
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python scripts/apply_china_returns_20261028_77.py

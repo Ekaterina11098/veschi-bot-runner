@@ -1,0 +1,137 @@
+name: Owner approved restore original10 CPC placements before closing two CPM tests
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-owner-restore-cpc10-20261029.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: china-owner-restore-cpc10-20261029
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Execute exact private approval and verify WB before after
+        env:
+          PYTHONPATH: scripts
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        shell: python
+        run: |
+          import os,json,copy,time,requests
+          from datetime import datetime,timezone,timedelta
+          from china_cloud_cost_control import Cache,WB,validate_identity
+          ROOT="china_agent:owner_restore_cpc10_close_cpm:2026-10-29:v1"
+          def stamp():return datetime.now(timezone.utc).isoformat()
+          def dt(s):return datetime.fromisoformat(s.replace(" UTC","+00:00").replace("Z","+00:00"))
+          def members(c):return {int(n["nm_id"]):n for n in c["nm_settings"]}
+          def same_settings(a,b):return all(a[k]==b[k] for k in ("id","status","currency","bid_type","settings"))
+          class NarrowWB(WB):
+           def req(self,path,method="GET",body=None,write=False):
+            bare=path.split("?")[0]
+            if write:
+             if (method,bare) not in {("PATCH","/adv/v0/auction/nms"),("PATCH","/api/advert/v1/bids")}:raise ValueError("Unapproved write")
+             if bare.endswith("/nms"):
+              if any(z["nms"]["delete"] or z["advert_id"] not in self.approved for z in body["nms"]):raise ValueError("Unapproved membership")
+              if any(not set(z["nms"]["add"]).issubset(self.approved[z["advert_id"]]) for z in body["nms"]):raise ValueError("Unapproved SKU")
+             else:
+              if any(z["advert_id"] not in self.approved or any(n["nm_id"] not in self.approved[z["advert_id"]] for n in z["nm_bids"]) for z in body["bids"]):raise ValueError("Unapproved bid")
+            elif (method,bare) not in {("GET","/api/advert/v2/adverts"),("POST","/api/advert/v1/bids/min"),("POST","/api/advert/v2/budget")}:
+             raise ValueError("Unapproved read")
+            time.sleep(3.1)
+            r=requests.request(method,"https://advert-api.wildberries.ru"+path,headers={"Authorization":self.token},json=body,timeout=60)
+            if not r.ok:
+             self.cache.create(ROOT+":http_error:"+str(time.time_ns()),dict(path=path,method=method,status=r.status_code,response=r.text[:5000],request=body,at=stamp()))
+             raise RuntimeError("WB advertising HTTP "+str(r.status_code))
+            return r.json() if r.content else {}
+          def main():
+           assert os.environ["GITHUB_REPOSITORY"]=="Ekaterina11098/veschi-bot-runner" and os.environ["GITHUB_REF"]=="refs/heads/main"
+           assert datetime.now(timezone(timedelta(hours=3))).date().isoformat()=="2026-10-29"
+           c=Cache();w=NarrowWB();w.cache=c;validate_identity(c,w);a=c.get(ROOT+":approval")
+           assert a and a["status"]=="approved" and a["owner_user_id"]==5122667182 and a["rate_policy"]=="same_day_verified_category_minimum_no_repeat_probe"
+           gs=a["groups"];items=[i for g in gs for i in g["items"]]
+           assert len(items)==13 and len({i["nm_id"] for i in items})==10
+           assert a["target_minor"]==28 and all(i["target_minor"]==28 for i in items)
+           assert {g["id"] for g in gs}=={41155824,41296359,41298169}
+           assert datetime.now(timezone.utc)-dt(a["approved_at"])<timedelta(hours=2)
+           w.approved={g["id"]:{i["nm_id"] for i in g["items"]} for g in gs}
+           if c.get(ROOT+":execution") is not None:
+            print("Existing execution; no automatic retries")
+            return
+           e=dict(status="preflight",created_at=stamp(),approval_key=ROOT+":approval",groups=[],steps={},wb_writes=0,telegram_calls=0,budget_writes=0,price_writes=0,stock_writes=0)
+           if not c.create(ROOT+":execution",e):raise ValueError("Concurrent execution")
+           def save():c.put(ROOT+":execution",json.loads(json.dumps(e)))
+           def mutate(label,path,body):
+            assert label not in e["steps"]
+            active=c.get(ROOT+":approval")
+            assert active==a and active["status"]=="approved"
+            e["steps"][label]=dict(status="submitting",path=path,request=body,submitted_at=stamp());save()
+            try:r=w.req(path,"PATCH",body,write=True)
+            except Exception:
+             e["steps"][label]["status"]="uncertain";save();raise
+            e["steps"][label].update(status="accepted",response=r);e["wb_writes"]+=1;save()
+           try:
+            ids=[g["id"] for g in gs];before=w.campaigns(ids)
+            # Price API is GET-only, using the same verified China token.
+            pr=requests.get("https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter",headers={"Authorization":w.token},params={"limit":1000,"offset":0},timeout=60)
+            if not pr.ok:raise RuntimeError("Price GET HTTP "+str(pr.status_code))
+            price_body=pr.json();goods=price_body.get("data",price_body).get("listGoods",[])
+            assert 0<len(goods)<1000
+            prices={p["nmID"]:p for p in goods}
+            assert all(prices.get(i["nm_id"],{}).get("vendorCode")==i["article"] and prices[i["nm_id"]].get("currencyIsoCode4217")=="CNY" for i in items)
+            budgets=w.req("/api/advert/v2/budget","POST",{"advertIds":ids})
+            e["before_budgets"]=budgets;e["prices_observed_at"]=stamp()
+            for g in gs:
+             b=before[str(g["id"])];old=members(b);assert b["status"]==9 and b["currency"]=="CNY" and b["bid_type"]=="manual"
+             assert b["settings"]["name"]==g["name"] and b["settings"]["payment_type"]=="cpc"
+             assert b["settings"]["placements"]==dict(search=g["placement"]=="search",recommendations=g["placement"]=="recommendations")
+             assert {n["subject"]["id"] for n in old.values()}=={g["subject"]}
+             wanted={i["nm_id"] for i in g["items"]};assert not wanted&set(old)
+             assert len(old|{n:None for n in wanted})<=50
+             mins={nm:28 for nm in wanted}
+             e["groups"].append(dict(campaign_id=g["id"],name=g["name"],placement=g["placement"],items=g["items"],before=b,minimums=mins,minimums_at=stamp(),status="preflight"))
+             save()
+            e["status"]="running";save()
+            for s in e["groups"]:
+             cid=s["campaign_id"];wanted={i["nm_id"] for i in s["items"]};b=s["before"];old=members(b)
+             fresh=w.campaigns([cid])[str(cid)]
+             assert same_settings(b,fresh) and members(fresh)==old
+             mutate(str(cid)+":add","/adv/v0/auction/nms",{"nms":[{"advert_id":cid,"nms":{"add":sorted(wanted),"delete":[]}}]})
+             mid=w.campaigns([cid])[str(cid)];s["after_membership"]=mid;save()
+             assert same_settings(b,mid) and set(members(mid))==set(old)|wanted
+             assert all(members(mid)[nm]==v for nm,v in old.items())
+             # Apply the already verified same-day category floor only to restored placements.
+             mins={nm:28 for nm in wanted};s["minimums"]=mins;s["minimums_basis"]="Same-day category minimum confirmed in WB; owner asks no repeat probe";save()
+             need=[nm for nm in wanted if members(mid)[nm]["bids_kopecks"].get(s["placement"])!=mins[nm]]
+             if need:mutate(str(cid)+":bids","/api/advert/v1/bids",{"bids":[{"advert_id":cid,"nm_bids":[dict(nm_id=nm,bid_kopecks=mins[nm],placement=s["placement"]) for nm in sorted(need)]}]})
+             after=w.campaigns([cid])[str(cid)];s["after"]=after;save()
+             assert same_settings(b,after) and set(members(after))==set(old)|wanted
+             assert all(members(after)[nm]==v for nm,v in old.items())
+             assert all(members(after)[nm]["bids_kopecks"][s["placement"]]==mins[nm] for nm in wanted)
+             s.update(status="verified",verified_at=stamp())
+             for label,step in e["steps"].items():
+              if label.startswith(str(cid)+":"):step["status"]="verified"
+             save()
+             child=ROOT+":"+str(cid)+":execution"
+             receipt=dict(status="verified",parent=ROOT+":execution",approval_key=ROOT+":approval",before=b,after=after,items=s["items"],minimums=mins,verified_at=s["verified_at"])
+             assert c.create(child,receipt),"Existing child; inspect instead of repeating"
+             registry=c.get("china_agent:verified_campaign_state:v1") or {};registry[str(cid)]=child;c.put("china_agent:verified_campaign_state:v1",registry)
+            e.update(status="verified",verified_at=stamp(),completed_at=stamp(),verified_items=sum(len(s["items"]) for s in e["groups"]));save()
+           except Exception as ex:
+            e.update(status="attention" if e["steps"] else "blocked",error_type=type(ex).__name__,reason=str(ex) if isinstance(ex,(ValueError,RuntimeError,AssertionError)) else "Failure; inspect private state",completed_at=stamp())
+            save()
+           print(json.dumps(dict(status=e["status"],verified_items=sum(len(s["items"]) for s in e["groups"] if s["status"]=="verified"),wb_writes=e["wb_writes"],telegram_calls=0)))
+          if __name__=="__main__":main()
+          

@@ -1,3 +1,4 @@
+from china_catalog_price_execute import catalogue_snapshot
 import copy,unittest
 from unittest.mock import patch
 from china_catalog_price_execute import verified_prior,CatalogIO
@@ -32,3 +33,15 @@ class Tests(unittest.TestCase):
    with self.assertRaises(ValueError):io.tg('sendMessage',dict(text='test'))
    self.assertEqual(transport.call_count,1)
 if __name__=='__main__':unittest.main()
+
+class PriceSnapshotContractTests(unittest.TestCase):
+ def test_catalog_writer_preserves_cabinet_required_by_daily_reader(self):
+  row=dict(nmID=100,vendorCode='test-bag',currencyIsoCode4217='CNY',sizes=[])
+  snap=catalogue_snapshot({'100':row},'execution')
+  self.assertEqual(snap['cabinet'],'token_3');self.assertEqual(snap['rows'],[row]);self.assertEqual(snap['execution_key'],'execution')
+ def test_wrong_currency_never_labeled_as_china(self):
+  for rows in [{}, {'1':dict(nmID=1,vendorCode='A',currencyIsoCode4217='RUB')},{'1':dict(nmID=1,currencyIsoCode4217='CNY')}]:
+   with self.assertRaises(ValueError):catalogue_snapshot(rows,'e')
+ def test_duplicate_cards_rejected(self):
+  row=dict(nmID=1,vendorCode='A',currencyIsoCode4217='CNY')
+  with self.assertRaises(ValueError):catalogue_snapshot({'a':row,'b':row},'e')

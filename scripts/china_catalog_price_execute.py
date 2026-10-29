@@ -8,6 +8,11 @@ from china_catalog_price_command import ROOT,digest,signature,parse,selection,ch
 from china_cloud_cost_control import Cache,WB,validate_identity
 CHAT=-1004342917488;BOT=8780468043
 def stamp():return datetime.now(timezone.utc).isoformat()
+def catalogue_snapshot(goods,execution_key):
+ rows=list(goods.values())
+ if not rows or len({g.get('nmID') for g in rows})!=len(rows):raise ValueError('Price snapshot identities incomplete')
+ if any(type(g.get('nmID'))is not int or g['nmID']<=0 or not g.get('vendorCode') or g.get('currencyIsoCode4217')!='CNY' for g in rows):raise ValueError('China price snapshot currency or identity unavailable')
+ return dict(cabinet='token_3',observed_at=stamp(),rows=rows,source='catalog_price_percent_verified_readback',execution_key=execution_key)
 def verified_prior(io,p):
  excluded={};wanted=set(p['rules'].get('exclude_verified_percent_today',[]))
  if not wanted:return excluded
@@ -115,7 +120,7 @@ def run_one(io,key):
  p.update(status='verified' if p['verified_count']==p['total_count'] else 'partial',completed_at=stamp(),verified_at=stamp() if p['verified_count'] else None)
  io.put(key,p)
  # Preserve a compact canonical full-catalog snapshot and no personal data.
- io.put('china_agent:prices:v1',dict(observed_at=stamp(),rows=list(io.catalog().values()),source='catalog_price_percent_verified_readback',execution_key=key))
+ io.put('china_agent:prices:v1',catalogue_snapshot(io.catalog(),key))
  return p
 def main():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')

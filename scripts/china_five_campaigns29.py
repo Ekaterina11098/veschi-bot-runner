@@ -2,8 +2,8 @@
 import os,json,requests,time
 from datetime import datetime,timezone,timedelta
 from china_cloud_cost_control import Cache,WB,stamp,validate_identity
-KEY='china_agent:five_campaigns_diagnostic:2026-10-29:v1'
-IDS=[41296359,41270474,41270471,41270309,41187173]
+KEY='china_agent:orders12_followup:2026-10-29:v1'
+IDS=[41270309]
 def main():
  assert os.environ['GITHUB_REPOSITORY']=='Ekaterina11098/veschi-bot-runner' and os.environ['GITHUB_REF']=='refs/heads/main'
  assert datetime.now(timezone(timedelta(hours=3))).date().isoformat()=='2026-10-29'
@@ -13,9 +13,9 @@ def main():
  inv=w.req('/adv/v1/promotion/count');allids=sorted({x['advertId'] for g in inv.get('adverts',[]) for x in g.get('advert_list',[])})
  camps=w.campaigns(allids)
  c.put(KEY+':campaigns',dict(observed_at=stamp(),campaigns=camps))
- targets={k:v for k,v in camps.items() if int(k) in IDS};assert len(targets)==5
+ targets={k:v for k,v in camps.items() if int(k) in IDS};assert len(targets)==1
  c.put(KEY+':budgets',dict(observed_at=stamp(),data=w.req('/api/advert/v2/budget','POST',dict(advertIds=IDS))))
- statsids=[int(k) for k,v in camps.items() if v['status'] in [7,9,11]]
+ statsids=IDS
  stats=w.req('/adv/v3/fullstats?ids='+','.join(map(str,statsids))+'&beginDate=2026-10-26&endDate=2026-10-29')
  c.put(KEY+':stats',dict(observed_at=stamp(),requested_ids=statsids,data=stats))
  msktime=timezone(timedelta(hours=3));cutoff=datetime.now(timezone.utc);start=datetime(2026,10,28,tzinfo=msktime)

@@ -1,5 +1,8 @@
 name: Read five China campaign diagnostics
 on:
+  push:
+    branches: [main]
+    paths: ['scripts/china_five_campaigns29.py','.github/workflows/china-five-campaigns29.yml']
   workflow_dispatch:
 permissions:
   contents: read

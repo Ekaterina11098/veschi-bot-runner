@@ -1,0 +1,30 @@
+name: Owner534 search cause diagnosis
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/china_534_search_cause29_read.py','.github/workflows/china-534-search-cause29.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-534-search-cause29
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Read search query statistics only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: PYTHONPATH=scripts python scripts/china_534_search_cause29_read.py

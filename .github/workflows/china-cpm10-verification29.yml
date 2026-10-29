@@ -1,8 +1,8 @@
-name: Owner CPM browser execution verification
+name: Owner authorized minimum CPM test execution
 on:
   push:
     branches: [main]
-    paths: ['scripts/china_cpm10_verify29.py','.github/workflows/china-cpm10-verification29.yml']
+    paths: ['scripts/china_cpm10_apply29.py','.github/workflows/china-cpm10-verification29.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,6 +26,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          REVIEW_PHASE: before
+          CPM_STAGE: create
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-        run: PYTHONPATH=scripts python scripts/china_cpm10_verify29.py
+        run: PYTHONPATH=scripts python scripts/china_cpm10_apply29.py

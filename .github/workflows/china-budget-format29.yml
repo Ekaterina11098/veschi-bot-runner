@@ -1,0 +1,44 @@
+name: Owner budget format29Oct replacement
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/china_budget_reserve.py','scripts/china_budget_replace29.py','scripts/test_china_advertising_budget_format29.py','scripts/china_advertising_cards.py','scripts/china_advertising_v2_png.py','.github/workflows/china-budget-format29.yml','china-budget-format29-apply.json']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-budget-format29
+  cancel-in-progress: false
+jobs:
+  replace:
+    if: github.repository == 'Ekaterina11098/veschi-bot-runner' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts
+            .github
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 Pillow==11.3.0
+      - name: Verify advertising reports and exact reply approvals offline
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
+      - name: Freeze owner approved replacement without sending
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_3: disabled-no-wb
+        run: PYTHONPATH=scripts python scripts/china_budget_replace29.py --prepare
+      - name: Replace budget PNG only after activation and archive
+        if: hashFiles('china-budget-format29-apply.json') != ''
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_3: disabled-no-wb
+        run: PYTHONPATH=scripts python scripts/china_budget_replace29.py --apply

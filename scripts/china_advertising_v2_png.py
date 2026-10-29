@@ -38,7 +38,7 @@ def render(bundle):
   d.rectangle((0,0,W,205),fill=NAVY)
   d.text((44,28),title,font=font(48,True),fill='white')
   d.text((44,100),'День: '+bundle['days'][-1]+' · 3 дня: '+bundle['days'][0]+'—'+bundle['days'][-1]+' · цель ДРР 5%',font=font(29,True),fill='white')
-  d.text((44,150),'Срез: '+str(bundle['source_observed_at']),font=font(24),fill='#dce9f0')
+  d.text((44,150),'Срез: '+(str(bundle['source_observed_at'])+(' · остатки: '+bundle['budget_balance_observed_at'] if 'бюджеты' in title and bundle.get('budget_balance_observed_at') else '')),font=font(24),fill='#dce9f0')
   return im,d
  def wrap(d,s,w,n=27):
   out=[]
@@ -90,39 +90,41 @@ def render(bundle):
  footer='ДРР = сумма расходов / сумма рекламных заказов до скидок WB. Дни без заказов входят в расходы. Нет заказов — сумма заказов 0, ДРР не вычисляется. Исторический расход исключённых сохранён. Атрибуция не равна выкупам и прибыли. Новые тесты отмечены; период может включать прежний состав. Итог относится только к кабинету Китай.'
  for j,line in enumerate(wrap(d,footer,W-88,24)):d.text((44,y+218+j*31),line,font=font(24),fill='#536b79')
  finish(im,y+240+len(wrap(d,footer,W-88,24))*31,'drr',actions)
- # Keep the existing family/cursor and exact per-image approval binding.
- im,d=canvas('Китай · бюджеты и потребность в резерве');y=240;actions=[]
- selected=[c for c in bundle['campaigns'] if (c.get('budget_action') or {}).get('kind')=='topup_campaign' or c.get('budget_review_required')]
+ # Owner-approved three columns; no row without a known cash shortfall.
+ from china_budget_reserve import apply
+ bundle=apply(bundle,bundle.get('budget_minimum_topup_cny',100))
+ im,d=canvas('Китай · бюджеты и суммы пополнения');y=240;actions=[]
+ selected=[c for c in bundle['campaigns'] if c.get('budget_review_required')]
  for c in selected:
-  need=c.get('budget_reference_need');gap=max(0,need-c['balance']) if need is not None else None
-  ready=(c.get('budget_action') or {}).get('kind')=='topup_campaign'
+  need=c.get('budget_reference_need');gap=c.get('budget_cash_gap')
+  title=wrap(d,'РК '+str(c['id'])+' · '+c['name'],730,29)
   decision=c.get('budget_short_note') or c['budget_recommendation']
-  if not ready and len(decision)>180:decision='Готового пополнения нет: требуется свежая экономика оставшихся товаров.'
-  text='Оценка расхода оставшихся SKU на 3 дня: '+money(need)+' ¥ · нехватка '+money(gap)+' ¥.'
-  if c.get('budget_reference_amount'):text+=' Ориентир резерва: '+money(c['budget_reference_amount'])+' ¥.'
-  lines=[text,decision]
-  if c.get('budget_risk_note'):lines.append(c['budget_risk_note'])
-  wrapped=[line for text in lines for line in wrap(d,text,W-120)]
-  height=160+36*len(wrapped)
+  advice=[]
+  for index,line in enumerate(decision.splitlines()):advice+=wrap(d,line,714,31 if index==0 else 27)
+  height=max(300,82+39*len(advice),46+36*len(title)+150)
+  if height>4800:raise ValueError('Budget card too long')
   if y+height>5500:
-   finish(im,y,'budgets',actions);im,d=canvas('Китай · бюджеты и потребность в резерве');y=240;actions=[]
+   finish(im,y,'budgets',actions);im,d=canvas('Китай · бюджеты и суммы пополнения');y=240;actions=[]
   d.rounded_rectangle((24,y,W-24,y+height),18,fill='white')
-  d.text((44,y+16),'РК '+str(c['id'])+' · '+c['name'],font=font(29,True),fill=NAVY)
-  d.text((44,y+62),'Остаток: '+money(c['balance'])+' ¥',font=font(27,True),fill=INK)
-  d.text((780,y+62),'Расход день / 3 дня: '+money(c['last']['spend'] if c.get('last') else None)+' / '+money(c['period']['spend'] if c.get('period') else None)+' ¥',font=font(27),fill=INK)
-  for x,label,value in [(44,'ДРР 3 дня: ',c.get('period')),(580,'ДРР день: ',c.get('last')),(1100,'ДРР сегодня: ',c.get('budget_today')),(1630,'Прямой ДРР оставшихся, 3 дня: ',c.get('current_period'))]:
-   if x==1100 and value is None:continue
-   d.text((x,y+108),label,font=font(24),fill=INK)
-   d.text((x+d.textlength(label,font=font(24)),y+108),pct(value),font=font(24,True),fill=color(value))
-  for i,line in enumerate(wrapped):d.text((44,y+150+i*36),line,font=font(27),fill=INK)
+  for j,line in enumerate(title):d.text((44,y+16+j*36),line,font=font(29,True),fill=NAVY)
+  left=y+26+len(title)*36
+  d.text((44,left),'Остаток: '+money(c.get('balance'))+' ¥',font=font(29,True),fill=INK)
+  d.text((44,left+48),'Запас на 3 дня: '+money(need)+' ¥',font=font(27),fill=INK)
+  d.text((44,left+88),'Нехватка: '+money(gap)+' ¥',font=font(27),fill=INK)
+  d.text((860,y+16),'Расходы и ДРР',font=font(29,True),fill=NAVY)
+  for offset,label,value in [(64,'Расход день: ',c['last']['spend'] if c.get('last') else None),(104,'Расход 3 дня: ',c['period']['spend'] if c.get('period') else None),(144,'Средний расход в день: ',c.get('budget_average_daily'))]:
+   d.text((860,y+offset),label+money(value)+' ¥',font=font(27),fill=INK)
+  for offset,label,value in [(200,'ДРР 3 дня: ',c.get('period')),(242,'ДРР день: ',c.get('last'))]:
+   d.text((860,y+offset),label,font=font(27),fill=INK)
+   d.text((860+d.textlength(label,font=font(27)),y+offset),pct(value),font=font(27,True),fill=color(value))
+  d.text((1630,y+16),'Рекомендация по пополнению',font=font(27,True),fill=NAVY)
+  for j,line in enumerate(advice):d.text((1630,y+65+j*39),line,font=font(31 if j==0 else 27,j==0),fill=RED if j==0 and decision.startswith('Не пополнять') else INK)
   y+=height+18
-  if ready:actions.append(c['budget_action'])
+  if c.get('budget_action'):actions.append(c['budget_action'])
  if not selected:
-  missing=any(c.get('missing_stats') and not c.get('never_started') for c in bundle['campaigns'])
-  text='Данные части РК отсутствуют; отсутствие потребности в пополнении не подтверждено.' if missing else 'По проверенному срезу остатка хватает на расчётный период. Новых пополнений нет.'
-  for line in wrap(d,text,W-88,29):d.text((44,y),line,font=font(29),fill=INK);y+=38
- for line in wrap(d,'Оценка резерва предварительная. Для готового пополнения нужны свежая экономика и отдельное согласие. Прямой ДРР SKU не включает ассоциированные заказы других товаров. Сегодня — неполный день; возможна поздняя атрибуция. Автопополнения нет.',W-88,24):
-  d.text((44,y+10),line,font=font(24),fill='#536b79');y+=32
+  d.text((44,y),'По расчёту запаса на 3 дня пополнение не требуется.',font=font(29),fill=INK);y+=55
+ footer='Сумма пополнения = средний расход за 3 полных дня × 3 − остаток. Округление вверх до 50 ¥; минимум WB — '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. РК без расчётной нехватки не показаны. Пополнение — после подтверждения.'
+ for line in wrap(d,footer,W-88,24):d.text((44,y+10),line,font=font(24),fill='#536b79');y+=32
  finish(im,y,'budgets',actions)
  for family in ['drr','budgets']:
   parts=[f for f in files if f['family']==family]

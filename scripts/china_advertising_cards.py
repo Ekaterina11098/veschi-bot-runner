@@ -39,7 +39,8 @@ def enhance(bundle,source):
  bundle['today_observed_at']=intraday.get('observed_at')
  bundle['total_yesterday_spend']=sum(c['last']['spend'] for c in bundle['campaigns'] if c.get('last') is not None) if all(c.get('last') is not None or c['status']!=9 for c in bundle['campaigns']) else None
  bundle['receipt_basis']='verified before/after diff and current campaign membership'
- return bundle
+ from china_budget_reserve import apply
+ return apply(bundle,(source.get('config') or {}).get('minTopUp',10000)/100)
 
 def notes(c):
  if c.get('missing_stats'):return ['Статистика WB за период отсутствует; расход и ДРР не подтверждены.']

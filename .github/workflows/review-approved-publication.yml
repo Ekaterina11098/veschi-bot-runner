@@ -69,3 +69,5 @@ jobs:
 # Activate positive-natural-descriptions-20261027 with exact-once guards.
 
 # Activate positive-descriptions-20261028 in all cabinet processes.
+
+# Activate positive-figurative-praise-20261029 in isolated workers.

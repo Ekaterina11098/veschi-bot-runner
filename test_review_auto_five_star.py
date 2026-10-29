@@ -114,6 +114,17 @@ class PolicyTests(unittest.TestCase):
     for suffix in (' Но ремешок дешевый.',' Молния заедает.','?'):
      self.assertFalse(classify(self.review(**{key:value+suffix}))['eligible'],value+suffix)
   self.assertFalse(classify(self.review(pros='Натуральная замша,цвет очень красивый.Маленькая но вместительная.',cons='Хотелось бы еще дополнительный ремешок, а то этот не очень...Кожзам самый дешевый.'))['eligible'])
+ def test_figurative_praise_and_qualified_negation(self):
+  positives=('Сумочка класс, довольная как розовый слон. Спасибо за качество и дизайн!','Очень классная сумочка, качественно сшита, цвет благородный, фурнитура не дишманская, очень благородно и дорого смотрится. Цена очень порадовала. Спасибо большое продавцу.')
+  for key in ('text','pros','cons'):
+   for value in positives:
+    self.assertTrue(classify(self.review(**{key:value}))['eligible'],value)
+    self.assertFalse(classify(self.review(**{key:value+' Но фурнитура сломалась.'}))['eligible'])
+    self.assertFalse(classify(self.review(**{key:value+' Но запах присутствует.'}))['eligible'])
+    self.assertFalse(classify(self.review(**{key:value+'?'}))['eligible'])
+  self.assertFalse(classify(self.review('Быстрая доставка. Очень аккуратно упаковано, есть пыльник. Сумочка прекрасная,маленькая, качественная. Запах при распаковке присутствует, но не критично. Рекомендую!'))['eligible'])
+  for value in ('Фурнитура дишманская','Не довольная как розовый слон','Фурнитура не качественная'):
+   self.assertFalse(classify(self.review(value))['eligible'])
  def test_purchase_status_neutral(self):
   for status in ('buyout','rejected','returned',None):
    answer=answer_for(self.review(orderStatus=status))

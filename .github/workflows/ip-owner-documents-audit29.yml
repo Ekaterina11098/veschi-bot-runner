@@ -1,0 +1,27 @@
+name: Owner private IP document audit29
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/ip-owner-documents-audit29.yml
+permissions: {contents: read}
+concurrency:
+  group: owner-ip-documents-audit29
+  cancel-in-progress: false
+jobs:
+  audit:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Read IP product documents into private cache only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+        run: python scripts/ip_owner_documents_audit29.py

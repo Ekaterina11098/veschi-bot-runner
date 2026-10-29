@@ -1,0 +1,91 @@
+name: Owner requested no-advertising MSK stock read 29Oct
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-ms89-stock-read-20261029.yml']
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: owner-ms89-stock-read-20261029
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: MoySklad GET only; result private
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import os,json,re,urllib.request,urllib.error,urllib.parse,datetime,gzip
+          KEY="china_agent:outside89_msk_stock:2026-10-29:v1"
+          MS="https://api.moysklad.ru/api/remap/1.2"
+          SB=os.environ["SUPABASE_URL"].rstrip("/")
+          def stamp():return datetime.datetime.now(datetime.timezone.utc).isoformat()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*a,**k):raise RuntimeError("Redirect blocked")
+          opener=urllib.request.build_opener(NoRedirect)
+          sh={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json"}
+          mh={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept-Encoding":"gzip","Accept":"application/json;charset=utf-8"}
+          def call(url,headers,method="GET",body=None):
+           req=urllib.request.Request(url,headers=headers,method=method,data=None if body is None else json.dumps(body).encode())
+           try:
+            with opener.open(req,timeout=90) as r:
+             raw=r.read()
+             return json.loads(gzip.decompress(raw) if r.headers.get("Content-Encoding")=="gzip" else raw) if raw else None
+           except urllib.error.HTTPError as e:raise RuntimeError("Remote HTTP "+str(e.code)) from None
+          def read_cache(key):
+           rows=call(SB+"/rest/v1/telegram_api_cache?"+urllib.parse.urlencode({"cache_key":"eq."+key,"select":"payload"}),sh)
+           return rows[0]["payload"] if rows else None
+          def save(value):
+           headers=dict(sh,Prefer="resolution=merge-duplicates,return=minimal")
+           call(SB+"/rest/v1/telegram_api_cache?on_conflict=cache_key",headers,"POST",{"cache_key":KEY,"payload":value,"updated_at":stamp(),"expires_at":"2036-10-29T00:00:00Z"})
+          def ms_get(path,params):
+           if path not in ("/entity/store","/report/stock/all","/entity/product"):raise ValueError("GET path rejected")
+           return call(MS+path+"?"+urllib.parse.urlencode(params),mh)
+          def pages(path,params):
+           rows=[];offset=0
+           while True:
+            page=ms_get(path,dict(params,limit=1000,offset=offset))
+            part=page.get("rows");size=page.get("meta",{}).get("size")
+            if not isinstance(part,list) or type(size) is not int:raise ValueError("Coverage unknown")
+            rows.extend(part);offset+=len(part)
+            if offset>=size:return rows
+            if not part or offset>50000:raise ValueError("Pagination incomplete")
+          request=read_cache(KEY+":request")
+          if not request or request.get("status")!="approved_readonly" or request.get("result_key")!=KEY:raise ValueError("Request mismatch")
+          articles=request["articles"]
+          if len(articles)!=89 or len(set(articles))!=89 or request["warehouse_name"]!="МСК":raise ValueError("Scope mismatch")
+          if read_cache(KEY) is not None:
+           print("Existing snapshot preserved; no repeated reads")
+           raise SystemExit()
+          out={"status":"reading","started_at":stamp(),"run_id":os.environ["GITHUB_RUN_ID"],"warehouse":"МСК","moysklad_writes":0,"wb_calls":0,"telegram_calls":0}
+          try:
+           stores=pages("/entity/store",{})
+           selected=[s for s in stores if s.get("name")=="МСК" and not s.get("archived")]
+           if len(selected)!=1:raise ValueError("MSK warehouse ambiguous")
+           warehouse=selected[0]
+           if not warehouse["meta"]["href"].startswith(MS+"/entity/store/"):raise ValueError("Warehouse URL invalid")
+           raw=pages("/report/stock/all",{"filter":"store="+warehouse["meta"]["href"]+";stockMode=all;quantityMode=all"})
+           out.update(warehouse_id=warehouse["id"],raw_count=len(raw),report_mode="stockMode=all;quantityMode=all",rows=[])
+           for article in articles:
+            matched=[r for r in raw if r.get("article")==article]
+            row={"article":article,"matching_rows":len(matched)}
+            if len(matched)==1 and all(type(matched[0].get(k)) in (int,float) for k in ("stock","reserve")):
+             r=matched[0];row.update(status="verified",stock=r["stock"],reserve=r["reserve"],available=r["stock"]-r["reserve"],in_transit=r.get("inTransit"),quantity_reported=r.get("quantity"))
+            else:
+             products=pages("/entity/product",{"filter":"article="+article})
+             exact=[p for p in products if p.get("article")==article]
+             row.update(status="stock_unverified",product_matches=len(exact),product_archived=[p.get("archived") for p in exact])
+            out["rows"].append(row)
+           out.update(status="complete" if all(r["status"]=="verified" for r in out["rows"]) else "partial",finished_at=stamp(),complete=len(out["rows"])==89 and all(r["status"]=="verified" for r in out["rows"]))
+           save(out)
+           print("Read completed; 89 article results saved privately. MS writes0; WB calls0; Telegram calls0.")
+          except Exception as e:
+           out.update(status="failed",finished_at=stamp(),error_type=type(e).__name__,error=str(e) if re.fullmatch(r"[A-Za-z0-9 ;:/=_-]{1,120}",str(e)) else "Read failed; details suppressed")
+           save(out)
+           print("Read failed; sanitized result saved privately")
+           raise SystemExit(1)

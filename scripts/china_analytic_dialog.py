@@ -289,7 +289,7 @@ def answer(w,job,history):
  from china_zero_orders import answer as zero_orders_answer
  zero_result=zero_orders_answer(w,job,history)
  if zero_result is not None:return zero_result
- from china_article_diagnostic_read import handle as article_diagnostic_handle
+ from china_product_diagnosis import handle as article_diagnostic_handle
  diagnostic=article_diagnostic_handle(w,job,history)
  if diagnostic is not None:return diagnostic
  from business_agents import conversation as c

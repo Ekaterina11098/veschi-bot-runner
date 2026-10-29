@@ -2,14 +2,14 @@ name: WB minimum server profile configuration probe
 on:
   push:
     branches: [main]
-    paths: ['scripts/china_minimum_server_probe29.py','.github/workflows/china-minimum-server-probe29.yml']
+    paths: ['scripts/china_minimum_server_probe29.py','scripts/china_minimum_server_wb_read29.py','.github/workflows/china-minimum-server-probe29.yml']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,5 +24,9 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           TINYFISH_API_KEY: ${{ secrets.TINYFISH_API_KEY }}
         run: PYTHONPATH=scripts python scripts/china_minimum_server_probe29.py
-
-# Owner confirmed server key saved on29Oct; verify profile metadata only.
+      - name: Verify saved WB identity and one price row from server only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TINYFISH_API_KEY: ${{ secrets.TINYFISH_API_KEY }}
+        run: PYTHONPATH=scripts python scripts/china_minimum_server_wb_read29.py

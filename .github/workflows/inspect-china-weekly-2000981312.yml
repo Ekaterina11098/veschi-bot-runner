@@ -1,0 +1,63 @@
+name: Inspect requested China weekly MS scope
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/inspect-china-weekly-2000981312.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - name: Read exact report stock and prior configuration
+        shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,json,collections
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          class ReadOnly(m.Transport):
+           def request(self,base,path,method="GET",body=None,params=None):
+            if base==m.MS and method!="GET":raise m.Stop("MS writes prohibited")
+            return super().request(base,path,method,body,params)
+          t=ReadOnly();db=m.Cache(t);w=m.Worker(t,db,{})
+          root="weekly_report_review:china:20261001:"
+          source=db.get(root+"source_rows:0")
+          sales=collections.Counter()
+          for r in source:
+           if r["docTypeName"]=="销售" and r["sellerOperName"]=="销售":
+            assert r["quantity"]==1
+            sales[r["vendorCode"].strip().casefold()]+=1
+          assert sum(sales.values())==8
+          config=db.get("fbs_document_chain:china:config:v1")
+          template=config["templates"]["salesreturn"]
+          out={"at":m.now(),"sales":dict(sales),"status":"reading","products":{},"stock":{}}
+          for k in ("organization","agent","store"):
+           out[k]=t.request(m.MS,m.href(template[k])[len(m.MS):])
+          out["rate"]=template["rate"]
+          out["currency"]=t.request(m.MS,m.href(template["rate"]["currency"])[len(m.MS):])
+          out["duplicate_orders"]=w.ms_rows("entity/customerorder",{"filter":"name=2000981312"})
+          flt="store="+m.href(out["store"])
+          for typ in ("customerorder","demand"):
+           ds=w.ms_rows("entity/"+typ,{"filter":flt+";moment>=2026-09-01 00:00:00","order":"moment,desc"})
+           out[typ+"_history"]=[{k:d.get(k) for k in ("id","name","moment","description","applicable","sum","organization","agent","store","rate","vatEnabled","vatIncluded","customerOrder")} for d in ds[:20]]
+          for a,q in sales.items():
+           ps=w.ms_rows("entity/product",{"filter":"article="+a+";archived=false"})
+           out["products"][a]=ps
+           if len(ps)==1:
+            out["stock"][a]=w.ms_rows("report/stock/all",{"filter":flt+";product="+m.href(ps[0]),"stockMode":"all","quantityMode":"all"})
+          out["states"]=t.request(m.MS,"entity/customerorder/metadata").get("states",[])
+          out["status"]="read_verified";out["completed_at"]=m.now()
+          db.put(root+"ms_preflight:v1",out)
+          print("Read-only China weekly preparation saved privately.")
+          

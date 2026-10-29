@@ -1,0 +1,133 @@
+name: Create authorized China weekly report 2000981312
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/create-china-weekly-2000981312.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-weekly-2000981312-documents
+  cancel-in-progress: false
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - name: Create only the authorized weekly order and demand
+        shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,json,collections,datetime,time
+          from decimal import Decimal,ROUND_FLOOR
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          ROOT="weekly_report_review:china:20261001:"
+          class Scoped(m.Transport):
+           def request(self,base,path,method="GET",body=None,params=None):
+            if base==m.MS and method!="GET":
+             permitted=(method=="POST" and path in ("entity/customerorder","entity/demand")) or (method=="PUT" and path.startswith("entity/demand/") and set(body or {})<= {"description"})
+             if not permitted:raise m.Stop("Write outside authorized weekly documents")
+            return super().request(base,path,method,body,params)
+          t=Scoped();db=m.Cache(t);w=m.Worker(t,db,{})
+          a=db.get(ROOT+"ms_authorization:v1");prep=db.get(ROOT+"ms_preflight:v1");raw=db.get(ROOT+"source_rows:0")
+          assert a and a["authorized"] is True and a["authorized_on"]==datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date().isoformat()
+          assert prep["status"]=="read_verified" and prep["store"]["name"]=="Гонконг WB FBO" and prep["currency"]["name"]=="руб"
+          sales=collections.Counter()
+          for r in raw:
+           assert r["reportId"]==2000981312
+           assert r["docTypeName"] not in ("Возврат","退货")
+           if r["docTypeName"]=="销售" and r["sellerOperName"]=="销售":
+            assert r["quantity"]==1
+            sales[r["vendorCode"].strip().casefold()]+=1
+          assert dict(sales)==prep["sales"] and sum(sales.values())==8
+          result=db.get(ROOT+"ms_documents:v1") or {"status":"preflight","documents":[],"started_at":m.now()}
+          def save():db.put(ROOT+"ms_documents:v1",result)
+          def norm(x):return m.href(x).split("?")[0]
+          def rows(path,params=None):return w.ms_rows(path,params)
+          def doc(kind,uid):return t.request(m.MS,"entity/"+kind+"/"+uid)
+          def pos(kind,uid,stock=False):return rows("entity/"+kind+"/"+uid+"/positions",{"expand":"assortment",**({"fields":"stock"} if stock else {})})
+          def counts(ps):return dict(collections.Counter({})+sum((collections.Counter({p["assortment"]["article"].strip().casefold():p["quantity"]}) for p in ps),collections.Counter()))
+          prefix="weekly-china-2000981312-"
+          common={k:m.meta(prep[k]) for k in ("organization","agent","store")}
+          common.update(applicable=True,vatEnabled=True,vatIncluded=True,rate={"currency":m.meta(prep["currency"])})
+          def scope(d):return all(norm(d.get(k,{}))==norm(common[k]) for k in ("organization","agent","store")) and norm(d.get("rate",{}).get("currency",{}))==norm(prep["currency"])
+          products=prep["products"]
+          for article in sales:assert len(products.get(article,[]))==1
+          existing_order=rows("entity/customerorder",{"filter":"name=2000981312"})
+          assert len(existing_order)<=1
+          if existing_order:assert existing_order[0].get("externalCode")==prefix+"order","Existing order must be reconciled"
+          existing_demand=rows("entity/demand",{"filter":"externalCode="+prefix+"demand"})
+          assert len(existing_demand)<=1
+          if not existing_demand:
+           exceptions=[]
+           for article,q in sales.items():
+            stock=rows("report/stock/all",{"filter":"store="+norm(prep["store"])+";product="+norm(products[article][0]),"stockMode":"all","quantityMode":"all"})
+            if len(stock)!=1 or stock[0].get("stock",0)<q or stock[0].get("quantity",0)<q or stock[0].get("price",0)<=0:exceptions.append(article)
+           result["stock_exceptions"]=exceptions;save()
+           if exceptions:raise m.Stop("Insufficient actual stock or cost; no documents created")
+          states=[s for s in t.request(m.MS,"entity/customerorder/metadata").get("states",[]) if s["name"]=="Доставлен"];assert len(states)==1
+          def makepos(article,q):return {"quantity":q,"price":0,"discount":0,"vat":0,"assortment":m.meta(products[article][0])}
+          positions=[makepos(article,q) for article,q in sales.items()]
+          def ensure(kind,tag,body):
+           ext=prefix+tag
+           found=rows("entity/"+kind,{"filter":"externalCode="+ext})
+           assert len(found)<=1
+           if found:d=found[0]
+           else:
+            result["pending_write"]={"kind":kind,"externalCode":ext,"at":m.now()};save()
+            try:d=t.request(m.MS,"entity/"+kind,"POST",{**body,"externalCode":ext})
+            except Exception:
+             result["status"]="write_outcome_requires_reconciliation";save();raise
+            result["pending_write"]=None
+           ps=pos(kind,d["id"])
+           assert scope(d) and d.get("applicable") is True and d["sum"]==0
+           assert counts(ps)==dict(sales) and all(p["price"]==0 for p in ps)
+           ref={"type":kind,"id":d["id"],"name":d["name"]}
+           if ref not in result["documents"]:result["documents"].append(ref)
+           save();return d
+          order=ensure("customerorder","order",{**common,"name":"2000981312","description":a["report_comment"],"state":m.meta(states[0]),"positions":positions})
+          linked=doc("customerorder",order["id"]).get("demands",[])
+          for ref in linked:
+           d=t.request(m.MS,norm(ref)[len(m.MS):])
+           assert d.get("externalCode")==prefix+"demand","Unexpected linked demand"
+          demand=ensure("demand","demand",{**common,"description":a["report_comment"],"customerOrder":m.meta(order),"positions":positions})
+          proof=[]
+          for attempt in range(3):
+           proof=[];bad=[]
+           for p in pos("demand",demand["id"],True):
+            q=Decimal(str(p["quantity"]));cost=Decimal(str(p.get("stock",{}).get("cost") or 0))
+            unit=(cost/q).to_integral_value(rounding=ROUND_FLOOR)
+            if unit<=0:bad.append(p["assortment"]["article"])
+            proof.append({"article":p["assortment"]["article"],"quantity":str(q),"actual_stock_cost_kopecks":str(cost),"unit_price_kopecks":str(unit)})
+           if not bad:break
+           time.sleep(2)
+          result["valuation_positions"]=proof;save()
+          if bad:raise m.Stop("Actual demand valuation requires clarification; prices remain zero")
+          total=sum(Decimal(p["unit_price_kopecks"])*Decimal(p["quantity"]) for p in proof)/100
+          def money(v):return format(v,",.2f").replace(","," ").replace(".",",")
+          comment="Опт: "+money(total)+" руб − рыжие возвраты 0,00 руб = "+money(total)+" руб"
+          t.request(m.MS,"entity/demand/"+demand["id"],"PUT",{"description":comment})
+          checks=[]
+          for kind,uid in (("customerorder",order["id"]),("demand",demand["id"])):
+           d=doc(kind,uid);ps=pos(kind,uid)
+           assert scope(d) and d["applicable"] is True and d["sum"]==0 and all(p["price"]==0 for p in ps) and counts(ps)==dict(sales)
+           assert len(rows("entity/"+kind,{"filter":"externalCode="+d["externalCode"]}))==1
+           if kind=="customerorder":
+            assert norm(d.get("state",{}))==norm(states[0])
+            assert d.get("description")==a["report_comment"] and [norm(x) for x in d.get("demands",[])]==[norm(demand)]
+           else:assert d.get("description")==comment and norm(d["customerOrder"])==norm(order)
+           checks.append({"type":kind,"id":uid,"name":d["name"],"quantity":sum(p["quantity"] for p in ps),"positions":len(ps),"all_prices_zero":True,"posted":True,"comment":d["description"],"state":"Доставлен" if kind=="customerorder" else None,"store":prep["store"]["name"]})
+          assert len(rows("entity/customerorder",{"filter":"name=2000981312"}))==1
+          result.update(status="complete",completed_at=m.now(),checks=checks,wholesale_rub=str(total),sales_units=8,return_units=0,all_prices_zero=True,all_posted=True,duplicate_check=True)
+          save()
+          print("Authorized China weekly order and demand created and verified; private results saved.")
+          

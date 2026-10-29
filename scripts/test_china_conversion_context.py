@@ -76,4 +76,16 @@ class Tests(unittest.TestCase):
    w=W({c.ROOT+'2026-10-29':snapshot(),c.WEEK_ROOT+'2026-10-29':p})
    with patch.object(c,'read',return_value=state('2026-10-22','2026-10-28')) as read:c.collect_period(w,7)
    read.assert_called_once()
+ def test_real_dialog_entry_passes_history_and_returns_evidence(self):
+  import ast
+  from pathlib import Path
+  tree=ast.parse(Path(__file__).with_name('china_analytic_dialog.py').read_text(encoding='utf8'))
+  fn=next(x for x in tree.body if isinstance(x,ast.FunctionDef) and x.name=='answer')
+  ns={'POLICY':'policy'};exec(compile(ast.Module(body=[fn],type_ignores=[]),'dialog_entry','exec'),ns)
+  w=W({c.ROOT+'2026-10-29':snapshot(),'policy':{'enabled':True}})
+  with patch.object(c,'read',return_value=state('2026-10-22','2026-10-28')):
+   text,trace=ns['answer'](w,dict(request_text='А если сравнить с данными в среднем за неделю'),H)
+  self.assertEqual(trace[0]['name'],'conversion_funnel_evidence')
+  self.assertEqual(trace[0]['requested_completed_days'],7)
+  self.assertIn('2026-10-22',text)
 if __name__=='__main__':unittest.main()

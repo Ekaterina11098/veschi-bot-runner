@@ -1,8 +1,5 @@
 name: Owner Noel same clock comparison29Oct
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/china_noel_comparison29_read.py','.github/workflows/china-noel-comparison29.yml']
   workflow_dispatch:
 permissions:
   contents: read

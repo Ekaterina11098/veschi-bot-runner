@@ -47,7 +47,7 @@ def collect(io,day,current=False):
   else:raise ValueError('Execution history exceeds safe pagination bound')
   save(io,key,s)
  if 'experience' not in s:
-  s['experience']=io.db('telegram_api_cache?cache_key=like.china_agent:experience:v1:*&select=payload&limit=300')
+  s['experience']=io.db('telegram_api_cache?cache_key=like.china_agent:experience:v1:*&payload->action->>kind=eq.price_change&select=action:payload->action,started_at:payload->>started_at&limit=300')
   if len(s['experience'])>=300:raise ValueError('Experience history pagination needed')
   save(io,key,s)
  if 'economics' not in s:

@@ -1,9 +1,6 @@
 name: Owner private IP document audit29
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - .github/workflows/ip-owner-documents-audit29.yml
 permissions: {contents: read}
 concurrency:
   group: owner-ip-documents-audit29

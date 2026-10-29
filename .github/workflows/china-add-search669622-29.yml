@@ -1,8 +1,5 @@
 name: Owner add two search placements
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/china_add_search669622_29.py','.github/workflows/china-add-search669622-29.yml']
   workflow_dispatch:
 permissions:
   contents: read

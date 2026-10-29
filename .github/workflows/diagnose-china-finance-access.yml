@@ -1,0 +1,74 @@
+name: Diagnose China finance access read only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diagnose-china-finance-access.yml']
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: diagnose-china-finance-access
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Inspect token metadata and read API responses privately
+        shell: python
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import os,json,base64,datetime,urllib.request,urllib.error,gzip,time,re
+          token=os.environ["WB_TOKEN_3"]
+          now=datetime.datetime.now(datetime.timezone.utc)
+          result={"checked_at":now.isoformat(),"token_secret":"WB_TOKEN_3","checks":[]}
+          try:
+           part=token.split(".")[1]
+           claims=json.loads(base64.urlsafe_b64decode(part+"="*(-len(part)%4)))
+           mask=int(claims.get("s",0))
+           result["metadata"]={"acc":claims.get("acc"),"for_type":("self" if claims.get("for")=="self" else "service" if str(claims.get("for","")).startswith("asid:") else "other_or_absent"),"test":claims.get("t"),"permission_mask":mask,"enabled_bit_positions":[i for i in range(32) if mask&(1<<i)],"expires_at":datetime.datetime.fromtimestamp(claims["exp"],datetime.timezone.utc).isoformat() if claims.get("exp") else None,"expired":claims.get("exp",0)<now.timestamp(),"finance_bit13":bool(mask&(1<<13)),"statistics_bit5":bool(mask&(1<<5)),"readonly_bit30":bool(mask&(1<<30))}
+          except Exception:
+           result["metadata"]={"decode_error":True}
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*args,**kwargs):raise RuntimeError("Redirect blocked")
+          op=urllib.request.build_opener(NoRedirect)
+          def scrub(value):
+           txt=json.dumps(value,ensure_ascii=False).replace(token,"[REDACTED]")
+           return re.sub(r"eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+","[REDACTED_JWT]",txt)[:12000]
+          def check(label,url,body=None):
+           headers={"Authorization":token,"Content-Type":"application/json","Accept-Encoding":"gzip"}
+           req=urllib.request.Request(url,headers=headers,method="POST" if body is not None else "GET",data=None if body is None else json.dumps(body).encode())
+           entry={"label":label,"url":url}
+           try:
+            with op.open(req,timeout=60) as r:
+             raw=r.read()
+             if r.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+             entry["http"]=r.status
+             value=json.loads(raw) if raw else None
+             if isinstance(value,list):entry["response"]={"type":"list","count":len(value),"report_ids":[v.get("reportId") for v in value if isinstance(v,dict)]}
+             else:entry["response"]=json.loads(scrub(value))
+           except urllib.error.HTTPError as e:
+            entry["http"]=e.code
+            raw=e.read()
+            if e.headers.get("Content-Encoding")=="gzip":
+             try:raw=gzip.decompress(raw)
+             except Exception:pass
+            entry["error"]=scrub(raw.decode("utf-8",errors="replace"))
+           except Exception as e:entry["transport_error"]=type(e).__name__
+           result["checks"].append(entry)
+          check("china_finance_ping","https://finance-api.wildberries.cn/ping")
+          check("china_statistics_ping","https://statistics-api.wildberries.cn/ping")
+          check("china_marketplace_ping","https://marketplace-api.wildberries.cn/ping")
+          body={"dateFrom":"2026-09-07","dateTo":"2026-09-13","period":"weekly","limit":1000,"offset":0}
+          time.sleep(31)
+          check("china_finance_report_list","https://finance-api.wildberries.cn/api/finance/v1/sales-reports/list",body)
+          check("ru_finance_report_list_comparison","https://finance-api.wildberries.ru/api/finance/v1/sales-reports/list",body)
+          sb=os.environ["SUPABASE_URL"].rstrip("/")
+          key=os.environ["SUPABASE_SECRET_KEY"]
+          headers={"apikey":key,"Authorization":"Bearer "+key,"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"}
+          data={"cache_key":"weekly_report_review:china:finance_access_diagnostic:v1","payload":result,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2099-01-01T00:00:00Z"}
+          req=urllib.request.Request(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",headers=headers,method="POST",data=json.dumps(data).encode())
+          with op.open(req,timeout=60) as r:assert r.status in (200,201,204)
+          print("Read-only diagnostics completed; sanitized evidence stored privately.")

@@ -11,7 +11,7 @@ def main():
  assert os.environ.get('GITHUB_REPOSITORY')=='Ekaterina11098/veschi-bot-runner' and os.environ.get('GITHUB_REF')=='refs/heads/main'
  assert datetime.now(timezone(timedelta(hours=3))).date().isoformat()=='2026-10-29'
  c=Cache();w=WB();validate_identity(c,w)
- assert c.create(ROOT+':read2:guard',dict(at=stamp())),'Read already claimed'
+ assert c.create(ROOT+':read3:guard',dict(at=stamp())),'Read already claimed'
  cfg=c.get(ROOT+':selection');assert cfg
  ids=sorted({a['advertId'] for g in w.req('/adv/v1/promotion/count').get('adverts',[]) for a in g.get('advert_list',[])})
  camps=w.campaigns(ids)
@@ -37,6 +37,24 @@ def main():
   if offset>=size:break
   assert part and offset<50000
  c.put(ROOT+':stock',dict(observed_at=stamp(),warehouse='МСК',complete=True,raw_count=offset,rows=rows))
+ cutoff=datetime.now(timezone.utc);msk=timezone(timedelta(hours=3));begin=datetime(2026,10,28,tzinfo=msk);cursor=0;orders={};visited=set();wanted={int(x['nm']) for x in cfg['candidates']}
+ while True:
+  assert cursor not in visited,'Orders cursor cycle'
+  visited.add(cursor)
+  r=requests.get('https://marketplace-api.wildberries.ru/api/v3/orders',params=dict(limit=1000,next=cursor,dateFrom=int(begin.timestamp()),dateTo=int(cutoff.timestamp())),headers={'Authorization':w.token},timeout=65)
+  assert r.ok,'Orders read HTTP '+str(r.status_code)
+  data=r.json();part=data.get('orders');assert isinstance(part,list)
+  for x in part:
+   if x['nmId'] not in wanted:continue
+   created=datetime.fromisoformat(x['createdAt'].replace('Z','+00:00'))
+   if created.tzinfo is None:created=created.replace(tzinfo=timezone.utc)
+   orders[str(x['id'])]=dict(nm=str(x['nmId']),article=x.get('article'),created_msk=created.astimezone(msk).strftime('%Y-%m-%d %H:%M:%S'))
+  nxt=data.get('next')
+  if not part or not nxt:break
+  assert nxt!=cursor,'Orders cursor stalled'
+  cursor=nxt
+  __import__('time').sleep(1)
+ c.put(ROOT+':orders',dict(status='complete',observed_at=stamp(),cutoff_msk=cutoff.astimezone(msk).isoformat(),pages=len(visited),rows=list(orders.values())))
  c.put(ROOT+':inputs',dict(status='complete',observed_at=stamp(),WBwrites=0,TelegramSends=0))
  print('Private candidate stock, price, and campaign inputs complete')
 if __name__=='__main__':main()

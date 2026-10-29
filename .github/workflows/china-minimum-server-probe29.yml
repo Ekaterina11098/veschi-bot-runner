@@ -24,3 +24,5 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           TINYFISH_API_KEY: ${{ secrets.TINYFISH_API_KEY }}
         run: PYTHONPATH=scripts python scripts/china_minimum_server_probe29.py
+
+# Owner confirmed server key saved on29Oct; verify profile metadata only.

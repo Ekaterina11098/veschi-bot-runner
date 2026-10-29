@@ -23,7 +23,7 @@ def main():
  assert c.create(ROOT+':'+STAGE+':guard',dict(at=stamp())),'Existing stage guard: inspect canonical state; no blind repeat'
  e=c.get(ROOT+':execution') or dict(status='preflight',created_at=stamp(),steps=[],approval_key=ROOT+':approval',WBwrites=0,TelegramSends=0)
  try:
-  if STAGE in ['preflight','preflight_retry']:
+  if STAGE in ['preflight','preflight_retry','preflight_filtered']:
    e['status']='preflight';save(c,e)
    current=w.campaigns([CID,REC]);before=current[str(CID)];rec=current[str(REC)]
    assert before['status']==9 and before['currency']=='CNY' and before['bid_type']=='manual' and before['settings']['payment_type']=='cpc' and before['settings']['placements']==dict(search=True,recommendations=False),'Destination settings changed'
@@ -51,14 +51,16 @@ def main():
     return r.json()
    stores=get('/entity/store',dict(limit=1000));assert stores['meta']['size']<=len(stores['rows'])
    stores=[s for s in stores['rows'] if s.get('name')=='МСК' and not s.get('archived')];assert len(stores)==1
-   names={x['article'] for x in a['items']};rows=[];offset=0
-   while True:
-    j=get('/report/stock/all',dict(filter='store='+stores[0]['meta']['href']+';stockMode=all;quantityMode=all',limit=100,offset=offset))
-    part=j['rows'];rows.extend({k:r.get(k) for k in ['article','stock','reserve','price']} for r in part if r.get('article') in names)
-    offset+=len(part)
-    c.put(ROOT+':stock_progress',dict(offset=offset,total=j['meta']['size'],at=stamp()))
-    if offset>=j['meta']['size']:break
-    assert part and offset<50000
+   names={x['article'] for x in a['items']};product_hrefs=[]
+   for article in sorted(names):
+    product=get('/entity/product',dict(filter='article='+article,limit=100))
+    matches=[p for p in product.get('rows',[]) if p.get('article')==article and not p.get('archived')]
+    assert len(matches)==1 and product['meta']['size']==1,'Exact stock product identity ambiguous'
+    product_hrefs.append(matches[0]['meta']['href'])
+   flt='store='+stores[0]['meta']['href']+';stockMode=all;quantityMode=all;'+ ';'.join('product='+u for u in product_hrefs)
+   j=get('/report/stock/all',dict(filter=flt,limit=100))
+   assert isinstance(j.get('rows'),list) and j['meta']['size']==len(j['rows']),'Filtered stock coverage incomplete'
+   rows=[{k:r.get(k) for k in ['article','stock','reserve','price']} for r in j['rows']]
    assert len(rows)==2 and {r['article'] for r in rows}==names,'Stock article ambiguity'
    assert all(isinstance(r['stock'],(int,float)) and isinstance(r['reserve'],(int,float)) and r['stock']-r['reserve']>=30 and r['price']>0 for r in rows),'Available MSK stock or COGS insufficient'
    e['stock']=dict(observed_at=stamp(),warehouse='МСК',rows=rows);e['economics']=[]
@@ -71,7 +73,7 @@ def main():
     e['economics'].append(dict(nm_id=nm,price_cny=price,cogs_cny=cost,buyout_scenario=.5,commission=.20,tax=.05,handling_rub=10,fx=12,logistics_cny=logistics,logistics_qualification='669 dated default12;622 unknown,conservative assumption35,not measured actual',CR_scenarios=scenarios))
    e['budget_before']=w.req('/api/advert/v2/budget','POST',dict(advertIds=[CID,REC]));assert any(b['advertId']==CID and b['currency']=='CNY' and b['total']>0 for b in e['budget_before']['adverts'])
    e['baseline_fullstats']=w.req('/adv/v3/fullstats?ids='+str(CID)+','+str(REC)+'&beginDate=2026-10-29&endDate=2026-10-29')
-   e['prepared_at']=stamp();e['status']='prepared';save(c,e);print('Fresh preflight complete privately; no WB changes')
+   e['recovered_preflight_error']=e.pop('error',None);e['prepared_at']=stamp();e['status']='prepared';save(c,e);print('Fresh preflight complete privately; no WB changes')
   elif STAGE=='apply':
    assert e['status']=='prepared' and datetime.now(timezone.utc)-datetime.fromisoformat(e['prepared_at'])<timedelta(minutes=20),'Preflight stale'
    current=w.campaigns([CID,REC]);before=current[str(CID)];rec=current[str(REC)]

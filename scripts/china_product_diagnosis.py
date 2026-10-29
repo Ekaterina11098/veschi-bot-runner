@@ -38,11 +38,15 @@ def all_ads(w,ids,first,last):
  key=ROOT+'ads:'+hashlib.sha256(json.dumps([sorted(ids),first,last]).encode()).hexdigest()[:20]
  saved=w.get(key)
  if saved and saved.get('cabinet')=='token_3' and 0<=(w.now-datetime.fromisoformat(saved['observed_at'])).total_seconds()<900:return saved
- from china_change_observation import Reader
  from china_analytic_dialog import reading
  import requests
  with reading():
-  catalogue=Reader(w,1).campaign_ids()
+  r=requests.get('https://advert-api.wildberries.ru/adv/v1/promotion/count',headers={'Authorization':os.environ['WB_TOKEN_3']},timeout=35,allow_redirects=False)
+  if not r.ok:raise RuntimeError('Campaign catalogue HTTP '+str(r.status_code))
+  groups=r.json().get('adverts')
+  if not isinstance(groups,list) or any(not isinstance(g.get('advert_list'),list) or g.get('count',len(g['advert_list']))!=len(g['advert_list']) for g in groups):raise ValueError('Incomplete campaign catalogue')
+  catalogue=sorted({a['advertId'] for g in groups for a in g['advert_list']})
+  if any(type(cid)is not int or cid<=0 for cid in catalogue):raise ValueError('Invalid campaign catalogue identity')
   if len(catalogue)>100:raise ValueError('More than100 campaigns: coverage not complete within bounded read')
   raw=[];returned=set()
   for start in range(0,len(catalogue),50):
@@ -54,7 +58,7 @@ def all_ads(w,ids,first,last):
    if any(c.get('advertId') not in batch for c in body):raise ValueError('Campaign outside requested catalogue')
    raw+=body;returned.update(c['advertId'] for c in body)
  rows,seen=normalize_ads(raw,ids,first,last)
- result=dict(source='WB fullstats, catalogue all statuses',source_key=key,observed_at=w.now.isoformat(),cabinet='token_3',currency='CNY',period_from=first,period_to=last,rows=rows,catalogue_count=len(catalogue),returned_campaign_count=len(returned),missing_campaign_ids=sorted(set(catalogue)-returned),coverage_complete=returned==set(catalogue),wb_writes=0)
+ result=dict(source='WB fullstats, catalogue all statuses',source_key=key,observed_at=w.now.isoformat(),cabinet='token_3',currency='CNY',period_from=first,period_to=last,rows=rows,catalogue_count=len(catalogue),catalogue_ids=catalogue,catalogue_all_statuses=True,returned_campaign_count=len(returned),missing_campaign_ids=sorted(set(catalogue)-returned),coverage_complete=returned==set(catalogue),wb_writes=0)
  w.save(key,result);return result
 def funnel_rows(state,ids,days):
  if not state.get('complete') or state.get('cabinet')!='token_3':raise ValueError('Incomplete/cross-cabinet funnel')
@@ -181,6 +185,6 @@ def handle(w,job,history):
   gaps.append(dict(source='Advertising validation',error=type(ex).__name__))
   ads=dict(rows=[],coverage_complete=False)
   result=build(ids,labels,days,ads,funnel,counts,events,history_complete)
- result.update(observed_at=w.now.isoformat(),sources=sources,gaps=gaps,status='complete' if not gaps and ads.get('coverage_complete') and history_complete and all(r['diagnosis']['signal']!='unknown' and all(v is not None for v in r['all_FBS_orders'].values()) for r in result['rows']) else 'partial')
+ result.update(observed_at=w.now.isoformat(),sources=sources,gaps=gaps,status='complete' if not gaps and ads.get('coverage_complete') and history_complete and all(r['diagnosis']['signal']!='unknown' and r['advertising_totals']['spend'] is not None and all(v is not None for v in r['all_FBS_orders'].values()) for r in result['rows']) else 'partial')
  key=ROOT+'job:'+str(job['id']);result['source_key']=key;w.save(key,result)
  return render(result),[dict(name='product_wide_diagnosis',result=result,read_only=True)]

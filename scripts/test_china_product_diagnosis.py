@@ -62,6 +62,7 @@ class Tests(unittest.TestCase):
   a=types.ModuleType('china_analytic_dialog');a.reading=nullcontext
   b=types.ModuleType('china_change_observation');reader=Mock();reader.campaign_ids.return_value=[1,2];b.Reader=lambda *a:reader
   requests=types.ModuleType('requests');requests.get=Mock()
+  catalogue=Mock(ok=True);catalogue.json.return_value={'adverts':[{'status':9,'count':1,'advert_list':[{'advertId':1}]},{'status':11,'count':1,'advert_list':[{'advertId':2}]}]}
   response=Mock(ok=True);response.json.return_value=[dict(advertId=1,currency='CNY',days=[])]
   class W:
    now=datetime(2026,10,29,15,tzinfo=timezone.utc)
@@ -69,9 +70,9 @@ class Tests(unittest.TestCase):
    def get(self,k):return self.saved.get(k)
    def save(self,k,v):self.saved[k]=v
   w=W()
-  with patch.dict(sys.modules,{'china_analytic_dialog':a,'china_change_observation':b,'requests':requests}),patch.dict('os.environ',{'WB_TOKEN_3':'synthetic'}),patch('requests.get',return_value=response) as get:
+  with patch.dict(sys.modules,{'china_analytic_dialog':a,'china_change_observation':b,'requests':requests}),patch.dict('os.environ',{'WB_TOKEN_3':'synthetic'}),patch('requests.get',side_effect=[catalogue,response]) as get:
    r=d.all_ads(w,[100],*D);d.all_ads(w,[100],*D)
-  get.assert_called_once();self.assertEqual(get.call_args.kwargs['params']['ids'],'1,2');self.assertFalse(r['coverage_complete']);self.assertEqual(r['missing_campaign_ids'],[2])
+  self.assertEqual(get.call_count,2);self.assertEqual(get.call_args.kwargs['params']['ids'],'1,2');self.assertFalse(r['coverage_complete']);self.assertEqual(r['missing_campaign_ids'],[2])
  def test_existing_evaluation_window_blocks_early_repeat(self):
   e=dict(event_id='e',record_type='verified_action',operational_outcome='verified',verified_at='2026-10-24T12:01:00Z',source_key='private:receipt',started_at='2026-10-24T12:00:00Z',comparison={'evaluate_from':'2026-10-30'},action={'nm_ids':[100],'kind':'bid_change'})
   self.assertFalse(build(events=[e])['rows'][0]['history']['repeat_ready'])

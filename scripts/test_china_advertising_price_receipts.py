@@ -1,5 +1,5 @@
 import unittest,copy
-from china_advertising_v2 import history,collect
+from china_advertising_v2 import history,collect,compact_execution_records
 class VerifiedPriceHistoryTests(unittest.TestCase):
  def receipt(self,status='done'):
   return {'status':status,'completed_at':'2026-10-28T18:31:00+00:00','items':[{
@@ -20,6 +20,21 @@ class VerifiedPriceHistoryTests(unittest.TestCase):
  def test_missing_or_different_target_not_proof(self):
   r=self.receipt();r['items'][0]['selection']['target_cny']='106';self.assertEqual(history([r]),[])
   r=self.receipt();r['items'][0].pop('request');self.assertEqual(history([r]),[])
+class ReceiptCompactionTests(unittest.TestCase):
+ def test_price_history_and_identity_preserved_without_raw_journals(self):
+  import json
+  receipt=VerifiedPriceHistoryTests().receipt('partial');receipt.update(original_jobs='x'*1000000,baseline_fullstats={'unused':'y'*100000})
+  full=[{'cache_key':'fixture:canonical:execution','payload':receipt}];small=compact_execution_records(full)
+  self.assertEqual(history(full),history(small));self.assertEqual(small[0]['cache_key'],full[0]['cache_key'])
+  self.assertLess(len(json.dumps(small)),2000);self.assertIn('original_jobs',full[0]['payload'])
+ def test_campaign_diffs_and_verified_funding_steps_unchanged(self):
+  receipt={'status':'verified','verified_at':'2026-10-28T12:00:00Z','before':{'id':1,'nm_settings':[{'nm_id':123}]},'after':{'id':1,'nm_settings':[]},
+   'steps':{'funding':{'status':'verified','path':'/adv/v1/budget/deposit?id=1','body':{'sum':100},'submitted_at':'2026-10-28T12:00:00Z'}},'baseline_fullstats':{'unused':'x'}}
+  small=compact_execution_records([{'payload':receipt}]);self.assertEqual(history([receipt]),history(small));self.assertEqual(small[0]['payload']['steps'],receipt['steps'])
+ def test_unanchored_legacy_records_are_not_pruned(self):
+  receipt={'legacy':{'original_jobs':{'status':'unknown'}},'scalar':'keep'}
+  self.assertEqual(compact_execution_records([receipt]),[receipt])
+
 class DailySourceSizeTests(unittest.TestCase):
  def test_only_fields_consumed_from_experience_are_persisted(self):
   import json

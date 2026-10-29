@@ -17,6 +17,22 @@ def http(io,path,method='GET',body=None):
  time.sleep(1.5);r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':io.token},json=body,timeout=60)
  if not r.ok:raise RuntimeError('China advertising read HTTP '+str(r.status_code))
  return r.json() if r.content else {}
+def compact_execution_records(records):
+ """Keep exactly the receipt fields consumed by history() and verified funding summaries."""
+ fields=('status','before','after','verified_at','completed_at','items','groups','campaigns','readback','selection','request','cid','nm','old','target','steps')
+ out=[]
+ for record in records:
+  payload=record.get('payload',record)
+  # Unanchored legacy maps are traversed generically; retain them without assumptions.
+  if not isinstance(payload,dict) or not any(k in payload for k in ('status','before','after')):
+   out.append(copy.deepcopy(record));continue
+  compact={k:copy.deepcopy(payload[k]) for k in fields if k in payload}
+  if 'payload' in record:
+   value=copy.deepcopy({k:v for k,v in record.items() if k!='payload'});value['payload']=compact
+  else:value=compact
+  out.append(value)
+ return out
+
 def collect(io,day,current=False):
  policy=io.get(FORMAT)
  if not policy or policy.get('status')!='approved' or policy.get('version')!=VERSION:raise ValueError('Approved daily advertising format missing')
@@ -45,7 +61,10 @@ def collect(io,day,current=False):
    page=io.db(query+'&offset='+str(offset));s['executions']+=page
    if len(page)<100:break
   else:raise ValueError('Execution history exceeds safe pagination bound')
-  save(io,key,s)
+  s['executions']=compact_execution_records(s['executions']);save(io,key,s)
+ else:
+  compacted=compact_execution_records(s['executions'])
+  if compacted!=s['executions']:s['executions']=compacted;save(io,key,s)
  if 'experience' not in s:
   s['experience']=io.db('telegram_api_cache?cache_key=like.china_agent:experience:v1:*&payload->action->>kind=eq.price_change&select=action:payload->action,started_at:payload->>started_at&limit=300')
   if len(s['experience'])>=300:raise ValueError('Experience history pagination needed')

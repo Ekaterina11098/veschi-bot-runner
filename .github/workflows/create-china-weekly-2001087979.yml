@@ -40,7 +40,8 @@ jobs:
           t=Scoped();db=m.Cache(t);w=m.Worker(t,db,{})
           a=db.get(ROOT+"ms_authorization:v1");prep=db.get(ROOT+"ms_preflight:v1");raw=[]
           for chunk in db.get(ROOT+"source_proof:v1")["chunks"]:raw.extend(db.get(chunk["key"]))
-          raw=[r for r in raw if str(r["rrdId"]) not in set(db.get(ROOT+"plan:v1")["ids"]["red"])]
+          red_ids=set(db.get(ROOT+"plan:v1")["ids"]["red"])
+          raw=[r for r in raw if str(r["rrdId"]) not in red_ids]
           assert a and a["authorized"] is True and a["authorized_on"]==datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date().isoformat()
           assert prep["status"]=="read_verified" and prep["store"]["name"]=="Гонконг WB FBO" and prep["currency"]["name"]=="руб"
           sales=collections.Counter()

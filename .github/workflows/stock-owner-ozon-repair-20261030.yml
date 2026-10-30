@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
     paths: ['.github/workflows/stock-owner-ozon-repair-20261030.yml']
+  schedule:
+    - cron: '10,20,30,40,50 5-20 30 10 *'
 permissions:
   contents: read
 concurrency:
@@ -10,6 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   stock:
+    if: github.event_name != 'schedule' || startsWith(github.event.schedule, '10,20,30,40,50')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

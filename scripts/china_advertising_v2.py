@@ -33,6 +33,17 @@ def compact_execution_records(records):
   out.append(value)
  return out
 
+def read_price_experience(io,page_size=300,max_pages=100):
+ """Load complete ordered price history; a page limit is not a total-history limit."""
+ query='telegram_api_cache?cache_key=like.china_agent:experience:v1:*&payload->action->>kind=eq.price_change&select=action:payload->action,started_at:payload->>started_at&order=cache_key.asc&limit='+str(page_size)
+ records=[]
+ for page_index in range(max_pages):
+  page=io.db(query+'&offset='+str(page_index*page_size))
+  if not isinstance(page,list):raise ValueError('Price experience page malformed')
+  records.extend(page)
+  if len(page)<page_size:return records
+ raise ValueError('Price experience history exceeds safe pagination bound')
+
 def collect(io,day,current=False):
  policy=io.get(FORMAT)
  if not policy or policy.get('status')!='approved' or policy.get('version')!=VERSION:raise ValueError('Approved daily advertising format missing')
@@ -66,8 +77,7 @@ def collect(io,day,current=False):
   compacted=compact_execution_records(s['executions'])
   if compacted!=s['executions']:s['executions']=compacted;save(io,key,s)
  if 'experience' not in s:
-  s['experience']=io.db('telegram_api_cache?cache_key=like.china_agent:experience:v1:*&payload->action->>kind=eq.price_change&select=action:payload->action,started_at:payload->>started_at&limit=300')
-  if len(s['experience'])>=300:raise ValueError('Experience history pagination needed')
+  s['experience']=read_price_experience(io)
   save(io,key,s)
  if 'economics' not in s:
   model=io.get('china_agent:loss_economics:latest:v1') or {};s['economics']=dict(status='unavailable',rows={})

@@ -8,9 +8,6 @@ permissions:
   contents: read
 jobs:
   read:
-    concurrency:
-      group: fbs-document-chain-production
-      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

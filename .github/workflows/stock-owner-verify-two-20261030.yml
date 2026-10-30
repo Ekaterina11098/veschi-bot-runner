@@ -1,0 +1,66 @@
+name: Verify two Ozon uncertain results
+on:
+  push:
+    paths: ['.github/workflows/stock-owner-verify-two-20261030.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-stock
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 3102bb39ecfe3c5a93f5c7c97aafebe6ecb3ae4d
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > /dev/null
+      - name: Read exact warehouse and confirm matching existing intents only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          STOCK_CLOUD_EXECUTION_ENABLED: 'true'
+        run: |
+          python - <<'PY'
+          import os,json,time,psycopg,requests
+          from stock_deploy_support import runtime_db,password,HOST,ROLE,PROJECT
+          from stock_operation_store import Store,Stopped
+          from stock_execution_fence import cloud_writer
+          from stock_shared_requests import SharedRequests
+          from stock_ozon_execution import readback_group
+          import tg_agent_new as g
+          os.environ['STOCK_DATABASE_URL']=psycopg.conninfo.make_conninfo(host=HOST,port=5432,dbname='postgres',user=ROLE+'.'+PROJECT,password=password(),sslmode='require')
+          expected=[('cloud:e45f6c3e-1f62-4474-8ab8-f8c03464bd57',3,'023-AlessiaBag-black',3),('cloud:fb47b498-c5ed-4de6-85d9-dee524bfdb25',0,'74-BonnieBag-green',10)]
+          original=requests.post
+          def only_read(url,**kwargs):
+              if not url.endswith('/functions/v1/stock-ozon-read'):raise Stopped('Read-only transport required')
+              return original(url,**kwargs)
+          requests.post=only_read
+          with cloud_writer(runtime_db()):
+           with runtime_db() as db:
+              store=Store(db,postgres=True);shared=SharedRequests(store)
+              g.STOCK_REQUEST_GATE=shared;g._CACHE_GET=shared.get;g._CACHE_SET=shared.put
+              items=[]
+              for rid,seq,offer,target in expected:
+                  snap,plan,_,origin,_=store.run(rid)
+                  found=[(op,state) for i,op,state,_ in store.operations(rid) if i==seq]
+                  if len(found)!=1:raise Stopped('Missing exact intent')
+                  op,state=found[0]
+                  if origin!='cloud' or op['location']['offer_id']!=offer or op['target']!=target or state not in ('uncertain','sent','confirmed'):raise Stopped('Intent changed')
+                  items.append((rid,seq,op,state))
+              db.commit()
+              values=readback_group(g,[op['location'] for _,_,op,_ in items]);observed=time.time()
+              for rid,seq,op,state in items:
+                  actual=values[op['location']['sku']]
+                  if actual==op['target'] and state!='confirmed':
+                      if not store.transition(rid,seq,state,'confirmed',{'actual':actual,'reconciled':True,'no_resend':True,'observed_at':observed,'owner_requested':True}):raise Stopped('Concurrent reconciliation')
+                  print(json.dumps({'offer_id':op['location']['offer_id'],'actual':actual,'target':op['target'],'confirmed':actual==op['target'],'observed_at':observed,'marketplace_writes':0}))
+          
+          PY

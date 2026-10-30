@@ -1,0 +1,22 @@
+name: Owner stock repair offline regression 2026-10-15
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-ms-recovery-tests-20261030.yml']
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 3102bb39ecfe3c5a93f5c7c97aafebe6ecb3ae4d
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9'
+      - run: python -m unittest test_stock_incremental_orders test_stock_read_retries test_stock_schedule test_stock_regular_service test_stock_presence_two test_stock_group_execution test_stock_reduction_credit test_stock_performance test_stock_furcoat_exclusion test_stock_ozon test_stock_notice_policy test_stock_unposted_orders test_stock_inventory_notice test_stock_document_identities test_stock_shared_requests test_stock_current_order_reserve test_stock_wb_supply_history test_stock_checkpoint_warehouses test_stock_approved_warehouses test_stock_batch_plan test_stock_batch_transport test_stock_automatic_recovery test_owner_low_rule test_order_demand test_stock_ms_recovery -v

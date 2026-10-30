@@ -47,3 +47,10 @@ class VerifiedUiFundingTests(unittest.TestCase):
    with self.subTest(field=field,value=value):
     changed=dict(receipt);changed[field]=value
     self.assertIsNone(verified_ui_funding(changed,12))
+
+class CompactUiFundingTests(unittest.TestCase):
+ def test_compact_history_preserves_verified_ui_funding_evidence(self):
+  from china_advertising_v2 import compact_execution_records,verified_ui_funding
+  payload=dict(status='verified',kind='owner_oneoff_budget_topup',before=dict(id=12),after=dict(id=12),amount_cny=500,verified_at='2026-10-30T05:09:01Z')
+  compact=compact_execution_records([dict(cache_key='receipt',payload=payload)])[0]['payload']
+  self.assertEqual(verified_ui_funding(compact,12),('2026-10-30T05:09:01Z',500))

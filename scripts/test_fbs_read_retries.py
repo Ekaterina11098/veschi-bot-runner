@@ -61,4 +61,25 @@ class RetryTests(unittest.TestCase):
   state={"supply":{"id":"supply"},"inflight":"customerorder"}
   with self.assertRaisesRegex(m.Stop,"Uncertain prior"):w.ensure("customerorder",{},state,"key")
   self.assertEqual(t.calls,[])
+class RejectedCreationTests(unittest.TestCase):
+ def test_validation_rejection_does_not_leave_uncertain_marker(self):
+  class Cache:
+   def put(self,*args):pass
+  t=SequenceTransport([m.Stop("HTTP_412 POST entity/demand")])
+  w=m.Worker(t,Cache(),{});w.ms_rows=lambda *args:[]
+  state={"supply":{"id":"supply"}}
+  with self.assertRaises(m.Stop):w.ensure("demand",{},state,"key")
+  self.assertNotIn("inflight",state)
+  self.assertEqual(state["status"],"demand_rejected")
+  self.assertEqual(t.calls,["POST"])
+ def test_server_failure_keeps_uncertain_marker(self):
+  class Cache:
+   def put(self,*args):pass
+  t=SequenceTransport([m.Stop("HTTP_503 POST entity/demand")])
+  w=m.Worker(t,Cache(),{});w.ms_rows=lambda *args:[]
+  state={"supply":{"id":"supply"}}
+  with self.assertRaises(m.Stop):w.ensure("demand",{},state,"key")
+  self.assertEqual(state["inflight"],"demand")
+  self.assertEqual(t.calls,["POST"])
 if __name__=="__main__":unittest.main()
+

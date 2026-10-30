@@ -36,3 +36,14 @@ class MissingEconomicsTimestampTests(unittest.TestCase):
   evidence=dict(observed_at='2026-10-29T12:00:00+03:00',stock_observed_at='2026-10-29T12:00:00+03:00',stock_free=12,expected_margin_before_ads_cny=10,sample_reliable=True)
   result=guard_sku_exclusion(row,evidence,dict(other_sku_orders=0,orders_on_this_sku_other_campaigns=0),'2026-10-29')
   self.assertEqual(result['action']['kind'],'ad_exclude_sku')
+
+class VerifiedUiFundingTests(unittest.TestCase):
+ def test_verified_ui_funding_is_campaign_scoped_and_fails_closed(self):
+  from china_advertising_v2 import verified_ui_funding
+  receipt=dict(status='verified',kind='owner_oneoff_budget_topup',before=dict(id=12,budget_cny=33.72),after=dict(id=12,budget_cny=533.16),amount_cny=500,verified_at='2026-10-30T05:09:01Z')
+  self.assertEqual(verified_ui_funding(receipt,12),('2026-10-30T05:09:01Z',500))
+  self.assertIsNone(verified_ui_funding(receipt,13))
+  for field,value in [('status','accepted'),('kind','proposal'),('amount_cny',None),('amount_cny',True),('amount_cny',0),('verified_at',None)]:
+   with self.subTest(field=field,value=value):
+    changed=dict(receipt);changed[field]=value
+    self.assertIsNone(verified_ui_funding(changed,12))

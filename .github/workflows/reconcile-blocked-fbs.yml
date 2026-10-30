@@ -8,6 +8,9 @@ permissions:
   contents: read
 jobs:
   read:
+    concurrency:
+      group: fbs-document-chain-production
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -38,4 +41,42 @@ jobs:
           docs=w.ms_rows("entity/demand",{"filter":"externalCode="+ext})
           linked=[t.request(m.MS,"entity/demand/"+m.href(x).rsplit("/",1)[-1]) for x in order.get("demands",[])]
           db.put("fbs_recovery:ip:301894900:proof:v1",{"at":m.now(),"state":s,"order":order,"external_matches":docs,"linked_demands":linked})
-          print("Read-only reconciliation evidence saved privately.")
+          # Adopt only the exact existing linked chain; never create stock movements.
+          assert order["id"]==s["documents"]["customerorder"]["id"]
+          assert len(linked)==1 and not linked[0].get("deleted")
+          demand=linked[0]
+          returns=[t.request(m.MS,"entity/salesreturn/"+m.href(x).rsplit("/",1)[-1]) for x in demand.get("returns",[])]
+          assert len(returns)==1 and not returns[0].get("deleted")
+          annotation=w.order_annotation(s["supply"])
+          originals={}
+          for typ,doc,parent in (("customerorder",order,None),("demand",demand,order),("salesreturn",returns[0],demand)):
+           payload=dict(c["templates"][typ],positions=s["positions"],description=annotation["description"])
+           if typ=="demand":payload["customerOrder"]=m.meta(parent)
+           if typ=="salesreturn":payload["demand"]=m.meta(parent)
+           original_comment=doc.get("description")
+           assert not original_comment or original_comment==annotation["description"]
+           # Check stock, prices, posting, scope and basis before any metadata write.
+           checked=dict(doc,description=annotation["description"])
+           w.verify(typ,checked,payload)
+           ext=c["document_prefix"]+":"+s["supply"]["id"]+":"+typ
+           matches=w.ms_rows("entity/"+typ,{"filter":"externalCode="+ext})
+           assert not matches or (len(matches)==1 and matches[0]["id"]==doc["id"])
+           originals[typ]=doc
+          db.put("fbs_recovery:ip:301894900:before:v1",{"at":m.now(),"documents":originals})
+          for typ,doc in originals.items():
+           ext=c["document_prefix"]+":"+s["supply"]["id"]+":"+typ
+           fresh=t.request(m.MS,"entity/"+typ+"/"+doc["id"],"PUT",{"externalCode":ext,"description":annotation["description"]})
+           payload=dict(c["templates"][typ],positions=s["positions"],description=annotation["description"])
+           if typ=="demand":payload["customerOrder"]=m.meta(order)
+           if typ=="salesreturn":payload["demand"]=m.meta(demand)
+           w.verify(typ,fresh,payload)
+           s.setdefault("documents",{})[typ]={"id":fresh["id"],"name":fresh["name"],**m.meta(fresh)}
+          t.request(m.MS,"entity/customerorder/"+order["id"],"PUT",annotation)
+          final=t.request(m.MS,"entity/customerorder/"+order["id"])
+          assert m.href(final.get("state",{}))==m.href(annotation["state"])
+          s.pop("inflight",None);s.pop("error",None)
+          s.update(status="complete",completed_at=m.now(),reconciled_existing=True,order_annotation={"description":annotation["description"],"state_name":c["order_annotation"]["state_name"]})
+          db.put(key,s)
+          db.put("fbs_recovery:ip:301894900:result:v1",{"at":m.now(),"status":"verified","documents":s["documents"],"quantity":sum(p["quantity"] for p in s["positions"]),"new_stock_documents":0})
+          print("Existing chain verified and registered; no new stock documents.")
+

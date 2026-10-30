@@ -19,7 +19,7 @@ def http(io,path,method='GET',body=None):
  return r.json() if r.content else {}
 def compact_execution_records(records):
  """Keep exactly the receipt fields consumed by history() and verified funding summaries."""
- fields=('status','before','after','verified_at','completed_at','items','groups','campaigns','readback','selection','request','cid','nm','old','target','steps')
+ fields=('status','kind','amount_cny','before','after','verified_at','completed_at','items','groups','campaigns','readback','selection','request','cid','nm','old','target','steps')
  out=[]
  for record in records:
   payload=record.get('payload',record)

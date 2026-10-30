@@ -1,4 +1,4 @@
-import sys,types,unittest,copy,os
+import sys,types,unittest,copy,os,requests
 from unittest.mock import patch
 import china_analytic_dialog as a
 from china_article_diagnostic_read import read_current
@@ -37,23 +37,29 @@ class ReadPlanTests(unittest.TestCase):
    self.assertFalse(a.allowed_read('PATCH','https://advert-api.wildberries.ru/api/advert/v1/bids'))
  def test_real_stock_reader_requires_all_modes_gzip_and_complete_pages(self):
   w=worker();an=analyst(w)
+  base='https://api.moysklad.ru/api/remap/1.2'
+  store=base+'/entity/store/00000000-0000-0000-0000-000000000001'
+  product=base+'/entity/product/00000000-0000-0000-0000-000000000002'
   class R:
-   ok=True
+   ok=True;status_code=200
    def __init__(self,p):self.p=p
    def json(self):return self.p
-  def get(url,params,headers,timeout):
-   self.assertEqual(headers['Accept-Encoding'],'gzip')
-   if url.endswith('/entity/store'):return R(dict(meta=dict(size=1),rows=[dict(name='МСК',meta=dict(href='store'),archived=False)]))
-   self.assertEqual(params['filter'],'store=store;stockMode=all;quantityMode=all')
-   return R(dict(meta=dict(size=1),rows=[dict(article='test-bag',stock=5,reserve=2,price=60000)]))
-  with patch.dict(os.environ,{'MOYSKLAD_API_TOKEN':'synthetic'}),patch.dict(sys.modules,{'requests':types.SimpleNamespace(get=get)}):
+  def get(url,params,headers,timeout,allow_redirects):
+   self.assertEqual(headers['Accept-Encoding'],'gzip');self.assertFalse(allow_redirects);self.assertEqual(params['limit'],100)
+   if url.endswith('/entity/store'):return R(dict(meta=dict(size=1),rows=[dict(name='МСК',meta=dict(href=store),archived=False)]))
+   if url.endswith('/entity/product'):
+    self.assertEqual(params['filter'],'article=test-bag')
+    return R(dict(meta=dict(size=1),rows=[dict(article='test-bag',meta=dict(href=product))]))
+   self.assertEqual(params['filter'],'store='+store+';stockMode=all;quantityMode=all;product='+product)
+   return R(dict(meta=dict(size=1),rows=[dict(article='test-bag',meta=dict(href=product),stock=5,reserve=2,price=60000)]))
+  with patch.dict(os.environ,{'MOYSKLAD_API_TOKEN':'synthetic'}),patch.object(requests,'get',get):
    result=an.collect('stock',[100],None,None)
-  self.assertEqual(result['rows'][0]['available'],3);self.assertEqual(result['rows'][0]['cost_rub'],600)
+  self.assertEqual(result['rows'][0]['available'],3);self.assertEqual(result['rows'][0]['cost_rub'],600);self.assertTrue(result['coverage_complete'])
  def test_stock_page_without_total_is_not_complete(self):
   w=worker();an=analyst(w)
   class R:
-   ok=True
+   ok=True;status_code=200
    def json(self):return dict(rows=[dict(name='МСК',meta=dict(href='store'))])
-  with patch.dict(os.environ,{'MOYSKLAD_API_TOKEN':'synthetic'}),patch.dict(sys.modules,{'requests':types.SimpleNamespace(get=lambda *a,**k:R())}):
-   with self.assertRaisesRegex(ValueError,'неполон'):an.collect('stock',[100],None,None)
+  with patch.dict(os.environ,{'MOYSKLAD_API_TOKEN':'synthetic'}),patch.object(requests,'get',lambda *a,**k:R()):
+   with self.assertRaisesRegex(ValueError,'completeness unknown'):an.collect('stock',[100],None,None)
 if __name__=='__main__':unittest.main()

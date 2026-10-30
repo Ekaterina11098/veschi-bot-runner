@@ -107,6 +107,17 @@ def event_time(at):
  if value.tzinfo is None:raise ValueError('Receipt timestamp needs timezone')
  return value
 
+def verified_ui_funding(payload,cid):
+ """Read a verified owner UI funding receipt without inventing an API request."""
+ if payload.get('status')!='verified' or payload.get('kind')!='owner_oneoff_budget_topup':return None
+ if (payload.get('before') or {}).get('id')!=cid or (payload.get('after') or {}).get('id')!=cid:return None
+ try:
+  amount=validnum(payload.get('amount_cny'));at=payload.get('verified_at')
+  if amount<=0:return None
+  event_time(at)
+  return at,amount
+ except (ValueError,TypeError):return None
+
 def history(records):
  """Normalize verified campaign diffs, mapped bid receipts and verified price readbacks."""
  found=[]
@@ -375,6 +386,8 @@ def build(s,minima=None):
    payload=rec.get('payload',rec)
    def funding_steps(z):
     if isinstance(z,dict):
+     ui_funding=verified_ui_funding(z,c['id'])
+     if ui_funding:funds.append(ui_funding)
      st=z.get('steps',{})
      if isinstance(st,dict):
       for label,v in st.items():

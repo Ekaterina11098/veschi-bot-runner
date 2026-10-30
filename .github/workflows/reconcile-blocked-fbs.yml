@@ -1,0 +1,42 @@
+name: Reconcile blocked FBS chain safely
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/reconcile-blocked-fbs.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  read:
+    concurrency:
+      group: fbs-document-chain-production
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Read existing document graph
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        working-directory: scripts
+        shell: python
+        run: |
+          import fbs_document_chain as m
+          from fbs_wb_cabinets import ScopedCache
+          t=m.Transport();db=m.Cache(t);sc=ScopedCache(t,"ip")
+          key="fbs_document_chain:ip:supply:v1:WB-GI-301894900"
+          s=db.get(key);c=sc.get("fbs_document_chain:ip:config:v1");w=m.Worker(t,sc,c)
+          order=t.request(m.MS,"entity/customerorder/"+s["documents"]["customerorder"]["id"])
+          ext=c["document_prefix"]+":"+s["supply"]["id"]+":demand"
+          docs=w.ms_rows("entity/demand",{"filter":"externalCode="+ext})
+          linked=[t.request(m.MS,"entity/demand/"+m.href(x).rsplit("/",1)[-1]) for x in order.get("demands",[])]
+          db.put("fbs_recovery:ip:301894900:proof:v1",{"at":m.now(),"state":s,"order":order,"external_matches":docs,"linked_demands":linked})
+          print("Read-only reconciliation evidence saved privately.")

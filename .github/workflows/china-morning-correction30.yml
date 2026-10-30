@@ -1,0 +1,39 @@
+name: Owner-authorized30Oct report receipt correction
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Explicit correction stage
+        required: true
+        default: prepare
+        type: choice
+        options: [prepare, apply]
+permissions:
+  contents: read
+concurrency:
+  group: china-advertising-daily
+  cancel-in-progress: false
+jobs:
+  correction:
+    if: github.ref == 'refs/heads/main'
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Verify report guards offline
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
+      - name: Exact owner authorized stage
+        env:
+          MODE: ${{ inputs.mode }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: PYTHONPATH=scripts python scripts/china_morning_correction30_replace.py --"$MODE"

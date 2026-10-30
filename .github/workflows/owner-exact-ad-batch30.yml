@@ -1,0 +1,32 @@
+name: Dated owner advertising scope30
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-exact-ad-batch30.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-advertising-write
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.repository == 'Ekaterina11098/veschi-bot-runner'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - run: python -m py_compile scripts/owner_exact_ad_batch30.py
+      - name: Apply only dated exact private owner scope and verify all WB settings
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: python scripts/owner_exact_ad_batch30.py

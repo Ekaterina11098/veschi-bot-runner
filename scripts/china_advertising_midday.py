@@ -111,6 +111,25 @@ def prepare_midday(io,day):
    out.append(dict(id=c['id'],name=c['settings']['name'],draft=draft,today=metric,attention=attention,post_change_note=('По товарам после запуска/изменений полный следующий день МСК ещё не завершён; повторных действий по ним нет.' if protected else None)))
  if not out:raise ValueError('Empty midday catalogue')
  return dict(day=day,observed_at=source.get('completed_at',source['observed_at']),campaigns=out,presentation='midday_green_current_day_v1',review_context=context)
+def only_completed_day_actions(bundle):
+ """Intraday counters alone cannot authorize a ready SKU change."""
+ import copy
+ out=copy.deepcopy(bundle)
+ for campaign in out['campaigns']:
+  kept=[]
+  for row in campaign.get('attention',[]):
+   evidence=row.get('closed_day_evidence') or {}
+   end=evidence.get('period_to')
+   if not isinstance(end,str):continue
+   try:
+    closed=date.fromisoformat(end)<date.fromisoformat(out['day'])
+   except ValueError:continue
+   if closed and evidence.get('verified') is True and evidence.get('source_ref') and evidence.get('postclick_reviewed') is True:
+    kept.append(row)
+  campaign['attention']=kept
+ out['recommendation_basis']='verified_completed_days_only;intraday_metrics_observational'
+ return out
+
 def recommendations(c):
  # Only actionable recommendations belong in this column; metrics/unknown data stay in their own cells.
  if c['attention']:
@@ -171,7 +190,7 @@ def run():
  if (io.get(key) or {}).get('status')=='delivered':print('already_delivered');return
  art='china_agent:advertising_midday_artifacts:'+day+':v1';saved=io.get(art)
  if not saved:
-  b=prepare_midday(io,day);files=[]
+  b=only_completed_day_actions(prepare_midday(io,day));files=[]
   for i,f in enumerate(render_midday(b)):
    p=plan(io,day,f,i,slot='midday')
    files.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))

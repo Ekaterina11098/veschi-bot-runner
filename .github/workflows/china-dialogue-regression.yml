@@ -8,6 +8,8 @@ on:
       - scripts/china_single_price_command.py
       - scripts/china_catalog_price_execute.py
       - scripts/test_china_owner_analytics30.py
+      - scripts/china_moysklad_read.py
+      - scripts/test_china_moysklad_read.py
       - scripts/china_analytic_dialog.py
       - scripts/china_bid_proposals.py
       - scripts/china_article*.py
@@ -57,6 +59,7 @@ jobs:
           python -m unittest discover -s scripts -p test_china_catalog_price_execute.py
           python -m unittest discover -s scripts -p test_china_conversion_context.py
           python -m unittest discover -s scripts -p test_china_owner_analytics30.py
+          python -m unittest discover -s scripts -p test_china_moysklad_read.py
           python -m unittest discover -s scripts -p test_china_analytic_dialog.py
           python -m unittest discover -s scripts -p test_china_bid_proposals.py
           python -m py_compile scripts/conversion_watches.py scripts/china_reply_evidence.py scripts/china_reply_quality.py scripts/china_catalog_price_command.py scripts/china_zero_orders_stock.py

@@ -199,21 +199,10 @@ class Analyst:
    if not r.ok:raise RuntimeError(topic+' HTTP '+str(r.status_code))
    return r.json()
   if topic=='stock':
-   base='https://api.moysklad.ru/api/remap/1.2';token='Bearer '+os.environ['MOYSKLAD_API_TOKEN'];raw_stores=get(base+'/entity/store',{'limit':1000},token)
-   if type(raw_stores.get('meta',{}).get('size')) is not int or raw_stores['meta']['size']>len(raw_stores.get('rows',[])):raise ValueError('Список складов неполон')
-   stores=[s for s in raw_stores['rows'] if s.get('name')=='МСК' and not s.get('archived')]
-   if len(stores)!=1:raise ValueError('Склад МСК не определён однозначно')
-   rows=[];offset=0
-   while True:
-    j=get(base+'/report/stock/all',{'filter':'store='+stores[0]['meta']['href']+';stockMode=all;quantityMode=all','limit':1000,'offset':offset},token);part=j.get('rows');size=j.get('meta',{}).get('size')
-    if not isinstance(part,list) or type(size) is not int:raise ValueError('Полнота остатков/COGS не подтверждена')
-    rows+=part
-    if len(rows)>=size:break
-    if not part or offset>20000:raise ValueError('Пагинация МойСклад неполна')
-    offset+=len(part)
-   articles={a.casefold() for nm,a in self.w.catalog() if not ids or int(nm) in ids}
-   selected=[r for r in rows if str(r.get('article','')).casefold() in articles]
-   return dict(source='МойСклад / МСК',rows=[dict(article=r['article'],stock=r.get('stock'),reserve=r.get('reserve'),available=r['stock']-r['reserve'] if r.get('stock') is not None and r.get('reserve') is not None else None,cost_rub=r['price']/100 if r.get('price') else None) for r in selected],note='available=stock-reserve; отсутствие строки не ноль. COGS — текущая, не историческая стоимость каждой проданной единицы.')
+   from china_moysklad_read import read_stock
+   articles=list(dict.fromkeys(a for nm,a in self.w.catalog() if not ids or int(nm) in ids))
+   result=read_stock(articles)
+   return dict(source='МойСклад / МСК',stock_observed_at=result['observed_at'],coverage_complete=result['coverage_complete'],missing_articles=result['missing_articles'],read_attempts=result['read_attempts'],rows=[dict(article=r['article'],stock=r.get('stock'),reserve=r.get('reserve'),available=r['stock']-r['reserve'] if type(r.get('stock')) in (int,float) and type(r.get('reserve')) in (int,float) else None,cost_rub=r['price']/100 if type(r.get('price')) in (int,float) and r['price']>0 else None) for r in result['rows']],note='available=stock-reserve; отсутствие строки не ноль. Точные товары, ограниченные повторы только GET; COGS текущая, не историческая стоимость каждой продажи.')
   if topic=='prices':
    rows=get('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter',{'limit':1000,'offset':0}).get('data',{}).get('listGoods',[])
    if len(rows)>=1000:raise ValueError('Цены требуют пагинации')

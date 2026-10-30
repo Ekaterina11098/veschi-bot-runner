@@ -103,6 +103,7 @@ def daily_metrics(raw):
  return {k:validnum(raw.get(f)) for k,f in [('spend','sum'),('amount','sum_price'),('orders','orders'),('views','views'),('clicks','clicks')]}
 def event_time(at):
  if not isinstance(at,str) or not at.strip():raise ValueError('Receipt timestamp is missing or not a string')
+ if at.endswith(' UTC'):at=at[:-4]+'+00:00'
  value=datetime.fromisoformat(at.replace('Z','+00:00'))
  if value.tzinfo is None:raise ValueError('Receipt timestamp needs timezone')
  return value
@@ -114,7 +115,8 @@ def verified_ui_funding(payload,cid):
  try:
   amount=validnum(payload.get('amount_cny'));at=payload.get('verified_at')
   if amount<=0:return None
-  event_time(at)
+  parsed=event_time(at)
+  if at.endswith(' UTC'):at=parsed.isoformat()
   return at,amount
  except (ValueError,TypeError):return None
 
@@ -134,7 +136,9 @@ def history(records):
   price_ok=ok or (status=='applied' and (root_ok or root.get('status')=='done'))
   at=x.get('verified_at') or x.get('completed_at') or root.get('verified_at') or root.get('completed_at')
   if at:
-   try:event_time(at)
+   try:
+    parsed=event_time(at)
+    if at.endswith(' UTC'):at=parsed.isoformat()
    except (ValueError,TypeError):at=None
   if ok and at and isinstance(after,dict) and isinstance(after.get('id'),int):
    cid=after['id']

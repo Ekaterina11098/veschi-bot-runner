@@ -95,7 +95,40 @@ def render(data):
    lines.append('Текущий показатель корзина→заказ ниже этого ориентира.')
  lines.append('Проценты рассчитаны из суммарных счётчиков, не средним процентов товаров или дней. Сегодня день неполный; сумки могут покупать позже, WB догружает данные. Это ориентир: сравнения до того же часа нет, окончательный вывод о падении или росте конверсии за день не подтверждён.')
  return '\n'.join(lines)
+def requested_day(w,text,history=()):
+ context=text
+ if re.search(r'хочу общий|а общий|за день|за \d{1,2} число',text,re.I):
+  context=' '.join(h.get('request_text','') for h in history[-4:])+' '+text
+ today=w.now.astimezone(MSK).date()
+ full=re.findall(r'(?<!\d)(\d{4}-\d{2}-\d{2})(?!\d)',context)
+ short=re.findall(r'за\s+(\d{1,2})(?:\s+число|[.]([01]?\d)(?:[.](\d{4}))?)',context,re.I)
+ if full:return datetime.fromisoformat(full[-1]).date()
+ if short:
+  d,m,y=short[-1];return today.replace(day=int(d),month=int(m) if m else today.month,year=int(y) if y else today.year)
+ if re.search(r'вчера',text,re.I):return today-timedelta(days=1)
+ return None
+
+def completed_day(w,day):
+ if day>=w.now.astimezone(MSK).date():raise ValueError('Requested completed day is not closed')
+ state=read(w,day,day);row=total(state,'selected',day,day)
+ def pct(v):return 'не определена' if v is None else f'{v:.2f}%'.replace('.',',')
+ at=datetime.fromisoformat(state['observed_at']).astimezone(MSK).strftime('%d.%m %H:%M')
+ text=(f'Общая воронка WB за полный {day}, срез {at} МСК: {row["views"]} переходов, {row["carts"]} корзин, {row["orders"]} заказанных товаров. '
+       f'Карточка→корзина {pct(row["card_cart_pct"])}, корзина→заказ {pct(row["cart_order_pct"])}, карточка→заказ {pct(row["card_order_pct"])}. '
+       'Проценты из суммарных счётчиков, не среднее процентов SKU. Это общая воронка, рекламные заказы отдельно.')
+ return text,[dict(name='conversion_funnel_evidence',requested_date=str(day),result=dict(row,observed_at=state['observed_at'],source_key=state.get('source_key'),cabinet='token_3'),read_only=True)]
+
 def handle(w,job,history=()):
+ from china_intraday_analysis import handle as hourly_handle
+ hourly_reply=hourly_handle(w,job,history)
+ if hourly_reply is not None:return hourly_reply
+ text=job.get('request_text','')
+ context_conversion=any(re.search(r'конверс|показатель.*число',h.get('request_text',''),re.I) for h in history[-4:])
+ try:
+  day=requested_day(w,text,history)
+  if day and not re.search(EXCLUDED,text,re.I) and (intent(text,history) is not None or context_conversion):return completed_day(w,day)
+ except Exception as exc:
+  return ('Общую конверсию за запрошенный полный день пока не подтвердил: '+type(exc).__name__+'. Сегодняшний срез не подставляю вместо него.',[dict(name='conversion_funnel_evidence',result=dict(available=False,error=type(exc).__name__),read_only=True)])
  days=intent(job.get('request_text',''),history)
  if days is None:return None
  try:

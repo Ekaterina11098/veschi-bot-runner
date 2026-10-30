@@ -66,8 +66,13 @@ class CatalogIO(IO):
   if a.get('basis')!='explicit_catalog_percent' or not a.get('selections') or any(selected.get(s['nm_id'])!=s for s in a['selections']) or a['selections_sha256']!=digest(a['selections']):raise ValueError('Exact catalog batch mismatch')
   self.write_selections={s['nm_id']:s for s in a['selections']}
   newer=self.db('business_agent_jobs?agent_id=eq.china&chat_id=eq.'+str(CHAT)+'&id=gt.'+str(p.get('last_human_job_id',0))+'&select=id,request_text&limit=100')
+  if len(newer)>=100:raise ValueError('Newer human requests truncated')
+  from china_single_price_command import parse_single
   for j in newer:
-   if parse(j['request_text']) is not None:raise ValueError('Newer human price clarification requires review before applying')
+   text=j['request_text'];single=parse_single(text)
+   same=single and any(single['reference'].casefold() in (nm,s['article'].casefold()) or (single['reference'].isdigit() and s['article'].casefold().startswith(single['reference']+'-')) for nm,s in selected.items())
+   if parse(text) is not None or same or __import__('re').search(r'отмен|стой|стоп|не.{0,20}(?:меня|подним|повыш|сниж|цен)',text,__import__('re').I):
+    raise ValueError('Newer human price clarification or cancellation requires review before applying')
  def tg(self,method,body):
   if method!='getChatMember':raise ValueError('No Telegram messages in catalog price executor')
   return super().tg(method,body)
@@ -86,13 +91,24 @@ def prepare(io,key,p):
  validate_identity(Cache(),WB());io.capability()
  if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']) or p.get('signature')!=signature(p):raise ValueError('Expired or changed catalog command')
  goods=io.catalog()
+ included=p['rules'].get('include_nm_ids')
+ if included:
+  if len(included)!=1 or p.get('scope')!='single':raise ValueError('Single-price scope changed')
+  if not all(n in goods for n in included):raise ValueError('Exact product missing')
+  goods={n:goods[n] for n in included}
  if not goods:raise ValueError('Catalog empty')
  prior=verified_prior(io,p);ss=[];rows=[]
  for nm,g in sorted(goods.items(),key=lambda kv:int(kv[0])):
   if nm in prior:
    rows.append(dict(nm_id=nm,article=g.get('vendorCode'),status='excluded_prior_raise',prior=prior[nm]));continue
   try:
-   s=selection(g,choose_percent(g['vendorCode'],p['rules']));request=plan(s,g);ss.append(s);rows.append(dict(selection=s,status='ready'))
+   if p['rules'].get('single_exact_percent'):
+    base=selection(g,'1')
+    pct=Decimal(p['rules']['default_percent']);target=Decimal(base['current_cny'])*(1+pct/100)
+    if target<=0:raise ValueError('Price must be positive')
+    s=dict(base,percent=str(pct),target_cny=str(target),nominal_target_cny=str(target),action='Снижение' if pct<0 else 'Повышение')
+   else:s=selection(g,choose_percent(g['vendorCode'],p['rules']))
+   request=plan(s,g);ss.append(s);rows.append(dict(selection=s,status='ready'))
   except ValueError as ex:rows.append(dict(nm_id=nm,article=g.get('vendorCode'),status='blocked',reason=str(ex)))
  p.update(status='prepared',prepared_at=stamp(),catalog_count=len(goods),excluded_prior=prior,selections=ss,rows=rows,source_goods={nm:g for nm,g in goods.items() if nm in {s['nm_id'] for s in ss}},batch_approvals=[])
  for start in range(0,len(ss),100):
@@ -124,12 +140,19 @@ def run_one(io,key):
  return p
 def main():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
- io=CatalogIO();key=ROOT+day();p=io.get(key)
- if not p:return
- try:r=run_one(io,key)
- except (ValueError,RuntimeError) as ex:
-  p=io.get(key);states=[io.get('china_agent:price_execution:v1:'+b['key'][len(PREFIX):]) or {} for b in p.get('batch_approvals',[])]
-  has_write=any(e.get('status') in ['submitting','submitted','uncertain'] or e.get('upload_id') for e in states)
-  p.update(status='uncertain' if has_write else 'blocked',reason=str(ex),updated_at=stamp());io.put(key,p);r=p
- print(json.dumps({k:r.get(k) for k in ['status','catalog_count','verified_count','total_count','reason']}))
+ io=CatalogIO()
+ keys=[ROOT+day()]
+ rows=io.db('telegram_api_cache?cache_key=like.'+ROOT+day()+':sku:*&select=cache_key&order=updated_at.asc&limit=100')
+ if len(rows)>=100:raise ValueError('Single-price queue truncated')
+ keys.extend(r['cache_key'] for r in rows)
+ for key in keys:
+  p=io.get(key)
+  if not p or p.get('status') not in ['requested','prepared','applying','submitted']:continue
+  try:r=run_one(io,key)
+  except (ValueError,RuntimeError) as ex:
+   p=io.get(key);states=[io.get('china_agent:price_execution:v1:'+b['key'][len(PREFIX):]) or {} for b in p.get('batch_approvals',[])]
+   has_write=any(e.get('status') in ['submitting','submitted','uncertain'] or e.get('upload_id') for e in states)
+   p.update(status='uncertain' if has_write else 'blocked',reason=str(ex),updated_at=stamp());io.put(key,p);r=p
+  print(json.dumps({k:r.get(k) for k in ['status','catalog_count','verified_count','total_count','reason']}))
+
 if __name__=='__main__':main()

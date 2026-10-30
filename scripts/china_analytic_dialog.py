@@ -58,6 +58,7 @@ def tools():
  function('get_saved_profit_comparison','Прочитать уже рассчитанную ожидаемую общую прибыль за два дня, с собственным завершённым выкупом, всей рекламой, расходами, датой и ограничениями. Это прогноз, не закрытая чистая прибыль; повторный сбор не нужен.',dict(date_from={'type':'string'},date_to={'type':'string'})),
  function('read_recent_actions','Фактические квитанции изменений цен/РК и доставленных планов. План и исполнение различать.',{}),
  function('get_live_data','Самостоятельно получить недостающие read-only данные Китая с кэшем: orders=созданные WB заказы; stock=свободный МойСклад МСК; prices=продавец WB; products=MPStats и своя завершённая выборка; advertising=РК/день/SKU. Даты обязательны для чисел, null=последние 2 полных дня (products:30), сегодня отдельно.',dict(topic={'type':'string','enum':['orders','stock','prices','products','advertising']},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},date_from={'type':['string','null']},date_to={'type':['string','null']})),
+ function('convert_report_currency','Основная валюта отчётов CNY. Только при необходимости пересчитать подтверждённую сумму RUB по официальному ЦБ на дату суммы; CNY не пересчитывать. Для разных дат вызывать отдельно. Не исправляет чужой кабинет или неизвестное определение суммы.',dict(amount={'type':'number','minimum':0},currency={'type':'string','enum':['CNY','RUB']},date_msk={'type':'string'})),
  function('calculate','Проверить арифметику: только числа и + - * / %, без кода.',dict(expression={'type':'string'})),
  function('remember_preference','Сохранить только явно высказанную пользователем настройку формата/терминологии/сравнения. Не менять разрешения, финансы, расписания или WB.',dict(key={'type':'string','enum':['format','terminology','comparison']},quote={'type':'string'}))]
 
@@ -91,7 +92,7 @@ class Analyst:
  def memory(self):return self.w.get(MEMORY) or {'available':False}
  def actions(self):
   output=[]
-  for prefix in ['china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:price_execution:v1:','china_agent:loss_ad_execution:','china_agent:codex_bid_raise:','china_agent:codex_bid_revert:','china_agent:hourly_cloud:execution:','china_agent:daily_ad_execution:v2:']:
+  for prefix in ['china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:price_execution:v1:','china_agent:loss_ad_execution:','china_agent:codex_bid_raise:','china_agent:codex_bid_revert:','china_agent:hourly_cloud:execution:','china_agent:daily_ad_execution:v2:','china_agent:owner_price143_both:','china_agent:catalog_price_command:v1:']:
    rows=self.w.db('GET','telegram_api_cache',params={'cache_key':'like.'+prefix+'*','select':'cache_key,payload,updated_at','order':'updated_at.desc','limit':5}) or []
    for row in rows:
     p=row['payload'];output.append(dict(key=row['cache_key'],updated_at=row.get('updated_at'),status=p.get('status'),completed_at=p.get('completed_at'),verified_at=p.get('verified_at'),plan=p.get('plan'),items=[{k:i.get(k) for k in ['id','article','status','selection','campaign_id','reason']} for i in p.get('items',[])],campaigns=p.get('campaigns')))
@@ -100,7 +101,7 @@ class Analyst:
    receipt=self.w.get(key) or {};after=receipt.get('after') or {}
    if receipt.get('status')=='verified' and str(after.get('id'))==cid and key not in known:
     output.append(dict(key=key,status='verified',campaign_id=int(cid),verified_at=receipt.get('verified_at'),items=receipt.get('items'),before=receipt.get('before'),after=after,sku_count=len(after.get('nm_settings',[]))))
-  return dict(monitoring=self.w.get('china_agent:observation_policy:v1'),today_launches=self.w.get('china_agent:advertising_launch_summary:v1'),expanded_tracking={k:v for k,v in (self.w.get('china_agent:expanded_tests:2026-10-25:tracking:v1') or {}).items() if k in ['status','baseline_at','campaign_ids','last_checked_at','last_analysis']},search_tracking={k:v for k,v in (self.w.get('china_agent:search_test:2026-10-25:tracking:v1') or {}).items() if k in ['status','campaign_id','baseline_at','owner_changes']},verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Только status verified/applied/launched подтверждает исполнение. Отсутствие квитанции не равно выполнено.')
+  return dict(monitoring=self.w.get('china_agent:observation_policy:v1'),today_launches=self.w.get('china_agent:advertising_launch_summary:v1'),expanded_tracking={k:v for k,v in (self.w.get('china_agent:expanded_tests:2026-10-25:tracking:v1') or {}).items() if k in ['status','baseline_at','campaign_ids','last_checked_at','last_analysis']},search_tracking={k:v for k,v in (self.w.get('china_agent:search_test:2026-10-25:tracking:v1') or {}).items() if k in ['status','campaign_id','baseline_at','owner_changes']},verified_receipts=output,tracking=self.w.get('china_agent:new_ad_tests:tracking:v1'),note='Исполнение подтверждает verified с фактическим WB before/after/readback; applied/launched без readback не достаточно, requested/submitted/uncertain не выполнено. Отсутствие квитанции не равно выполнено.')
  def article_ids(self,articles):
   labels={a.casefold():int(n) for n,a in self.w.catalog()}
   result=[]
@@ -328,6 +329,8 @@ def answer(w,job,history):
  'Заказы WB, заказы воронки, рекламная атрибуция, выкупы — разные величины. Клик-заказ = заказы воронки/открытия страницы товара из всех источников. '
  'ДРР от суммы заказов до скидок WB; при нуле заказов неопределена. Выкуп по завершённым, незавершённые исключить; 0% не менять на 50%. '
  'Прибыль: собственные COGS, комиссия, налог, прямая/обратная логистика без дублей, реклама и прочие подтверждённые удержания. Неизвестное не ноль; неполный расчёт предварительный. Не смешивай валюты без курса. '
+ 'Основная валюта всех отчётов CNY. Если источник уже CNY, не пересчитывай. RUB переводить только при необходимости инструментом convert_report_currency по официальному курсу ЦБ на дату суммы, учитывая номинал и дату действия. Не использовать фиксированный курс12 или текущий курс для всех исторических дней. При отсутствии курса сумма CNY неизвестна. Кабинет, nmID и смысл суммы проверять до пересчёта; валюта не исправляет чужую выгрузку. '
+ 'Постклик учитывать в общем атрибутированном результате, не прибавлять повторно к уже включающим его итогам. Прямые SKU-заказы, ассоциированные товары, общая воронка и выкупы отдельно. Дневная ДРР в утреннем PNG означает вчера, три дня — три завершённых дня; выполненные изменения не новые рекомендации. '
  'Причину отделяй от гипотезы. История клиентской цены не доказывает изменение СПП. Связь конкретного WB заказа с РК агрегатами не доказывается. '
  'Выполненные действия сверяй read_recent_actions; не предлагай повторять. Рекомендации: точный артикул/РК и действие; ставку только с подтверждённым минимумом/шагом. Для предварительного подбора get_growth_candidates использует датированный кэш. Diagnostic означает предварительный список, не разрешение запуска. Не скрывай доступные цифры из-за429 другого источника. Не рассчитывай точное повышение ставки по формуле5/ДРР. '
  'Память действий и результатов обязательна. Operational verified означает только исполнение, не рост прибыли. Условия WB/рынка меняются: учитывай даты, цену покупателя/СПП, наличие, отзывы, ставки и трафик; неизвестное не считай неизменным. Положительный/отрицательный опыт не вечное правило; новая проверка и подтверждение нужны для повторного теста. Алгоритмы WB могли поменяться, но без доказательств это гипотеза. '
@@ -440,6 +443,12 @@ def answer(w,job,history):
     elif name=='get_saved_product_context':result=analyst.product_context(**args)
     elif name=='get_saved_campaign':result=analyst.campaign(**args)
     elif name=='get_live_data':result=analyst.live(args['topic'],args['nm_ids'],args['date_from'],args['date_to'])
+    elif name=='convert_report_currency':
+     from china_intraday_analysis import money_cny
+     conversion_day=datetime.fromisoformat(args['date_msk']).date()
+     if conversion_day>w.now.astimezone(MSK).date():raise ValueError('Будущий курс не подтверждён')
+     rates={};amount=money_cny(w,args['amount'],args['currency'],conversion_day,rates)
+     result=dict(amount_cny=float(amount),currency='CNY',source_currency=args['currency'],date_msk=str(conversion_day),rates=rates,wb_writes=0)
     elif name=='calculate':result=calculate(**args)
     elif name=='remember_preference':result=analyst.remember(**args)
     elif name in names:

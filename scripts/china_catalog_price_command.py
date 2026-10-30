@@ -56,14 +56,19 @@ def selection(g,percent):
  return dict(nm_id=str(g['nmID']),article=g['vendorCode'],action='Повышение',current_cny=str(old),target_cny=str(target),base_cny=str(base),seller_discount=discount,club_discount=g.get('clubDiscount'),percent=percent,nominal_target_cny=str(old*(1+Decimal(percent)/100)),rounding_policy='nearest_WB_base_unit_preserve_discount')
 def status_text(p):
  rules=p['rules'];summary='Все товары +'+rules['default_percent']+'%'
+ if p.get('scope')=='single':
+  pct=rules['default_percent'];summary=p['article']+': '+('+' if not pct.startswith('-') else '')+pct+'%'
  for r in rules.get('overrides',[]):summary+='; артикулы с '+r['fragment']+' +'+r['percent']+'% вместо общего процента'
  if rules.get('exclude_verified_percent_today'):summary+='; сегодняшние проверенные повышения на '+','.join(rules['exclude_verified_percent_today'])+'% исключены'
  status=p.get('status')
  if status in ['verified','partial']:
-  return summary+'. WB подтвердил '+str(p.get('verified_count',0))+' из '+str(p.get('total_count',0))+' товаров. Не изменено/не подтверждено: '+str(p.get('total_count',0)-p.get('verified_count',0))+'. Повторное повышение не отправляю.'
+  return summary+'. WB подтвердил '+str(p.get('verified_count',0))+' из '+str(p.get('total_count',0))+' товаров. Не изменено/не подтверждено: '+str(p.get('total_count',0)-p.get('verified_count',0))+'. Повторное повышение не отправляю.'+(' Минимум автоакций: '+p.get('minimum_price_status','required_not_verified')+'.' if p.get('scope')=='single' else '')
  if status in ['uncertain','blocked']:return summary+'. Выполнение не подтверждено: '+p.get('reason','нужна сверка журнала')+'. Повторная запись не отправляется.'
  return 'Принято: '+summary+'. Зарегистрирован точный ценовой запрос; выполнение подтвержу только после сверки WB. Повторные сообщения не складывают проценты.'
 def handle(w,job,history):
+ from china_single_price_command import handle as single_handle
+ single=single_handle(w,job,history)
+ if single is not None:return single
  text=job.get('request_text','');parsed=resolve(text,history)
  today=w.now.astimezone(ZoneInfo('Europe/Moscow')).date().isoformat();key=ROOT+today;p=w.get(key)
  if parsed is not None and parse(text) is None and not p:

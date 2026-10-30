@@ -1,0 +1,63 @@
+name: Owner repair rejected Ozon writes30Oct
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-owner-ozon-repair-20261030.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-stock
+  cancel-in-progress: false
+jobs:
+  stock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 34ae646c0536d38634ee83cc42d1707de9901ed8
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/daily-install.log" 2>&1
+      - name: Owner-authorized fresh wholesale recalculation and execution
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
+          STOCK_DAILY_ENABLED: 'true'
+          STOCK_OZON_ENABLED: 'true'
+          STOCK_PENDING_RESERVE_ENABLED: 'true'
+          STOCK_NOTIFICATIONS_ENABLED: 'true'
+          STOCK_CLOUD_EXECUTION_ENABLED: 'true'
+          STOCK_JOURNAL_IMPORT_ACCEPTED: 'true'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+          WB_STOCK_WAREHOUSE_1: ${{ vars.WB_STOCK_WAREHOUSE_1 }}
+          WB_STOCK_WAREHOUSE_2: ${{ vars.WB_STOCK_WAREHOUSE_2 }}
+          WB_STOCK_WAREHOUSE_3: ${{ vars.WB_STOCK_WAREHOUSE_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MOYSKLAD_STORE_NAME: МСК
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+          AUTO_STOCK_FAIL_FAST: '1'
+        run: |
+          python content_group_destination.py private-source/owner_ozon_gateway_repair_20261030.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-stock-wholesale21oct-receipt
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90
+

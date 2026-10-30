@@ -26,6 +26,8 @@ jobs:
         working-directory: scripts
         shell: python
         run: |
+          import sys,os
+          sys.path.insert(0,os.getcwd())
           import fbs_document_chain as m
           from fbs_wb_cabinets import ScopedCache
           t=m.Transport();db=m.Cache(t);sc=ScopedCache(t,"ip")

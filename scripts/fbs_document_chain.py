@@ -286,7 +286,18 @@ class Worker:
             state["inflight"] = typ
             state["status"] = "creating_" + typ
             self.db.put(key, state)
-            self.t.request(MS, "entity/" + typ, "POST", payload)
+            try:
+                self.t.request(MS, "entity/" + typ, "POST", payload)
+            except Stop as error:
+                # Validation/auth rejection means the API did not accept creation.
+                # Preserve the marker for timeouts and server errors.
+                if any(str(error).startswith("HTTP_" + str(code) + " POST ")
+                       for code in (400, 401, 403, 404, 405, 412, 413, 415, 422)):
+                    state.pop("inflight", None)
+                    state["status"] = typ + "_rejected"
+                    state["last_rejection"] = {"type": typ, "error": str(error), "at": now()}
+                    self.db.put(key, state)
+                raise
             docs = self.ms_rows("entity/" + typ, {"filter": "externalCode=" + ext})
             if len(docs) != 1:
                 raise Stop("Created document readback ambiguous")

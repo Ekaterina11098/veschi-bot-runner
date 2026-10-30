@@ -24,7 +24,19 @@ def parse_single(text):
  return dict(reference=matches[0],percent=format(pct,'g'))
 def handle(w,job,history=()):
  text=job.get('request_text','');p=parse_single(text)
- if not p:return None
+ if not p:
+  if re.search(r'цен|поднял|изменил|поменял|выполн',text,re.I) or re.fullmatch(r'\s*(?:делай|сделай|пробуй|давай)[.! ]*',text,re.I):
+   today=w.now.astimezone(ZoneInfo('Europe/Moscow')).date().isoformat()
+   for h in reversed(history[-4:]):
+    previous=parse_single(h.get('request_text',''))
+    if not previous or h.get('id') is None:continue
+    ref=previous['reference'].casefold()
+    found=[str(n) for n,a in w.catalog() if str(n)==ref or a.casefold()==ref or (ref.isdecimal() and a.casefold().startswith(ref+'-'))]
+    if len(found)!=1:continue
+    key=ROOT+today+':sku:'+found[0]+':'+str(h['id']);old=w.get(key)
+    if old:
+     return status_text(old),[dict(name='single_price_status',command_key=key,status=old['status'],wb_writes=0)]
+  return None
  if re.search(r'ООО|\bИП\b|в обоих|два кабинет',text,re.I):
   return 'Этот ценовой исполнитель привязан к Китаю. Изменение другого кабинета здесь не выполняю и выполненным не называю.',[dict(name='single_price_command',status='cabinet_mismatch')]
  if not w.authorized(job):return 'Нет подтверждённых прав действующего участника группы.',[dict(name='single_price_command',status='unauthorized')]

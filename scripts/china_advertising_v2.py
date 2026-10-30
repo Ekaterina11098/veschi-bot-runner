@@ -102,6 +102,7 @@ def ratio(row):return row['spend']/row['amount']*100 if row and row['amount']>0 
 def daily_metrics(raw):
  return {k:validnum(raw.get(f)) for k,f in [('spend','sum'),('amount','sum_price'),('orders','orders'),('views','views'),('clicks','clicks')]}
 def event_time(at):
+ if not isinstance(at,str) or not at.strip():raise ValueError('Receipt timestamp is missing or not a string')
  value=datetime.fromisoformat(at.replace('Z','+00:00'))
  if value.tzinfo is None:raise ValueError('Receipt timestamp needs timezone')
  return value

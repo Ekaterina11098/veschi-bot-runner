@@ -1,0 +1,56 @@
+name: Diagnose Moscow stock reads only30Oct
+on:
+  push:
+    paths: ['.github/workflows/stock-ms-read-diagnosis-20261030.yml']
+permissions:
+  contents: read
+concurrency:
+  group: stock-ms-read-diagnosis
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 34ae646c0536d38634ee83cc42d1707de9901ed8
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 > /dev/null
+      - name: Diagnose GETs without marketplace calls or document changes
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MOYSKLAD_STORE_NAME: МСК
+        run: |
+          python - <<'PY'
+          import json,time,requests,os
+          from urllib.parse import urlparse
+          import tg_agent_new as g
+          original=requests.request
+          def read(method,url,**kw):
+              assert method=='GET' and urlparse(url).hostname=='api.moysklad.ru'
+              started=time.monotonic()
+              try:
+                  r=original(method,url,**kw)
+                  print(json.dumps({'path':urlparse(url).path,'status':r.status_code,'type':r.headers.get('Content-Type'),'encoding':r.headers.get('Content-Encoding'),'bytes':len(r.content),'elapsed':round(time.monotonic()-started,2)},ensure_ascii=False),flush=True)
+                  return r
+              except Exception as e:
+                  print(json.dumps({'path':urlparse(url).path,'exception':type(e).__name__,'elapsed':round(time.monotonic()-started,2)}),flush=True)
+                  raise
+          requests.request=read
+          try:
+              stocks,unresolved=g.load_ms_stocks_dict()
+              print(json.dumps({'complete':True,'articles':len(stocks),'unresolved':len(unresolved)}))
+          except Exception as e:
+              chain=[]
+              for _ in range(4):
+                  if e is None:break
+                  message=str(e).replace(os.environ['MOYSKLAD_API_TOKEN'],'[redacted]')
+                  chain.append({'type':type(e).__name__,'message':message[:400]})
+                  e=e.__cause__ or e.__context__
+              print(json.dumps({'complete':False,'error_chain':chain},ensure_ascii=False))
+          PY

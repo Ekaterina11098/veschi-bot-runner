@@ -20,11 +20,12 @@ jobs:
   approval:
     if: vars.REVIEW_APPROVAL_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -40,7 +41,7 @@ jobs:
           node review-approval-preparation/test_review_callback_headers.mjs
           node review-approval-preparation/test_review_inbox_route.mjs
           node review-approval-preparation/test_review_webhook_state.mjs
-          python -m unittest test_review_autonomy.py test_review_cleanup.py test_review_reliability.py
+          python -m unittest test_review_autonomy.py test_review_cleanup.py test_review_reliability.py test_review_process_resilience.py
           PYTHONPATH=review-approval-preparation python -m unittest discover -s review-approval-preparation -p test_review_replyrouting.py
       - name: Process one authenticated new approval, never old queues
         working-directory: review-approval-preparation
@@ -102,21 +103,36 @@ jobs:
           name: owner-encrypted-review-approval-supplement
           path: ${{ runner.temp }}/review-approval-output/*.aes.json
           retention-days: 90
-      - name: Preserve independent ciphertext only
+  archive:
+    name: Archive existing ciphertext without replaying approvals
+    needs: approval
+    if: always() && needs.approval.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            review_ciphertext_archive.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: owner-encrypted-review-approval-supplement
+          path: ${{ runner.temp }}/review-approval-output
+      - name: Retry only the saved encrypted file
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python review_ciphertext_archive.py
+      - uses: actions/upload-artifact@v4
         if: always()
-        run: |
-          mkdir -p recovery-output/review-approval
-          cp "$RUNNER_TEMP/review-approval-output/approval-supplement.aes.json" "recovery-output/review-approval/approval-${{ github.run_id }}.aes.json"
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add recovery-output/review-approval/
-          git commit -m "Preserve encrypted new review approval supplement"
-          for attempt in 1 2 3 4 5; do
-            git pull --rebase origin main
-            if git push origin HEAD:main; then exit 0; fi
-            sleep 2
-          done
-          exit 1
+        with:
+          name: review-approval-archive-receipt
+          path: ${{ runner.temp }}/review-approval-output/archive-receipt.json
+          if-no-files-found: ignore
+          retention-days: 90
 # Only review/question approvals; no general queue or stopped task dispatch.
 
 

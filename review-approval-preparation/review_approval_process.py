@@ -1,5 +1,5 @@
 """Dedicated event entry, disabled unless both deployment flags are explicitly set."""
-import base64,json,os
+import base64,json,os,time
 from pathlib import Path
 from review_telegram_approval import Approval,Repository,Rejected,sha
 from review_approval_bridge import SQLSource,DurableBridge
@@ -69,15 +69,23 @@ def process(approval,bridge,telegram,wb,update,publication_enabled=False,preserv
     if preserve:preserve()
     return result
 
+class ApprovalLockBusy(RuntimeError):pass
+
+def acquire_ui_lock(conn,wait_seconds=120,interval=2,clock=time.monotonic,sleep=time.sleep):
+    """Keep every SQL query short; session close releases an acquired lock."""
+    deadline=clock()+wait_seconds
+    while True:
+        if conn.execute("SELECT pg_try_advisory_lock(hashtextextended('review-approval-process-ui-v1',0))").fetchone()[0]:return True
+        remaining=deadline-clock()
+        if remaining<=0:return False
+        sleep(min(interval,remaining))
+
 def main():
     if os.getenv('REVIEW_APPROVAL_ENABLED')!='1':raise Rejected('Review approval disabled')
     import psycopg
     import wildberries
     conn=psycopg.connect(os.environ['REVIEW_APPROVAL_DSN'],autocommit=True,connect_timeout=10,options='-c statement_timeout=30000')
     try:
-        # GitHub pending concurrency drops older callbacks. Keep every run and
-        # serialize its complete decision + Telegram edit on this DB session.
-        conn.execute("SELECT pg_advisory_lock(hashtextextended('review-approval-process-ui-v1',0))")
         approval=Approval(Repository(conn,postgres=True),os.environ['REVIEW_APPROVAL_INGRESS_KEY'],os.environ['REVIEW_APPROVAL_OWNER_ID'],os.environ['TELEGRAM_ALLOWED_CHAT_ID'],os.environ['REVIEW_APPROVAL_BOT_ID'],enabled=True)
         bridge=DurableBridge(approval,SQLSource(conn))
         output=Path(os.environ['RUNNER_TEMP'])/'review-approval-output';output.mkdir(exist_ok=True)
@@ -88,10 +96,18 @@ def main():
         from review_approval_inbox import drain,process_update,PREFIX
         from review_approval_notice import NewNoticeTransport
         options=dict(new_notices_enabled=os.getenv('REVIEW_NEW_NOTICES_ENABLED')=='1',cutover=float(os.environ['REVIEW_APPROVAL_CUTOVER']) if os.getenv('REVIEW_APPROVAL_CUTOVER') else None)
+        # Do not let PostgreSQL's 30-second statement timeout cancel lock waits.
+        # Real Telegram updates are already encrypted in the durable inbox.
+        if not acquire_ui_lock(conn):
+            saved=conn.execute("SELECT 1 FROM review_approval.source_cache WHERE (starts_with(cache_key,%s) OR starts_with(cache_key,'reviews:telegram-group-ingress:v1:')) AND payload->>'update_id'=%s LIMIT 1",(PREFIX,str(update.get('update_id')))).fetchone() if update and isinstance(update.get('update_id'),int) else None
+            preserve()
+            if update and not saved:raise ApprovalLockBusy('Unqueued dispatch retained in encrypted workflow input; retry before processing')
+            print(json.dumps({'status':'busy','inbox_retained':True,'retry_by_scheduled_worker':True}))
+            return
         try:
             inbox=drain(approval,bridge,TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']),os.environ['REVIEW_APPROVAL_INGRESS_KEY'],preserve=preserve,**options)
             # An inbox-backed dispatch only wakes us; never bypass its ordering/retry.
-            saved=conn.execute("SELECT 1 FROM review_approval.source_cache WHERE starts_with(cache_key,%s) AND payload->>'update_id'=%s LIMIT 1",(PREFIX,str(update.get('update_id')))).fetchone() if update and isinstance(update.get('update_id'),int) else None
+            saved=conn.execute("SELECT 1 FROM review_approval.source_cache WHERE (starts_with(cache_key,%s) OR starts_with(cache_key,'reviews:telegram-group-ingress:v1:')) AND payload->>'update_id'=%s LIMIT 1",(PREFIX,str(update.get('update_id')))).fetchone() if update and isinstance(update.get('update_id'),int) else None
             if update and not saved:
                 transport=NewNoticeTransport if update.get('new_notice') else TelegramTransport
                 result=process_update(approval,bridge,transport(os.environ['TELEGRAM_BOT_TOKEN']),update,preserve=preserve,**options)

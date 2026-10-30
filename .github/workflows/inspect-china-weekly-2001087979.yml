@@ -1,0 +1,65 @@
+name: Inspect requested China weekly MS scope 2001087979
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/inspect-china-weekly-2001087979.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - name: Read exact products and complete store stock
+        shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,json,collections,concurrent.futures
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          class ReadOnly(m.Transport):
+           def request(self,base,path,method="GET",body=None,params=None):
+            if base==m.MS and method!="GET":raise m.Stop("MS writes prohibited")
+            return super().request(base,path,method,body,params)
+          t=ReadOnly();db=m.Cache(t);w=m.Worker(t,db,{})
+          root="weekly_report_review:china:20261019:"
+          plan=db.get(root+"plan:v1");assert plan["salesUnits"]==485 and not plan["returns"]
+          sales=plan["sales"]
+          config=db.get("fbs_document_chain:china:config:v1");template=config["templates"]["salesreturn"]
+          out={"at":m.now(),"sales":sales,"status":"reading","products":{},"stock":{}}
+          for k in ("organization","agent","store"):out[k]=t.request(m.MS,m.href(template[k])[len(m.MS):])
+          out["rate"]=template["rate"];out["currency"]=t.request(m.MS,m.href(template["rate"]["currency"])[len(m.MS):])
+          out["duplicate_orders"]=w.ms_rows("entity/customerorder",{"filter":"name=2001087979"})
+          flt="store="+m.href(out["store"])
+          for typ in ("customerorder","demand"):
+           ds=w.ms_rows("entity/"+typ,{"filter":flt+";moment>=2026-09-01 00:00:00","order":"moment,desc"})
+           out[typ+"_history"]=[{k:d.get(k) for k in ("id","name","moment","description","applicable","sum","organization","agent","store","rate","vatEnabled","vatIncluded","customerOrder")} for d in ds[:20]]
+          db.put(root+"ms_preflight:v1",out)
+          def product(a):
+           rt=ReadOnly();rw=m.Worker(rt,None,{})
+           return a,rw.ms_rows("entity/product",{"filter":"article="+a+";archived=false"})
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+           for a,ps in pool.map(product,sales):out["products"][a]=ps
+          db.put(root+"ms_preflight:v1",out)
+          def norm(x):return m.href(x).split("?")[0]
+          try:
+           bulk=w.ms_rows("report/stock/all",{"filter":flt,"stockMode":"all","quantityMode":"all"})
+           byid={norm(r):r for r in bulk};out["stock_source"]="complete store stock report"
+           for a,ps in out["products"].items():out["stock"][a]=[byid[norm(ps[0])]] if len(ps)==1 and norm(ps[0]) in byid else []
+          except m.Stop:
+           out["stock_source"]="individual stock fallback"
+           for a,ps in out["products"].items():
+            if len(ps)==1:out["stock"][a]=w.ms_rows("report/stock/all",{"filter":flt+";product="+norm(ps[0]),"stockMode":"all","quantityMode":"all"})
+          out["states"]=t.request(m.MS,"entity/customerorder/metadata").get("states",[])
+          out["status"]="read_verified";out["completed_at"]=m.now();db.put(root+"ms_preflight:v1",out)
+          print("Read-only requested weekly scope and stock stored privately.")
+          

@@ -14,6 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: private-source
           repository: Ekaterina11098/VESCHI_AI
           ref: 3102bb39ecfe3c5a93f5c7c97aafebe6ecb3ae4d
           token: ${{ secrets.SOURCE_READ_TOKEN }}
@@ -24,6 +28,7 @@ jobs:
       - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > /dev/null
       - name: Read exact warehouse and confirm matching existing intents only
         env:
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           STOCK_CLOUD_EXECUTION_ENABLED: 'true'

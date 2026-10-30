@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   correction:
-    if: github.ref == 'refs/heads/main'
+    if: ${{ false }} # Completed dated owner correction; no further runs
     concurrency:
       group: bot-mpstats-data
       cancel-in-progress: false

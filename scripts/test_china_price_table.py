@@ -9,14 +9,14 @@ CAT=dict(cabinet='token_3',rows=[dict(vendorCode='51-NoelBag-green',nmID=1473243
 for r in CAT['rows']:
  if r['vendorCode']=='123-Zont-pink':r.update(currencyIsoCode4217='CNY',discount=35,sizes=[dict(price=164,discountedPrice=106.6)])
 BUYER=dict(report_date=str(DAY),status='available',rows={'1473243906':dict(article='51-NoelBag-green',current_cny='180',buyer_rub='1960'),'1556488210':dict(article='123-Zont-pink',current_cny='106.6',buyer_rub='1160')})
-REVIEW=dict(report_date=str(DAY),status='complete_disclosed_forecast_model',model_version='wb_four_day_baseline_daily_means_v3',products=[dict(article='123-Zont-pink',after_price=106.6,before_price=82,full_days=4,result=dict(status='rollback_review'))])
+REVIEW=dict(report_date=str(DAY),status='complete_disclosed_forecast_model',model_version='wb_profit_floor_price_hypothesis_v4',products=[dict(article='123-Zont-pink',after_price=106.6,before_price=82,full_days=4,buyout_fallback=False,buyout_sample=20,economic_target=dict(basis='profit_floor_demand_hypothesis',status='recommended',price_cny=82,base_cny=164,discount=50,expected_profit_advantage_per_day=10),result=dict(status='rollback_review'))])
 SOURCE='Первое повышение +10%: 1 кандидатов.\n• 51-NoelBag-green: заказы 3/2/2/3.\n  Предложение: 180 → 198 ¥ после скидки, с округлением.'
 class TableTests(unittest.TestCase):
  def text(self,buyer=BUYER,review=REVIEW):return render_table(SOURCE,'intraday',review,DAY,CAT,buyer)
  def test_one_table_all_five_price_fields(self):
   text=self.text()
   rows=[[v.strip() for v in line.split('|')] for line in text.splitlines() if line.startswith(('Повышение','Снижение'))]
-  self.assertEqual(rows,[['Повышение','51-NoelBag-green','180 → 198 ¥','1 960 → 2 156 ₽'],['Снижение','123-Zont-pink','106,6 → 101,4 ¥','1 160 → 1 103 ₽']])
+  self.assertEqual(rows,[['Повышение','51-NoelBag-green','180 → 198 ¥','1 960 → 2 156 ₽'],['Снижение','123-Zont-pink','106,6 → 82 ¥','1 160 → 892 ₽']])
   self.assertEqual(text.count('Цена покупателя (новая — прогноз)'),1)
  def test_product_navigation(self):
   payload=table_payload(self.text(),CAT)
@@ -37,3 +37,4 @@ class TableTests(unittest.TestCase):
  def test_unrelated_message_not_formatted(self):
   self.assertIsNone(table_payload('Обычный вопрос',{}))
 if __name__=='__main__':unittest.main()
+

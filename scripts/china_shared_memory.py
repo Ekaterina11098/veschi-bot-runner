@@ -8,7 +8,7 @@ from datetime import datetime,timezone
 
 POLICY='china_agent:shared_memory:policy:v1'
 ROOT='china_agent:shared_memory:v1:work:'
-WORK=re.compile(r'реклам|кампани|бюджет|ставк|ДРР|\bРК\b|\bWB\b|wildberries|ВБ\b|артикул|SKU|скю|продаж|заказ|выкуп|прибыл|себесто|каталог|карточк|МойСклад|VESCHI|агент|отч[её]т|Telegram|телеграм|(?<!\d)4\d{7}(?!\d)|\d+-[A-Za-z]',re.I)
+WORK=re.compile(r'цен(?:а|ы|е|у|ой|ами|ах)\b|конверси|реклам|кампани|бюджет|ставк|ДРР|\bРК\b|\bWB\b|wildberries|ВБ\b|артикул|SKU|скю|продаж|заказ|выкуп|прибыл|себесто|каталог|карточк|МойСклад|VESCHI|агент|отч[её]т|Telegram|телеграм|(?<!\d)4\d{7}(?!\d)|\d+-[A-Za-z]',re.I)
 PRIVATE=re.compile(r'личн(?:ое|ая|ые|ую|ой)|здоров|диагноз|врач|беремен|интим|психотерап|семейн|парол|секрет|токен|api[_ -]?key|sb_secret_|sk-[A-Za-z0-9]',re.I)
 WRITE=re.compile(r'запомни|сохрани|закреп|договор|используй|считай|пиши|отвечай|не показывай|забудь|удали.*памят',re.I)
 

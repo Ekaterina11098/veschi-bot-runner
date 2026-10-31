@@ -1,0 +1,31 @@
+name: Owner completed China economics source31
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-high-drr-buyout31-read.yml']
+permissions: {contents: read}
+jobs:
+  read:
+    if: github.event.head_commit.message == 'Owner authorized completed economics history31'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0
+      - name: One scoped MPStats read, no marketplace writes or messages
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          PYTHONPATH: scripts:source
+        run: python scripts/owner_high_drr_buyout31_read.py

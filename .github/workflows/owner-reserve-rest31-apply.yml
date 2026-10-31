@@ -1,0 +1,30 @@
+name: Owner remaining three reserves31
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-reserve-rest31-apply.yml']
+permissions: {contents: read}
+concurrency:
+  group: china-dialog-queue
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.run_attempt == 1 && github.event.head_commit.message == 'Apply remaining three owner approved reserves31'
+    concurrency:
+      group: china-dialog-data
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - run: python -m py_compile scripts/owner_reserve_rest31_apply.py
+      - name: Apply only exact owner-confirmed values with full readback
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python scripts/owner_reserve_rest31_apply.py

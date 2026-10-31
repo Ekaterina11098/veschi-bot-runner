@@ -13,7 +13,7 @@ def saved_products(w,first,last,ids):
   selected=[]
   for r in rows:
    if ids and int(r['nm_id']) not in ids:continue
-   p={k:r.get(k) for k in ['nm_id','sa_name','finished_orders','is_payed','finish_as_return','not_finished_orders','orders_sum','orders_count','funnel_orders_count','open_card_count','add_to_cart_count','advertisement','price_after_discount','price_after_spp','sales_sum','returns_sum','rating','commentsvaluation']}
+   p={k:r.get(k) for k in ['nm_id','sa_name','finished_orders','is_payed','finish_as_return','not_finished_orders','orders_sum','orders_count','funnel_orders_count','open_card_count','add_to_cart_count','advertisement','price_after_discount','price_after_spp','sales_sum','sales_count','returns_sum','returns_count','cost_price','logistic_all','total_commission_without_spp_in_sales','rating','commentsvaluation']}
    p['buyout_pct']=100*p['is_payed']/p['finished_orders'] if p['finished_orders'] else None
    selected.append(p)
   return dict(source='saved validated MPStats exact-period products',snapshot_id=snap['id'],observed_at=snap['collected_at'],period_from=str(first),period_to=str(last),rows=selected,cached=True,wb_reads=0,mpstats_reads=0,note='Точный сохранённый период. Не смешивать общую воронку с рекламной; деньги исходного отчёта не складывать с CNY без подтверждённого курса. Неподтверждённые расходы не0.')

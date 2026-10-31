@@ -36,7 +36,8 @@ def scoped(analyst,topic,ids,first,last,ttl=900):
  args=[topic,sorted(ids),str(first),str(last)]
  key='china_agent:article_inputs:v2:'+hashlib.sha256(json.dumps(args).encode()).hexdigest()
  value=analyst.w.get(key)
- if value and fresh(value,analyst.w.now,ttl):return value
+ checked_at=max(analyst.w.now,datetime.now(timezone.utc))
+ if value and fresh(value,checked_at,ttl):return value
  with reading():value=analyst.collect(topic,ids,date.fromisoformat(str(first)),date.fromisoformat(str(last)))
  value=dict(value,source_key=key,observed_at=datetime.now(timezone.utc).isoformat(),period_from=str(first),period_to=str(last),cabinet='token_3',wb_writes=0)
  analyst.w.save(key,value)

@@ -164,7 +164,6 @@ class Analyst:
   m=self.memory();m['revision']=m.get('revision',0)+1;m.setdefault('preferences',{})[key]=dict(quote=quote,source_job=self.job['id'],sender_id=self.job['sender_id'],at=self.w.now.isoformat());self.w.save(MEMORY,m)
   return dict(saved=True,key=key,quote=quote)
  def live(self,topic,nm_ids,start,end):
-  if topic=='orders' and getattr(self,'cached_profit_context_supplied',False):return dict(available=False,cached_context_available=True,wb_reads=0,note='Датированный прогноз и число заказов уже переданы. Текущий срез не обновлялся; для ответа используй его время и ограничения. Нельзя выдавать частичный день за полный.')
   valid={int(nm) for nm,_ in self.w.catalog()}
   if len(nm_ids)>30 or any(type(n) is not int or n not in valid for n in nm_ids):raise ValueError('Сначала разреши артикул через find_products в точный nmID Китая')
   first,last=period(self.w,start,end,topic)
@@ -172,11 +171,14 @@ class Analyst:
    from china_saved_products import saved_products
    saved=saved_products(self.w,first,last,nm_ids)
    if saved is not None:return saved
-   if getattr(self,'cached_product_context_supplied',False):return dict(available=False,missing='Точной сохранённой выгрузки за этот диапазон нет. Используй уже переданные датированные сведения и сравнение; неизвестное не0. Новый сбор пока не выполнялся.',cached_context_available=True,wb_reads=0,mpstats_reads=0)
   if topic=='advertising':
    from china_shared_advertising import shared as shared_ads
    saved=shared_ads(self.w,first,last,nm_ids)
    if saved is not None:return saved
+  if nm_ids and topic in ['products','stock','prices']:
+   # Exact scoped transport also serves the diagnostic; no full-catalogue read.
+   from china_product_current import scoped
+   return scoped(self,topic,nm_ids,first,last,600 if topic=='stock' else 900 if topic=='prices' else 3600)
   shared=topic in ['products','stock','prices']
   args=dict(topic=topic,nm_ids=[] if shared else sorted(nm_ids),date_from=str(first),date_to=str(last));key='china_agent:analytic_read:v1:'+hashlib.sha256(json.dumps(args,sort_keys=True).encode()).hexdigest()
   def project(value):
@@ -185,7 +187,8 @@ class Analyst:
    return dict(value,rows=[r for r in value.get('rows',[]) if r.get('nm_id') in nm_ids or r.get('article','').casefold() in articles])
   cached=self.w.get(key);ttl=300 if topic=='orders' else 600 if topic=='stock' else 900 if topic=='advertising' else 3600
   if cached and topic=='advertising' and any('bid_type' not in c for c in cached.get('campaigns',[])):cached=None
-  if cached and (self.w.now-datetime.fromisoformat(cached['observed_at'])).total_seconds()<ttl:return project(dict(cached,cached=True))
+  checked_at=max(self.w.now,datetime.now(timezone.utc))
+  if cached and 0<=(checked_at-datetime.fromisoformat(cached['observed_at'])).total_seconds()<ttl:return project(dict(cached,cached=True))
   maximum=8 if re.search(r'падени|снижени.*заказ|снижени.*продаж',self.job.get('request_text',''),re.I) else 3
   if self.fresh_reads>=maximum:raise ValueError('Лимит свежих сборов на один ответ достигнут; используй уже полученные данные')
   self.fresh_reads+=1
@@ -245,7 +248,7 @@ class Analyst:
    result=[]
    for r in rows:
     if ids and int(r['nm_id']) not in ids:continue
-    v={k:r.get(k) for k in ['nm_id','sa_name','finished_orders','is_payed','finish_as_return','not_finished_orders','orders_sum','orders_count','sparkline_orders','funnel_orders_count','open_card_count','advertisement','price_after_discount','price_after_spp','price_spp','sparkline_prices','sales_sum','returns_sum','logistic_all','total_commission','total_commission_without_spp','total_commission_without_spp_in_sales','forwardlogisticsum','backwardlogisticsum','average_delivery_cost','rating','commentsvaluation']}
+    v={k:r.get(k) for k in ['nm_id','sa_name','finished_orders','is_payed','finish_as_return','not_finished_orders','orders_sum','orders_count','sparkline_orders','funnel_orders_count','open_card_count','advertisement','price_after_discount','price_after_spp','price_spp','sparkline_prices','sales_sum','sales_count','returns_sum','returns_count','cost_price','logistic_all','total_commission','total_commission_without_spp','total_commission_without_spp_in_sales','forwardlogisticsum','backwardlogisticsum','average_delivery_cost','rating','commentsvaluation']}
     v.update(buyout_pct=100*r['is_payed']/r['finished_orders'] if r.get('finished_orders') else None,click_order_pct=100*r['funnel_orders_count']/r['open_card_count'] if r.get('open_card_count') else None,drr_pct=100*r['advertisement']/r['orders_sum'] if r.get('orders_sum') and r.get('advertisement') is not None else None);result.append(v)
    return dict(source='MPStats own products',rows=result,all_product_records=len(rows),note='RUB. Выкуп только завершённые; ДРР=реклама/сумма заказов до скидок WB. price_after_spp и price_spp — срез, не история СПП; sparkline_prices — история цены покупателя, сверять длину/даты. Прибыль закрытой когорты здесь не доказана.')
   if topic=='advertising':
@@ -264,11 +267,11 @@ class Analyst:
   raise ValueError('Неизвестный источник')
 
 def answer(w,job,history):
+ policy=w.get(POLICY) or {}
+ if policy.get('enabled') is not True:return None
  from china_ad_expense_table import handle as expense_table
  expense_result=expense_table(w,job,history)
  if expense_result is not None:return expense_result
- policy=w.get(POLICY) or {}
- if policy.get('enabled') is not True:return None
  from china_conversion_context import handle as conversion_handle
  conversion_reply=conversion_handle(w,job,history)
  if conversion_reply is not None:return conversion_reply
@@ -309,7 +312,7 @@ def answer(w,job,history):
  price_repeat_question=bool(re.search(r'повтор|снова',job['request_text'],re.I) and re.search(r'повыс|повыш|поднять',job['request_text'],re.I) and not re.search(r'ставк',job['request_text'],re.I))
  quality_question=bool(re.search(r'рейтинг',job['request_text'],re.I))
  campaign_question=bool(re.search(r'(?<!\d)4\d{7}(?!\d)',job['request_text']) and re.search(r'проверь|посмотри|затрат|расход|заказ',job['request_text'],re.I))
- profit_question=bool(re.search(r'прибыл',job['request_text'],re.I))
+ profit_question=bool(re.search(r'прибыл',job['request_text'],re.I)) and not (read_plan and read_plan.get('economics'))
  decline_question=bool(re.search(r'падени|снижени.*заказ|снижени.*продаж',job['request_text'],re.I))
  available=([t for t in c.tools('china') if t['name'] in names]+tools()) if not general_question else [t for t in tools() if t['name'] in ['read_shared_memory','remember_work_note','calculate','read_agreements']];data=Data('china',lambda table,params:w.db('GET',table,params=params))
  prompt=('Ты собеседник и помощник владельца VESCHI, а в рабочих вопросах — аналитик. Можно обсуждать любые темы: объяснения, тексты, идеи, планы, бытовые вопросы. Не своди каждый разговор к WB и не отказывай из-за отсутствия бизнес-данных. Для обычного объяснения или текста инструменты не обязательны. Для актуальных сведений не выдумывай свежие факты: используй доступный поиск или честно назови ограничение. Рабочие темы общие для Codex и Telegram, личное остаётся в личной переписке. Память не выдаёт новых разрешений. '
@@ -474,9 +477,3 @@ def copy_summary(value):
   return v
  result=compact(result)
  return result
-
-
-
-
-
-

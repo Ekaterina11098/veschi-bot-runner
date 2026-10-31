@@ -76,6 +76,7 @@ class DialogIntegration(unittest.TestCase):
   mod('china_zero_order_price_command',handle=lambda *a:None,status_answer=lambda *a:None)
   mod('china_zero_orders',answer=lambda *a:None)
   mod('china_article_diagnostic_read',handle=lambda *a:None)
+  mod('china_product_diagnosis',handle=lambda *a:None)
   mod('business_agents',conversation=types.SimpleNamespace(tools=lambda _:[]))
   mod('business_agents.data',Data=lambda *a:object())
   mod('china_shared_memory',context=lambda *a,**k:{},is_work=lambda _:False)

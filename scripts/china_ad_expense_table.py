@@ -7,6 +7,7 @@ def requested(text,history=()):
  if re.search(r'рекоменд|что.*делать|проанализ|разбер|почему.*убыт',text,re.I):return False
  context=' '.join(h.get('request_text','') for h in history[-4:])
  own=bool(re.search(r'дрр|ддр',text,re.I) and re.search(r'расход|трат|таблиц|лидер|артикул|отсорт',text,re.I))
+ own=own or bool(re.search(r'расход|трат',text,re.I) and re.search(r'без\s+(?:рекламных\s+)?заказ|заказов\s+нет',text,re.I))
  follow=bool(re.search(r'хочу сам посмотреть|это не то что я просил|без заказов.*расход|перед высоким',text,re.I) and re.search(r'дрр|ддр',context,re.I))
  return own or follow
 
@@ -66,6 +67,10 @@ def handle(w,job,history):
  # Explicit today request is diagnostic, not a completed-day action recommendation.
  text=job['request_text'];match=re.search(r'(?:выше|больше|>)\s*(\d+(?:[.,]\d+)?)\s*%',text,re.I)
  rows,unknown=table(source['stats'],labels,float(match[1].replace(',','.')) if match else 0)
+ from china_analytic_evidence import resolve_scope
+ selected,unresolved=resolve_scope(w.catalog(),text)
+ if unresolved:return 'Не удалось однозначно сопоставить указанный артикул. Уточните полный артикул; таблицу другого товара или всего кабинета не подставляю.',[dict(name='ad_expense_table',identity_unresolved=True,read_only=True)]
+ if selected:rows=[r for r in rows if r['nm_id'] in selected]
  cutoff=datetime.fromisoformat(source['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M МСК')
  note='Сначала расходы без рекламных заказов; затем ДРР по убыванию. Срез '+cutoff+'. Сегодня неполный день. ДРР=сумма расходов/атрибутированная сумма заказов; не выкупы. Заказы разных РК могут пересекаться. Это данные для просмотра, не рекомендации менять рекламу.'
  if source.get('missing_campaign_ids'):note+=' Нет данных по '+str(len(source['missing_campaign_ids']))+' РК; итог неполный, пропуск не0.'

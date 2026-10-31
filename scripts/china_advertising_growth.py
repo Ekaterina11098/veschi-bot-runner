@@ -52,7 +52,8 @@ def shortlist(s):
 def assess(r,e,cfg,now):
  required=['observed_at','stock_observed_at','prices_observed_at','buyout_observed_at']
  if any(not fresh(e.get(k),now)for k in required):return None
- if e.get('cabinet')!='token_3' or e.get('currency')!='CNY' or e.get('stock_free',0)<=0 or e.get('published_stock',0)<=0:return None
+ if e.get('cabinet')!='token_3' or e.get('currency')!='CNY':return None
+ if any(not isinstance(e.get(k),(int,float))or e[k]<=0 for k in ['stock_free','published_stock']):return None
  if not e.get('rating')or e['rating']<4.5 or e.get('finished',0)<10 or e.get('paid',0)<3:return None
  if e.get('expected_margin_before_ads_cny',-1)<=0 or e.get('stress_margin_before_ads_cny',-1)<=0:return None
  if e.get('negative_experience_requires_review'):return None
@@ -117,6 +118,7 @@ def collect_evidence(io,s,rough):
  return evidence,dict(total_shortlisted=len(rough),checked=len(wanted),bounded_limit=8,older_or_missing_evidence_is_not_zero=True)
 def enrich(io,s,bundle):
  # Keep collection failures private; a missing raise never fills report cells with explanations.
+ if not all(k in s for k in ['period_to','batches','config']):return bundle
  day=str(date.fromisoformat(s['period_to'])+timedelta(days=1));key=ROOT+day+':v1';prior=io.get(key)
  if prior:return merge(bundle,prior.get('actions',[]))
  rough=shortlist(s);record=dict(status='complete',observed_at=stamp(),period_to=s['period_to'],actions=[],wb_writes=0,telegram_calls=0)

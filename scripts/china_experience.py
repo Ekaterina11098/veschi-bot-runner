@@ -22,8 +22,9 @@ def assess_candidate(experiences,nm,current):
  for event in relevant:
   comparison=compare_conditions(event.get('context') or {},current)
   if event.get('business_outcome')=='negative' or event.get('advertising_outcome')=='negative' or event.get('expected_outcome')=='negative':
-   risks.append(dict(event_id=event['event_id'],previous_result='negative',condition_comparison=comparison))
-   if not comparison['changes']:needs_review=True
+   financial_negative=event.get('business_outcome')=='negative' or event.get('expected_outcome')=='negative'
+   risks.append(dict(event_id=event['event_id'],previous_result='negative',basis='business_or_model' if financial_negative else 'advertising_only_not_profit',condition_comparison=comparison))
+   if financial_negative and not comparison['changes']:needs_review=True
  return dict(event_ids=[e['event_id'] for e in relevant],needs_review=needs_review,risks=risks,requires_confirmation=True,note='Негативный опыт требует проверки причины/изменений; это не вечный запрет. Положительный опыт не гарантия.')
 def stamp():return datetime.now(timezone.utc).isoformat()
 def save(w,key,value):
@@ -170,7 +171,12 @@ def decision_context(w,nm_ids=(),current=None):
    evaluate_from=event.get('comparison',{}).get('evaluate_from')
    if (evaluate_from and str(today)<evaluate_from) or not evaluate_from and 0<=(today-changed).days<=3:recent.update(action.get('nm_ids',[]))
   event['current_condition_comparison']=compare_conditions(event.get('context') or {},current or {})
- return dict(result,recent_changed_nm_ids=sorted(recent),rules=['Не повторять недавнее изменение до сопоставимых полных дней','Положительный и отрицательный опыт сохраняются вместе; новый результат может отличаться','Изменения алгоритмов WB — гипотеза, пока нет подтверждения','Рекомендация не разрешает WB-записи; нужен подтверждённый точный план'])
+ from china_experiment_journal import context as journal_context
+ journal=journal_context(w,nm_ids,experiences=result['experiences'])
+ for nm,change in journal['latest_by_nm'].items():
+  if change['window']['completed_days']==0:recent.add(int(nm))
+ journal=dict(journal,events=journal['events'][:12],latest_by_nm=dict(list(journal['latest_by_nm'].items())[:12]),observations=journal['observations'][:12],decisions=journal['decisions'][:12],model_view_limited=True)
+ return dict(result,experiment_journal=journal,recent_changed_nm_ids=sorted(recent),rules=['Не повторять недавнее изменение до сопоставимых полных дней','Положительный и отрицательный опыт сохраняются вместе; новый результат может отличаться','Изменения алгоритмов WB — гипотеза, пока нет подтверждения','Рекомендация не разрешает WB-записи; нужен подтверждённый точный план'])
 def summarize_comparison(before,after):
  if before.get('days')!=after.get('days') or before.get('period_complete') is not True or after.get('period_complete') is not True:return dict(outcome='inconclusive',reason='Нужны равные полные периоды')
  if before.get('profit_method')!=after.get('profit_method') or before.get('currency')!=after.get('currency'):return dict(outcome='inconclusive',reason='Метод прибыли/валюта не сопоставимы')
@@ -189,5 +195,3 @@ def observe(w,eid,before,after,source_keys,context=None):
  result=summarize_comparison(before,after);conditions=compare_conditions(before.get('conditions') or {},after.get('conditions') or {});record=dict(observed_at=stamp(),before=before,after=after,result=result,source_keys=source_keys,context=context or {},condition_comparison=conditions)
  e.setdefault('observations',[]).append(record);e.update(business_outcome=result['outcome'],last_observed_at=record['observed_at'],context=context or e.get('context',{}));save(w,ROOT+eid,e)
  return e
-
-

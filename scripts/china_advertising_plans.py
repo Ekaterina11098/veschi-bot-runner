@@ -21,7 +21,9 @@ def economics(source,nm):
  price=pr['sizes'][0]['discountedPrice']
  expected=(paid/f)*(price*(1-fee/100-.05*p['price_after_spp']/p['price_after_discount'])-st['price']/1200)-log['delivery_cny']-10/12-.05*price
  if expected<=0:raise ValueError('При ДРР5% предварительная экономика отрицательная')
- return dict(article=p['sa_name'],subject_id=p['subject_id'],available=st['stock']-st['reserve'],paid=paid,finished=f,expected_cny_at5=round(expected,2),seller_price_cny=price,cogs_kopecks=st['price'],forecast=True,assumptions='FX12RUB/CNY, налог5%, обработка10RUB; WBPromotion не дублирован')
+ from china_experiment_journal import risk_limits
+ limits=risk_limits(expected+.05*price,paid/f,f)
+ return dict(article=p['sa_name'],subject_id=p['subject_id'],available=st['stock']-st['reserve'],paid=paid,finished=f,expected_cny_at5=round(expected,2),seller_price_cny=price,cogs_kopecks=st['price'],risk_limits=limits,forecast=True,assumptions='FX12RUB/CNY, налог5%, обработка10RUB; WBPromotion не дублирован')
 def prepare(w,job,kind,nm_ids=(),raise_percent=None,count=None):
  if kind=='raise':
   from china_bid_proposals import prepare as prepare_bid
@@ -54,6 +56,9 @@ def prepare(w,job,kind,nm_ids=(),raise_percent=None,count=None):
  items=[];blocked=[]
  for nm in nm_ids:
   try:
+   if callable(getattr(w,'db',None)):
+    from china_experiment_journal import context as journal_context,guard as journal_guard
+    if not journal_guard(journal_context(w,[nm]),nm,w.now)['allowed']:raise ValueError('Журнал: сначала завершить полный день после последнего verified изменения')
    econ=economics(source,nm)
    if kind=='raise' and nm in recent:raise ValueError('Недавнее подтверждённое изменение: нужен результат текущего теста, повторное повышение не предлагаю')
    if nm in protected:raise ValueError('Товар требует отдельной проверки истории исключения')
@@ -73,7 +78,9 @@ def prepare(w,job,kind,nm_ids=(),raise_percent=None,count=None):
     cid=suitable[0]['id'] if suitable else None
     reference=min([n['bids_kopecks']['search'] for n in suitable[0]['nm_settings'] if n['bids_kopecks'].get('search',0)>0],default=0) if suitable else r['current_minor']
     if type(reference)is not int or reference<=0:raise ValueError('Нет обоснованной тестовой ставки')
-    items.append(dict(kind='ad_add_sku' if cid else 'ad_create_search_draft',campaign_id=cid,nm_id=nm,subject_id=econ['subject_id'],article=econ['article'],placement='search',target_minor=reference,economics=econ,evidence=r,test_additional_cny=20))
+    cap=econ['risk_limits']['suggested_initial_risk_budget_cny']
+    if cap<=0:raise ValueError('Нет положительного экономического предела теста')
+    items.append(dict(kind='ad_add_sku' if cid else 'ad_create_search_draft',campaign_id=cid,nm_id=nm,subject_id=econ['subject_id'],article=econ['article'],placement='search',target_minor=reference,economics=econ,evidence=r,test_additional_cny=cap))
   except (ValueError,KeyError,TypeError) as ex:blocked.append(dict(nm_id=nm,reason=str(ex)))
  if not items:return dict(status='blocked',items=[],blocked=blocked,note='Готового плана нет; это не подтверждение действий')
  pid='dialog-ads-'+str(job['id'])+'-'+kind
@@ -278,4 +285,3 @@ def process(io):
    r=io.tg('sendMessage',dict(chat_id=CHAT,text=text,reply_parameters=dict(message_id=a['input_message_id'],allow_sending_without_reply=True)))
    io.put(key,dict(status='sent',message_id=r['message_id'],chat_id=CHAT,text=text))
   except Exception:io.put(key,dict(status='uncertain',text=text))
-

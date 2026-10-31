@@ -3,6 +3,10 @@ on:
   push:
     branches: [main]
     paths:
+      - scripts/china_experiment_journal.py
+      - scripts/china_experience.py
+      - scripts/test_china_experiment_journal31.py
+      - scripts/china_advertising_plans.py
       - scripts/china_analytic_evidence.py
       - scripts/china_saved_products.py
       - scripts/china_product_current.py
@@ -68,6 +72,9 @@ jobs:
           python -m unittest discover -s scripts -p test_china_conversion_context.py
           python -m unittest discover -s scripts -p test_china_owner_analytics30.py
           python -m unittest discover -s scripts -p test_china_moysklad_read.py
+          python -m unittest discover -s scripts -p test_china_experiment_journal31.py
+          python -m unittest discover -s scripts -p test_china_experience.py
+          python -m unittest discover -s scripts -p test_china_advertising_plans.py
           python -m unittest discover -s scripts -p test_china_budget_completed31.py
           python -m unittest discover -s scripts -p test_china_once_report.py
           python -m unittest discover -s scripts -p test_china_pavel_questions31.py

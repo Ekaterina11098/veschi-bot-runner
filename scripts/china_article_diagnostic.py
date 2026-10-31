@@ -53,7 +53,9 @@ def economics(f,target):
  if not all(number(x) for x in required) or price<=0 or cost<=0 or shipping<0 or not 0<q<=1 or not 0<=fee<100 or not 0<=tax<100 or handling<0:return dict(available=False,reason='Цена/собственная COGS/логистика/выкуп/комиссия неполны')
  pre=q*(price*(1-(fee+tax)/100)-cost)-shipping-handling
  scenarios=[dict(click_order_pct=cr,ad_cost_per_order_cny=round(target/(cr/100),4),profit_per_order_cny=round(pre-target/(cr/100),4),profit_per_buyout_cny=round((pre-target/(cr/100))/q,4)) for cr in [1,2,3]]
- return dict(available=True,buyout=q,completed_sample=e.get('completed_sample'),logistics_source=e.get('logistics_source'),pre_ad_per_order_cny=round(pre,4),scenarios=scenarios,scenario_not_measured_forecast=True,unknown_reverse_and_shared_charges=True)
+ from china_experiment_journal import risk_limits
+ limits=risk_limits(pre,q,e.get('completed_sample'),bid_cny=target)
+ return dict(available=True,buyout=q,completed_sample=e.get('completed_sample'),logistics_source=e.get('logistics_source'),pre_ad_per_order_cny=round(pre,4),scenarios=scenarios,risk_limits=limits,scenario_not_measured_forecast=True,unknown_reverse_and_shared_charges=True)
 def evaluate(f,now,days=3,raise_percent=10):
  if not 2<=days<=14 or not number(raise_percent) or not 0<raise_percent<=30:raise ValueError('Нужны 2–14 полных дней и сценарий повышения до30%')
  today=now.astimezone(MSK).date();last=today-timedelta(days=1);first=last-timedelta(days=days-1)
@@ -67,6 +69,9 @@ def evaluate(f,now,days=3,raise_percent=10):
  traffic=aggregate([observations[d] for d in dates]) if all(d in observations for d in dates) else aggregate([])
  gaps=list(f.get('gaps',[]))
  out=dict(nm_id=f['nm_id'],article=f['article'],campaign_id=f.get('campaign',{}).get('id'),placement=f.get('campaign',{}).get('placement'),period_from=str(first),period_to=str(last),eligible_dates=dates,latest_verified_change=str(verified_day) if verified_day else None,last_availability_statement=str(max(availability)) if availability else None,review_from=str(review) if review else None,traffic=traffic,today_observation=f.get('today_observation'),all_source=f.get('all_source'),evidence={k:f.get(k,{}) for k in ['price','stock','campaign','visibility','quality','economy']},recommendation='Нет',action=None,stage='unknown',gaps=gaps,economics=None,execution_authorized=False,wb_writes=0)
+ out['experiment_journal']=f.get('experiment_journal',{})
+ bid=f.get('campaign',{}).get('bid_minor')
+ if type(bid)is int and bid>0:out['economics']=economics(f,bid/100)
  if f.get('unresolved_action'):
   out.update(stage='uncertain_action',reason='Есть незавершённая или uncertain операция по SKU; повтор и новый тест заблокированы до сверки');return out
  if not dates:
@@ -127,6 +132,9 @@ def render(result):
   if r['action']:
    e=r['economics'];out+=' Предварительно на заказ при CR1/2/3%: '+ '/'.join(f"{x['profit_per_order_cny']:g}" for x in e['scenarios'])+' CNY; сценарии, не измеренный прогноз. Выкуп '+str(round(e['buyout']*100,1))+'%, завершённая выборка '+str(e.get('completed_sample'))+'. Лимит выборки и неизвестные удержания сохраняются. Нужен отдельный подтверждённый план, сейчас изменений нет.'
   else:out+=' '+r['reason']+'.'
+  limits=(r.get('economics') or {}).get('risk_limits') or {}
+  if limits.get('available'):
+   out+=' Модельный предел расходов на созданный заказ '+str(limits['break_even_cpa_model_cny'])+' CNY; предварительный риск-бюджет теста '+str(limits['suggested_initial_risk_budget_cny'])+' CNY на SKU во всех РК вместе, не автоматический лимит WB. Неподтверждённые расходы и малая выборка могут уменьшить запас.'
   general=r.get('all_source') or {}
   if general.get('missing'):out+=' Общая воронка WB не подтверждена; органику вычитанием рекламной атрибуции не определяю.'
   if number(general.get('orders')):out+=' Все заказы ('+general.get('source','источник')+'): '+str(general['orders'])+'; органику вычитанием рекламной атрибуции не определяю.'

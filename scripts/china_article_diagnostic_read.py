@@ -92,6 +92,12 @@ def collect(analyst,nm_ids,days=3,raise_percent=10,campaign_ids=(),reader=None):
  except Exception as ex:view={};history_checked=False;gaps.append('Журнал/сохранённый состав: '+safe_error(ex))
  if campaign_ids:view=dict(view,campaigns={cid:c for cid,c in view.get('campaigns',{}).items() if cid in campaign_ids},requested_campaign_ids=list(campaign_ids))
  changes=[dict(x,verified=True) for x in view.get('changes',[])]
+ from china_experiment_journal import context as journal_context
+ try:
+  journal=journal_context(w,ids)
+  changes += [dict(nm=e['nm_id'],kind=e['kind'],at=e['at'],verified=True,source_key=e['source_key']) for e in journal['events']]
+ except Exception as ex:
+  journal=dict(available=False,error=safe_error(ex));history_checked=False;gaps.append('Журнал экспериментов: '+safe_error(ex))
  try:changes+=price_changes(w,ids)
  except Exception as ex:history_checked=False;gaps.append('Квитанции цен: '+safe_error(ex))
  # Current facts can be refreshed while post-change evaluation still waits for a full day.
@@ -156,6 +162,7 @@ def collect(analyst,nm_ids,days=3,raise_percent=10,campaign_ids=(),reader=None):
     if today_rows:f['today_observation']=dict(date=str(day),observed_at=fresh_inputs.get('campaign_at') or view.get('observed_at'),counters=today_rows[0],incomplete_day=True,used_for_selection=False)
     if card.get('reason'):f['gaps'].append('Витрина WB: '+str(card['reason']))
     if nm in pending:f['gaps'].append('Незавершённая или uncertain операция по SKU; повтор заблокирован')
+    f['experiment_journal']=dict(latest=journal.get('latest_by_nm',{}).get(str(nm)),decisions=[d for d in journal.get('decisions',[]) if nm in d.get('nm_ids',[])],grants_action_permission=False)
     facts.append(f);rows.append(evaluate(f,checked_at,days,raise_percent))
  seen_actions=set()
  for row in rows:
@@ -240,4 +247,3 @@ def handle(w,job,history):
  cids=[int(x) for x in re.findall(r'(?<!\d)(4\d{7})(?!\d)',text)]
  result=collect(Analyst(w,job,history),ids,days=int(period[1]) if period else 3,raise_percent=float(percent[1].replace(',','.')) if percent else 10,campaign_ids=cids)
  return result['text'],[dict(name='article_diagnostic',source_key=result['source_key'],status=result['status'],nm_ids=ids,read_only=True,wb_writes=0)]
-

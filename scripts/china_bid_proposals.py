@@ -74,6 +74,8 @@ def candidates(w,view,economy,nm_ids=()):
  last=w.now.astimezone(MSK).date()-timedelta(days=1)
  dates=[str(last-timedelta(days=i)) for i in range(2,-1,-1)]
  rows=[];blocked=[];wanted=set(nm_ids);labels={int(p['nm_id']):p.get('sa_name') for p in economy.get('products',[])}
+ from china_experiment_journal import context as journal_context,guard as journal_guard
+ journal=journal_context(w,nm_ids) if callable(getattr(w,'db',None)) else {}
  for c in view['campaigns'].values():
   if c.get('status')!=9 or c.get('currency')!='CNY' or c.get('bid_type')!='manual' or c.get('settings',{}).get('payment_type')!='cpc':continue
   zone='search' if c['settings']['placements'].get('search') else 'recommendations'
@@ -81,6 +83,7 @@ def candidates(w,view,economy,nm_ids=()):
    nm=n['nm_id']
    if wanted and nm not in wanted:continue
    try:
+    if journal and not journal_guard(journal,nm,w.now)['allowed']:raise ValueError('Журнал: после последнего verified изменения ещё нет полного следующего дня МСК')
     protected=(w.get(POLICY) or {}).get('protected_pending_nm_ids',[])
     if nm in protected and (not (w.get(POLICY) or {}).get('protected_pending_until') or w.now<timestamp(w.get(POLICY)['protected_pending_until'])):raise ValueError('Уже есть подтверждаемый план; не дублировать товар')
     if any(x.get('nm')==nm and x.get('kind')=='bid' and x.get('cid')!=c['id'] and timestamp(x.get('at')) and timestamp(x['at']).astimezone(MSK).date()==w.now.astimezone(MSK).date() for x in view['changes']):raise ValueError('Сегодня ставку товара уже изменяли; не повторять в другой РК')
@@ -200,7 +203,11 @@ def prepare(w,job,nm_ids=(),raise_percent=None,count=None,refresh=None):
   minimum=fresh['minimums'].get(str(r['campaign_id'])+':'+str(r['nm_id']))
   if type(minimum)is not int or not old<target<=cfg.get('cpcMaxBid',0) or target<minimum:
    blocked.append(dict(nm_id=r['nm_id'],reason='Повышение не соответствует свежему минимуму/шагу WB'));continue
-  items.append(dict(kind='ad_raise_bid',campaign_id=r['campaign_id'],nm_id=r['nm_id'],article=r['article'],placement=r['placement'],old_minor=old,target_minor=target,minimum_minor=minimum,economics=r['economics'],evidence=r,test_additional_cny=20))
+  risk=r['economics'].get('risk_limits',{})
+  cap=risk.get('suggested_initial_risk_budget_cny',20)
+  if not risk.get('available') or cap<=0:
+   blocked.append(dict(nm_id=r['nm_id'],reason='Не подтверждён положительный модельный предел теста'));continue
+  items.append(dict(kind='ad_raise_bid',campaign_id=r['campaign_id'],nm_id=r['nm_id'],article=r['article'],placement=r['placement'],old_minor=old,target_minor=target,minimum_minor=minimum,economics=r['economics'],evidence=r,test_additional_cny=cap))
  if not items:return dict(status='blocked',items=[],blocked=blocked[:12],note='После свежей проверки готовых повышений нет')
  pid='dialog-ads-'+str(job['id'])+'-raise';created=iso()
  plan=dict(plan_id=pid,execution_kind='advertising_dialog_v1',job_id=job['id'],sender_id=job['sender_id'],chat_id=job['chat_id'],bot_id=8780468043,items=items,plan_sha256=digest(items),created_at=created,expires_at=(datetime.now(timezone.utc)+timedelta(hours=2)).isoformat(),report_message_ids=[],blocked=blocked[:12],source_observed_at=fresh['observed_at'],price_changes=False,budget_writes=False,raise_percent=percent,decision_basis='completed_days_only' if policy.get('selection_completed_days_only') is True else 'completed_days_plus_current_observation')
@@ -212,6 +219,7 @@ def prepare(w,job,nm_ids=(),raise_percent=None,count=None,refresh=None):
   lines.append(i['article']+' · РК'+str(i['campaign_id'])+' '+('поиск' if i['placement']=='search' else 'рекомендации')+': '+format(i['old_minor']/100,'.2f')+' → '+format(i['target_minor']/100,'.2f')+' ¥; полных дней '+str(len(r['decision_days']))+': '+str(past['orders'])+' заказов, ДРР '+metric+today_note+('. Тест получения трафика.' if r.get('traffic_test') else '. Тест: малая выборка.' if r.get('small_sample') else '.'))
  if len(items)<n:lines.append('Подошло '+str(len(items))+' из запрошенных '+str(n)+': остальные не прошли историю, экономику или свежие результаты.')
  lines+=['Срез '+fresh['observed_at']+'. Экономика предварительная: собственный выкуп/COGS/историческая логистика; FX12, налог5%, обработка10₽ — допущения; общие удержания могут быть неполны. Нет гарантии ДРР5% или роста заказов.','Ответьте «делай» или «поднимай» на это сообщение. Выполню только указанные ставки, затем проверю WB. Пополнений и пауз нет.','План рекламы: '+pid]
+ lines.insert(-2,'Предлагаемый риск-бюджет теста: '+str(round(sum(i['test_additional_cny'] for i in items),2))+' CNY; по одному пределу на SKU во всех РК вместе. Половина модельного предела одного заказа, максимум20CNY — рабочая гипотеза, не автоматический расход или стоп WB.')
  plan['text']='\n'.join(lines)
  freeze_plan(plan)
  if len(plan['text'])>4000 and not plan.get('proposal_files'):raise ValueError('План слишком длинный; запросите меньший набор')
@@ -301,4 +309,3 @@ def shortlist(w,job,count=30,raise_percent=None):
  result=prepare(w,job,raise_percent=raise_percent,count=count)
  if result.get('status')!='ready':result['text']=result.get('note','Подтверждённых рекомендаций сейчас нет. Проверка не завершена — ставки не менялись.')
  return result
-

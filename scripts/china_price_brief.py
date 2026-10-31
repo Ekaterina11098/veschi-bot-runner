@@ -31,12 +31,17 @@ def raising(answer, mode):
 def lowering(review, day, catalogue=None, omitted=None):
     if (not isinstance(review,dict) or review.get('report_date')!=str(day)
         or review.get('status')!='complete_disclosed_forecast_model'
-        or review.get('model_version')!='wb_four_day_baseline_daily_means_v3'):
+        or review.get('model_version')!='wb_profit_floor_price_hypothesis_v4'):
         return None
     rows=[]
     for item in review['products']:
         if item.get('result',{}).get('status')!='rollback_review':continue
-        if item.get('full_days',0)<4:raise RuntimeError('Premature rollback')
+        if item.get('full_days',0)<1:raise RuntimeError('Premature rollback')
+        if item.get('full_days',0)<4 and not item.get('result',{}).get('early_review_criteria_met'):
+            raise RuntimeError('Early rollback evidence missing')
+        if item.get('buyout_fallback') or item.get('buyout_sample',0)<10:
+            if omitted is not None:omitted.append(dict(article=item['article'],status='own_buyout_evidence_insufficient'))
+            continue
         matches=[r for r in (catalogue or {}).get('rows',[]) if r.get('vendorCode','').casefold()==item['article'].casefold()]
         if len(matches)!=1:raise RuntimeError('Current China price missing for five percent decrease')
         row=matches[0]
@@ -52,8 +57,16 @@ def lowering(review, day, catalogue=None, omitted=None):
         if current!=Decimal(str(item['after_price'])):
             if omitted is not None:omitted.append(dict(article=item['article'],nm_id=str(row['nmID']),status='price_changed_since_review',review_after_price=str(item['after_price']),current_price=str(current)))
             continue  # The old experiment cannot recommend another cut after a new price change.
-        target_base=(base*Decimal('0.95')).to_integral_value(rounding='ROUND_CEILING')
-        old=price(current);new=price(target_base*(1-discount/100))
+        target=item.get('economic_target') or {}
+        if target.get('basis')!='profit_floor_demand_hypothesis' or target.get('status')!='recommended' or target.get('expected_profit_advantage_per_day',-1)<0:
+            if omitted is not None:omitted.append(dict(article=item['article'],status='economic_target_unverified'))
+            continue
+        target_price=Decimal(str(target['price_cny']))
+        if target_price<Decimal(str(item['before_price'])):
+            raise RuntimeError('Economic target below pre-increase price')
+        implied=(Decimal(str(target['base_cny']))*(1-Decimal(str(target['discount']))/100)).quantize(Decimal('.01'))
+        if implied!=target_price:raise RuntimeError('Economic target price parameters mismatch')
+        old=price(current);new=price(target_price)
         if Decimal(old.replace(',','.'))<=Decimal(new.replace(',','.')):
             raise RuntimeError('Rollback is not a decrease')
         rows.append((item['article'],old,new))
@@ -163,7 +176,23 @@ def render_plain(answer,mode,review,day,catalogue,buyer=None,omitted=None):
             else:
                 rub=lambda value:format(value,',').replace(',',' ')
                 buyer_text=rub(before)+' → '+rub(after)+' ₽'
-            blocks.append(action+' · '+article+' Продавец: '+old+' → '+new+' ¥\nПокупатель: '+buyer_text)
+            block=action+' · '+article+' Продавец: '+old+' → '+new+' ¥\nПокупатель: '+buyer_text
+            if action=='Снижение':
+                item=next(p for p in review['products'] if p['article']==article)
+                t=item['economic_target']
+                num=lambda v:format(v,'.2f').replace('.',',')
+                block+='\nГипотеза: '+num(t['predicted_orders_per_day'])+' заказов/день; для сохранения прибыли нужно '+num(t['required_orders_per_day'])+'.'
+                block+='\nПрогноз прибыли: '+num(t['predicted_profit_per_day'])+' ₽/день; до повышения '+num(t['profit_floor_per_day'])+' ₽/день. Реклама и выкуп учтены; сохранение трафика и затрат — допущение, не гарантия.'
+            blocks.append(block)
+    proposed={a for a,old,new in (down or [])}
+    blocked=[p for p in (review or {}).get('products',[]) if p.get('result',{}).get('status')=='rollback_review' and p.get('article') not in proposed]
+    for item in blocked:
+        t=item.get('economic_target') or {};best=t.get('best_scenario')
+        if t.get('status')=='profit_floor_not_reached' and best:
+            fmt=lambda v:format(v,'.2f').replace('.',',')
+            blocks.append(item['article']+': при расчётной цене '+fmt(best['price_cny'])+' ¥ для сохранения прибыли до повышения нужно '+fmt(best['required_orders_per_day'])+' заказов/день, гипотеза даёт '+fmt(best['predicted_orders_per_day'])+'. Условие по прибыли пока не достигается; требуется пересмотр гипотезы, снижение не подтверждено.')
+        else:
+            blocks.append(item['article']+': расчёт выгодного снижения не завершён — '+str(t.get('status') or 'не подтверждены экономические входные данные')+'.')
     if not blocks:
         blocks.append('Повышение: нет')
         if down is not None:blocks.append('Снижение: нет')
@@ -190,3 +219,5 @@ def plain_payload(text,catalogue):
     entities.sort(key=lambda e:e['offset'])
     return dict(entities=entities,reply_markup=dict(inline_keyboard=[]),
                 link_preview_options=dict(is_disabled=True))
+
+

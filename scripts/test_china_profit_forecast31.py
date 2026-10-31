@@ -72,7 +72,7 @@ class Model(unittest.TestCase):
    f=fixture();mutate(f)
    with self.assertRaises(ValueError):calc(f)
  def test_no_orders_still_deduct_ads(self):
-  f=fixture();f['inputs']['orders']['rows']=[];self.assertEqual(calc(f)['totals']['forecast_profit_cny'],-5)
+  f=fixture();f['inputs']['orders']['rows']=[];r=calc(f);self.assertEqual(r['totals']['forecast_profit_cny'],-5);self.assertIn('-5.00',p.render(r))
  def test_selected_scope_uses_sku_not_campaign_cost(self):
   f=fixture();f['inputs']['advertising']['rows'][0]['days'][0]['sum']=100
   r=p.calculate(f,POLICY,{},DAY,[143]);self.assertEqual(r['totals']['advertising_cny'],5)
@@ -128,6 +128,37 @@ class Routes(unittest.TestCase):
   with patch.dict(sys.modules,{'requests':types.SimpleNamespace(),'china_cloud_cost_control':fakecloud,'china_moysklad_read':types.SimpleNamespace(read_stock=lambda a:None)}):
    state,returned=p.collect(w,{'id':901},DAY)
   self.assertEqual(key,returned);self.assertEqual(state['status'],'partial')
+ def test_full_fresh_collector_reads_only_and_filters_bad_unordered_price(self):
+  w=W();calls=[];f=fixture();raworder=f['inputs']['orders']['rows'][0]
+  class Response:
+   ok=True
+   def __init__(self,value):self.value=value
+   def json(self):return copy.deepcopy(self.value)
+  def get(url,**kw):
+   calls.append(('GET',url,kw))
+   if url.endswith('/api/v3/orders'):return Response(dict(orders=[raworder],next=0))
+   if url.endswith('/list/goods/filter'):return Response(dict(data=dict(listGoods=[dict(nmID=999,vendorCode='other',currencyIsoCode4217='CNY',sizes=[dict(discountedPrice=0)]),dict(nmID=143,vendorCode='143-Bag-black',currencyIsoCode4217='CNY',sizes=[dict(discountedPrice=100)])])))
+   if url.endswith('/config'):return Response(dict(currency='CNY'))
+   if url.endswith('/count'):return Response(dict(adverts=[dict(advert_list=[dict(advertId=4),dict(advertId=9)])]))
+   if url.endswith('/fullstats'):return Response(f['inputs']['advertising']['rows'])
+   raise AssertionError(url)
+  def post(url,**kw):
+   calls.append(('POST',url,kw));self.assertTrue(url.endswith('/api/v3/orders/status'));self.assertEqual(kw['json'],{'orders':[1]})
+   return Response(dict(orders=f['inputs']['statuses']['rows']))
+  class Analyst:
+   def __init__(self,*args):pass
+   def collect(self,topic,ids,first,last):
+    selfargs=(topic,ids,first,last)
+    if selfargs!=('products',[],date(2026,10,1),date(2026,10,30)):raise AssertionError(selfargs)
+    return f['inputs']['own_products']
+  cloud=types.SimpleNamespace(Cache=lambda:None,WB=lambda:None,validate_identity=lambda *a:None)
+  saved=types.SimpleNamespace(saved_products=lambda *a:None)
+  reports=types.SimpleNamespace(Reports=lambda w:types.SimpleNamespace(finance=lambda *a:dict(cabinet='token_3',period_from=str(DAY),period_to=str(DAY),rows=[],complete=False)))
+  with patch.dict(sys.modules,{'requests':types.SimpleNamespace(get=get,post=post),'china_cloud_cost_control':cloud,'china_moysklad_read':types.SimpleNamespace(read_stock=lambda a:f['inputs']['stock']),'china_saved_products':saved,'china_wb_evidence':reports}),patch('china_analytic_dialog.Analyst',Analyst),patch('china_intraday_analysis.rate',return_value=f['inputs']['fx']),patch.object(p,'now',return_value=CLOCK),patch.dict('os.environ',{'WB_TOKEN_3':'synthetic'}):
+   state,key=p.collect(w,{'id':902},DAY)
+  self.assertEqual(state['status'],'complete');self.assertEqual(len(state['inputs']['prices']['rows']),1)
+  self.assertEqual(calc(state)['totals']['forecast_profit_cny'],18.5)
+  self.assertEqual({method for method,_,_ in calls},{'GET','POST'})
 
 if __name__=='__main__':unittest.main()
 

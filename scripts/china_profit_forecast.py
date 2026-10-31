@@ -17,6 +17,14 @@ def fresh(p,clock,ttl):
  try:return p.get('cabinet')=='token_3' and 0<=(clock-datetime.fromisoformat(p['observed_at'])).total_seconds()<=ttl
  except (ValueError,KeyError,TypeError):return False
 
+def index(rows,key):
+ result={}
+ for row in rows:
+  identity=key(row)
+  if identity in result:raise ValueError('Duplicate input identity')
+  result[identity]=row
+ return result
+
 def ad_cost(p,day,ids=()):
  if p.get('all_statuses_included') is not True:raise ValueError('Advertising closed-campaign coverage unknown')
  rows=p.get('rows');catalog=p.get('catalogue')
@@ -103,13 +111,14 @@ def calculate(inputs,policy,delivery,day,ids=()):
  if orders.get('complete') is not True:raise ValueError('Order pagination incomplete')
  cutoff=datetime.fromisoformat(orders['cutoff_msk']).astimezone(MSK)
  if cutoff.date()!=day and cutoff!=datetime.combine(day+timedelta(days=1),datetime.min.time(),MSK):raise ValueError('Order cutoff mismatch')
- own={int(p['nm_id']):p for p in parts.get('own_products',{}).get('rows',[])}
+ own=index(parts.get('own_products',{}).get('rows',[]),lambda p:int(p['nm_id']))
  cohort=parts.get('own_products',{})
  if cohort.get('period_from') and (cohort['period_from']!=str(day-timedelta(days=30)) or cohort.get('period_to')!=str(day-timedelta(days=1))):raise ValueError('Buyout cohort must be30 completed days')
- prices={int(p['nm_id']):p for p in parts.get('prices',{}).get('rows',[])}
- costs={p['article'].casefold():p for p in parts.get('stock',{}).get('rows',[])}
- statuses=parts.get('statuses',{});status={s['id']:s for s in statuses.get('rows',[])}
+ prices=index(parts.get('prices',{}).get('rows',[]),lambda p:int(p['nm_id']))
+ costs=index(parts.get('stock',{}).get('rows',[]),lambda p:p['article'].casefold())
+ statuses=parts.get('statuses',{});status=index(statuses.get('rows',[]),lambda s:s['id'])
  totals=collections.defaultdict(float);fallback=collections.Counter();details=[];missing=[];seen=set();chosen=set(ids)
+ for k in ['orders','cancelled_orders','expected_buyouts','expected_seller_revenue_cny','cogs_cny','commission_cny','tax_cny','logistics_cny','handling_cny','pre_ad_profit_cny']:totals[k]=0.
  for o in orders['rows']:
   oid=o['id'];nm=o['nmId'];article=o['article']
   if oid in seen:raise ValueError('Duplicate FBS order')
@@ -219,6 +228,7 @@ def collect(w,job,day):
    return dict(rows=out,complete=True)
   def prices():
    out=[];seen=set()
+   if not wanted:return dict(rows=[],missing_ids=[],source='No ordered SKUs')
    for offset in range(0,20000,1000):
     part=get('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter',dict(limit=1000,offset=offset)).get('data',{}).get('listGoods')
     if not isinstance(part,list):raise ValueError('Prices page absent')
@@ -244,6 +254,7 @@ def collect(w,job,day):
    if len(cids)>1000:raise ValueError('Campaign inventory exceeds bound')
    out=[]
    for i in range(0,len(cids),50):
+    if i:time.sleep(21)
     j=get('https://advert-api.wildberries.ru/adv/v3/fullstats',dict(ids=','.join(map(str,cids[i:i+50])),beginDate=str(day),endDate=str(day)))
     if not isinstance(j,list):raise ValueError('Advertising array absent')
     out+=j

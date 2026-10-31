@@ -7,6 +7,8 @@ EXEC='china_agent:daily_ad_execution:v2:'
 def plan(io,day,f,index,slot=''):
  pid='daily-'+day+('-'+slot if slot else '')+'-'+f['family']+'-'+str(index);items=copy.deepcopy(f['actions'])
  p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='daily_ad_actions_v2',family=f['family'],created_at=datetime.now(timezone.utc).isoformat(),expires_at=(datetime.now(timezone.utc)+timedelta(hours=20)).isoformat(),items=items,plan_sha256=digest(items),report_message_ids=[],price_changes=False,auto_topup=False,period_to=day)
+ raises=[x['growth_evidence']['observed_at'] for x in items if x.get('direction')=='raise' and x.get('growth_evidence')]
+ if raises:p['expires_at']=min(datetime.fromisoformat(t)+timedelta(hours=2) for t in raises).isoformat()
  k=PLAN+pid;old=io.get(k)
  if old:
   if old['plan_sha256']!=p['plan_sha256']:raise ValueError('Daily page plan changed')
@@ -34,6 +36,8 @@ def handle(w,job):
  p=w.get(PLAN+b['plan_id'])
  if not p or p.get('chat_id')!=CHAT or p['plan_sha256']!=digest(p['items']) or b['plan_sha256']!=p['plan_sha256']:raise ValueError('Daily plan hash mismatch')
  if m.get('reply_message_id') not in p['report_message_ids']:raise ValueError('Daily reply not bound')
+ if p.get('owner_completed_budget_receipts'):
+  return ('Все пополнения этого PNG уже выполнены и проверены WB по поручению владельца. Повторно бюджеты не пополняю. Для нового пополнения нужны свежий расчёт и отдельное подтверждение.',[])
  if w.now>datetime.fromisoformat(p['expires_at']):return ('План устарел. Нужен свежий отчёт и подтверждение обновлённых действий.',[])
  if p.get('invalidated_at'):return ('План этого PNG отозван после проверки: '+p.get('invalidation_reason','нужен свежий план')+'. Изменения не выполняю.',[])
  if p.get('visible_from') and datetime.fromisoformat(job['created_at'])<datetime.fromisoformat(p['visible_from']):return ('PNG обновлён после этого подтверждения. Ответьте на обновлённый отчёт ещё раз.',[])
@@ -100,7 +104,10 @@ def execute(io,a,p):
     if kind=='ad_set_bid' and old==item['target_minor']:state.update(status='verified',already_done=True,after=before);save();continue
     if old!=item['old_minor']:raise ValueError('Bid changed since PNG')
     if kind=='ad_set_bid':
-     if not 0<item['target_minor']<old:raise ValueError('Only exact approved bid reduction')
+     if item['target_minor']>old:
+      from china_advertising_growth import validate_raise
+      validate_raise(io,item,before)
+     elif not 0<item['target_minor']<old:raise ValueError('Only exact approved bid change')
      typ='search' if zone=='search' else 'recommendation';j=req('/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[item['nm_id']],payment_type='cpc',placement_types=[typ]));v=[b['value'] for row in j.get('bids',[]) if row['nm_id']==item['nm_id'] for b in row['bids'] if b['type']==typ and b['currency']=='CNY']
      if len(v)!=1 or v[0]>item['target_minor']:raise ValueError('WB minimum changed')
      path='/api/advert/v1/bids';body=dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=item['nm_id'],bid_kopecks=item['target_minor'],placement=zone)])])

@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
-    if: github.run_attempt == 1 && github.event.head_commit.message == 'Apply remaining three owner approved reserves31'
+    if: ${{ false }}
     concurrency:
       group: china-dialog-data
       cancel-in-progress: false

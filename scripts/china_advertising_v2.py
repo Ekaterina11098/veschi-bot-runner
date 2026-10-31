@@ -448,6 +448,7 @@ def build(s,minima=None):
   funding_done='; '.join('+'+str(f[1])+' ¥ · '+datetime.fromisoformat(f[0].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M') for f in sorted(set(recent_funds))) or 'Нет новых подтверждённых пополнений'
   out.append(dict(budget_reference_need=rate*3 if rate is not None else None,budget_review_required=bool(c['status']==9 and rate is not None and rate*3>balance['total']),minimum_topup_cny=s['config']['minTopUp']/100,funding_done=funding_done,id=c['id'],name=c['settings']['name'],zone=zone,payment=bid,status=c['status'],period=period,last=last,drr=bdrr,focus=focus,balance=balance['total'],forecast=forecast,coverage=balance['total']/rate if rate and not incomplete_composition else None,budget_recommendation=recommendation,budget_action=action,new_composition=incomplete_composition,missing_stats=cp is None,created=created))
  bundle=dict(version=VERSION,day=str(end+timedelta(days=1)),days=days,source_observed_at=datetime.fromisoformat(s['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m.%Y %H:%M МСК'),campaigns=out,wb_writes=0)
+ if not out:return bundle
  from china_budget_reserve import attach_completed_evidence,apply
  return apply(attach_completed_evidence(bundle,s,changes),s['config']['minTopUp']/100)
 

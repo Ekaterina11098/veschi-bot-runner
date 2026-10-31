@@ -155,12 +155,13 @@ class BudgetClarityTests(unittest.TestCase):
    calls.append(text);return original(draw,xy,text,*args,**kwargs)
   with patch.object(ImageDraw.ImageDraw,'text',capture):files=render(bundle)
   self.assertTrue(any('нехватка' in s.lower() for s in calls))
-  self.assertFalse(any('нет свежей экономики' in s for s in calls))
-  self.assertEqual(files[-1]['actions'][0]['amount_cny'],100)
-  self.assertEqual(files[-1]['actions'][0]['basis'],'average_completed_3days_exact_topup_v1')
+  self.assertTrue(any('нет свежей экономики' in s for s in calls))
+  self.assertEqual(files[-1]['actions'],[])
  def test_disabled_third_png_returns_before_data_generation(self):
   import china_agent_reports
   policy=type('Policy',(),{'get':lambda self,key:{'morning_attention_png':False}})()
   with patch('china_price_apply.IO',return_value=policy):
    self.assertEqual(china_agent_reports.daily_loss(),'disabled_by_owner')
+
+
 

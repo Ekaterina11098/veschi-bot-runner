@@ -15,18 +15,23 @@ class Fake:
  def save(self,k,v,insert=False):return self.create(k,v) if insert else self.put(k,v)
  def tg(self,name,body):return {'id':r.BOT}
 def bundle(spend=500,balance=120,amount=10000):
- return {'day':r.DAY,'days':['2026-10-26','2026-10-27','2026-10-28'],'source_observed_at':'dated fixture','campaigns':[{'id':12,'status':9,'name':'Synthetic campaign','balance':balance,'period':{'spend':spend,'amount':amount},'last':{'spend':300,'amount':5000},'current_articles':[{'nm':1},{'nm':2}]}]}
+ days=['2026-10-26','2026-10-27','2026-10-28'];observed='2026-10-29T06:18:49+00:00'
+ e=dict(observed_at=observed,period_from=days[0],period_to=days[-1],expected_total_profit_rub=100,source_ids=['own-fixture'],basis='preliminary_model',own_cogs_rub=490,seller_revenue_rub=1500,sample_size=30,preliminary=False)
+ period=dict(spend=spend,amount=amount,orders=5 if amount else 0)
+ return dict(day=r.DAY,days=days,source_observed_at=observed,budget_days=days,budget_observed_at=observed,budget_balance_observed_at_iso=observed,campaigns=[dict(id=12,status=9,name='Synthetic campaign',balance=balance,period=period,budget_period=period,last=dict(spend=300,amount=5000),current_articles=[{'nm':1},{'nm':2}],budget_members=[dict(nm=nm,economics=copy.deepcopy(e)) for nm in [1,2]])])
 class ReserveTests(unittest.TestCase):
  def test_average_whole_campaign_not_maxday_or_sku(self):
   b=bundle();b['campaigns'][0]['current_period']={'spend':1,'amount':1}
   c=apply(b)['campaigns'][0];self.assertEqual(c['budget_reference_need'],500);self.assertEqual(c['budget_average_daily'],500/3)
   self.assertEqual(c['budget_action']['amount_cny'],400);self.assertEqual(c['budget_action']['nm_ids'],[1,2]);self.assertNotIn('примерно',c['budget_short_note'])
  def test_unknown_profit_model_does_not_block_cash_reserve(self):
-  self.assertIsNotNone(apply(bundle())['campaigns'][0]['budget_action'])
+  b=bundle()
+  for m in b['campaigns'][0]['budget_members']:m['economics']={}
+  c=apply(b)['campaigns'][0];self.assertEqual(c['budget_reserve_amount'],400);self.assertIsNone(c['budget_action'])
  def test_no_gap_hides_row_even_when_high_drr(self):
   c=apply(bundle(50,100,100))['campaigns'][0];self.assertFalse(c['budget_review_required']);self.assertIsNone(c['budget_action'])
  def test_high_completed_campaign_drr_has_explicit_reason(self):
-  c=apply(bundle(amount=1000))['campaigns'][0];self.assertTrue(c['budget_review_required']);self.assertIsNone(c['budget_action']);self.assertIn('50,00%',c['budget_short_note'])
+  c=apply(bundle(amount=1000))['campaigns'][0];self.assertTrue(c['budget_review_required']);self.assertIsNone(c['budget_action']);self.assertEqual(c['budget_drr'],50);self.assertIn('после исполнения рекомендаций РК',c['budget_short_note'])
  def test_zero_orders_are_not_zero_drr(self):
   c=apply(bundle(amount=0))['campaigns'][0];self.assertIn('не определена',c['budget_short_note']);self.assertIsNone(c['budget_action'])
  def test_minimum_and_rounding(self):
@@ -111,3 +116,5 @@ class ReplacementTests(unittest.TestCase):
   with patch('china_group_permissions.allowed',return_value=True):
    reply,trace=handle(io,self.job(io,485));self.assertIn('отозван',reply);self.assertEqual(trace,[])
 if __name__=='__main__':unittest.main()
+
+

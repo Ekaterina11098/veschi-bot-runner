@@ -7,11 +7,14 @@ import china_analytic_dialog as a
 from conversion_watches import Worker
 
 class CheckpointTests(unittest.TestCase):
- def test_product_projection_reuses_one_full_source_collection(self):
+ def test_exact_product_sources_are_scoped_and_cached_without_other_skus(self):
   w=W();w.catalog=lambda:[('100','one-bag'),('200','two-bag')];an=a.Analyst(w,{},[])
   with patch.object(an,'collect',return_value=dict(source='MPStats',rows=[dict(nm_id=100),dict(nm_id=200)])) as collect:
    first=an.live('products',[100],None,None);second=an.live('products',[200],None,None)
-  self.assertEqual(first['rows'],[dict(nm_id=100)]);self.assertEqual(second['rows'],[dict(nm_id=200)]);self.assertEqual(collect.call_count,1)
+   repeated=an.live('products',[100],None,None)
+  self.assertEqual(first['rows'],[dict(nm_id=100)]);self.assertEqual(second['rows'],[dict(nm_id=200)])
+  self.assertEqual(repeated['rows'],first['rows']);self.assertEqual(collect.call_count,2)
+  self.assertEqual([c.args[1] for c in collect.call_args_list],[[100],[200]])
  def test_resume_keeps_completed_tool_call_without_repeating(self):
   w=W();count=[]
   def model(body):

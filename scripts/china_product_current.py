@@ -36,9 +36,15 @@ def scoped(analyst,topic,ids,first,last,ttl=900):
  args=[topic,sorted(ids),str(first),str(last)]
  key='china_agent:article_inputs:v2:'+hashlib.sha256(json.dumps(args).encode()).hexdigest()
  value=analyst.w.get(key)
+ def project(source):
+  if not ids or not isinstance(source.get('rows'),list):return source
+  catalog=analyst.w.catalog() if callable(getattr(analyst.w,'catalog',None)) else []
+  articles={a.casefold() for n,a in catalog if int(n) in ids}
+  return dict(source,rows=[r for r in source['rows'] if r.get('nm_id',r.get('nmID')) in ids or str(r.get('article','')).casefold() in articles])
  checked_at=max(analyst.w.now,datetime.now(timezone.utc))
- if value and fresh(value,checked_at,ttl):return value
+ if value and fresh(value,checked_at,ttl):return project(value)
  with reading():value=analyst.collect(topic,ids,date.fromisoformat(str(first)),date.fromisoformat(str(last)))
+ value=project(value)
  value=dict(value,source_key=key,observed_at=datetime.now(timezone.utc).isoformat(),period_from=str(first),period_to=str(last),cabinet='token_3',wb_writes=0)
  analyst.w.save(key,value)
  return value

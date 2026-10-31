@@ -67,4 +67,5 @@ def main():
  result.update(status='completed',passed=sum(not r['failures'] for r in result['cases']),total=len(cases),completed_at=datetime.now(timezone.utc).isoformat())
  if not c.create(output_key,result) or c.get(output_key)!=result:raise ValueError('Immutable evaluation readback failed')
  print(json.dumps(dict(status=result['status'],passed=result['passed'],total=result['total'],wb_requests=0,telegram_sends=0)))
+ if result['passed']!=result['total']:raise ValueError('Real-question model evaluation failed; inspect private results')
 if __name__=='__main__':main()

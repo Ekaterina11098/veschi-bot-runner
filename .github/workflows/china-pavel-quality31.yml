@@ -7,6 +7,7 @@ permissions: {contents: read}
 concurrency: {group: china-pavel-quality31, cancel-in-progress: false}
 jobs:
   evaluate:
+    if: ${{ false }} # Frozen real-model replay completed with private readback; no repeat API cost
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

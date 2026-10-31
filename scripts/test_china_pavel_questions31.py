@@ -57,4 +57,19 @@ class PavelReplay(unittest.TestCase):
   w=W();w.db=lambda *a,**kw:[dict(id=1,collected_at=w.now.isoformat(),payload=[obs])]
   r=saved_products(w,'2026-10-01','2026-10-30',[1473243895])['rows'][0]
   self.assertEqual(r['sales_count'],2);self.assertEqual(r['is_payed'],1);self.assertEqual(r['buyout_pct'],20)
+ def test_missing_orders_array_is_not_zero(self):
+  import china_analytic_dialog as a,os
+  from datetime import date
+  module=types.ModuleType('requests')
+  module.get=lambda *args,**kwargs:types.SimpleNamespace(ok=True,json=lambda:{})
+  with patch.dict(sys.modules,{'requests':module}),patch.dict(os.environ,{'WB_TOKEN_3':'synthetic'}):
+   with self.assertRaisesRegex(ValueError,'не ноль'):
+    a.Analyst(W(),{},[]).collect('orders',[1473243895],date(2026,10,30),date(2026,10,30))
+ def test_exact_scope_read_budget_is_bounded(self):
+  import china_analytic_dialog as a
+  an=a.Analyst(W(),{},[]);an.fresh_reads=6
+  module=types.ModuleType('china_product_current');module.scoped=Mock()
+  with patch.dict(sys.modules,{'china_product_current':module}):
+   with self.assertRaises(ValueError):an.live('stock',[1473243895],'2026-10-01','2026-10-30')
+  module.scoped.assert_not_called()
 if __name__=='__main__':unittest.main()

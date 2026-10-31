@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
-    if: github.run_attempt == 1 && github.event.head_commit.message == 'Owner authorized morning report recovery 2026-10-31'
+    if: ${{ false }}
     concurrency:
       group: bot-mpstats-data
       cancel-in-progress: false
@@ -39,7 +39,7 @@ jobs:
         run: PYTHONPATH=scripts python scripts/china_advertising_daily.py
   daily:
     needs: prepare
-    if: github.run_attempt == 1 && github.event.head_commit.message == 'Owner authorized morning report recovery 2026-10-31'
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

@@ -125,6 +125,15 @@ class PolicyTests(unittest.TestCase):
   self.assertFalse(classify(self.review('Быстрая доставка. Очень аккуратно упаковано, есть пыльник. Сумочка прекрасная,маленькая, качественная. Запах при распаковке присутствует, но не критично. Рекомендую!'))['eligible'])
   for value in ('Фурнитура дишманская','Не довольная как розовый слон','Фурнитура не качественная'):
    self.assertFalse(classify(self.review(value))['eligible'])
+ def test_october31_verified_positive_reviews(self):
+  positives=["Очень милая, красивая сумочка. Сшита качественно, довольно вместительная, поместится всё необходимое. Я довольна","Сумка просто Шик! Брала в подарок, сама себе захотела!","Товар пришел в фабричной упаковке, без повреждений. Замечательная сумочка, на вид маленькая, но очень вместительная. Качественный материал, фурнитура, все в прекрасном состоянии.","Сумочка очень красивая удобная хорошо работают молнии красивая кожа качественная рекомендую","Сумочка очень красивая, уютная, яркая. Отказалась в пользу модели побольше"]
+  for key in ('text','pros','cons'):
+   for value in positives:
+    self.assertTrue(classify(self.review(**{key:value}))['eligible'],value)
+    for suffix in (' Но молния заедает.',' Не кожа.','?'):
+     self.assertFalse(classify(self.review(**{key:value+suffix}))['eligible'],value+suffix)
+  for value in ('Не милая','Не сшита качественно','Отказалась в пользу модели побольше, потому что ремень порвался','Хорошо работают молнии, но шов разошелся','Без повреждений, но пахнет','Сумка просто шик, не рекомендую'):
+   self.assertFalse(classify(self.review(value))['eligible'],value)
  def test_purchase_status_neutral(self):
   for status in ('buyout','rejected','returned',None):
    answer=answer_for(self.review(orderStatus=status))

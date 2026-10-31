@@ -136,7 +136,7 @@ def main():
                         active=None;app.chat=app.legacy_chat
                 # Stay available while idle; GitHub schedules can be delayed.
                 with repo.transaction():
-                    health=dict(checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),code_commit=os.getenv('GITHUB_SHA'),auto_policy_code_version='positive-figurative-praise-20261029',worker_cabinet=worker_cabinet,pending_cabinets=len(pending),inbox=report.get('inbox',{}),errors=len(report['errors']),legacy_queue_calls=0)
+                    health=dict(checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'),code_commit=os.getenv('GITHUB_SHA'),auto_policy_code_version='positive-verified-descriptions-20261031',worker_cabinet=worker_cabinet,pending_cabinets=len(pending),inbox=report.get('inbox',{}),errors=len(report['errors']),legacy_queue_calls=0)
                     repo.put('events','approved-worker:health:v1',health)
                     if worker_cabinet:repo.put('events','approved-worker:health:v1:'+worker_cabinet,health)
                 time.sleep(10)

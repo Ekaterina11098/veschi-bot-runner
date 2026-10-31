@@ -4,7 +4,7 @@ from datetime import date,datetime,timedelta
 from decimal import Decimal,InvalidOperation,ROUND_CEILING
 from zoneinfo import ZoneInfo
 MSK=ZoneInfo('Europe/Moscow')
-POLICY='completed_msk_3days_test_economics_v2'
+POLICY='completed_msk_3days_target5_zeroorder_review_v3'
 
 def number(value):
  if isinstance(value,bool) or value is None:raise ValueError('Budget input unknown')
@@ -112,10 +112,19 @@ def apply(bundle,minimum_cny=100):
   c['budget_economics_status']=state;c['budget_economics_reason']=reason
   label='ДРР завершённых дней не определена без суммы рекламных заказов. ' if revenue==0 else ''
   decision='Резерв '+str(int(amount))+' ¥; согласовать продолжение теста.\n'+label+reason
-  if state=='positive':
+  zero_orders=spend>0 and period.get('orders')==0
+  over5=c['budget_drr'] is not None and c['budget_drr']>5
+  approved=c.get('approved_test_risk_remaining_cny')
+  bounded=type(approved) in (int,float) and math.isfinite(approved) and approved>0
+  blocked=(zero_orders or over5) and not (bounded and (not over5 or c.get('approved_drr_exception') is True))
+  if blocked:
+   decision+=' Целевой потолок ДРР5%. '+('Есть расходы без заказов: ' if zero_orders else 'ДРР завершённых дней выше5%: ')+'проверить экономику и рассмотреть снижение ставки или исключение SKU; обычное пополнение не рекомендовано без отдельно согласованного ограниченного теста.'
+  if state=='positive' and not blocked:
    decision='Пополнить на '+str(int(amount))+' ¥\nЗапас на 3 дня. '+label+reason
    members=sorted({m['nm'] for m in c['budget_members']})
    if not out.get('view_only'):
     c['budget_action']=dict(id='topup:'+str(c['id']),kind='topup_campaign',campaign_id=c['id'],amount_cny=int(amount),balance_before=float(balance),target_balance=float(balance+amount),status_before=9,nm_ids=members,basis=POLICY,completed_days=days)
   c['budget_short_note']=decision;c['budget_recommendation']=decision
  return out
+
+

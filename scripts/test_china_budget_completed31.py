@@ -28,9 +28,13 @@ class CompletedBudgetTests(unittest.TestCase):
   s['batches']['0']['stats'][0]['days'][-1].update(sum=0,sum_price=0,orders=0)
   b=result(s)['campaigns'][0]
   for k in ['budget_reference_need','budget_cash_gap','budget_reserve_amount','budget_short_note','budget_action']:self.assertEqual(a[k],b[k])
- def test_positive_small_test_not_rejected_above5(self):
+ def test_positive_small_model_does_not_override_owner_five_target(self):
   c=result()['campaigns'][0];self.assertGreater(c['budget_drr'],5)
-  self.assertIsNotNone(c['budget_action']);self.assertIn('малая выборка',c['budget_short_note']);self.assertNotIn('Не пополнять',c['budget_short_note'])
+  self.assertIsNone(c['budget_action']);self.assertIn('малая выборка',c['budget_short_note']);self.assertIn('потолок ДРР5%',c['budget_short_note']);self.assertIn('снижение ставки',c['budget_short_note'])
+ def test_positive_small_model_below5_can_propose_reserve(self):
+  s=source()
+  for d in s['batches']['0']['stats'][0]['days']:d['sum_price']=10000
+  c=result(s)['campaigns'][0];self.assertLess(c['budget_drr'],5);self.assertIsNotNone(c['budget_action'])
  def test_low_drr_not_profit_proof(self):
   s=source();s['economics']={}
   for d in s['batches']['0']['stats'][0]['days']:d['sum_price']=100000
@@ -49,6 +53,7 @@ class CompletedBudgetTests(unittest.TestCase):
   s=source()
   for d in s['batches']['0']['stats'][0]['days']:d['sum_price']=0;d['orders']=0
   c=result(s)['campaigns'][0];self.assertIsNone(c['budget_drr']);self.assertIn('не определена',c['budget_short_note'])
+  self.assertIsNone(c['budget_action']);self.assertIn('исключение',c['budget_short_note'])
  def test_same_day_verified_change_waits(self):
   s=source();s['batches']['0']['campaigns']['adverts'][0]['timestamps']['started']='2026-10-31T10:00:00+03:00'
   c=result(s)['campaigns'][0];self.assertEqual(c['budget_economics_status'],'waiting');self.assertIsNone(c['budget_action'])
@@ -81,3 +86,5 @@ class CompletedBudgetTests(unittest.TestCase):
   self.assertTrue(all(not f['actions'] for f in parts if f['family']=='budgets'))
 
 if __name__=='__main__':unittest.main()
+
+

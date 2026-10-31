@@ -121,12 +121,14 @@ def render(bundle):
   if c.get('budget_action'):actions.append(c['budget_action'])
  if not selected:
   d.text((44,y),'У действующих РК нет расчётной нехватки по завершённым дням.',font=font(29),fill=INK);y+=55
- footer='Резерв = средний расход за 3 завершённых дня МСК × 3 − свежий остаток. Сегодня — только справка. Округление вверх до 50 ¥; минимум WB — '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. Решение учитывает собственную экономику после verified изменений; ДРР выше 5% сама по себе не отменяет тест. Пополнение — после подтверждения.'
+ footer='Резерв = средний расход за 3 завершённых дня МСК × 3 − свежий остаток. Сегодня — только справка. Округление вверх до 50 ¥; минимум WB — '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. Решение учитывает собственную экономику после verified изменений; Целевой потолок ДРР 5% для всех товаров. Превышение или расходы без заказов требуют проверки экономики и снижения ставки/исключения; продолжение — только отдельно согласованный ограниченный тест. Пополнение — после подтверждения.'
  for line in wrap(d,footer,W-88,24):d.text((44,y+10),line,font=font(24),fill='#536b79');y+=32
  finish(im,y,'budgets',actions)
  for family in ['drr','budgets']:
   parts=[f for f in files if f['family']==family]
   for i,f in enumerate(parts,1):f.update(kind=family+':'+str(i).zfill(3),page=i,total=len(parts))
  return files
+
+
 
 

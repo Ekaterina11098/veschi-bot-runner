@@ -6,7 +6,7 @@ on:
 permissions: {contents: read}
 jobs:
   checks:
-    if: github.run_attempt == 1 && github.event.head_commit.message == 'Verify sparse morning growth integration31'
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

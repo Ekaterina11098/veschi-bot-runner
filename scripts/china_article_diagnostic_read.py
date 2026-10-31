@@ -5,6 +5,7 @@ from china_article_diagnostic import MSK,FIELDS,fresh,at,evaluate,render,scope,r
 PREFIX='china_agent:article_diagnostic:v1:'
 def safe_error(ex):
  code=re.search(r'HTTP\s*(\d{3})',str(ex))
+ if isinstance(ex,ValueError) and not re.search(r'token|Bearer|api[_ -]?key|https?://',str(ex),re.I):return str(ex)[:180] or 'ValueError'
  return 'HTTP '+code[1] if code else type(ex).__name__
 def price_changes(w,ids):
  since=(w.now-timedelta(days=4)).isoformat()
@@ -81,7 +82,7 @@ def collect(analyst,nm_ids,days=3,raise_percent=10,campaign_ids=(),reader=None):
  if not 2<=days<=14 or not number(raise_percent) or not 0<raise_percent<=30:raise ValueError('Период2–14полныхдней; повышение1–30%')
  if len(campaign_ids)>10 or any(type(c)is not int or c<=0 for c in campaign_ids):raise ValueError('Нужны точные РК')
  day=w.now.astimezone(MSK).date();last=day-timedelta(days=1);first=last-timedelta(days=days-1)
- key=PREFIX+str(analyst.job['id'])+':'+hashlib.sha256(json.dumps([ids,days,raise_percent,sorted(campaign_ids),analyst.job.get('request_text','')],ensure_ascii=False).encode()).hexdigest()[:16]
+ key=PREFIX+str(analyst.job['id'])+':'+hashlib.sha256(json.dumps([2,ids,days,raise_percent,sorted(campaign_ids),analyst.job.get('request_text','')],ensure_ascii=False).encode()).hexdigest()[:16]
  cached=w.get(key)
  if cached and fresh(cached,w.now,600):return dict(cached,cached=True)
  source=w.get('china_agent:new_ad_source:v1:'+str(day)) or {};gaps=[];history_checked=True
@@ -93,7 +94,7 @@ def collect(analyst,nm_ids,days=3,raise_percent=10,campaign_ids=(),reader=None):
  changes=[dict(x,verified=True) for x in view.get('changes',[])]
  try:changes+=price_changes(w,ids)
  except Exception as ex:history_checked=False;gaps.append('Квитанции цен: '+safe_error(ex))
- # No new collection to select another change before the first full post-change day.
+ # Current facts can be refreshed while post-change evaluation still waits for a full day.
  availability=availability_statements(analyst,ids)
  wait={n for n in ids if any(x.get('nm')==n and x.get('verified') is True and at(x.get('at')) and at(x['at']).astimezone(MSK).date()>=last for x in changes)}
  wait|={x['nm'] for x in availability if at(x['at']).astimezone(MSK).date()>=last}
@@ -101,9 +102,11 @@ def collect(analyst,nm_ids,days=3,raise_percent=10,campaign_ids=(),reader=None):
  except Exception as ex:pending=set(ids);gaps.append('Незавершённые операции: '+safe_error(ex))
  wait|=pending
  fresh_inputs={}
- if len(wait)!=len(ids):
-  try:fresh_inputs=(reader or read_current)(analyst,[n for n in ids if n not in wait],view,str(first),str(last))
-  except Exception as ex:gaps.append('Текущие источники: '+safe_error(ex))
+ try:fresh_inputs=(reader or read_current)(analyst,ids,view,str(first),str(last))
+ except Exception as ex:gaps.append('Текущие источники: '+safe_error(ex))
+ if fresh_inputs.get('economy_source'):
+  source=fresh_inputs['economy_source']
+ checked_at=max([w.now]+[t for t in [at(fresh_inputs.get(k)) for k in ('price_at','stock_at','campaign_at')]+[at(source.get('observed_at'))] if t is not None])
  economies={int(p['nm_id']):p for p in source.get('products',[])}
  prices={int(p.get('nmID',p.get('nm_id',0))):p for p in fresh_inputs.get('prices',[])}
  stocks=fresh_inputs.get('stock',[]);camps=fresh_inputs.get('campaigns',{})
@@ -119,7 +122,11 @@ def collect(analyst,nm_ids,days=3,raise_percent=10,campaign_ids=(),reader=None):
     w.save('china_agent:article_visibility:v1:'+str(nm),card)
    except Exception as ex:card=dict(available=False,reason='Витрина WB: '+safe_error(ex))
   quality=dict(observed_at=card.get('observed_at'),rating=card.get('rating'),review_count=card.get('review_count'))
-  if not card:
+  if not number(quality.get('rating')) or not 0<quality['rating']<=5:
+   # A seller/own-product rating is separate evidence, never buyer orderability.
+   if number(p.get('commentsvaluation')) and 0<p['commentsvaluation']<=5:
+    quality=dict(observed_at=source.get('observed_at'),rating=p['commentsvaluation'],review_count=None,source='MPStats own exact-SKU product snapshot; not merged buyer-card rating')
+  if not card and not number(quality.get('rating')):
    rv=w.get('china_agent:growth_review:v1:'+str(nm)) or {}
    quality=dict(observed_at=rv.get('observed_at'),rating=rv.get('rating') if rv.get('rating') else None,review_count=None,source='Seller feedback counts do not prove merged-card review count')
   stock_rows=[s for s in stocks if (s.get('article') or '').casefold()==article.casefold()]
@@ -135,7 +142,7 @@ def collect(analyst,nm_ids,days=3,raise_percent=10,campaign_ids=(),reader=None):
    placements=[z for z in ['search','recommendations'] if c.get('settings',{}).get('placements',{}).get(z) is True] or [None]
    for zone in placements:
     f=dict(nm_id=nm,article=article,unresolved_action=nm in pending,history_checked=history_checked,gaps=list(gaps)+fresh_inputs.get('gaps',[]),
-     stock=dict(observed_at=fresh_inputs.get('stock_at'),available=st['stock']-st['reserve'] if number(st.get('stock')) and number(st.get('reserve')) and st['reserve']>=0 else None,cogs_cny=st['cost_rub']/12 if number(st.get('cost_rub')) else None),
+     stock=dict(observed_at=fresh_inputs.get('stock_at'),available=st['stock']-st['reserve'] if number(st.get('stock')) and number(st.get('reserve')) and st['reserve']>=0 else None,cogs_cny=st['cost_rub']/source.get('policy',{}).get('fx_rub_cny',12) if number(st.get('cost_rub')) else None),
      price=dict(observed_at=fresh_inputs.get('price_at'),currency=pr.get('currency'),seller_cny=pr.get('seller_price')),
      campaign=dict(id=c.get('id'),status=c.get('status'),currency=c.get('currency'),payment_type=c.get('settings',{}).get('payment_type'),placement=zone,bid_minor=member.get('bids_kopecks',{}).get(zone),minimum_minor=fresh_inputs.get('minimums',{}).get(str(c.get('id'))+':'+str(nm)+':'+str(zone)),step_minor=fresh_inputs.get('config',{}).get('cpcStep'),maximum_minor=fresh_inputs.get('config',{}).get('cpcMaxBid'),budget_cny=fresh_inputs.get('budgets',{}).get(str(c.get('id'))),observed_at=fresh_inputs.get('campaign_at')),
      quality=quality,visibility=card,changes=[x for x in changes if x.get('nm')==nm],availability_events=[x for x in availability if x['nm']==nm],
@@ -144,12 +151,12 @@ def collect(analyst,nm_ids,days=3,raise_percent=10,campaign_ids=(),reader=None):
     valid_buyout=number(finished) and finished>0 and number(paid) and 0<=paid<=finished
     f['all_source']=fresh_inputs.get('general',{}).get(nm)
     f['economy']=dict(observed_at=source.get('observed_at'),buyout=paid/finished if valid_buyout else None,completed_sample=finished,commission_pct=p.get('total_commission_without_spp_in_sales'),logistics_cny=log.get('delivery_cny'),logistics_source=log.get('delivery_source'),tax_pct=policy.get('tax_pct'),handling_cny=policy.get('handling_rub',10)/policy.get('fx_rub_cny',12),own_period=[source.get('period_from'),source.get('period_to')])
-    if not fresh(source,w.now,86400):f['gaps'].append('Собственная экономика старше24часов или дата неизвестна')
+    if not fresh(source,checked_at,86400):f['gaps'].append('Собственная экономика старше24часов или дата неизвестна')
     today_rows=completed_rows(fresh_inputs.get('stats',view.get('stats',{})).get(c.get('id')),nm,str(day),str(day))
     if today_rows:f['today_observation']=dict(date=str(day),observed_at=fresh_inputs.get('campaign_at') or view.get('observed_at'),counters=today_rows[0],incomplete_day=True,used_for_selection=False)
     if card.get('reason'):f['gaps'].append('Витрина WB: '+str(card['reason']))
     if nm in pending:f['gaps'].append('Незавершённая или uncertain операция по SKU; повтор заблокирован')
-    facts.append(f);rows.append(evaluate(f,w.now,days,raise_percent))
+    facts.append(f);rows.append(evaluate(f,checked_at,days,raise_percent))
  seen_actions=set()
  for row in rows:
   if row['action'] and row['nm_id'] in seen_actions:row.update(action=None,recommendation='Нет',reason='Для SKU уже выделен один проект теста в другой РК; одновременное повышение не предлагается')
@@ -166,16 +173,18 @@ def read_current(analyst,ids,view,first,last):
   try:return fn()
   except Exception as ex:result['gaps'].append(name+': '+safe_error(ex));return None
  def current_value(topic):
-  value=analyst.live(topic,ids,None,None)
-  if fresh(value,w.now):return value
-  if analyst.fresh_reads>=3:raise ValueError('Лимит свежих источников; устаревшее не текущие данные')
-  analyst.fresh_reads+=1
-  with reading():data=analyst.collect(topic,[],__import__('datetime').date.fromisoformat(first),__import__('datetime').date.fromisoformat(last))
-  return dict(data,observed_at=w.now.isoformat())
+  from china_product_current import scoped
+  return scoped(analyst,topic,ids,first,last)
  stock=run('МойСклад МСК/COGS',lambda:current_value('stock'))
  price=run('Цена WB',lambda:current_value('prices'))
  if stock:result.update(stock=stock.get('rows',[]),stock_at=stock.get('observed_at'))
  if price:result.update(prices=price.get('rows',[]),price_at=price.get('observed_at'))
+ # Refresh the own completed-order cohort independently of an absent morning candidate job.
+ from china_product_current import scoped
+ cohort_first=str(__import__('datetime').date.fromisoformat(last)-timedelta(days=29))
+ products=run('Собственная завершённая статистика',lambda:scoped(analyst,'products',ids,cohort_first,last,86400))
+ if products:
+  result['economy_source']=dict(observed_at=products['observed_at'],period_from=cohort_first,period_to=last,products=products.get('rows',[]),policy=w.get('china_agent:new_ad_economics_policy:v1') or {})
  # WB total funnel and advertising attribution remain separate; never subtract them as organic.
  with reading():
   try:
@@ -231,3 +240,4 @@ def handle(w,job,history):
  cids=[int(x) for x in re.findall(r'(?<!\d)(4\d{7})(?!\d)',text)]
  result=collect(Analyst(w,job,history),ids,days=int(period[1]) if period else 3,raise_percent=float(percent[1].replace(',','.')) if percent else 10,campaign_ids=cids)
  return result['text'],[dict(name='article_diagnostic',source_key=result['source_key'],status=result['status'],nm_ids=ids,read_only=True,wb_writes=0)]
+

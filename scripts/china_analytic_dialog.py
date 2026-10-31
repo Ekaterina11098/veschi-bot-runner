@@ -204,9 +204,8 @@ class Analyst:
    result=read_stock(articles)
    return dict(source='МойСклад / МСК',stock_observed_at=result['observed_at'],coverage_complete=result['coverage_complete'],missing_articles=result['missing_articles'],read_attempts=result['read_attempts'],rows=[dict(article=r['article'],stock=r.get('stock'),reserve=r.get('reserve'),available=r['stock']-r['reserve'] if type(r.get('stock')) in (int,float) and type(r.get('reserve')) in (int,float) else None,cost_rub=r['price']/100 if type(r.get('price')) in (int,float) and r['price']>0 else None) for r in result['rows']],note='available=stock-reserve; отсутствие строки не ноль. Точные товары, ограниченные повторы только GET; COGS текущая, не историческая стоимость каждой продажи.')
   if topic=='prices':
-   rows=get('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter',{'limit':1000,'offset':0}).get('data',{}).get('listGoods',[])
-   if len(rows)>=1000:raise ValueError('Цены требуют пагинации')
-   return dict(source='WB seller prices',rows=[dict(nm_id=r['nmID'],article=r['vendorCode'],currency=r['currencyIsoCode4217'],discount=r['discount'],seller_price=r['sizes'][0]['discountedPrice']) for r in rows if not ids or r['nmID'] in ids],note='Цена продавца; не текущая цена покупателя и не СПП.')
+   from china_product_current import read_prices
+   return read_prices(get,ids)
   if topic=='orders':
    today=self.w.now.astimezone(MSK).date();cutoff=datetime.now(timezone.utc);from_dt=datetime.combine(first,datetime.min.time(),MSK);to_dt=min(cutoff,datetime.combine(last+timedelta(days=1),datetime.min.time(),MSK));cursor=0;orders={}
    while True:
@@ -246,7 +245,7 @@ class Analyst:
    result=[]
    for r in rows:
     if ids and int(r['nm_id']) not in ids:continue
-    v={k:r.get(k) for k in ['nm_id','sa_name','finished_orders','is_payed','finish_as_return','not_finished_orders','orders_sum','orders_count','sparkline_orders','funnel_orders_count','open_card_count','advertisement','price_after_discount','price_after_spp','price_spp','sparkline_prices','sales_sum','returns_sum','logistic_all','total_commission','total_commission_without_spp','rating','commentsvaluation']}
+    v={k:r.get(k) for k in ['nm_id','sa_name','finished_orders','is_payed','finish_as_return','not_finished_orders','orders_sum','orders_count','sparkline_orders','funnel_orders_count','open_card_count','advertisement','price_after_discount','price_after_spp','price_spp','sparkline_prices','sales_sum','returns_sum','logistic_all','total_commission','total_commission_without_spp','total_commission_without_spp_in_sales','forwardlogisticsum','backwardlogisticsum','average_delivery_cost','rating','commentsvaluation']}
     v.update(buyout_pct=100*r['is_payed']/r['finished_orders'] if r.get('finished_orders') else None,click_order_pct=100*r['funnel_orders_count']/r['open_card_count'] if r.get('open_card_count') else None,drr_pct=100*r['advertisement']/r['orders_sum'] if r.get('orders_sum') and r.get('advertisement') is not None else None);result.append(v)
    return dict(source='MPStats own products',rows=result,all_product_records=len(rows),note='RUB. Выкуп только завершённые; ДРР=реклама/сумма заказов до скидок WB. price_after_spp и price_spp — срез, не история СПП; sparkline_prices — история цены покупателя, сверять длину/даты. Прибыль закрытой когорты здесь не доказана.')
   if topic=='advertising':
@@ -265,6 +264,9 @@ class Analyst:
   raise ValueError('Неизвестный источник')
 
 def answer(w,job,history):
+ from china_ad_expense_table import handle as expense_table
+ expense_result=expense_table(w,job,history)
+ if expense_result is not None:return expense_result
  policy=w.get(POLICY) or {}
  if policy.get('enabled') is not True:return None
  from china_conversion_context import handle as conversion_handle
@@ -472,6 +474,7 @@ def copy_summary(value):
   return v
  result=compact(result)
  return result
+
 
 
 

@@ -158,9 +158,11 @@ def run():
                         views=sum(r['views'] for r in raw), drr_pct=spend/amount*100 if amount>0 else None),
             basis='Current cumulative advertising attribution snapshot, including completed campaigns; overlapping attributed orders not unique; not exact order cutoff')
         try:
-            budgets = w.req('/api/advert/v2/budget', 'POST', dict(advertIds=ids)).get('adverts', []) if ids else []
-            e['budgets'] = dict(status='complete' if {r['advertId'] for r in budgets} == set(ids) else 'partial',
-                                observed_at=stamp(), rows=budgets)
+            budget_ids = sorted(int(cid) for cid, row in campaigns.items() if row['status'] in (9, 11))
+            budgets = w.req('/api/advert/v2/budget', 'POST', dict(advertIds=budget_ids)).get('adverts', []) if budget_ids else []
+            e['budgets'] = dict(status='complete' if {r['advertId'] for r in budgets} == set(budget_ids) else 'partial',
+                                observed_at=stamp(), rows=budgets, requested_ids=budget_ids,
+                                scope='Active and paused only; completed campaign expenses retained in advertising stats')
         except Exception as ex:
             e['budgets'] = dict(status='unavailable', reason=safe_error(ex))
         adtime = datetime.fromisoformat(e['advertising']['observed_at'])

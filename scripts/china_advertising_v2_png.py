@@ -57,7 +57,7 @@ def render(bundle):
  for c in bundle['campaigns']:
   p=c.get('period');day=c.get('last');draft=c.get('never_started')
   cells=[str(c['id'])+'\n'+c['name'],'День: '+(money(day['spend'])+' ¥' if day else 'не запускалась' if draft else 'нет данных')+'\n3 дня: '+(money(p['spend'])+' ¥' if p else 'не запускалась' if draft else 'нет данных'),'Не применима' if draft else pct(p),'Не применима' if draft else pct(day),summary(c),'\n'.join(recommendations(c))]
-  ls=[wrap(d,s,xs[i+1]-xs[i]-34) for i,s in enumerate(cells)]
+  ls=[wrap(d,s,xs[i+1]-xs[i]-34,bold=(i==5 and bool(c.get('attention')))) for i,s in enumerate(cells)]
   h=max(140,max(map(len,ls))*35+36)
   if h>4800:raise ValueError('Campaign row too long; refuse clipped report')
   if y+h>5500:

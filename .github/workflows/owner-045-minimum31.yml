@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
+    if: ${{ false }} # One-time owner action WBverified31Oct; no further execution
     runs-on: ubuntu-latest
     timeout-minutes: 7
     steps:

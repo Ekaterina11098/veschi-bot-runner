@@ -20,7 +20,9 @@ def tracked_rows(state, day):
         # Retain pending cohorts until the first four-day assessment, even
         # after their detection date leaves the rolling four-day window.
         first_check=detected+timedelta(days=5)
-        if low <= detected < day or (detected < day <= first_check):
+        progress=(state.get('price_review_progress') or {}).get(str(nm),{})
+        reviewed=(progress.get('detected_at')==change.get('detected_at') and progress.get('complete') is True)
+        if detected < day and (low <= detected or day <= first_check or not reviewed):
             rows.append((nm,entry,change,detected))
     return sorted(rows,key=lambda r:r[1].get('article',r[0]))
 
@@ -106,7 +108,7 @@ class PairWorker(CoverageWorker):
             if latest.get('period_to')!=expected: raise RuntimeError('Completed period mismatch')
             from china_agent.daily_expected_control import build,render_candidates
             self.control_preview=preview
-            build(self)
+            self.price_control_review=build(self,candidate_review=True)
             from china_agent.price_brief import render_plain as brief
             full=render_candidates(self)
             review=self.get('china_agent:daily_expected_candidates:'+str(self.day)+(':verify' if preview else ''))
@@ -145,4 +147,6 @@ def main():
             import requests
             requests.sessions.Session.request=w.original_http
 if __name__=='__main__':main()
+
+
 

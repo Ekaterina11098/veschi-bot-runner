@@ -44,6 +44,37 @@ def read_price_experience(io,page_size=300,max_pages=100):
   if len(page)<page_size:return records
  raise ValueError('Price experience history exceeds safe pagination bound')
 
+def read_economics(io):
+ model=io.get('china_agent:loss_economics:latest:v1') or {};result=dict(status='unavailable',rows={})
+ try:
+  observed=event_time(model['observed_at'])
+  if not 0<=(datetime.now(timezone.utc)-observed).total_seconds()<=48*3600:return result
+  from china_loss_policy import evaluate
+  assessed={}
+  for row in model.get('records',[]):
+   try:
+    value=evaluate(row)
+    assessed[str(row['nm_id'])]=dict(value,period_from=row.get('period_from'),period_to=row.get('period_to'),source_ids=row.get('source_ids'),own_cogs_rub=row.get('own_cogs_rub'),seller_revenue_rub=row.get('seller_revenue_rub'),fx_rub_cny=row.get('fx_rub_cny'),basis='preliminary_model')
+   except (ValueError,KeyError,TypeError):continue
+  return dict(status='available',observed_at=model['observed_at'],rows=assessed)
+ except (KeyError,ValueError,TypeError,ImportError):return result
+
+def refresh_budget_context(io,source,day):
+ """Cached morning receipts cannot establish the current post-change test window."""
+ s=copy.deepcopy(source);since=(date.fromisoformat(day)-timedelta(days=14)).isoformat()
+ query='telegram_api_cache?or=(cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:loss_ad_execution:*,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:owner_*:execution,cache_key.like.china_agent:price_execution:v1:*,cache_key.like.china_agent:new_ad_execution:*,cache_key.like.china_agent:hourly_cloud:execution:*,cache_key.like.china_agent:daily_ad_execution:v2:*,cache_key.like.china_agent:advertising_dialog_execution:v1:*,cache_key.like.china_agent:bid_resume:*)&updated_at=gte.'+since+'&select=cache_key,payload&order=cache_key.asc&limit=100'
+ records=[]
+ for offset in range(0,2000,100):
+  page=io.db(query+'&offset='+str(offset))
+  if not isinstance(page,list):raise ValueError('Current execution context unavailable')
+  records+=page
+  if len(page)<100:break
+ else:raise ValueError('Current execution history incomplete')
+ s['executions']=compact_execution_records(records)
+ s['experience']=read_price_experience(io)
+ s['economics']=read_economics(io)
+ return s
+
 def collect(io,day,current=False):
  policy=io.get(FORMAT)
  if not policy or policy.get('status')!='approved' or policy.get('version')!=VERSION:raise ValueError('Approved daily advertising format missing')
@@ -79,20 +110,7 @@ def collect(io,day,current=False):
  if 'experience' not in s:
   s['experience']=read_price_experience(io)
   save(io,key,s)
- if 'economics' not in s:
-  model=io.get('china_agent:loss_economics:latest:v1') or {};s['economics']=dict(status='unavailable',rows={})
-  try:
-   observed=datetime.fromisoformat(model['observed_at'].replace('Z','+00:00'))
-   if observed.tzinfo is None:observed=observed.replace(tzinfo=MSK)
-   if abs((datetime.now(timezone.utc)-observed).total_seconds())<=48*3600:
-    from china_loss_policy import evaluate
-    assessed={}
-    for row in model.get('records',[]):
-     try:
-      value=evaluate(row);assessed[str(row['nm_id'])]=dict(expected_total_profit_rub=value['expected_total_profit_rub'],basis='preliminary_model')
-     except (ValueError,KeyError,TypeError):continue
-    s['economics']=dict(status='available',observed_at=model['observed_at'],rows=assessed)
-  except (KeyError,ValueError,TypeError,ImportError):pass
+ if 'economics' not in s:s['economics']=read_economics(io)
  s['status']='complete';s['completed_at']=stamp();save(io,key,s);return s
 
 def never_started_draft(c):
@@ -417,10 +435,13 @@ def build(s,minima=None):
   recent_funds=[f for f in funds if f[0][:10]>=days[-1]]
   funding_done='; '.join('+'+str(f[1])+' ¥ · '+datetime.fromisoformat(f[0].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M') for f in sorted(set(recent_funds))) or 'Нет новых подтверждённых пополнений'
   out.append(dict(budget_reference_need=rate*3 if rate is not None else None,budget_review_required=bool(c['status']==9 and rate is not None and rate*3>balance['total']),minimum_topup_cny=s['config']['minTopUp']/100,funding_done=funding_done,id=c['id'],name=c['settings']['name'],zone=zone,payment=bid,status=c['status'],period=period,last=last,drr=bdrr,focus=focus,balance=balance['total'],forecast=forecast,coverage=balance['total']/rate if rate and not incomplete_composition else None,budget_recommendation=recommendation,budget_action=action,new_composition=incomplete_composition,missing_stats=cp is None,created=created))
- return dict(version=VERSION,day=str(end+timedelta(days=1)),days=days,source_observed_at=datetime.fromisoformat(s['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m.%Y %H:%M МСК'),campaigns=out,wb_writes=0)
+ bundle=dict(version=VERSION,day=str(end+timedelta(days=1)),days=days,source_observed_at=datetime.fromisoformat(s['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m.%Y %H:%M МСК'),campaigns=out,wb_writes=0)
+ from china_budget_reserve import attach_completed_evidence,apply
+ return apply(attach_completed_evidence(bundle,s,changes),s['config']['minTopUp']/100)
 
 def prepare(io,day):
  s=dict(collect(io,day));s['intraday']=io.get('china_agent:advertising_intraday:'+day+':v1') or {};minimums={}
+ s=refresh_budget_context(io,s,day)
  # Query minima only for existing products with a meaningful signal, on their actual campaign/placement.
  rough=build(s)
  for c in rough['campaigns']:
@@ -438,6 +459,7 @@ def prepare(io,day):
  from china_advertising_cards import enhance
  from china_advertising_growth import enrich
  return enrich(io,s,enhance(build(s,minimums),s))
+
 
 
 

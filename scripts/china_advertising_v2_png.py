@@ -31,7 +31,10 @@ def render(bundle):
   im=Image.new('RGB',(W,H),BG);d=ImageDraw.Draw(im)
   d.rectangle((0,0,W,205),fill=NAVY)
   d.text((44,28),title,font=font(48,True),fill='white')
-  d.text((44,100),'День: '+bundle['days'][-1]+' · 3 дня: '+bundle['days'][0]+'—'+bundle['days'][-1]+' · цель ДРР 5%',font=font(29,True),fill='white')
+  bd=bundle.get('budget_days') or []
+  subtitle=('Резерв: '+bd[0]+'—'+bd[-1]+' · 3 завершённых дня МСК' if 'бюджеты' in title and len(bd)==3 else 'День: '+bundle['days'][-1]+' · 3 дня: '+bundle['days'][0]+'—'+bundle['days'][-1]+' · цель ДРР 5%')
+  if bundle.get('intraday') and 'бюджеты' not in title:subtitle+=' · сегодня неполный'
+  d.text((44,100),subtitle,font=font(29,True),fill='white')
   d.text((44,150),'Срез: '+(str(bundle['source_observed_at'])+(' · остатки: '+bundle['budget_balance_observed_at'] if 'бюджеты' in title and bundle.get('budget_balance_observed_at') else '')),font=font(24),fill='#dce9f0')
   return im,d
  def wrap(d,s,w,n=27,bold=False):
@@ -106,9 +109,10 @@ def render(bundle):
   d.text((44,left+48),'Запас на 3 дня: '+money(need)+' ¥',font=font(27),fill=INK)
   d.text((44,left+88),'Нехватка: '+money(gap)+' ¥',font=font(27),fill=INK)
   d.text((860,y+16),'Расходы и ДРР',font=font(29,True),fill=NAVY)
-  for offset,label,value in [(64,'Расход день: ',c['last']['spend'] if c.get('last') else None),(104,'Расход 3 дня: ',c['period']['spend'] if c.get('period') else None),(144,'Средний расход в день: ',c.get('budget_average_daily'))]:
+  bp=c.get('budget_period')
+  for offset,label,value in [(64,'Последний день обзора: ',c['last']['spend'] if c.get('last') else None),(104,'Расход завершённых 3 дней: ',bp['spend'] if bp else None),(144,'Средний расход в день: ',c.get('budget_average_daily'))]:
    d.text((860,y+offset),label+money(value)+' ¥',font=font(27),fill=INK)
-  for offset,label,value in [(200,'ДРР 3 дня: ',c.get('period')),(242,'ДРР день: ',c.get('last'))]:
+  for offset,label,value in [(200,'ДРР завершённых дней: ',bp),(242,'ДРР дня обзора (справка): ',c.get('last'))]:
    d.text((860,y+offset),label,font=font(27),fill=INK)
    d.text((860+d.textlength(label,font=font(27)),y+offset),pct(value),font=font(27,True),fill=color(value))
   d.text((1630,y+16),'Рекомендация по пополнению',font=font(27,True),fill=NAVY)
@@ -116,12 +120,13 @@ def render(bundle):
   y+=height+18
   if c.get('budget_action'):actions.append(c['budget_action'])
  if not selected:
-  d.text((44,y),'По расчёту запаса на 3 дня пополнение не требуется.',font=font(29),fill=INK);y+=55
- footer='Сумма пополнения = средний расход за 3 полных дня × 3 − остаток. Округление вверх до 50 ¥; минимум WB — '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. РК без расчётной нехватки не показаны. Пополнение — после подтверждения.'
+  d.text((44,y),'У действующих РК нет расчётной нехватки по завершённым дням.',font=font(29),fill=INK);y+=55
+ footer='Резерв = средний расход за 3 завершённых дня МСК × 3 − свежий остаток. Сегодня — только справка. Округление вверх до 50 ¥; минимум WB — '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. Решение учитывает собственную экономику после verified изменений; ДРР выше 5% сама по себе не отменяет тест. Пополнение — после подтверждения.'
  for line in wrap(d,footer,W-88,24):d.text((44,y+10),line,font=font(24),fill='#536b79');y+=32
  finish(im,y,'budgets',actions)
  for family in ['drr','budgets']:
   parts=[f for f in files if f['family']==family]
   for i,f in enumerate(parts,1):f.update(kind=family+':'+str(i).zfill(3),page=i,total=len(parts))
  return files
+
 

@@ -23,6 +23,8 @@ def prepare(io,day):
  observed=datetime.fromisoformat(fresh['observed_at'].replace('Z','+00:00'))
  if observed.astimezone(MSK).date().isoformat()!=day:raise ValueError('Сохранённый срез относится к другому дню')
  s=copy.deepcopy(base);s['period_to']=day;s['observed_at']=fresh['observed_at']
+ from china_advertising_v2 import refresh_budget_context
+ s=refresh_budget_context(io,s,day)
  campaigns={c['id']:c for b in s['batches'].values() for c in b['campaigns']['adverts']}
  if fresh.get('campaigns'):campaigns={c['id']:c for c in fresh['campaigns']}
  raw={c['advertId']:copy.deepcopy(c) for b in s['batches'].values() for c in b['stats']}
@@ -35,6 +37,7 @@ def prepare(io,day):
  if ex.get('status')=='verified' and ex.get('after') and ex.get('verified_at','')>membership_at:
   campaigns[41298169]=ex['after'];s.setdefault('executions',[]).append(dict(payload=ex))
  budgets=fresh.get('budgets') or [x for b in s['batches'].values() for x in b['budgets']['adverts']]
+ s['budget_balance_observed_at_iso']=(fresh if fresh.get('budgets') else base)['observed_at']
  s['batches']={'0':dict(campaigns=dict(adverts=list(campaigns.values())),stats=list(raw.values()),budgets=dict(adverts=budgets))}
  b=build(s);b['day']=day;b['intraday']=True
  cut=observed.astimezone(MSK).strftime('%d.%m %H:%M МСК')
@@ -81,3 +84,4 @@ def prepare(io,day):
    period={k:sum(z[k] for z in daily) for k in zero}
    c['focus'].append(dict(nm=nm,article=labels.get(nm,{}).get('article','WB '+str(nm)),daily=daily,period=period,period_drr=ratio(period),done='Сегодня запущен/расширен тест',decision='Проверить исключение; только после отдельного подтверждения.',reason=f"Сегодня расход {t['spend']:.2f} ¥; {t['clicks']} кликов; {t['carts']} корзин; {t['orders']} рекламных заказов. Ранний сигнал, не доказанный убыток.",action=None))
  return b
+

@@ -79,7 +79,11 @@ def collect(io,day,current=False):
  policy=io.get(FORMAT)
  if not policy or policy.get('status')!='approved' or policy.get('version')!=VERSION:raise ValueError('Approved daily advertising format missing')
  key=('china_agent:advertising_midday_source:' if current else 'china_agent:advertising_source:')+day+':v2';s=io.get(key)
- if s and s.get('status')=='complete':return s
+ if s and s.get('status')=='complete':
+  if not current:
+   from china_morning_readiness import ensure
+   ensure(io,s,day,key)
+  return s
  end=date.fromisoformat(day) if current else date.fromisoformat(day)-timedelta(days=1);start=end if current else end-timedelta(days=6)
  if not s:s=dict(status='collecting',version=VERSION,cabinet='token_3',observed_at=stamp(),period_from=str(start),period_to=str(end),wb_writes=0);save(io,key,s)
  if 'ids' not in s:
@@ -111,6 +115,9 @@ def collect(io,day,current=False):
   s['experience']=read_price_experience(io)
   save(io,key,s)
  if 'economics' not in s:s['economics']=read_economics(io)
+ if not current:
+  from china_morning_readiness import ensure
+  ensure(io,s,day,key)
  s['status']='complete';s['completed_at']=stamp();save(io,key,s);return s
 
 def never_started_draft(c):
@@ -297,6 +304,7 @@ def guard_sku_exclusion(row, evidence, context, report_day):
  def fresh(value):
   try:
    at=event_time(value);end=datetime.combine(date.fromisoformat(report_day)+timedelta(days=1),datetime.min.time(),MSK)
+   if evidence.get('owner_strategy_review') is True:end=max(end,datetime.now(timezone.utc))
    return 0<=(end-at.astimezone(MSK)).total_seconds()<=48*3600
   except (ValueError,TypeError,KeyError):return False
  if not evidence or not fresh(evidence.get('observed_at')):blockers.append('нет свежей собственной экономики')
@@ -309,6 +317,10 @@ def guard_sku_exclusion(row, evidence, context, report_day):
  if context.get('other_sku_orders',0)>0 and evidence.get('entry_sku_attribution_verified') is not True:
   blockers.append('заказы других товаров нельзя распределить между входными SKU')
  if context.get('orders_on_this_sku_other_campaigns',0)>0:blockers.append('товар получает заказы из других РК')
+ if evidence.get('owner_strategy_review') is True and fresh(evidence.get('observed_at')) and evidence.get('stock_free') is not None and fresh(evidence.get('stock_observed_at')) and isinstance(evidence.get('expected_margin_before_ads_cny'),(int,float)) and post.get('clicks',0)>=100 and post.get('spend',0)>=max(0,evidence['expected_margin_before_ads_cny']):
+  row['economic_risk_warnings']=list(blockers)
+  row['reason']+=' Предложение ограничения расходов по стратегии владельца, не доказанный убыток. Малая выборка/ассоциированные заказы и неизвестные расходы сохраняются; исполнение только после ответа на этот PNG.'
+  blockers=[]
  if blockers:
   row['candidate_for_manual_review']=True;row['action']=None
   row['decision']='Продолжить тест без повышения; исключение требует проверки.'
@@ -444,6 +456,9 @@ def prepare(io,day):
  s=refresh_budget_context(io,s,day)
  # Query minima only for existing products with a meaningful signal, on their actual campaign/placement.
  rough=build(s)
+ from china_morning_readiness import enrich_economics
+ s=enrich_economics(io,s,rough,day)
+ save(io,'china_agent:advertising_source:'+day+':v2',s)
  for c in rough['campaigns']:
   ids=[r['nm'] for r in c['focus'] if not r.get('pending_first_day') and 'Выполнено.' not in r['decision']]
   if not ids or c['status']!=9 or c['payment']!='cpc':continue
@@ -459,6 +474,8 @@ def prepare(io,day):
  from china_advertising_cards import enhance
  from china_advertising_growth import enrich
  return enrich(io,s,enhance(build(s,minimums),s))
+
+
 
 
 

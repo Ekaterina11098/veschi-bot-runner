@@ -78,6 +78,40 @@ def safe_error(ex):
     return str(ex) if isinstance(ex, (ValueError, RuntimeError)) else type(ex).__name__
 
 
+def collect_funnel(c, cut, nm_ids):
+    """General funnel counters, never advertising orders divided by all visits."""
+    from china_wb_evidence import Reports, FUNNEL, normalize_funnel
+    if not nm_ids or len(nm_ids) > 5 or any(type(nm) is not int for nm in nm_ids):
+        raise ValueError('Exact bounded funnel scope required')
+    class Adapter:
+        def get(self, key): return c.get(key)
+        def save(self, key, value): return c.put(key, value)
+        def db(self, method, table, params=None, body=None, prefer=None):
+            if table != 'telegram_api_cache':
+                raise ValueError('Private report cache only')
+            return c.req(method, params, body, prefer)
+    selected = dict(start=cut.date().isoformat(), end=cut.date().isoformat())
+    yesterday = (cut-timedelta(days=1)).date().isoformat()
+    past = dict(start=yesterday, end=yesterday)
+    body = dict(selectedPeriod=selected, pastPeriod=past, nmIds=nm_ids, brandNames=[],
+                subjectIds=[], tagIds=[], skipDeletedNm=False,
+                orderBy=dict(field='openCard', mode='desc'), limit=10, offset=0)
+    result = Reports(Adapter()).request(FUNNEL, body)
+    if not result['available']:
+        return dict(status='unavailable', reason=result.get('status'), retry_at=result.get('retry_at'))
+    data = result['data'].get('data', {})
+    products = data.get('products')
+    if not isinstance(products, list) or data.get('currency', '').upper() != 'CNY':
+        raise ValueError('Funnel currency/shape mismatch')
+    if {p['product']['nmId'] for p in products} != set(nm_ids) or len(products) != len(nm_ids):
+        raise ValueError('Funnel target coverage mismatch')
+    return dict(status='complete', observed_at=result['observed_at'], scope='all_sources',
+                rows=normalize_funnel(products, selected, past, slot_key(cut)),
+                update_delay_hours=2, past_period_is_full_day=True,
+                samehour_baseline_key=slot_key(cut-timedelta(days=1)),
+                warning='Current partial day; API past is full previous day, not same hour. Use saved observed snapshots for same-clock comparison, with reporting lag explicitly.')
+
+
 def run():
     if os.environ.get('GITHUB_REPOSITORY') != 'Ekaterina11098/veschi-bot-runner':
         raise RuntimeError('Public owner runner only')
@@ -137,6 +171,11 @@ def run():
         e['sales_comparisons'] = {str(x): comparison(e['orders']['0']['totals'], e['orders'][str(x)]['totals']) for x in (1, 7)}
         if cut.hour:
             e['last_hour_comparisons'] = {str(x): comparison(e['orders']['0']['last_completed_hour'], e['orders'][str(x)]['last_completed_hour']) for x in (1, 7)}
+    if policy.get('funnel_nm_ids'):
+        try:
+            e['general_funnel'] = collect_funnel(c, cut, policy['funnel_nm_ids'])
+        except Exception as ex:
+            e['general_funnel'] = dict(status='unavailable', reason=safe_error(ex))
     try:
         inv = w.req('/adv/v1/promotion/count')
         ids = sorted({a['advertId'] for group in inv.get('adverts', []) if group['status'] in (7, 9, 11)

@@ -1,0 +1,28 @@
+name: Owner candidate economics read31
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-high-drr-economics31-read.yml']
+permissions: {contents: read}
+concurrency:
+  group: china-full-experiment-read
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.event.head_commit.message == 'Owner authorized candidate economics read31'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - run: python -m py_compile scripts/owner_high_drr_economics31_read.py
+      - name: Only read history and current candidate conditions, save privately
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: python scripts/owner_high_drr_economics31_read.py

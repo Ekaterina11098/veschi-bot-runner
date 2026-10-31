@@ -405,7 +405,7 @@ def build(s,minima=None):
      st=z.get('steps',{})
      if isinstance(st,dict):
       for label,v in st.items():
-       if v.get('status') not in ['verified','accepted']:continue
+       if not isinstance(v,dict) or v.get('status') not in ['verified','accepted']:continue
        path=v.get('path','');body=v.get('body') or {}
        if path=='/adv/v1/budget/deposit?id='+str(c['id']) and body.get('sum'):
         at=v.get('submitted_at') or payload.get('completed_at') or payload.get('verified_at')

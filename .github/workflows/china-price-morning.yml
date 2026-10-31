@@ -76,6 +76,8 @@ jobs:
           cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py
           cp ../scripts/china_expected_order_profit.py china_agent/expected_order_profit.py
           cp ../scripts/china_price_experiment_result.py china_agent/price_experiment_result.py
+          cp ../scripts/china_price_economic_target.py china_agent/price_economic_target.py
+          python ../scripts/test_price_rules31.py
           python -m compileall -q china_agent/morning_pair.py china_agent/daily_expected_control.py
           if [ "$REPORT_ACTION" = verify ]; then
             python -m china_agent.morning_pair --verify

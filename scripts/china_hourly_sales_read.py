@@ -27,6 +27,46 @@ def slot_key(cut):
     return ROOT + ':snapshot:' + cut.strftime('%Y-%m-%dT%H') + ':MSK'
 
 
+def saved_slot(c, cut):
+    key=slot_key(cut); pointer=c.get(key+':latest') or {}
+    source=pointer.get('source_key',key)
+    if source!=key and not source.startswith(key+':attempt:'):
+        raise ValueError('Hourly slot pointer scope mismatch')
+    value=c.get(source)
+    if value and (value.get('cabinet')!='token_3' or value.get('slot_msk')!=cut.isoformat()):
+        raise ValueError('Hourly snapshot identity mismatch')
+    return source,value
+
+
+def complete_slot(value):
+    return bool(value and value.get('status')=='complete'
+                and all((value.get('orders',{}).get(str(n)) or {}).get('status')=='complete' for n in (0,1,7))
+                and value.get('advertising',{}).get('status')=='complete')
+
+
+def claim_slot(c,cut,run_id,clock):
+    """CAS recovery only after the 12m lease exceeds the 9m job timeout."""
+    key=slot_key(cut)+':lease';old=c.row(key)
+    attempts=(old or {}).get('payload',{}).get('attempt',1) if old else 0
+    if old:
+        previous=old['payload']
+        until=datetime.fromisoformat(previous['until']) if previous.get('until') else datetime.fromisoformat(previous['created_at'])+timedelta(minutes=12)
+        if until>clock or attempts>=3:return False
+    value=dict(created_at=clock.isoformat(),until=(clock+timedelta(minutes=12)).isoformat(),workflow_run=run_id,attempt=attempts+1)
+    if not old:return c.create(key,value)
+    return len(c.req('PATCH',dict(cache_key='eq.'+key,updated_at='eq.'+old['updated_at']),dict(payload=value,updated_at=clock.isoformat()),'return=representation'))==1
+
+
+def publish_latest(c,source,value):
+    pointer=dict(source_key=source,status=value['status'],observed_at=value['observed_at'],
+                 completed_at=value['completed_at'],slot_msk=value['slot_msk'],wb_writes=0)
+    cut=datetime.fromisoformat(value['slot_msk'])
+    c.put(slot_key(cut)+':latest',pointer)
+    current=c.get(ROOT+':latest') or {}
+    if not current.get('slot_msk') or current['slot_msk']<=value['slot_msk']:
+        c.put(ROOT+':latest',pointer)
+
+
 def aggregate(rows):
     bad = [r['id'] for r in rows if r.get('convertedCurrencyCode') != 156
            or type(r.get('convertedPrice')) not in (int, float)]
@@ -115,16 +155,24 @@ def collect_funnel(c, cut, nm_ids):
 def run():
     if os.environ.get('GITHUB_REPOSITORY') != 'Ekaterina11098/veschi-bot-runner':
         raise RuntimeError('Public owner runner only')
-    c = Cache(); w = ReadOnlyWB()
+    c = Cache()
     policy = c.get(POLICY) or {}
     if policy.get('enabled') is not True or policy.get('cabinet') != 'token_3' or policy.get('wb_writes') != 0:
         raise RuntimeError('Read-only owner policy unavailable')
-    validate_identity(c, w)
-    cut = datetime.now(timezone.utc).astimezone(MSK).replace(minute=0, second=0, microsecond=0)
-    key = slot_key(cut)
-    if c.get(key):
-        print('Frozen hourly slot already exists; no API reads repeated')
+    clock=datetime.now(timezone.utc)
+    cut = clock.astimezone(MSK).replace(minute=0, second=0, microsecond=0)
+    base_key=slot_key(cut);source,previous=saved_slot(c,cut)
+    if complete_slot(previous):
+        publish_latest(c,source,previous)
+        print('Complete hourly slot already exists; no API reads repeated')
         return
+    run_id=os.environ.get('GITHUB_RUN_ID') or clock.strftime('%Y%m%dT%H%M%S')
+    if not claim_slot(c,cut,run_id,clock):
+        print('Hourly slot lease active or bounded retries exhausted; no API reads')
+        return
+    key=base_key if c.get(base_key) is None else base_key+':attempt:'+run_id
+    w=ReadOnlyWB()
+    validate_identity(c,w)
     catalog = c.get('china_agent:prices:v1') or {}
     if catalog.get('cabinet') != 'token_3':
         raise ValueError('China catalogue identity unavailable')
@@ -132,9 +180,6 @@ def run():
     e = dict(status='reading', cabinet='token_3', slot_msk=cut.isoformat(), observed_at=stamp(),
              wb_writes=0, telegram_calls=0, workflow_run=os.environ.get('GITHUB_RUN_ID'),
              orders={}, advertising={}, grants_action_permission=False)
-    if not c.create(key + ':lease', dict(created_at=stamp(), workflow_run=e['workflow_run'])):
-        raise RuntimeError('Hourly slot already attempted; inspect lease before recovery')
-
     def get(path, params=None):
         if path not in ('/api/v3/orders', '/api/v3/orders/new'):
             raise ValueError('FBS read-only endpoint guard')
@@ -207,7 +252,7 @@ def run():
         adtime = datetime.fromisoformat(e['advertising']['observed_at'])
         e['ad_comparisons'] = {}
         for offset in (1, 7):
-            oldkey = slot_key(cut-timedelta(days=offset)); old = c.get(oldkey) or {}
+            oldkey,old=saved_slot(c,cut-timedelta(days=offset));old=old or {}
             prev = old.get('advertising', {})
             result = dict(status='unavailable_no_saved_same_clock_snapshot', source_key=oldkey)
             if prev.get('status') == 'complete' and e['advertising']['status'] == 'complete':
@@ -228,8 +273,7 @@ def run():
         raise RuntimeError('Frozen slot conflict')
     if c.get(key) != e:
         raise RuntimeError('Frozen snapshot readback mismatch')
-    c.put(ROOT + ':latest', dict(source_key=key, status=e['status'], observed_at=e['observed_at'],
-                               completed_at=e['completed_at'], slot_msk=e['slot_msk'], wb_writes=0))
+    publish_latest(c,key,e)
     print(json.dumps(dict(status=e['status'], source_key=key, orders={k:v['status'] for k,v in e['orders'].items()}, advertising=e['advertising']['status'], wb_writes=0, telegram_calls=0)))
 
 

@@ -1,0 +1,14 @@
+name: Verify China hourly cache-only recovery
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/verify-china-hourly-recovery31.yml']
+permissions: {contents: read}
+jobs:
+  verify:
+    if: github.event.head_commit.message == 'Repair China hourly read-only collection with deduplicated fallback'
+    uses: ./.github/workflows/china-hourly-sales-read.yml
+    secrets:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

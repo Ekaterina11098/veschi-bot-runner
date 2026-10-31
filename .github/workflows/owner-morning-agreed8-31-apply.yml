@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
-    if: github.run_attempt == 1 && github.event.head_commit.message == 'Owner authorized agreed eight PNG edit 2026-10-31'
+    if: ${{ false }}
     concurrency:
       group: bot-mpstats-data
       cancel-in-progress: false

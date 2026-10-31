@@ -32,12 +32,7 @@ def render(bundle):
   h=max(265,max(len(x)for x in ls)*37+48)
   d.rounded_rectangle((20,y,W-20,y+h),16,fill='#fff1cc'if r['action']else'white')
   for i,lines in enumerate(ls):
-   for j,line in enumerate(lines):d.text((xs[i],y+18+j*37),line,font=font(29 if j==0 else 26,j==0),fill=NAVY if j==0 else INK)
-  # Ratio colors use true ratio-of-sums, not the forward cash scenario.
-  for label,value,offset in [('ДРР 3 дня: ',original['period'],2),('ДРР день: ',original['last'],3)]:
-   # Render a separate small colored tag; numeric source remains the original historical period.
-   tag=pct(value);tw=d.textlength(tag,font=font(24,True))
-   d.text((xs[1]+610-tw,y+h-34),tag,font=font(24,True),fill=color(value)) if offset==2 else None
+   for j,line in enumerate(lines):d.text((xs[i],y+18+j*37),line,font=font(29 if j==0 else 26,j==0),fill=(color(original['period']) if i==1 and line.startswith('ДРР 3 дня:') else color(original['last']) if i==1 and line.startswith('ДРР день:') else NAVY if j==0 else INK))
   y+=h+16
   if r['action']:actions.append(r['action'])
  footer=[

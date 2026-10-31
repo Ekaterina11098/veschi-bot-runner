@@ -30,6 +30,8 @@ def question_allowed(job,cfg):
 
 
 def intent(text):
+    from china_once_report import requested as once_requested
+    if once_requested(text):return 'create_once'
     value = text.casefold().replace('ё', 'е')
     if re.search(r'наблюден|задани|отчет',value):
         if re.search(r'\b(отмени|отменить|останови|удали)\b', value): return 'cancel'
@@ -168,6 +170,9 @@ class Worker:
 
     def command(self, job):
         if not self.authorized(job):raise PermissionError('Owner scope mismatch')
+        from china_once_report import prepare as once_report
+        once=once_report(self,job)
+        if once is not None:return once
         text=job['request_text']; action=intent(text)
         if action=='help':return HELP
         watches=self.watches()
@@ -632,7 +637,7 @@ class Worker:
         if not due:return 0
         needed=set()
         for _,w in due:
-            if w.get('kind')=='task':continue
+            if w.get('kind') in ('task','once_task'):continue
             _,missing=self.load_days(w);needed.update(missing)
         if needed and self.collect:
             try:self.collect(sorted(needed,reverse=True)[:14])
@@ -646,10 +651,11 @@ class Worker:
             receipt_key='report:'+w['id']+':'+label
             old=self.get(RECEIPTS+receipt_key)
             if old:text=old['text']
-            elif w.get('kind')=='task':
+            elif w.get('kind') in ('task','once_task'):
                 scheduled=dict(id=0,agent_id='china',chat_id=w['chat_id'],sender_id=w['owner_user_id'],origin='scheduled',request_text='Сегодня '+self.now.astimezone(MSK).date().isoformat()+'. Выполни один текущий запуск сохранённого аналитического поручения. Ничего не планируй и не меняй в WB. Относительные даты считай от сегодня. Поручение: '+w['task_text'])
                 text,_=self.dialog(scheduled,[])
-                text='Китай · задание '+w['id']+'\n'+text+'\nЕжедневно в '+w['clock']+' МСК. Отмена: «Отмени задание '+w['id']+'».'
+                ending='Разовый отчёт; повторного ежедневного запуска нет.' if w.get('kind')=='once_task' else 'Ежедневно в '+w['clock']+' МСК. Отмена: «Отмени задание '+w['id']+'».'
+                text='Китай · задание '+w['id']+'\n'+text+'\n'+ending
                 # Freeze the complete generated answer before the first send.
                 self.save(RECEIPTS+receipt_key,dict(status='prepared',text=text,chat_id=w['chat_id']))
             else:
@@ -660,7 +666,9 @@ class Worker:
                 status=self.send_once(receipt_key+':part:'+str(index),w['chat_id'],part)
                 if status!='sent':break
             if status=='sent':
-                w.update(initial_pending=False,next_at=next_due(w['clock'],self.now),last_sent_at=self.now.isoformat());self.save(key,w);sent+=1
+                w.update(initial_pending=False,next_at=next_due(w['clock'],self.now),last_sent_at=self.now.isoformat())
+                if w.get('kind')=='once_task':w.update(status='completed',next_at=None,completed_at=self.now.isoformat())
+                self.save(key,w);sent+=1
             elif status in ('sending','uncertain'):
                 w.update(status='delivery_uncertain');self.save(key,w)
         return sent
@@ -837,6 +845,7 @@ def main():
 
 
 if __name__=='__main__':main()
+
 
 
 

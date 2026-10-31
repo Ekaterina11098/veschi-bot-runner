@@ -59,6 +59,7 @@ def read(w):
  w.save(key,value);return value
 
 def handle(w,job,history):
+ if job.get('origin')=='scheduled' or re.search(r'вчера|за два дня|202\d-\d\d-\d\d',job.get('request_text',''),re.I):return None
  if job.get('chat_id')!=-1004342917488 or not requested(job.get('request_text',''),history):return None
  source=read(w);labels={int(n):a for n,a in w.catalog()}
  # Explicit today request is diagnostic, not a completed-day action recommendation.

@@ -35,6 +35,13 @@ class CompletedBudgetTests(unittest.TestCase):
   s=source()
   for d in s['batches']['0']['stats'][0]['days']:d['sum_price']=10000
   c=result(s)['campaigns'][0];self.assertLess(c['budget_drr'],5);self.assertIsNotNone(c['budget_action'])
+ def test_profitable_campaign_cannot_hide_zero_order_member_spend(self):
+  s=source();raw=s['batches']['0'];raw['campaigns']['adverts'][0]['nm_settings'].append(dict(nm_id=2,bids_kopecks=dict(search=28)))
+  s['economics']['rows']['2']=copy.deepcopy(s['economics']['rows']['1'])
+  s['catalogue']['rows'].append(dict(nmID=2,vendorCode='test2',price=126))
+  for d in raw['stats'][0]['days']:
+   d['sum_price']=100000;d['apps'][0]['nms'].append(dict(nmId=2,sum=10,sum_price=0,orders=0,views=20,clicks=2))
+  c=result(s)['campaigns'][0];self.assertLess(c['budget_drr'],5);self.assertIsNone(c['budget_action']);self.assertIn('SKU 2',c['budget_short_note'])
  def test_low_drr_not_profit_proof(self):
   s=source();s['economics']={}
   for d in s['batches']['0']['stats'][0]['days']:d['sum_price']=100000

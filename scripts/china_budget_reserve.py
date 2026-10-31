@@ -53,7 +53,13 @@ def attach_completed_evidence(bundle,source,changes):
    latest=max((instant(t) for t in ats),default=None)
    evidence=copy.deepcopy(econ.get('rows',{}).get(str(nm)) or {})
    evidence.setdefault('observed_at',econ.get('observed_at'))
-   c['budget_members'].append(dict(nm=nm,first_full_day=str(latest.astimezone(MSK).date()+timedelta(days=1)) if latest else None,economics=evidence))
+   first_full=str(latest.astimezone(MSK).date()+timedelta(days=1)) if latest else None
+   member_rows=[r for day in days if not first_full or day>=first_full for app in daily.get(day,{}).get('apps',[]) for r in app.get('nms',[]) if r.get('nmId')==nm]
+   traffic=None
+   if member_rows:
+    try:traffic={k:sum(float(number(r.get(f))) for r in member_rows) for k,f in [('spend','sum'),('orders','orders'),('amount','sum_price')]}
+    except (ValueError,InvalidOperation,TypeError):traffic=None
+   c['budget_members'].append(dict(nm=nm,first_full_day=first_full,economics=evidence,completed_traffic=traffic))
  return out
 
 def economics_review(c,days,observed):
@@ -113,12 +119,14 @@ def apply(bundle,minimum_cny=100):
   label='ДРР завершённых дней не определена без суммы рекламных заказов. ' if revenue==0 else ''
   decision='Резерв '+str(int(amount))+' ¥; согласовать продолжение теста.\n'+label+reason
   zero_orders=spend>0 and period.get('orders')==0
+  zero_members=[m['nm'] for m in c.get('budget_members',[]) if (m.get('completed_traffic') or {}).get('spend',0)>0 and m['completed_traffic'].get('orders')==0]
+  zero_orders=zero_orders or bool(zero_members)
   over5=c['budget_drr'] is not None and c['budget_drr']>5
   approved=c.get('approved_test_risk_remaining_cny')
   bounded=type(approved) in (int,float) and math.isfinite(approved) and approved>0
   blocked=(zero_orders or over5) and not (bounded and (not over5 or c.get('approved_drr_exception') is True))
   if blocked:
-   decision+=' Целевой потолок ДРР5%. '+('Есть расходы без заказов: ' if zero_orders else 'ДРР завершённых дней выше5%: ')+'проверить экономику и рассмотреть снижение ставки или исключение SKU; обычное пополнение не рекомендовано без отдельно согласованного ограниченного теста.'
+   decision+=' Целевой потолок ДРР5%. '+('Есть расходы без заказов'+(' по SKU '+','.join(map(str,zero_members)) if zero_members else '')+': ' if zero_orders else 'ДРР завершённых дней выше5%: ')+'проверить экономику и рассмотреть снижение ставки или исключение SKU; обычное пополнение не рекомендовано без отдельно согласованного ограниченного теста.'
   if state=='positive' and not blocked:
    decision='Пополнить на '+str(int(amount))+' ¥\nЗапас на 3 дня. '+label+reason
    members=sorted({m['nm'] for m in c['budget_members']})

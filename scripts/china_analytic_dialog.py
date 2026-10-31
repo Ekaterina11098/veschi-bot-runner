@@ -91,7 +91,10 @@ def period(w,start,end,topic):
 
 class Analyst:
  def __init__(self,w,job,history):self.w=w;self.job=job;self.history=history;self.fresh_reads=0
- def memory(self):return self.w.get(MEMORY) or {'available':False}
+ def memory(self):
+  m=self.w.get(MEMORY) or {'available':False}
+  strategy=self.w.get('china_agent:strategy:v1')
+  return dict(m,strategy=strategy) if strategy else m
  def actions(self):
   output=[]
   for prefix in ['china_agent:new_ad_execution:v1:','china_agent:ad_rule_execution:','china_agent:price_execution:v1:','china_agent:loss_ad_execution:','china_agent:codex_bid_raise:','china_agent:codex_bid_revert:','china_agent:hourly_cloud:execution:','china_agent:daily_ad_execution:v2:','china_agent:owner_price143_both:','china_agent:catalog_price_command:v1:']:
@@ -357,6 +360,8 @@ def answer(w,job,history):
  messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. Сегодняшний неполный день — сигнал диагностики. Рекомендации по ставке, исключению и пополнению обосновывай завершёнными днями после последнего verified изменения и собственной экономикой теста. День изменения исключай; ноль заказов не0%ДРР. Подтверждённый технический сбой или остановку нужной РК сообщай сразу; это не разрешение менять WB. Мониторы этой переписки настроены в Codex. Если monitoring запрещает Telegram, не обещать сообщения сюда в группу: назвать канал Codex явно. При продолжении наблюдения использовать monitoring и не откладывать контроль до даты итоговой оценки. Для предварительной прибыли одного дня сам вызови get_preliminary_profit: свежие заказы/статусы, цены/COGS, свой завершённый выкуп, все рекламные расходы и известные удержания. Для сравнения двух уже сохранённых дней используй get_saved_profit_comparison с датами; старый прогноз не сегодняшний. Не выдавай прогноз за закрытую прибыль, неизвестные расходы за нули, convertedPrice за выручку. При уточнении корзин по обсуждаемым товарам брать nm_ids из предыдущего диалога и products.basket_events общего среза. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
  messages.append(dict(role='developer',content='Рекламные предложения делай конкретными и исполнимыми: если явно просят кандидатов на повышение рекламных ставок, используй list_bid_shortlist: сначала проверка всех оснований, затем только подтверждённые рекомендации. Не заполняй список сомнительными ради числа и не советуй проверку вместо её выполнения. Для конкретного предложения после get_growth_candidates используй prepare_advertising_plan, даже если в кэше нет текущего дня: этот инструмент обновит только выбранные РК. Для повышения nm_ids=[] означает самостоятельный выбор по полной экономике и истории. Количество и процент возьми из команды участника, не заменяй30%на10%. Его готовый текст нельзя расширять неподтверждёнными действиями. Если просят Делай/Давай добавляй, но точный план ещё не был отправлен, сначала подготовь его; прежняя общая фраза не разрешает неизвестные ставки. Подготовка берёт кэш и verified-историю без WB polling; перед применением отдельный исполнитель проверит WB. Пополнения и паузы не входят. Если экономика/данные не подтвердились, сообщи конкретные товары и пробелы. Не обещай просто проверить потом и не подменяй результат подтверждением приёма.'))
  messages.append(dict(role='developer',content='Павел любит короткие ответы: число — одним числом, вывод 1–3 коротких предложения. Если товаров больше5, используй таблицу Markdown: она доставится PNG. Не прячь даты, пропуски и статус предварительного отбора. Для точного плана используй только результат prepare_advertising_plan: он сам готовит PNG и привязку команд.'))
+ from china_strategy import RULES as STRATEGY_RULES
+ messages.append(dict(role='developer',content=STRATEGY_RULES))
  messages.append(dict(role='user',content=job['request_text'][:4000]));trace=[dict(name='experience_context',result=experience,read_only=True)]
  if initial_evidence:trace.append(initial_evidence)
  checkpoint_key='china_agent:analytic_checkpoint:v3:'+str(job['id']);scope=hashlib.sha256((str(job['chat_id'])+'|'+job['request_text']+'|'+policy.get('model','gpt-6.1-sol')).encode()).hexdigest();checkpoint=w.get(checkpoint_key);start_turn=0
@@ -491,5 +496,7 @@ def copy_summary(value):
   return v
  result=compact(result)
  return result
+
+
 
 

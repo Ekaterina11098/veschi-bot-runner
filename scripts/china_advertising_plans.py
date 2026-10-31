@@ -66,8 +66,10 @@ def prepare(w,job,kind,nm_ids=(),raise_percent=None,count=None):
    if not candidates:raise ValueError('Нет подтверждённой рекомендации с рекламной статистикой')
    r=max(candidates,key=lambda r:(r.get('previous_full_days') or {}).get('orders',0))
    past=r.get('previous_full_days') or {};today=r.get('today') or {}
+   if r.get('previous_drr') is not None and r['previous_drr']>5:raise ValueError('ДРР завершённого периода выше общего потолка5%: сначала снижение/исключение или отдельно согласованный ограниченный тест, не обычное расширение')
+   if past.get('spend',0)>0 and past.get('orders')==0:raise ValueError('Завершённый расход без заказов: сначала проверить экономику и снижение/исключение; новый тест требует отдельного согласования риска')
    if kind=='raise':
-    if past.get('orders',0)<3 or r.get('previous_drr') is None or r['previous_drr']>4 or not today.get('orders') or r.get('today_drr') is None or r['today_drr']>5:raise ValueError('Нет достаточного запаса по рекламе за3дня и сегодня')
+    if past.get('orders',0)<3 or r.get('previous_drr') is None or r['previous_drr']>4:raise ValueError('Нет достаточного запаса по рекламе за завершённые дни')
     cid=r['campaign_id'];old=r['current_minor'];target=math.ceil(old*1.10/step)*step
     if type(old)is not int or target<=old or target>cfg.get('cpcMaxBid',0):raise ValueError('Ставка не определена')
     items.append(dict(kind='ad_raise_bid',campaign_id=cid,nm_id=nm,article=econ['article'],placement='recommendations',old_minor=old,target_minor=target,economics=econ,evidence=r,test_additional_cny=20))
@@ -84,7 +86,7 @@ def prepare(w,job,kind,nm_ids=(),raise_percent=None,count=None):
   except (ValueError,KeyError,TypeError) as ex:blocked.append(dict(nm_id=nm,reason=str(ex)))
  if not items:return dict(status='blocked',items=[],blocked=blocked,note='Готового плана нет; это не подтверждение действий')
  pid='dialog-ads-'+str(job['id'])+'-'+kind
- p=dict(plan_id=pid,execution_kind='advertising_dialog_v1',job_id=job['id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,items=items,plan_sha256=digest(items),created_at=iso(),expires_at=(datetime.now(timezone.utc)+timedelta(hours=2)).isoformat(),report_message_ids=[],blocked=blocked,source_observed_at=scan.get('observed_at'),price_changes=False,budget_writes=False)
+ p=dict(decision_basis='completed_days_only',target_drr_pct=5,plan_id=pid,execution_kind='advertising_dialog_v1',job_id=job['id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,items=items,plan_sha256=digest(items),created_at=iso(),expires_at=(datetime.now(timezone.utc)+timedelta(hours=2)).isoformat(),report_message_ids=[],blocked=blocked,source_observed_at=scan.get('observed_at'),price_changes=False,budget_writes=False)
  lines=['Предлагаю точный рекламный тест:']
  for i in items:
   action=('РК '+str(i['campaign_id'])+': '+str(i['old_minor']/100)+' → '+str(i['target_minor']/100)+' ¥ в рекомендациях') if kind=='raise' else ('добавить в поиск РК '+str(i['campaign_id']) if i['campaign_id'] else 'создать поисковый черновик без пополнения и запуска')+'; ставка '+str(i['target_minor']/100)+' ¥'
@@ -285,3 +287,5 @@ def process(io):
    r=io.tg('sendMessage',dict(chat_id=CHAT,text=text,reply_parameters=dict(message_id=a['input_message_id'],allow_sending_without_reply=True)))
    io.put(key,dict(status='sent',message_id=r['message_id'],chat_id=CHAT,text=text))
   except Exception:io.put(key,dict(status='uncertain',text=text))
+
+

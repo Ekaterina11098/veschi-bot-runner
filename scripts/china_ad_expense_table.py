@@ -73,6 +73,7 @@ def handle(w,job,history):
  if selected:rows=[r for r in rows if r['nm_id'] in selected]
  cutoff=datetime.fromisoformat(source['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M МСК')
  note='Сначала расходы без рекламных заказов; затем ДРР по убыванию. Срез '+cutoff+'. Сегодня неполный день. ДРР=сумма расходов/атрибутированная сумма заказов; не выкупы. Заказы разных РК могут пересекаться. Это данные для просмотра, не рекомендации менять рекламу.'
+ note+=' Целевой потолок ДРР5% для всех товаров. Расходы без заказов требуют проверки экономики теста и рассмотрения снижения ставки или исключения по завершённым дням после изменения; малая выборка не оправдывает неограниченный расход.'
  if source.get('missing_campaign_ids'):note+=' Нет данных по '+str(len(source['missing_campaign_ids']))+' РК; итог неполный, пропуск не0.'
  if unknown:note+=' Не сопоставлено артикулов: '+str(len(unknown))+'.'
  data=[[r['article'],f"{r['spend']:.2f} CNY",'Не определена: 0 рекламных заказов' if r['zero_orders'] else 'Не определена: нет суммы заказов' if r['drr'] is None else f"{r['drr']:.2f}%"] for r in rows]
@@ -80,3 +81,5 @@ def handle(w,job,history):
  # Existing durable table delivery renders this as PNG with the actual message receipt.
  answer=note+'\n\n| Артикул | Траты сегодня | ДРР |\n|---|---:|---:|\n'+'\n'.join('| '+' | '.join(r)+' |' for r in data)
  return answer,[dict(name='ad_expense_table',source_key='china_agent:ad_expense_table:v1:'+source['date_msk'],row_count=len(rows),read_only=True,wb_writes=0)]
+
+

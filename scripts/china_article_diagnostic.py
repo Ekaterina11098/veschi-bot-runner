@@ -50,9 +50,9 @@ def economics(f,target):
  p=f.get('price',{});s=f.get('stock',{});e=f.get('economy',{})
  price=p.get('seller_cny');cost=s.get('cogs_cny');shipping=e.get('logistics_cny');q=e.get('buyout');fee=e.get('commission_pct');tax=e.get('tax_pct',5);handling=e.get('handling_cny',10/12)
  required=[price,cost,shipping,q,fee,tax,handling,target]
- if not all(number(x) for x in required) or price<=0 or cost<=0 or shipping<0 or not 0<q<=1 or not 0<=fee<100 or not 0<=tax<100 or handling<0:return dict(available=False,reason='Цена/собственная COGS/логистика/выкуп/комиссия неполны')
+ if not all(number(x) for x in required) or price<=0 or cost<=0 or shipping<0 or not 0<=q<=1 or not 0<=fee<100 or not 0<=tax<100 or handling<0:return dict(available=False,reason='Цена/собственная COGS/логистика/выкуп/комиссия неполны')
  pre=q*(price*(1-(fee+tax)/100)-cost)-shipping-handling
- scenarios=[dict(click_order_pct=cr,ad_cost_per_order_cny=round(target/(cr/100),4),profit_per_order_cny=round(pre-target/(cr/100),4),profit_per_buyout_cny=round((pre-target/(cr/100))/q,4)) for cr in [1,2,3]]
+ scenarios=[dict(click_order_pct=cr,ad_cost_per_order_cny=round(target/(cr/100),4),profit_per_order_cny=round(pre-target/(cr/100),4),profit_per_buyout_cny=round((pre-target/(cr/100))/q,4) if q else None) for cr in [1,2,3]]
  from china_experiment_journal import risk_limits
  limits=risk_limits(pre,q,e.get('completed_sample'),bid_cny=target)
  return dict(available=True,buyout=q,completed_sample=e.get('completed_sample'),logistics_source=e.get('logistics_source'),pre_ad_per_order_cny=round(pre,4),scenarios=scenarios,risk_limits=limits,scenario_not_measured_forecast=True,unknown_reverse_and_shared_charges=True)
@@ -76,6 +76,18 @@ def evaluate(f,now,days=3,raise_percent=10):
   out.update(stage='uncertain_action',reason='Есть незавершённая или uncertain операция по SKU; повтор и новый тест заблокированы до сверки');return out
  if not dates:
   out.update(stage='observe_change',reason='После изменения ещё не завершён первый полный день МСК' if verified_day==latest else 'После сообщения владельца о восстановлении наличия ещё не завершён первый полный день МСК; сообщение не является WB-квитанцией');return out
+ from china_strategy import review
+ verified=f.get('history_checked') is True and all(fresh(f.get(k),now) for k in ['price','stock','campaign']) and fresh(f.get('economy'),now,86400) and all(number(traffic.get(k)) for k in FIELDS) and f.get('campaign',{}).get('status')==9 and number(f.get('campaign',{}).get('budget_cny')) and f['campaign']['budget_cny']>0 and number(f.get('stock',{}).get('available')) and f['stock']['available']>0
+ assessment=review(traffic,out.get('economics') or {},f.get('campaign',{}),dates,verified,f.get('approved_test_risk_remaining_cny'),f.get('approved_drr_exception') is True)
+ out['strategy_review']=assessment
+ if assessment.get('action'):
+  camp=f['campaign'];kind=assessment['action']
+  action=dict(kind=kind,campaign_id=camp['id'],nm_id=f['nm_id'],placement=camp.get('placement'))
+  if kind=='lower_bid_recommendation':
+   action.update(old_minor=assessment['old_minor'],target_minor=assessment['target_minor'])
+   recommendation=f"Предложение снизить CPC {assessment['old_minor']/100:g} → {assessment['target_minor']/100:g} CNY в РК {camp['id']}"
+  else:recommendation=f"Предложение исключить {f['article']} из РК {camp['id']}"
+  out.update(stage=assessment['status'],action=action,recommendation=recommendation,reason=assessment['reason']);return out
  if not f.get('history_checked'):
   gaps.append('Журнал выполненных действий не подтверждён')
  stock=f.get('stock',{});price=f.get('price',{});camp=f.get('campaign',{});card=f.get('visibility',{});quality=f.get('quality',{})
@@ -129,9 +141,14 @@ def render(result):
   return ' / '.join(fmt(k) for k in ['views','clicks','baskets','orders'])
  if len(rows)==1:
   r=rows[0];out=f"{r['article']}"+(f" · РК {r['campaign_id']}" if r.get('campaign_id') else '')+f". За {first}—{last}, реклама: показы/клики/корзины/заказы {stat(r)}.\nРекомендация: {r['recommendation']}"
+  if (r.get('action') or {}).get('kind') in ['lower_bid_recommendation','exclude_sku_recommendation']:
+   rate=r['strategy_review'].get('drr_pct');out+=' ДРР '+('не определена:0 заказов' if rate is None else f'{rate:g}%')+'; целевой потолок5%. '+r['reason']+'. Экономика предварительная, малая выборка и неизвестные расходы сохраняются. Нужен отдельный подтверждённый план; изменений WB нет.'
+   return out
   if r['action']:
    e=r['economics'];out+=' Предварительно на заказ при CR1/2/3%: '+ '/'.join(f"{x['profit_per_order_cny']:g}" for x in e['scenarios'])+' CNY; сценарии, не измеренный прогноз. Выкуп '+str(round(e['buyout']*100,1))+'%, завершённая выборка '+str(e.get('completed_sample'))+'. Лимит выборки и неизвестные удержания сохраняются. Нужен отдельный подтверждённый план, сейчас изменений нет.'
   else:out+=' '+r['reason']+'.'
+  assessment=r.get('strategy_review') or {}
+  if assessment.get('requires_review'):out+=' Целевой потолок ДРР5%. '+assessment.get('reason','Проверить экономику и рассмотреть снижение ставки или исключение из РК')+'.'
   limits=(r.get('economics') or {}).get('risk_limits') or {}
   if limits.get('available'):
    out+=' Модельный предел расходов на созданный заказ '+str(limits['break_even_cpa_model_cny'])+' CNY; предварительный риск-бюджет теста '+str(limits['suggested_initial_risk_budget_cny'])+' CNY на SKU во всех РК вместе, не автоматический лимит WB. Неподтверждённые расходы и малая выборка могут уменьшить запас.'
@@ -151,3 +168,5 @@ def render(result):
  if reasons:lines+=['Ограничения проверки: '+'; '.join(reasons[:4])+'.']
  if any(r['action'] for r in rows):lines+=['Проекты тестов, не исполнение. Экономика предварительная; CR1/2/3% — сценарии; неизвестные удержания не0.']
  return '\n'.join(lines)
+
+

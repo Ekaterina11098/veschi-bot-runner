@@ -152,6 +152,7 @@ class BudgetClarityTests(unittest.TestCase):
   bundle=dict(days=['2026-10-24','2026-10-25','2026-10-26'],source_observed_at='27.10 08:40',campaigns=[c])
   bundle.update(budget_days=bundle['days'],budget_observed_at='2026-10-27T05:40:00Z',budget_balance_observed_at_iso='2026-10-27T05:40:00Z')
   c['budget_period']=row(100,4000)
+  c['budget_members']=[dict(nm=1,economics={}),dict(nm=2,economics={})]
   original=ImageDraw.ImageDraw.text;calls=[]
   def capture(draw,xy,text,*args,**kwargs):
    calls.append(text);return original(draw,xy,text,*args,**kwargs)

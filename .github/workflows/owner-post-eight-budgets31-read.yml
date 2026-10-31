@@ -1,0 +1,23 @@
+name: Owner post-eight budget read31
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-post-eight-budgets31-read.yml']
+permissions: {contents: read}
+jobs:
+  read:
+    if: github.event.head_commit.message == 'Read owner campaign budgets after verified eight actions'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Read cash and composition only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python scripts/owner_post_eight_budgets31_read.py

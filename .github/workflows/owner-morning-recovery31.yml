@@ -1,0 +1,73 @@
+name: Owner recovery morning report 31 October
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-morning-recovery31.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-advertising-daily
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.run_attempt == 1 && github.event.head_commit.message == 'Owner authorized morning report recovery 2026-10-31'
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts
+            .github
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Check advertising arithmetic and duplicate safeguards
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
+      - name: Prepare and freeze the existing daily identity without Telegram calls
+        env:
+          CHINA_AD_PREPARE_ONLY: 'true'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: PYTHONPATH=scripts python scripts/china_advertising_daily.py
+  daily:
+    needs: prepare
+    if: github.run_attempt == 1 && github.event.head_commit.message == 'Owner authorized morning report recovery 2026-10-31'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts
+            .github
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Wait for 07:30 MSK after preparation
+        run: |
+          python - <<'PY'
+          import time
+          from datetime import datetime, timezone
+          now = datetime.now(timezone.utc)
+          target = now.replace(hour=4, minute=30, second=0, microsecond=0)
+          while (remaining := (target - datetime.now(timezone.utc)).total_seconds()) > 0:
+              time.sleep(min(remaining, 15))
+          PY
+      - name: Deliver only frozen pages with the existing receipt and part identities
+        env:
+          CHINA_AD_FROZEN_ONLY: 'true'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: PYTHONPATH=scripts python scripts/china_advertising_daily.py

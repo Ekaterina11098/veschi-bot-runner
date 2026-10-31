@@ -123,13 +123,18 @@ def handle(w,job,history=()):
  hourly_reply=hourly_handle(w,job,history)
  if hourly_reply is not None:return hourly_reply
  text=job.get('request_text','')
+ # The replied-to message is stronger context than an unrelated last four turns.
+ # Reuse the complete funnel aggregator instead of truncating SKU rows for the model.
+ quoted=next((t.get('reply_text','') for t in job.get('tool_trace',[]) if t.get('name')=='china_saved_question'),'')
+ if not re.search(EXCLUDED,text,re.I) and re.search(r'отч[её]т|такой|такую|так же',text,re.I) and re.search(r'общая воронка WB|карточка\s*→\s*корзина',quoted,re.I) and re.search(r'сегодня|сейчас|вчера',text,re.I):
+  text+=' Общая конверсия.'
  context_conversion=any(re.search(r'конверс|показатель.*число',h.get('request_text',''),re.I) for h in history[-4:])
  try:
   day=requested_day(w,text,history)
   if day and not re.search(EXCLUDED,text,re.I) and (intent(text,history) is not None or context_conversion):return completed_day(w,day)
  except Exception as exc:
   return ('Общую конверсию за запрошенный полный день пока не подтвердил: '+type(exc).__name__+'. Сегодняшний срез не подставляю вместо него.',[dict(name='conversion_funnel_evidence',result=dict(available=False,error=type(exc).__name__),read_only=True)])
- days=intent(job.get('request_text',''),history)
+ days=intent(text,history)
  if days is None:return None
  try:
   data=collect_period(w,days) if days>1 else collect(w)

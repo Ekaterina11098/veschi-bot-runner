@@ -95,7 +95,7 @@ def apply(bundle,minimum_cny=100):
  out['budget_reserve_policy']=POLICY;out['budget_minimum_topup_cny']=float(minimum)
  for c in out['campaigns']:
   c['budget_action']=None;c['budget_review_required']=False
-  for field in ('budget_reserve_amount','budget_economics_status','budget_economics_reason','budget_drr'):c.pop(field,None)
+  for field in ('budget_reserve_amount','budget_economics_status','budget_economics_reason','budget_drr','budget_followup'):c.pop(field,None)
   if c.get('status')!=9 or c.get('never_started'):continue
   try:
    days=out['budget_days'];observed=instant(out['budget_observed_at'])
@@ -127,6 +127,8 @@ def apply(bundle,minimum_cny=100):
   blocked=(zero_orders or over5) and not (bounded and (not over5 or c.get('approved_drr_exception') is True))
   if blocked:
    decision+=' Целевой потолок ДРР5%. '+('Есть расходы без заказов'+(' по SKU '+','.join(map(str,zero_members)) if zero_members else '')+': ' if zero_orders else 'ДРР завершённых дней выше5%: ')+'проверить экономику и рассмотреть снижение ставки или исключение SKU; обычное пополнение не рекомендовано без отдельно согласованного ограниченного теста.'
+   c['budget_followup']=dict(status='conditional_after_campaign_recommendations',reference_cash_gap_cny=int(amount),final_topup_amount_cny=None,requires_verified_campaign_changes=True,requires_fresh_balance_and_members=True,requires_remaining_sku_economics=True,requires_separate_confirmation=True,execution_authorized=False)
+   decision+=' После принятия и WBverified выполнения рекомендаций по РК — пересчитать потребность по оставшимся товарам и свежему балансу и предложить сумму пополнения. Текущая нехватка — справочная, не окончательная сумма после изменений. Первый полный день после изменения либо отдельное согласование ограниченного резерва теста.'
   if state=='positive' and not blocked:
    decision='Пополнить на '+str(int(amount))+' ¥\nЗапас на 3 дня. '+label+reason
    members=sorted({m['nm'] for m in c['budget_members']})

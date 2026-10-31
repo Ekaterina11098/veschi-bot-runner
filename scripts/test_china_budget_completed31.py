@@ -35,6 +35,10 @@ class CompletedBudgetTests(unittest.TestCase):
   s=source()
   for d in s['batches']['0']['stats'][0]['days']:d['sum_price']=10000
   c=result(s)['campaigns'][0];self.assertLess(c['budget_drr'],5);self.assertIsNotNone(c['budget_action'])
+ def test_conditional_funding_after_verified_campaign_recommendations(self):
+  c=result()['campaigns'][0];f=c['budget_followup']
+  self.assertEqual(f['status'],'conditional_after_campaign_recommendations');self.assertTrue(f['requires_verified_campaign_changes']);self.assertTrue(f['requires_fresh_balance_and_members'])
+  self.assertIsNone(f['final_topup_amount_cny']);self.assertFalse(f['execution_authorized']);self.assertIsNone(c['budget_action']);self.assertIn('WBverified',c['budget_short_note'])
  def test_profitable_campaign_cannot_hide_zero_order_member_spend(self):
   s=source();raw=s['batches']['0'];raw['campaigns']['adverts'][0]['nm_settings'].append(dict(nm_id=2,bids_kopecks=dict(search=28)))
   s['economics']['rows']['2']=copy.deepcopy(s['economics']['rows']['1'])

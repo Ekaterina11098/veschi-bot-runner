@@ -15,6 +15,23 @@ CAT=dict(cabinet='token_3',rows=[dict(vendorCode='143-ReginaBag-black',nmID=1473
 def review(days=1):
  return dict(report_date=str(DAY),status='complete_disclosed_forecast_model',model_version='wb_profit_floor_price_hypothesis_v4',products=[dict(article='143-ReginaBag-black',before_price=450.5,after_price=495.55,full_days=days,buyout_fallback=False,buyout_sample=94,result=dict(status='rollback_review',early_review_criteria_met=True),economic_target=dict(basis='profit_floor_demand_hypothesis',status='recommended',price_cny=450.5,base_cny=901,discount=50,expected_profit_advantage_per_day=100))])
 class PriceRules(unittest.TestCase):
+ def test_telegram_keeps_exact_compact_proposal(self):
+  import sys, types
+  from unittest.mock import patch
+  fake=types.ModuleType('china_agent.buyer_price_forecast');fake.forecast=lambda *args:None
+  with patch.dict(sys.modules,{'china_agent':types.ModuleType('china_agent'),'china_agent.buyer_price_forecast':fake}):
+   text=brief.render_plain('ПЕРВОЕ ПОВЫШЕНИЕ +5%: 0','morning',review(),DAY,CAT)
+  self.assertEqual(text,'Снижение · 143-ReginaBag-black Продавец: 495,55 → 450,5 ¥\nПокупатель: нет данных')
+  self.assertIsNotNone(brief.plain_payload(text,CAT))
+ def test_unconfirmed_scenario_stays_internal(self):
+  import sys, types
+  from unittest.mock import patch
+  fake=types.ModuleType('china_agent.buyer_price_forecast');fake.forecast=lambda *args:None
+  r=review();r['products'][0]['economic_target']=dict(status='profit_floor_not_reached',best_scenario=dict(price_cny=450.5,required_orders_per_day=20,predicted_orders_per_day=10))
+  with patch.dict(sys.modules,{'china_agent':types.ModuleType('china_agent'),'china_agent.buyer_price_forecast':fake}):
+   text=brief.render_plain('ПЕРВОЕ ПОВЫШЕНИЕ +5%: 0','morning',r,DAY,CAT)
+  self.assertEqual(text,'Повышение: нет\n\nСнижение: нет')
+
  def test_baseline_does_not_mix_previous_prices(self):
   pair=windows(date(2026,10,30),DAY)
   from decimal import Decimal

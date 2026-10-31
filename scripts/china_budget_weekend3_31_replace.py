@@ -86,7 +86,7 @@ def apply(io):
   if f['status']!='prepared':raise ValueError('Telegram edit uncertain; no blind retry')
   data=base64.b64decode(f['b64'],validate=True)
   if hashlib.sha256(data).hexdigest()!=f['sha256']:raise ValueError('Frozen replacement PNG changed')
-  caption='Китай · '+('реклама' if f['family']=='budgets' else 'бюджеты')+' · '+DAY+' · исправлено по проверке владельца. ДРР день: 30.10; 3 дня: 28–30.10. '
+  caption='Китай · '+('реклама' if f['family']=='drr' else 'бюджеты')+' · '+DAY+' · исправлено по проверке владельца. ДРР день: 30.10; 3 дня: 28–30.10. '
   caption+='Касса: 31.10 10:16 МСК. Три дня резерва с учётом последнего полного дня. '
   caption+=('Новых действий: '+str(f['action_count'])+'. Ответьте «Сделай всё» только на обновлённый PNG.' if f['action_count'] else 'Новых действий для исполнения нет.')
   oldplan=io.get(PLAN+f['old_binding']['plan_id'])

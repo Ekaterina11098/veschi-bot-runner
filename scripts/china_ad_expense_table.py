@@ -1,7 +1,6 @@
 """Answer expense/DRR questions directly; descriptive data never invokes bid selection."""
 import math,re
 from datetime import datetime,timezone
-from china_article_diagnostic import MSK,fresh
 
 def requested(text,history=()):
  if re.search(r'сделай|пополни|выключи|поставь|измени|подними',text,re.I):return False
@@ -34,6 +33,7 @@ def table(stats,labels,threshold=0):
  return result,sorted(set(missing))
 
 def read(w):
+ from china_article_diagnostic import MSK,fresh
  from china_price_apply import IO
  from china_advertising_v2 import http
  from china_analytic_dialog import reading
@@ -61,6 +61,7 @@ def read(w):
 def handle(w,job,history):
  if job.get('origin')=='scheduled' or re.search(r'вчера|за два дня|202\d-\d\d-\d\d',job.get('request_text',''),re.I):return None
  if job.get('chat_id')!=-1004342917488 or not requested(job.get('request_text',''),history):return None
+ from china_article_diagnostic import MSK
  source=read(w);labels={int(n):a for n,a in w.catalog()}
  # Explicit today request is diagnostic, not a completed-day action recommendation.
  text=job['request_text'];match=re.search(r'(?:выше|больше|>)\s*(\d+(?:[.,]\d+)?)\s*%',text,re.I)

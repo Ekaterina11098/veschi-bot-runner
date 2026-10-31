@@ -13,11 +13,11 @@ class FakeWB:
 helper.WB = FakeWB
 helper.validate_identity = lambda *a: None
 helper.stamp = lambda: '2026-10-31T10:00:00+00:00'
-sys.modules['china_cloud_cost_control'] = helper
-sys.modules.setdefault('requests', types.ModuleType('requests'))
 spec = importlib.util.spec_from_file_location('collector', __file__.replace('test_china_', 'china_'))
 m = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(m)
+with patch.dict(sys.modules, {'china_cloud_cost_control': helper,
+                             'requests': types.ModuleType('requests')}):
+    spec.loader.exec_module(m)
 
 class CollectorTest(unittest.TestCase):
     def test_msk_boundary_and_half_open_window(self):

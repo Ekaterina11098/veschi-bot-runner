@@ -1,7 +1,12 @@
 name: China hourly sales API read
 on:
   schedule:
-    - cron: '2 * * * *'
+    - cron: '7,22,37,52 * * * *'
+  workflow_call:
+    secrets:
+      SUPABASE_URL: {required: true}
+      SUPABASE_SECRET_KEY: {required: true}
+      WB_TOKEN_3: {required: true}
   workflow_dispatch:
   push:
     branches: [main]
@@ -12,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
-    if: ${{ github.event_name != 'push' || github.event.head_commit.message == 'Connect China hourly read-only API collection' }}
+    if: ${{ github.event_name != 'push' || github.event.head_commit.message == 'Connect China hourly read-only API collection' || github.event.head_commit.message == 'Repair China hourly read-only collection with deduplicated fallback' }}
     runs-on: ubuntu-latest
     timeout-minutes: 9
     steps:

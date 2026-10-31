@@ -7,10 +7,12 @@ from test_china_article_diagnostic import NOW
 class ReadPlanTests(unittest.TestCase):
  def test_real_read_plan_is_scoped_and_never_mutates(self):
   w=worker();an=analyst(w);data=inputs();calls=[]
-  def live(topic,ids,*x):
-   calls.append(('live',topic,ids))
-   return dict(rows=data['stock'] if topic=='stock' else data['prices'],observed_at=NOW.isoformat())
-  an.live=live
+  def collect(topic,ids,*x):
+   calls.append(('collect',topic,ids));self.assertEqual(ids,[100])
+   if topic=='products':return dict(source='own completed cohort',rows=[dict(nm_id=100,finished_orders=10,is_payed=8,total_commission_without_spp_in_sales=20)])
+   return dict(source='exact inputs',rows=data['stock'] if topic=='stock' else data['prices'])
+  an.collect=collect;an.fresh_reads=3
+  an.live=lambda *x:(_ for _ in ()).throw(AssertionError('Must not reuse exhausted model read allowance'))
   def http(io,path,method='GET',body=None):
    self.assertEqual(method,'GET');self.assertIsNone(body);calls.append(('http',path))
    if path=='/api/advert/v1/config':return dict(currency='CNY',cpcStep=1,cpcMaxBid=500)
@@ -28,6 +30,7 @@ class ReadPlanTests(unittest.TestCase):
   with patch.dict(sys.modules,modules):result=read_current(an,[100],view(),'2026-10-25','2026-10-27')
   self.assertEqual(result['general'][100]['orders'],2);self.assertEqual(result['budgets']['40000001'],100);self.assertEqual(result['minimums']['40000001:100:recommendations'],28);self.assertFalse(result['gaps'])
   self.assertTrue(any(c[0]=='minimums' and c[2]==[100] for c in calls))
+  self.assertEqual({c[1] for c in calls if c[0]=='collect'},{'prices','stock','products'})
  def test_get_public_offer_does_not_allow_other_public_or_marketplace_endpoints(self):
   # The core read fence must reject cart and price mutations.
   with patch.dict(sys.modules,{'china_wb_evidence':types.SimpleNamespace(allowed_read=lambda *x:False)}),a.reading():
@@ -63,3 +66,4 @@ class ReadPlanTests(unittest.TestCase):
   with patch.dict(os.environ,{'MOYSKLAD_API_TOKEN':'synthetic'}),patch.object(requests,'get',lambda *a,**k:R()):
    with self.assertRaisesRegex(ValueError,'completeness unknown'):an.collect('stock',[100],None,None)
 if __name__=='__main__':unittest.main()
+

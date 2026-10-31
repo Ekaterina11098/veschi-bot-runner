@@ -5,6 +5,7 @@ from china_article_diagnostic import MSK,fresh
 
 def requested(text,history=()):
  if re.search(r'сделай|пополни|выключи|поставь|измени|подними',text,re.I):return False
+ if re.search(r'рекоменд|что.*делать|проанализ|разбер|почему.*убыт',text,re.I):return False
  context=' '.join(h.get('request_text','') for h in history[-4:])
  own=bool(re.search(r'дрр|ддр',text,re.I) and re.search(r'расход|трат|таблиц|лидер|артикул|отсорт',text,re.I))
  follow=bool(re.search(r'хочу сам посмотреть|это не то что я просил|без заказов.*расход|перед высоким',text,re.I) and re.search(r'дрр|ддр',context,re.I))

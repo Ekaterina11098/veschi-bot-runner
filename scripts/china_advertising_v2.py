@@ -436,7 +436,8 @@ def prepare(io,day):
    minimums[str(c['id'])+':'+str(x['nm_id'])]=v[0]
   if returned!=set(ids):raise ValueError('Incomplete campaign minima')
  from china_advertising_cards import enhance
- return enhance(build(s,minimums),s)
+ from china_advertising_growth import enrich
+ return enrich(io,s,enhance(build(s,minimums),s))
 
 
 

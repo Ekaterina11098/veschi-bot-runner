@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
-    if: github.run_attempt == 1 && github.event.head_commit.message == 'Apply owner three-day weekend budget PNG31'
+    if: ${{ false }}
     concurrency:
       group: bot-mpstats-data
       cancel-in-progress: false

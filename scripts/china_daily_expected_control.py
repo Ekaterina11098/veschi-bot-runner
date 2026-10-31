@@ -6,7 +6,8 @@ import json,os,base64,re,time
 def comparison_windows(detected,today):
  n=min(4,max(0,(today-detected).days-1))
  if not n:return None
- return ((detected-timedelta(days=4),detected-timedelta(days=1)),(detected+timedelta(days=1),detected+timedelta(days=n)))
+ end=today-timedelta(days=1)
+ return ((detected-timedelta(days=4),detected-timedelta(days=1)),(end-timedelta(days=n-1),end))
 
 def all_days(a,b):return [a+timedelta(days=i) for i in range((b-a).days+1)]
 
@@ -90,20 +91,12 @@ def build(worker,candidate_review=False):
  from analytics.mpstats_gaps import execute_reads
  from analytics.collect import _fetch_transport
  state=worker.get(demand.STATE_KEY) or {};tracked=tracked_rows(state,worker.day)
- if candidate_review:
-  tracked=[]
-  for nm,result in (state.get('latest',{}).get('results') or {}).items():
-   before=result.get('conversion_before');after=result.get('conversion_after')
-   entry=state.get('price_history',{}).get(nm,{})
-   change=entry.get('last_price_change') or entry.get('increase') or {}
-   if result.get('full_days',0)>=4 and before is not None and after is not None and after<before and change.get('baseline_from') and change.get('baseline_to'):
-    detected=datetime.fromisoformat(change['detected_at']).astimezone(MSK).date()
-    tracked.append((nm,entry,change,detected))
  end=worker.day-timedelta(days=1);rate_start=end-timedelta(days=29)
+ from china_agent.price_economic_target import verified_price_history,baseline_after_last_change,canonical_change_days
+ price_events=verified_price_history(worker)
+ tracked=canonical_change_days(tracked,price_events)
  pairs={str(nm):comparison_windows(d,worker.day) for nm,e,c,d in tracked}
- if candidate_review:
-  pairs={str(nm):((date.fromisoformat(c['baseline_from']),date.fromisoformat(c['baseline_to'])),(worker.day-timedelta(days=4),end)) for nm,e,c,d in tracked}
-  if any((a[1]-a[0]).days!=3 for a,b in pairs.values()):raise RuntimeError('Candidate baseline must contain four full days')
+ pairs={str(nm):baseline_after_last_change(pairs[str(nm)],nm,(c.get('before_price') or {}).get('current_cny'),d,price_events) for nm,e,c,d in tracked}
  windows={(str(rate_start),str(end))}
  for pair in pairs.values():
   if pair:windows.update((str(a),str(b)) for a,b in pair)
@@ -232,8 +225,18 @@ def build(worker,candidate_review=False):
   if a['orders']==b['orders']==0:result.update(status='no_orders',result_action='Заказов в обоих периодах нет. Разница результата связана с рекламными расходами; влияние цены не оценено.')
   after=outcomes['after']
   if after['completed'] and after['paid']==0:item['zero_buyout_signal']=dict(attention=True,message='Заказы есть, подтверждённых выкупов нет; проверить причины отмен/возвратов. Не связывать с качеством без проверки.')
+  if result.get('status')=='rollback_review' and not item['buyout_fallback'] and resolved['sample_size']>=10 and item['before_price']<item['after_price'] and a['orders'] and b['orders']:
+   from china_agent.price_economic_target import choose_target
+   item['economic_target']=choose_target(change['before_price'],change['after_price'],a,b,buyout_probability=resolved['probability'],retention=retention,cost=costs.get(article.casefold()),dispatch=dispatch,fx=model['rub_per_cny'])
   item.update(full_days=full_days,result=result);output.append(item)
- value=dict(model_version='wb_four_day_baseline_daily_means_v3',report_date=str(worker.day),status='complete_disclosed_forecast_model',products=output,rate_period=[str(rate_start),str(end)],calculated_at=datetime.now(MSK).isoformat(),telegram_calls=0,wb_writes=0)
+ value=dict(model_version='wb_profit_floor_price_hypothesis_v4',report_date=str(worker.day),status='complete_disclosed_forecast_model',products=output,rate_period=[str(rate_start),str(end)],calculated_at=datetime.now(MSK).isoformat(),telegram_calls=0,wb_writes=0)
+ # Keep unfinished or adverse experiments visible until resolved/new price.
+ if not getattr(worker,'control_preview',False):
+  progress=state.setdefault('price_review_progress',{})
+  for product in output:
+   nm=str(product['nm_id']);change=state['price_history'][nm].get('last_price_change') or state['price_history'][nm].get('increase') or {}
+   progress[nm]=dict(detected_at=change.get('detected_at'),assessed_at=datetime.now(MSK).isoformat(),complete=product.get('full_days',0)>=4 and product.get('result',{}).get('status') in ('positive','mixed','observe'))
+  worker.save(demand.STATE_KEY,state)
  worker.save(('china_agent:daily_expected_candidates:' if candidate_review else 'china_agent:daily_expected_control:')+str(worker.day)+(':verify' if getattr(worker,'control_preview',False) else ''),value)
  return value
 
@@ -277,7 +280,7 @@ def model_notes():
  'База до изменения фиксирована: четыре полных дня. После — завершённые дни с первого по четвёртый; сравниваются средние заказы и прогноз прибыли в день. Конверсия — отношение сумм заказов воронки к суммам просмотров за свой период, не среднее дневных процентов. День обнаружения и сегодняшний день исключены. Новая корректировка сбрасывает отсчёт. Все изменения цены согласовываем.')
 
 def render(value):
- if value.get('model_version')!='wb_four_day_baseline_daily_means_v3':raise RuntimeError('Legacy forecast forbidden')
+ if value.get('model_version')!='wb_profit_floor_price_hypothesis_v4':raise RuntimeError('Legacy forecast forbidden')
  return '\n\n'.join(['Китай • контроль изменений цен • '+value['report_date']+'\nПод наблюдением: '+str(len(value['products']))+' товаров.']+[render_item(p) for p in value['products']]+[model_notes()])
 
 def render_candidates(worker):
@@ -302,7 +305,7 @@ def render_candidates(worker):
   if not entry.get('increase') and not entry.get('last_price_change') and all(v>=1 for v in values):
    proposal=demand.offer(price)
    if proposal:initial.append((targets[nm],nm,values,proposal))
- review=build(worker,candidate_review=True)
+ review=getattr(worker,'price_control_review',None) or build(worker,candidate_review=True)
  lines=['Китай • кандидаты на повышение и проверку снижения • '+str(worker.day),'Период: '+str(wanted[0])+'–'+str(wanted[-1])+'. Проверен каталог: '+str(len(targets))+' товаров.','ПЕРВОЕ ПОВЫШЕНИЕ +5%: '+str(len(initial))]
  for article,nm,values,p in sorted(initial):
   cancels=sum(daily[str(d)][nm]['cancelled'] for d in wanted)
@@ -311,3 +314,5 @@ def render_candidates(worker):
  lines.extend(render_item(p) for p in review['products'])
  lines.append(model_notes())
  return '\n\n'.join(lines)
+
+

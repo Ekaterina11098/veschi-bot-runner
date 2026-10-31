@@ -1,0 +1,39 @@
+name: Owner compact morning PNG 31 October
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-morning-agreed8-31-apply.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-morning-compact31
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.run_attempt == 1 && github.event.head_commit.message == 'Owner authorized agreed eight PNG edit 2026-10-31'
+    concurrency:
+      group: bot-mpstats-data
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts
+            .github
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Check advertising arithmetic and duplicate safeguards
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
+      - name: Prepare and freeze the existing daily identity without Telegram calls
+        env:
+          CHINA_AD_PREPARE_ONLY: 'true'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: PYTHONPATH=scripts python scripts/china_morning_agreed8_31_replace.py --apply

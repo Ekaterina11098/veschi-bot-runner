@@ -141,3 +141,12 @@ jobs:
           python -m unittest discover -s scripts -p 'test_china_catalog_price_*.py'
           python scripts/china_zero_order_price_execute.py --drain
           python scripts/china_catalog_price_execute.py --drain
+
+  hourly-sales-fallback:
+    name: Recover missing hourly read-only sales snapshot
+    if: github.event_name == 'schedule'
+    uses: ./.github/workflows/china-hourly-sales-read.yml
+    secrets:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

@@ -7,12 +7,12 @@ for r in CAT['rows']:
  if r['vendorCode']=='123-Zont-pink':r.update(currencyIsoCode4217='CNY',discount=35,sizes=[dict(price=164,discountedPrice=106.6)])
 def review(status='rollback_review',days=4):
  return dict(report_date=str(DAY),status='complete_disclosed_forecast_model',
- model_version='wb_four_day_baseline_daily_means_v3',products=[
- dict(article='123-Zont-pink',after_price=106.6,before_price=82,full_days=days,result=dict(status=status))])
+ model_version='wb_profit_floor_price_hypothesis_v4',products=[
+ dict(article='123-Zont-pink',after_price=106.6,before_price=82,full_days=days,buyout_fallback=False,buyout_sample=20,economic_target=dict(basis='profit_floor_demand_hypothesis',status='recommended',price_cny=82,base_cny=164,discount=50,expected_profit_advantage_per_day=10),result=dict(status=status))])
 class BriefTests(unittest.TestCase):
  def test_morning(self):
   source='ПЕРВОЕ ПОВЫШЕНИЕ +10%: 1\n\n590-PamelaBag-brown\nЗаказы по дням: 1/3/1/1; отмены: 0.\nЦена продавца после скидки: 341,1 → 375,3 ¥.\nОбъяснение\nПовторное повышение\nПРОВЕРКА ВОЗМОЖНОГО СНИЖЕНИЯ'
-  self.assertEqual(render(source,'morning',review(),DAY,CAT),'Рекомендации к повышению:\n590-PamelaBag-brown: 341,1 → 375,3 ¥\nАртикул WB: 1473245510\n\nРекомендации к снижению:\n123-Zont-pink: 106,6 → 101,4 ¥\nАртикул WB: 1556488210')
+  self.assertEqual(render(source,'morning',review(),DAY,CAT),'Рекомендации к повышению:\n590-PamelaBag-brown: 341,1 → 375,3 ¥\nАртикул WB: 1473245510\n\nРекомендации к снижению:\n123-Zont-pink: 106,6 → 82 ¥\nАртикул WB: 1556488210')
  def test_intraday(self):
   source='Первое повышение +10%: 1 кандидатов.\n• 15-FurPanama-cream: заказы 1/1/2/1.\n  Предложение: 79 → 87 ¥ после скидки, с округлением.\nБлижайшие кандидаты — ждём сегодняшний заказ:\n• OTHER: 1/1/1/0.'
   self.assertEqual(render(source,'intraday',review('investigate'),DAY,CAT),'Рекомендации к повышению:\n15-FurPanama-cream: 79 → 87 ¥\nАртикул WB: 1535337778\n\nРекомендации к снижению:\nНет')
@@ -39,3 +39,4 @@ class BriefTests(unittest.TestCase):
  def test_ambiguous_id_rejected(self):
   with self.assertRaises(RuntimeError):catalogue_ids(dict(cabinet='token_3',rows=[dict(vendorCode='A',nmID=123),dict(vendorCode='a',nmID=456)]))
 if __name__=='__main__':unittest.main()
+

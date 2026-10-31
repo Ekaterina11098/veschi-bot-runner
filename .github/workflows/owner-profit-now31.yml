@@ -30,4 +30,4 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
-        run: python scripts/owner_profit_now31.py
+        run: python scripts/owner_profit_now31_resume.py

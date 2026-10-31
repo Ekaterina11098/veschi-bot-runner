@@ -6,6 +6,7 @@ on:
 permissions: {contents: read}
 jobs:
   journal:
+    if: ${{ false }} # Immutable private bootstrap verified31Oct; runtime imports new receipts incrementally
     runs-on: ubuntu-latest
     timeout-minutes: 9
     steps:

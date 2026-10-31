@@ -176,23 +176,7 @@ def render_plain(answer,mode,review,day,catalogue,buyer=None,omitted=None):
             else:
                 rub=lambda value:format(value,',').replace(',',' ')
                 buyer_text=rub(before)+' → '+rub(after)+' ₽'
-            block=action+' · '+article+' Продавец: '+old+' → '+new+' ¥\nПокупатель: '+buyer_text
-            if action=='Снижение':
-                item=next(p for p in review['products'] if p['article']==article)
-                t=item['economic_target']
-                num=lambda v:format(v,'.2f').replace('.',',')
-                block+='\nГипотеза: '+num(t['predicted_orders_per_day'])+' заказов/день; для сохранения прибыли нужно '+num(t['required_orders_per_day'])+'.'
-                block+='\nПрогноз прибыли: '+num(t['predicted_profit_per_day'])+' ₽/день; до повышения '+num(t['profit_floor_per_day'])+' ₽/день. Реклама и выкуп учтены; сохранение трафика и затрат — допущение, не гарантия.'
-            blocks.append(block)
-    proposed={a for a,old,new in (down or [])}
-    blocked=[p for p in (review or {}).get('products',[]) if p.get('result',{}).get('status')=='rollback_review' and p.get('article') not in proposed]
-    for item in blocked:
-        t=item.get('economic_target') or {};best=t.get('best_scenario')
-        if t.get('status')=='profit_floor_not_reached' and best:
-            fmt=lambda v:format(v,'.2f').replace('.',',')
-            blocks.append(item['article']+': при расчётной цене '+fmt(best['price_cny'])+' ¥ для сохранения прибыли до повышения нужно '+fmt(best['required_orders_per_day'])+' заказов/день, гипотеза даёт '+fmt(best['predicted_orders_per_day'])+'. Условие по прибыли пока не достигается; требуется пересмотр гипотезы, снижение не подтверждено.')
-        else:
-            blocks.append(item['article']+': расчёт выгодного снижения не завершён — '+str(t.get('status') or 'не подтверждены экономические входные данные')+'.')
+            blocks.append(action+' · '+article+' Продавец: '+old+' → '+new+' ¥\nПокупатель: '+buyer_text)
     if not blocks:
         blocks.append('Повышение: нет')
         if down is not None:blocks.append('Снижение: нет')

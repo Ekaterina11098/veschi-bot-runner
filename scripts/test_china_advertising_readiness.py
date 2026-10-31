@@ -31,5 +31,25 @@ class Quality(unittest.TestCase):
  def test_no_previous_date_result_as_today(self):
   io=IO();io.mem['china_agent:owner_profit_now:2026-10-31:v1:collection']['cabinet']='token_1'
   self.assertTrue(ensure(io,source(0,0,0),'2026-11-01','source')['usable'])
+class EconomicsRefresh(unittest.TestCase):
+ def test_own_buyouts_current_seller_price_and_stock_refresh_without_per_sku_price_calls(self):
+  from unittest.mock import patch
+  from china_morning_readiness import enrich_economics
+  io=IO();io.mem['china_agent:new_ad_economics_policy:v1']=dict(tax_pct=5,handling_rub=10,logistics_by_nm={'10':dict(delivery_cny=3)})
+  s=dict(catalogue=dict(rows=[dict(nmID=10,vendorCode='bag')]))
+  rough=dict(campaigns=[dict(focus=[dict(nm=10,period=dict(spend=20))])])
+  calls=[]
+  def live(self,topic,ids,first,last):
+   calls.append((topic,ids,first,last))
+   data={'products':[dict(nm_id=10,is_payed=10,finish_as_return=2,finished_orders=20,total_commission_without_spp_in_sales=20)],'prices':[dict(nm_id=10,article='bag',seller_price=100)],'stock':[dict(article='bag',cost_rub=120,available=8)]}
+   return dict(observed_at='2026-11-01T04:15:00Z',rows=data[topic])
+  with patch.dict('os.environ',dict(WB_TOKEN_3='fixture',MPSTATS_API_TOKEN='fixture',MOYSKLAD_API_TOKEN='fixture')),patch('china_analytic_dialog.Analyst.live',live),patch('china_intraday_analysis.rate',return_value=dict(rub_per_cny='12')):
+   result=enrich_economics(io,s,rough,'2026-11-01')
+  r=result['economics']['rows']['10']
+  self.assertEqual([c for c in calls if c[0]=='prices'],[('prices',[],'2026-10-02','2026-10-31')])
+  self.assertEqual(r['stock_free'],8);self.assertEqual(r['sample_size'],20)
+  self.assertAlmostEqual(r['expected_margin_before_ads_cny'],28.6666666667)
+  self.assertTrue(r['unknown_reverse_and_shared_costs'])
+  self.assertEqual(result['morning_fresh_inputs']['wb_writes'],0)
 if __name__=='__main__':unittest.main()
 

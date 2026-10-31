@@ -64,7 +64,6 @@ def enrich_economics(io,source,rough,report_day):
  from china_analytic_dialog import Analyst,reading
  from china_intraday_analysis import rate
  from china_expected_order_profit import buyout_from_product
- from decimal import Decimal
  last=date.fromisoformat(report_day)-timedelta(days=1);first=last-timedelta(days=29)
  class Work:
   now=datetime.now(timezone.utc)
@@ -75,7 +74,8 @@ def enrich_economics(io,source,rough,report_day):
  values={};errors={}
  with reading():
   for topic in ['products','prices','stock']:
-   try:values[topic]=an.live(topic,ids,str(first),str(last))
+   # A paginated price list avoids up to30 per-SKU requests and rate-limit failures.
+   try:values[topic]=an.live(topic,[] if topic=='prices' else ids,str(first),str(last))
    except Exception as ex:errors[topic]=type(ex).__name__
   try:fx=float(rate(w,last)['rub_per_cny'])
   except Exception as ex:fx=None;errors['fx']=type(ex).__name__

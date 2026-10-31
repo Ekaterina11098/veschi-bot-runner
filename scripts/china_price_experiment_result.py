@@ -24,14 +24,23 @@ def experiment_result(before_profit,after_profit,before_views,before_orders,afte
   return result
  p=conversion_test(before_views,before_orders,after_views,after_orders)
  result['conversion_fisher_p']=p
- if p is None or before_orders+after_orders==0:
+ if delta<0 and full_days>=4:
+  text='Прогноз прибыли в день снизился — проверяем экономику возврата прежней цены. Падение конверсии не является обязательным условием; причина ухудшения не установлена.';status='rollback_review'
+ elif p is None or before_orders+after_orders==0:
   text='Недостаточно наблюдений для решения — продолжаем сбор данных.';status='insufficient_observations'
  else:
   decline=after_orders/after_views<before_orders/before_views
   strong=decline and p<.05
-  if strong and delta<0:
-   text='Ожидаемая прибыль и конверсия снизились — внимательно наблюдаем; '+('проверяем связку и рассматриваем возврат прежней цены.' if full_days>=4 else 'решение о возврате после четырёх полных дней и проверки связки.')
-   status='rollback_review' if full_days>=4 else 'watch_decline'
+  early=(full_days>=1 and before_profit>0 and percent<=-20 and strong
+         and before_views>=100 and after_views>=100 and before_orders+after_orders>=30
+         and buyout_sample is not None and buyout_sample>=10)
+  result['early_review_criteria_met']=early
+  if delta<0 and (full_days>=4 or early):
+   text='Прогноз прибыли в день снизился — предлагается проверить экономику возврата прежней цены. Причина ухудшения не установлена; автоматического изменения нет.'
+   status='rollback_review'
+  elif strong and delta<0:
+   text='Прибыль и конверсия снизились, но подтверждений для раннего предложения недостаточно — продолжаем проверку.'
+   status='watch_decline'
   elif delta>0 and decline:
    text='Ожидаемая прибыль выросла, конверсия снизилась — результат смешанный, внимательно наблюдаем.';status='mixed'
   elif delta>0:
@@ -57,3 +66,5 @@ def zero_buyout_signal(orders,paid_kept,finished,pending,unpaid,returned):
   return dict(status='zero_buyout_with_completed_outcomes',attention=True,
    message=f'⚠️ Заказы есть, выкупов нет: заказы {orders}; завершено {finished}; невыкупы/отказы {unpaid}; возвраты после выкупа {returned}; ожидают исхода {pending}. Проверить доставку, отзывы, соответствие фото и описания, качество товара. Причина не установлена; отдельно от оценки изменения цены.')
  return dict(status='unverified',attention=False,message='Заказы есть, выкупы не подтверждены — сверить статусы, прежде чем делать вывод о товаре.')
+
+

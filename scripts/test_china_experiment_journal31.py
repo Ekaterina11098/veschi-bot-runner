@@ -59,6 +59,13 @@ class Journal(unittest.TestCase):
   result=assess_candidate([dict(event_id='small',action=dict(nm_ids=[1473243895]),advertising_outcome='negative',business_outcome='inconclusive')],1473243895,{})
   self.assertFalse(result['needs_review']);self.assertEqual(result['risks'][0]['basis'],'advertising_only_not_profit')
 class Limits(unittest.TestCase):
+ def test_explicit_order_request_can_refresh_after_saved_profit(self):
+  from unittest.mock import patch
+  from china_analytic_dialog import Analyst
+  w=W();an=Analyst(w,dict(request_text='Сколько сейчас заказов на045?'),[]);an.cached_profit_context_supplied=True
+  with patch.object(an,'collect',return_value=dict(source='synthetic',total_orders=2)) as collect:
+   result=an.live('orders',[1473243895],'2026-10-30','2026-10-30')
+  collect.assert_called_once();self.assertEqual(result['total_orders'],2)
  def test_045_preliminary_economics(self):
   pre=.2*(235.2*.75-850.001197/12)-12.8-10/12
   r=risk_limits(pre,.2,5,bid_cny=.5)

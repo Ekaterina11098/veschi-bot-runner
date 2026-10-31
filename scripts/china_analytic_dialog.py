@@ -164,6 +164,8 @@ class Analyst:
   m=self.memory();m['revision']=m.get('revision',0)+1;m.setdefault('preferences',{})[key]=dict(quote=quote,source_job=self.job['id'],sender_id=self.job['sender_id'],at=self.w.now.isoformat());self.w.save(MEMORY,m)
   return dict(saved=True,key=key,quote=quote)
  def live(self,topic,nm_ids,start,end):
+  if topic=='orders' and getattr(self,'cached_profit_context_supplied',False) and not re.search(r'заказ|обнови|свеж|сейчас',self.job.get('request_text',''),re.I):
+   return dict(available=False,cached_context_available=True,wb_reads=0,note='Датированный прогноз уже получен; отдельного запроса свежих заказов нет. Используй его время и ограничения. Явный вопрос о заказах разрешает новый read-only сбор.')
   valid={int(nm) for nm,_ in self.w.catalog()}
   if len(nm_ids)>30 or any(type(n) is not int or n not in valid for n in nm_ids):raise ValueError('Сначала разреши артикул через find_products в точный nmID Китая')
   first,last=period(self.w,start,end,topic)

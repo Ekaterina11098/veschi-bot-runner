@@ -1,0 +1,31 @@
+name: China hourly sales API read
+on:
+  schedule:
+    - cron: '2 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-hourly-sales-read.yml']
+permissions: {contents: read}
+concurrency:
+  group: china-hourly-sales-read
+  cancel-in-progress: false
+jobs:
+  read:
+    if: ${{ github.event_name != 'push' || github.event.head_commit.message == 'Connect China hourly read-only API collection' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Verify windows, pagination, money and no-write guard
+        run: python scripts/test_china_hourly_sales_read.py
+      - name: Collect private dated API snapshots; no marketplace writes or Telegram
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: python scripts/china_hourly_sales_read.py

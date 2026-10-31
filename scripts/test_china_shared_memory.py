@@ -20,6 +20,10 @@ def job(text='Проверь рекламную кампанию',**kw):
  return dict(id=8,chat_id=-77,sender_id=5,request_text=text,**kw)
 
 class SharedMemory(unittest.TestCase):
+ def test_price143_explanation_is_a_work_question(self):
+  self.assertTrue(is_work('Почему нужно опустить цену на 143 сумку?'))
+  self.assertTrue(is_work('Какая общая конверсия у 143?'))
+
  def test_disabled_or_other_channel_cannot_read(self):
   w=W();self.assertFalse(context(w,dict(chat_id=-78))['available']);self.assertFalse(w.queries)
  def test_only_work_prefix_queried_even_with_private_rows(self):

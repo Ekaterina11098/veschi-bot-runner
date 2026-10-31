@@ -75,7 +75,7 @@ from analytics.mpstats_probe import discover
 from analytics.mpstats_gaps import execute_reads
 ROOT='china_agent:raise_candidates:2026-10-31:v1'
 def read_buyout():
- c=Cache();q=c.get(ROOT+':read_request')or{};key=ROOT+':buyout30'
+ c=Cache();q=c.get(ROOT+':read_request')or{};key=ROOT+':buyout30_with_rating'
  if q.get('status')!='approved_read_only' or q.get('cabinet')!='token_3' or datetime.now(timezone.utc)>=datetime.fromisoformat(q['expires_at']):raise ValueError('Read authorization expired')
  if c.get(key):return
  found=[]
@@ -88,7 +88,7 @@ def read_buyout():
   if len(found)!=1:raise ValueError('No one complete scoped observation')
   body=found[0].get('data',{}).get('data',{});rows=body.get('data',[])
   if body.get('need_update')!=0 or body.get('total')!=len(rows):raise ValueError('Products source not ready or incomplete')
-  wanted={i['nm_id']for i in q['items']};fields=['nm_id','sa_name','finished_orders','is_payed','finish_as_return','not_finished_orders','average_delivery_cost','forwardlogisticsum','backwardlogisticsum','total_commission_without_spp_in_sales','is_payed_percent_after_returns','logistic_all','orders_count','orders_sum','sales_sum','returns_sum']
+  wanted={i['nm_id']for i in q['items']};fields=['commentsvaluation','feedback_count','nm_id','sa_name','finished_orders','is_payed','finish_as_return','not_finished_orders','average_delivery_cost','forwardlogisticsum','backwardlogisticsum','total_commission_without_spp_in_sales','is_payed_percent_after_returns','logistic_all','orders_count','orders_sum','sales_sum','returns_sum']
   selected=[{k:r.get(k)for k in fields}for r in rows if int(r['nm_id'])in wanted]
   value=dict(status='complete',period_from='2026-10-01',period_to='2026-10-30',observed_at=stamp(),source='MPStats verified own China products',currency='RUB',all_product_records=len(rows),rows=selected,missing_ids=sorted(wanted-{int(r['nm_id'])for r in selected}),wb_writes=0,telegram_calls=0)
  except Exception as ex:value=dict(status='unavailable',reason=str(ex)if isinstance(ex,ValueError)else type(ex).__name__,observed_at=stamp(),wb_writes=0,telegram_calls=0)

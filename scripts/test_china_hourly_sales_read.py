@@ -49,6 +49,29 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(w.req('/api/advert/v2/budget','POST'),{'safe_read':True})
     def test_zero_baseline_no_fake_growth(self):
         self.assertIsNone(m.comparison({'count':4,'amount_cny':50},{'count':0,'amount_cny':0})['count']['pct'])
+    def test_general_funnel_preserves_full_day_warning(self):
+        reports=types.ModuleType('china_wb_evidence')
+        reports.FUNNEL='read-only-funnel'
+        class FakeReports:
+            def __init__(self, adapter): pass
+            def request(self, url, body):
+                self_body=body
+                return {'available':True,'observed_at':'2026-10-31T10:02:00+00:00',
+                        'data':{'data':{'currency':'CNY','products':[{'product':{'nmId':143}}]}}}
+        reports.Reports=FakeReports
+        reports.normalize_funnel=lambda *a: [{'nm_id':143,'selected':{'clicks':772,'orders':3}}]
+        with patch.dict(sys.modules,{'china_wb_evidence':reports}):
+            result=m.collect_funnel(object(),datetime(2026,10,31,13,tzinfo=m.MSK),[143])
+        self.assertTrue(result['past_period_is_full_day'])
+        self.assertEqual(result['scope'],'all_sources')
+        self.assertIn('2026-10-30T13',result['samehour_baseline_key'])
+    def test_general_funnel_scope_is_bounded(self):
+        reports=types.ModuleType('china_wb_evidence')
+        reports.Reports=object; reports.FUNNEL='funnel';reports.normalize_funnel=lambda *a:None
+        with patch.dict(sys.modules,{'china_wb_evidence':reports}):
+            for scope in ([],list(range(6)),['143']):
+                with self.assertRaises(ValueError):
+                    m.collect_funnel(object(),datetime(2026,10,31,13,tzinfo=m.MSK),scope)
 
 if __name__=='__main__':unittest.main()
 

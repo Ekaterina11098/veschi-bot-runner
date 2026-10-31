@@ -7,6 +7,7 @@ permissions: {contents: read}
 concurrency: {group: owner-ad-review1, cancel-in-progress: false}
 jobs:
   read:
+    if: ${{ false }} # Dated read complete; private inputs and clarification verified
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

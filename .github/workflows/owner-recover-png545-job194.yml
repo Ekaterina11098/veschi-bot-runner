@@ -1,0 +1,33 @@
+name: Recover original owner PNG545 command194
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-recover-png545-job194.yml']
+permissions: {contents: read}
+concurrency:
+  group: china-dialog-queue
+  cancel-in-progress: false
+jobs:
+  recover:
+    if: github.event.head_commit.message == 'Recover original owner command194 after exact parser fix'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    concurrency:
+      group: china-dialog-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Test exact original confirmation and negations
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_reply_delai_vse31.py
+      - name: Recover only original visible eight-action approval and collect budgets read-only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          PYTHONPATH: scripts
+        run: python scripts/owner_recover_png545_job194.py

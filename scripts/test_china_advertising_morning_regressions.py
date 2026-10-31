@@ -150,12 +150,16 @@ class BudgetClarityTests(unittest.TestCase):
  def test_missing_economics_does_not_hide_cash_reserve_amount(self):
   c=dict(id=12,status=9,current_articles=[{'nm':1},{'nm':2}],name='Test',period=row(100,4000),last=row(40,2000),current_period=row(90,3500),attention=[],notes=[],member_count=2,balance=10,budget_reference_need=120,budget_review_required=True,budget_recommendation='Пополнение не готово: нет свежей экономики.')
   bundle=dict(days=['2026-10-24','2026-10-25','2026-10-26'],source_observed_at='27.10 08:40',campaigns=[c])
+  bundle.update(budget_days=bundle['days'],budget_observed_at='2026-10-27T05:40:00Z',budget_balance_observed_at_iso='2026-10-27T05:40:00Z')
+  c['budget_period']=row(100,4000)
   original=ImageDraw.ImageDraw.text;calls=[]
   def capture(draw,xy,text,*args,**kwargs):
    calls.append(text);return original(draw,xy,text,*args,**kwargs)
   with patch.object(ImageDraw.ImageDraw,'text',capture):files=render(bundle)
   self.assertTrue(any('нехватка' in s.lower() for s in calls))
-  self.assertTrue(any('нет свежей экономики' in s for s in calls))
+  visible=' '.join(' '.join(calls).split())
+  self.assertIn('свежая собственная экономика',visible)
+  self.assertIn('Резерв 100 ¥',visible)
   self.assertEqual(files[-1]['actions'],[])
  def test_disabled_third_png_returns_before_data_generation(self):
   import china_agent_reports

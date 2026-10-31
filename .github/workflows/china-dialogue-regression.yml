@@ -6,6 +6,9 @@ on:
       - scripts/china_strategy.py
       - scripts/test_china_strategy31.py
       - scripts/china_budget_context.py
+      - scripts/china_budget_reserve.py
+      - scripts/china_advertising_v2_png.py
+      - scripts/test_china_budget_completed31.py
       - scripts/china_profit_forecast.py
       - scripts/test_china_profit_forecast31.py
       - scripts/test_china_funnel_reply31.py

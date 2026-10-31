@@ -7,6 +7,7 @@ permissions: {contents: read}
 concurrency: {group: owner-profit-now31, cancel-in-progress: false}
 jobs:
   read:
+    if: ${{ false }} # Dated owner read complete; corrected private calculation:v2 verified, no repeat polling
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

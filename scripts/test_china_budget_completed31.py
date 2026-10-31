@@ -39,6 +39,7 @@ class CompletedBudgetTests(unittest.TestCase):
   c=result()['campaigns'][0];f=c['budget_followup']
   self.assertEqual(f['status'],'conditional_after_campaign_recommendations');self.assertTrue(f['requires_verified_campaign_changes']);self.assertTrue(f['requires_fresh_balance_and_members'])
   self.assertIsNone(f['final_topup_amount_cny']);self.assertFalse(f['execution_authorized']);self.assertIsNone(c['budget_action']);self.assertIn('WBverified',c['budget_short_note'])
+  self.assertEqual(f['recommended_topup_amount_cny'],400);self.assertTrue(f['can_approve_amount_now']);self.assertTrue(c['budget_short_note'].startswith('Рекомендовано 400 ¥\nпосле исполнения рекомендаций РК'))
  def test_profitable_campaign_cannot_hide_zero_order_member_spend(self):
   s=source();raw=s['batches']['0'];raw['campaigns']['adverts'][0]['nm_settings'].append(dict(nm_id=2,bids_kopecks=dict(search=28)))
   s['economics']['rows']['2']=copy.deepcopy(s['economics']['rows']['1'])

@@ -56,6 +56,7 @@ jobs:
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_new_ads.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_experience.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_analytic_dialog.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_profit_forecast31.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_conversion_context.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_analytic_evidence.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_product_diagnosis.py
@@ -150,3 +151,5 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+
+

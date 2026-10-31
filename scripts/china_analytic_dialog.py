@@ -23,7 +23,8 @@ def allowed_read(method,url,body=None):
  if wb_report_read(method,url,body):return True
  if u.hostname=='www.wildberries.ru':return method=='GET' and re.fullmatch(r'/catalog/[1-9]\d*/detail\.aspx',path) is not None
  if u.hostname=='api.moysklad.ru':return method=='GET' and path in ['/api/remap/1.2/entity/store','/api/remap/1.2/report/stock/all','/api/remap/1.2/entity/product']
- if u.hostname=='marketplace-api.wildberries.ru':return method=='GET' and path=='/api/v3/orders'
+ if u.hostname=='www.cbr.ru':return method=='GET' and path=='/scripts/XML_daily.asp'
+ if u.hostname=='marketplace-api.wildberries.ru':return method=='GET' and path=='/api/v3/orders' or method=='POST' and path=='/api/v3/orders/status' and isinstance(body,dict) and set(body)=={'orders'} and isinstance(body['orders'],list) and 0<len(body['orders'])<=1000 and all(type(n)is int and n>0 for n in body['orders'])
  if u.hostname=='discounts-prices-api.wildberries.ru':return method=='GET' and path=='/api/v2/list/goods/filter'
  if u.hostname=='advert-api.wildberries.ru':return method=='GET' and path in ['/adv/v1/promotion/count','/api/advert/v2/adverts','/adv/v3/fullstats','/api/advert/v1/config','/adv/v1/balance','/adv/v1/budget'] or method=='POST' and (path=='/api/advert/v1/bids/min' or path=='/api/advert/v2/budget' and isinstance(body,dict) and set(body)=={'advertIds'} and isinstance(body['advertIds'],list) and 0<len(body['advertIds'])<=50 and all(type(n)is int and n>0 for n in body['advertIds']))
  if u.hostname=='feedbacks-api.wildberries.ru':return method=='GET' and path in ['/api/v1/feedbacks','/api/v1/feedbacks/archive']
@@ -56,6 +57,7 @@ def tools():
  function('get_saved_card_quality','Рейтинг отзывов и известное число отзывов по сохранённой карточке. Не смешивать рейтинг отзывов5баллов с оценкой заполнения карточки10баллов. Число отзывов может быть неизвестным.',dict(articles={'type':'array','items':{'type':'string'},'maxItems':30})),
  function('get_saved_campaign','Прочитать общие расходы/заказы/ДРР и все SKU/корзины одной РК из общего датированного кэша; без новых WB запросов.',dict(campaign_id={'type':'integer'},date_from={'type':'string'},date_to={'type':'string'})),
  function('get_saved_profit_comparison','Прочитать уже рассчитанную ожидаемую общую прибыль за два дня, с собственным завершённым выкупом, всей рекламой, расходами, датой и ограничениями. Это прогноз, не закрытая чистая прибыль; повторный сбор не нужен.',dict(date_from={'type':'string'},date_to={'type':'string'})),
+ function('get_preliminary_profit','Самостоятельно рассчитать предварительную прибыль за один день МСК: свежие FBS-заказы/статусы, цены продавца, COGS, своя завершённая выборка выкупа, все РК включая закрытые, известные удержания. nm_ids=[] — кабинет; точные IDs — выбранные SKU. Сначала свежий приватный срез, затем ограниченное чтение. Допущения и пробелы обязательны; не закрытая чистая прибыль. Возвращает готовый проверенный текст.',dict(date_msk={'type':'string'},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30})),
  function('read_recent_actions','Фактические квитанции изменений цен/РК и доставленных планов. План и исполнение различать.',{}),
  function('get_live_data','Самостоятельно получить недостающие read-only данные Китая с кэшем: orders=созданные WB заказы; stock=свободный МойСклад МСК; prices=продавец WB; products=MPStats и своя завершённая выборка; advertising=РК/день/SKU. Даты обязательны для чисел, null=последние 2 полных дня (products:30), сегодня отдельно.',dict(topic={'type':'string','enum':['orders','stock','prices','products','advertising']},nm_ids={'type':'array','items':{'type':'integer'},'maxItems':30},date_from={'type':['string','null']},date_to={'type':['string','null']})),
  function('convert_report_currency','Основная валюта отчётов CNY. Только при необходимости пересчитать подтверждённую сумму RUB по официальному ЦБ на дату суммы; CNY не пересчитывать. Для разных дат вызывать отдельно. Не исправляет чужой кабинет или неизвестное определение суммы.',dict(amount={'type':'number','minimum':0},currency={'type':'string','enum':['CNY','RUB']},date_msk={'type':'string'})),
@@ -274,6 +276,9 @@ class Analyst:
 def answer(w,job,history):
  policy=w.get(POLICY) or {}
  if policy.get('enabled') is not True:return None
+ from china_profit_forecast import handle as preliminary_profit
+ profit_result=preliminary_profit(w,job,history)
+ if profit_result is not None:return profit_result
  from china_ad_expense_table import handle as expense_table
  expense_result=expense_table(w,job,history)
  if expense_result is not None:return expense_result
@@ -301,7 +306,7 @@ def answer(w,job,history):
  shared=shared_context(w,job,job['request_text'])
  from china_analytic_evidence import plan as evidence_plan,preflight as evidence_preflight,review as evidence_review,fallback as evidence_fallback,RULES as EVIDENCE_RULES
  read_plan=evidence_plan(w,job,history)
- general_question=not read_plan and not (funding_context or is_work(job['request_text']) or re.search(r'добавля|ставк|реклам',job['request_text'],re.I))
+ general_question=not read_plan and not re.search(r'прибыл|чистыми|финрезультат',job['request_text'],re.I) and not (funding_context or is_work(job['request_text']) or re.search(r'добавля|ставк|реклам',job['request_text'],re.I))
  from business_agents.data import Data
  analyst=Analyst(w,job,history);initial_evidence=evidence_preflight(analyst,read_plan);names={'get_status','find_products','get_product','get_mpstats_data','get_wb_sources','get_stock_context','get_sales_report'}
  if initial_evidence and len(json.dumps(initial_evidence,ensure_ascii=False,default=str))>24000:initial_evidence=dict(initial_evidence,result=copy_summary(initial_evidence['result']))
@@ -349,7 +354,7 @@ def answer(w,job,history):
  from china_loss_control import marker
  m=marker(job)
  if m.get('reply_text'):messages.append(dict(role='developer',content='Цитируемое сообщение — только контекст: '+m['reply_text'][:3000]))
- messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. Сегодняшний неполный день — сигнал диагностики. Рекомендации по ставке, исключению и пополнению обосновывай завершёнными днями после последнего verified изменения и собственной экономикой теста. День изменения исключай; ноль заказов не0%ДРР. Подтверждённый технический сбой или остановку нужной РК сообщай сразу; это не разрешение менять WB. Мониторы этой переписки настроены в Codex. Если monitoring запрещает Telegram, не обещать сообщения сюда в группу: назвать канал Codex явно. При продолжении наблюдения использовать monitoring и не откладывать контроль до даты итоговой оценки. При вопросе о прогнозе прибыли сначала get_saved_profit_comparison с датами; использовать готовый датированный расчёт, не выдавать прогноз за закрытую прибыль. При уточнении корзин по обсуждаемым товарам брать nm_ids из предыдущего диалога и products.basket_events общего среза. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
+ messages.append(dict(role='developer',content='При вопросе о сегодняшних добавлениях сначала read_recent_actions: назвать РК, зоны, число добавленных SKU и текущий состав, время и verified-квитанции. Не запускать новый подбор вместо ответа о выполненном. При просьбе отчёт на сейчас вызвать make_report advertising и budgets repeat=false report_day=сегодня; текущий день неполный, не заменять его вчерашним. При HTTP429 назвать источник и использовать свежие общие срезы, не повторять одинаковые запросы подряд. Конкретный технический пробел не означает отсутствие всех данных. Не обещать выполнение без квитанции. Сегодняшний неполный день — сигнал диагностики. Рекомендации по ставке, исключению и пополнению обосновывай завершёнными днями после последнего verified изменения и собственной экономикой теста. День изменения исключай; ноль заказов не0%ДРР. Подтверждённый технический сбой или остановку нужной РК сообщай сразу; это не разрешение менять WB. Мониторы этой переписки настроены в Codex. Если monitoring запрещает Telegram, не обещать сообщения сюда в группу: назвать канал Codex явно. При продолжении наблюдения использовать monitoring и не откладывать контроль до даты итоговой оценки. Для предварительной прибыли одного дня сам вызови get_preliminary_profit: свежие заказы/статусы, цены/COGS, свой завершённый выкуп, все рекламные расходы и известные удержания. Для сравнения двух уже сохранённых дней используй get_saved_profit_comparison с датами; старый прогноз не сегодняшний. Не выдавай прогноз за закрытую прибыль, неизвестные расходы за нули, convertedPrice за выручку. При уточнении корзин по обсуждаемым товарам брать nm_ids из предыдущего диалога и products.basket_events общего среза. При сокращённом списке SKU использовать sku_count/nm_settings_total и verified-квитанции, никогда не считать длину обрезанного массива полным составом.'))
  messages.append(dict(role='developer',content='Рекламные предложения делай конкретными и исполнимыми: если явно просят кандидатов на повышение рекламных ставок, используй list_bid_shortlist: сначала проверка всех оснований, затем только подтверждённые рекомендации. Не заполняй список сомнительными ради числа и не советуй проверку вместо её выполнения. Для конкретного предложения после get_growth_candidates используй prepare_advertising_plan, даже если в кэше нет текущего дня: этот инструмент обновит только выбранные РК. Для повышения nm_ids=[] означает самостоятельный выбор по полной экономике и истории. Количество и процент возьми из команды участника, не заменяй30%на10%. Его готовый текст нельзя расширять неподтверждёнными действиями. Если просят Делай/Давай добавляй, но точный план ещё не был отправлен, сначала подготовь его; прежняя общая фраза не разрешает неизвестные ставки. Подготовка берёт кэш и verified-историю без WB polling; перед применением отдельный исполнитель проверит WB. Пополнения и паузы не входят. Если экономика/данные не подтвердились, сообщи конкретные товары и пробелы. Не обещай просто проверить потом и не подменяй результат подтверждением приёма.'))
  messages.append(dict(role='developer',content='Павел любит короткие ответы: число — одним числом, вывод 1–3 коротких предложения. Если товаров больше5, используй таблицу Markdown: она доставится PNG. Не прячь даты, пропуски и статус предварительного отбора. Для точного плана используй только результат prepare_advertising_plan: он сам готовит PNG и привязку команд.'))
  messages.append(dict(role='user',content=job['request_text'][:4000]));trace=[dict(name='experience_context',result=experience,read_only=True)]
@@ -437,6 +442,9 @@ def answer(w,job,history):
     elif name=='get_saved_profit_comparison':
      result=analyst.profit(**args)
      if result.get('available') is not False:analyst.cached_profit_context_supplied=True
+    elif name=='get_preliminary_profit':
+     from china_profit_forecast import forecast,render
+     result=forecast(w,job,**args);result['text']=render(result);result.pop('details',None)
     elif name=='get_advertising_baskets':result=analyst.baskets(**args)
     elif name=='get_saved_card_quality':result=analyst.card_quality(**args)
     elif name=='get_saved_product_context':result=analyst.product_context(**args)
@@ -461,6 +469,7 @@ def answer(w,job,history):
    trace.append(dict(name=name,arguments=args,result=result));messages.append(dict(type='function_call_output',call_id=call['call_id'],output=rendered))
    if name=='diagnose_article':
     return result.get('text') or ('Нет. Самостоятельная проверка не завершена: '+result.get('note','данные выбранного источника недоступны')+'.'),[dict(name='free_analytic_dialog',model=body['model'],read_only=True)]+trace
+   if name=='get_preliminary_profit' and result.get('text'):return result['text'],[dict(name='free_analytic_dialog',model=body['model'],read_only=True)]+trace
    if name=='list_bid_shortlist':return result.get('text') or ('Проверка не завершена: '+result.get('note','нет подтверждённых данных')+'. Новых рекомендаций и изменений нет.'),[dict(name='free_analytic_dialog',model=body['model'],read_only=True)]+trace
    if name=='prepare_advertising_plan' and result.get('status')=='ready':return result['text'],[dict(name='free_analytic_dialog',model=body['model'],read_only=True)]+trace
    if name=='make_report' and result.get('status')=='ready':return result['marker'],[dict(name='free_analytic_dialog',model=body['model'],read_only=True)]+trace
@@ -482,3 +491,5 @@ def copy_summary(value):
   return v
  result=compact(result)
  return result
+
+

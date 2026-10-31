@@ -2,7 +2,8 @@ import importlib.util
 import sys
 import types
 import unittest
-from datetime import datetime
+import copy
+from datetime import datetime,timedelta,timezone
 from unittest.mock import patch
 
 helper = types.ModuleType('china_cloud_cost_control')
@@ -20,6 +21,58 @@ with patch.dict(sys.modules, {'china_cloud_cost_control': helper,
     spec.loader.exec_module(m)
 
 class CollectorTest(unittest.TestCase):
+    def cache(self):
+        class C:
+            def __init__(self):self.rows={};self.version=0;self.race=False
+            def row(self,key):return copy.deepcopy(self.rows.get(key))
+            def get(self,key):return copy.deepcopy((self.rows.get(key) or {}).get('payload'))
+            def put(self,key,p):self.version+=1;self.rows[key]=dict(payload=copy.deepcopy(p),updated_at=str(self.version))
+            def create(self,key,p):
+                if key in self.rows:return False
+                self.put(key,p);return True
+            def req(self,method,params,body,prefer):
+                assert method=='PATCH'
+                key=params['cache_key'][3:];row=self.rows.get(key)
+                if self.race or not row or params['updated_at']!='eq.'+row['updated_at']:return []
+                self.put(key,body['payload']);return [self.row(key)]
+        return C()
+    def snapshot(self,cut,status='complete'):
+        return dict(status=status,cabinet='token_3',slot_msk=cut.isoformat(),observed_at=cut.isoformat(),completed_at=cut.isoformat(),orders={str(n):dict(status='complete') for n in (0,1,7)},advertising=dict(status='complete'))
+    def test_backup_skips_complete_hour_before_wb_identity_or_requests(self):
+        clock=datetime.now(timezone.utc);cut=clock.astimezone(m.MSK).replace(minute=0,second=0,microsecond=0)
+        c=self.cache();c.put(m.POLICY,dict(enabled=True,cabinet='token_3',wb_writes=0));c.put(m.slot_key(cut),self.snapshot(cut))
+        with (patch.object(m,'Cache',return_value=c),patch.object(m,'ReadOnlyWB',side_effect=AssertionError('Repeated WB read')),patch.object(m,'validate_identity',side_effect=AssertionError('Repeated identity')),
+              patch.dict('os.environ',GITHUB_REPOSITORY='Ekaterina11098/veschi-bot-runner')):
+            m.run()
+        self.assertEqual(c.get(m.ROOT+':latest')['source_key'],m.slot_key(cut))
+    def test_active_lease_blocks_duplicate(self):
+        c=self.cache();clock=datetime(2026,10,31,12,tzinfo=timezone.utc);cut=clock.astimezone(m.MSK)
+        self.assertTrue(m.claim_slot(c,cut,'one',clock));self.assertFalse(m.claim_slot(c,cut,'two',clock+timedelta(minutes=5)))
+    def test_crash_lease_recovers_only_after_timeout(self):
+        c=self.cache();clock=datetime(2026,10,31,12,tzinfo=timezone.utc);cut=clock.astimezone(m.MSK)
+        self.assertTrue(m.claim_slot(c,cut,'one',clock));self.assertTrue(m.claim_slot(c,cut,'two',clock+timedelta(minutes=13)))
+        self.assertEqual(c.get(m.slot_key(cut)+':lease')['attempt'],2)
+    def test_recovery_cas_race_loser_cannot_read(self):
+        c=self.cache();clock=datetime(2026,10,31,12,tzinfo=timezone.utc);cut=clock.astimezone(m.MSK)
+        m.claim_slot(c,cut,'one',clock);c.race=True
+        self.assertFalse(m.claim_slot(c,cut,'two',clock+timedelta(minutes=13)))
+    def test_attempts_are_bounded(self):
+        c=self.cache();clock=datetime(2026,10,31,12,tzinfo=timezone.utc);cut=clock.astimezone(m.MSK)
+        for n in range(3):self.assertTrue(m.claim_slot(c,cut,str(n),clock+timedelta(minutes=13*n)))
+        self.assertFalse(m.claim_slot(c,cut,'four',clock+timedelta(minutes=40)))
+    def test_partial_snapshot_preserved_while_recovery_is_selected(self):
+        c=self.cache();cut=datetime(2026,10,31,15,tzinfo=m.MSK);key=m.slot_key(cut)
+        original=self.snapshot(cut,'partial');c.put(key,original)
+        recovered=self.snapshot(cut);source=key+':attempt:77';c.put(source,recovered);m.publish_latest(c,source,recovered)
+        self.assertEqual(c.get(key),original);self.assertEqual(m.saved_slot(c,cut),(source,recovered))
+    def test_slot_pointer_cannot_cross_hours(self):
+        c=self.cache();cut=datetime(2026,10,31,15,tzinfo=m.MSK);c.put(m.slot_key(cut)+':latest',dict(source_key=m.slot_key(cut-timedelta(hours=1))))
+        with self.assertRaises(ValueError):m.saved_slot(c,cut)
+    def test_latest_cannot_regress_to_old_hour(self):
+        c=self.cache();cut=datetime(2026,10,31,15,tzinfo=m.MSK)
+        m.publish_latest(c,m.slot_key(cut),self.snapshot(cut))
+        old=cut-timedelta(hours=1);m.publish_latest(c,m.slot_key(old),self.snapshot(old))
+        self.assertEqual(c.get(m.ROOT+':latest')['slot_msk'],cut.isoformat())
     def test_msk_boundary_and_half_open_window(self):
         start = datetime(2026,10,31,0,tzinfo=m.MSK)
         end = start.replace(hour=13)

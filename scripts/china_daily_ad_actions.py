@@ -87,6 +87,7 @@ def execute(io,a,p):
    if state['status'] in ['submitting','accepted','uncertain']:
     try:state['status']='verified' if verified(item,state) else 'uncertain'
     except Exception:state['status']='uncertain'
+    if state['status']=='verified':state.setdefault('verified_at',datetime.now(timezone.utc).isoformat())
     save()
    continue
   state=dict(id=item['id'],status='preflight');e['items'].append(state);save()
@@ -128,12 +129,12 @@ def execute(io,a,p):
    state.update(status='submitting',request=dict(path=path,method=method,body=body));save()
    response=req(path,method,body);state.update(status='accepted',response=response,submitted_at=datetime.now(timezone.utc).isoformat());e['wb_writes']+=1;save()
    for _ in range(20):
-    if verified(item,state):state['status']='verified';break
+    if verified(item,state):state.update(status='verified',verified_at=datetime.now(timezone.utc).isoformat());break
     time.sleep(8)
    save()
   except Exception as ex:
    state.update(status='uncertain' if state['status']=='submitting' else state['status'] if state['status']=='accepted' else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__);save()
- e['status']='done' if all(x['status'] in ['verified','blocked'] for x in e['items']) else 'attention';save()
+ e['status']='done' if all(x['status'] in ['verified','blocked'] for x in e['items']) else 'attention';e['completed_at']=datetime.now(timezone.utc).isoformat();save()
  from china_execution_notice import deliver_result
  deliver_result(io,a,p,e)
  notice=io.get('china_agent:daily_ad_result:v2:'+p['plan_id'])

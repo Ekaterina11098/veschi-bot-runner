@@ -22,16 +22,10 @@ def summary(c):
  if p is None:return 'Статистика отсутствует; числовой результат не подтверждён.'
  return ('День: '+str(int(day['orders']))+' рекламных заказов; сумма '+money(day['amount'])+' ¥.\n' if day else 'День: нет данных.\n')+'3 дня: '+str(int(p['orders']))+' рекламных заказов; сумма '+money(p['amount'])+' ¥; '+str(int(p['clicks']))+' кликов.'
 def recommendations(c):
- if c.get('never_started'):return ['Черновик, ещё не запускалась. Бюджет '+money(c.get('balance'))+' ¥; ДРР не применима.']
- if c.get('missing_stats'):return ['Статистика отсутствует; рекомендации по эффективности не подтверждены.']
- rows=c.get('attention',[])
- if rows:return [r['article']+': '+r['decision']+' '+r.get('reason','') for r in rows]
- notes=[n for n in c.get('notes',[]) if not n.startswith('Уже исключены:')]
- if c.get('period') and c['period']['spend']>0 and c['period']['amount']==0:
-  return ['Расход без рекламных заказов: '+money(c['period']['spend'])+' ¥; '+str(int(c['period']['clicks']))+' кликов. '+('Новый тест; полного дня после запуска ещё нет.' if c.get('new_composition') else 'Нужен контроль безрезультатного расхода; ДРР не вычисляется.')]
- return notes or ['Изменений не нужно.']
+ rows=[r for r in c.get('attention',[]) if r.get('action')]
+ return [r['article']+': '+r['decision'] for r in rows] or ['Не требуется']
 def render(bundle):
- bundle=dict(bundle,campaigns=[c for c in bundle['campaigns'] if not c.get('never_started')])
+ bundle=dict(bundle,campaigns=sorted([c for c in bundle['campaigns'] if not c.get('never_started')],key=lambda c:not any(r.get('action') for r in c.get('attention',[]))))
  W=2400;H=6500;xs=[44,355,650,870,1090,1700,2356];files=[]
  def canvas(title):
   im=Image.new('RGB',(W,H),BG);d=ImageDraw.Draw(im)
@@ -55,7 +49,7 @@ def render(bundle):
   files.append(dict(family=family,bytes=b.getvalue(),actions=actions))
  def table():
   im,d=canvas('Китай · ДРР и рекламные расходы')
-  d.text((44,216),'Зелёный: ДРР ≤ 5% · чёрный: нейтрально / нет оценки · красный: ДРР > 5%',font=font(24),fill=INK)
+  d.text((44,216),'Новых действий: '+str(sum(bool(r.get('action')) for c in bundle['campaigns'] for r in c.get('attention',[])))+' · рекомендации выделены и показаны первыми · ДРР: ≤ 5% зелёный, > 5% красный',font=font(24),fill=INK)
   for i,label in enumerate(['Кампания WB','Расход, CNY','ДРР 3 дня','ДРР день','Товары: данные за 3 дня','Рекомендации по 3 дням']):
    for j,line in enumerate(wrap(d,label,xs[i+1]-xs[i]-28,29)):d.text((xs[i],267+j*35),line,font=font(29,True),fill=NAVY)
   return im,d
@@ -68,10 +62,10 @@ def render(bundle):
   if h>4800:raise ValueError('Campaign row too long; refuse clipped report')
   if y+h>5500:
    finish(im,y,'drr',actions);im,d=table();y=365;actions=[]
-  d.rounded_rectangle((24,y,W-24,y+h),18,fill='white')
+  d.rounded_rectangle((24,y,W-24,y+h),18,fill='#fff1cc' if any(r.get('action') for r in c.get('attention',[])) else 'white')
   for i,lines in enumerate(ls):
    col=color(p) if i==2 else color(day) if i==3 else INK
-   for j,line in enumerate(lines):d.text((xs[i],y+18+j*35),line,font=font(27),fill=col)
+   for j,line in enumerate(lines):d.text((xs[i],y+18+j*35),line,font=font(27,i==5 and bool(c.get('attention'))),fill=col)
   actions.extend(r['action'] for r in c.get('attention',[]) if r.get('action'))
   y+=h+12
  # Never sum daily percentages or double-count SKU/app totals.

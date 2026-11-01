@@ -7,6 +7,7 @@ permissions:
   contents: read
 jobs:
   read:
+    if: false # Dated read completed; private result verified
     runs-on: ubuntu-latest
     timeout-minutes: 5
     concurrency:

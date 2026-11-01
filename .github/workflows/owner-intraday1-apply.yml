@@ -2,7 +2,7 @@ name: Owner approved exact first PNG actions 1Nov
 on:
   push:
     branches: [main]
-    paths: ['scripts/owner_intraday1_apply.py']
+    paths: ['scripts/owner_intraday1_resume.py']
 permissions:
   contents: read
 concurrency:
@@ -36,4 +36,4 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: PYTHONPATH=scripts:source python scripts/owner_intraday1_apply.py
+        run: PYTHONPATH=scripts:source python scripts/owner_intraday1_resume.py

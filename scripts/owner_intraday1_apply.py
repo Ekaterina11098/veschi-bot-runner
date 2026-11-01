@@ -55,25 +55,34 @@ def put(c,key,value):
   if c.get(key)==value:return
   if not (str(ex).startswith('Private state HTTP')or type(ex).__name__in['Timeout','ConnectionError','ReadTimeout']):raise
   time.sleep(2);c.put(key,value)
-def main():
+def main(resume=False):
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
  c=Cache();items=approval(c)
- if c.get(ROOT+':execution'):print('Existing execution: never repeat');return
+ prior=c.get(ROOT+':execution')
+ if prior and not resume:print('Existing execution: never repeat');return
+ if resume:
+  if not prior or prior.get('status')not in ['partial_or_uncertain','partial_or_blocked','blocked']:raise ValueError('No terminal partial execution to resume')
+  for key in prior.get('steps',{}).values():
+   if (c.get(key)or{}).get('status')!='verified':raise ValueError('Unresolved child: no mutation retry')
+  if not c.create(ROOT+':resume1_lease',dict(started_at=stamp())):return
  w=ScopedWB(items);validate_identity(c,w)
- e=dict(status='preflight',created_at=stamp(),approval_key=ROOT+':approval',scope_sha256=SCOPE,png_sha256=PNG,items=items,steps={},preflight=[],wb_writes=0,budget_writes=0,price_writes=0,telegram_calls=0)
- if not c.create(ROOT+':execution',e):raise ValueError('Concurrent execution')
+ if prior:
+  e=copy.deepcopy(prior);e.setdefault('prior_attempts',[]).append({k:copy.deepcopy(e.get(k))for k in ['status','reason','preflight','completed_at']});e['preflight']=[];e.update(status='preflight',resume_started_at=stamp());e.pop('reason',None)
+ else:
+  e=dict(status='preflight',created_at=stamp(),approval_key=ROOT+':approval',scope_sha256=SCOPE,png_sha256=PNG,items=items,steps={},preflight=[],wb_writes=0,budget_writes=0,price_writes=0,telegram_calls=0)
+  if not c.create(ROOT+':execution',e):raise ValueError('Concurrent execution')
  def save():put(c,ROOT+':execution',e)
  try:
   from china_advertising_state import AdvertisingIO
   from china_moysklad_read import read_stock
   import requests
-  ids=sorted({x['campaign_id']for x in items});campaigns=w.campaigns(ids);e['before']=copy.deepcopy(campaigns)
+  ids=sorted({x['campaign_id']for x in items});campaigns=w.campaigns(ids);e.setdefault('before',copy.deepcopy(campaigns));e['latest_preflight_campaigns']=copy.deepcopy(campaigns)
   e['budgets']=w.req('/api/advert/v2/budget','POST',dict(advertIds=ids));e['budget_observed_at']=stamp();save()
   stock=read_stock(sorted({x['article']for x in items}));e['stock']=stock
   prices=AdvertisingIO().prices(sorted({x['nm_id']for x in items}));e['prices']=prices;e['prices_observed_at']=stamp()
   rr=requests.get('https://advert-api.wildberries.ru/api/advert/v1/config',headers={'Authorization':w.token},timeout=50);rr.raise_for_status();cfg=rr.json();e['config']=cfg
   if cfg.get('currency')!='CNY' or type(cfg.get('cpcStep'))is not int or cfg['cpcStep']<=0:raise ValueError('Unknown bid step')
-  original=c.get('china_agent:owner_intraday_review:2026-11-01:v1:inputs');oldprices={r['nm_id']:r['seller_price']for r in original['inputs']['prices']['rows']};sm={r['article']:r for r in stock['rows']}
+  original=c.get('china_agent:owner_intraday_review:2026-11-01:v1:inputs');oldprices={r['nm_id']:r['seller_price']for r in original['inputs']['prices']['rows']};sm={r['article'].casefold():r for r in stock['rows']}
   e['minimums']={};eligible=[]
   for cid in ids:
    group=[x for x in items if x['campaign_id']==cid];cp=campaigns[str(cid)]
@@ -86,8 +95,8 @@ def main():
      if not ns and x['kind']=='ad_exclude_sku':result['status']='already_absent';e['preflight'].append(result);continue
      if ns and x['kind']=='ad_set_bid' and ns[0]['bids_kopecks'].get(x['placement'])==x['target_minor']:result['status']='already_target';e['preflight'].append(result);continue
      expected(cp,[x]);g=prices[str(x['nm_id'])];ps={s['discountedPrice']for s in g['sizes']}
-     if g['vendorCode']!=x['article'] or g['currencyIsoCode4217']!='CNY' or ps!={oldprices[x['nm_id']]}:raise ValueError('Seller price or article changed since PNG')
-     st=sm[x['article']];result.update(price_cny=next(iter(ps)),stock_free=st['stock']-st['reserve'],cogs_rub=st.get('price',0)/100)
+     if g['vendorCode'].casefold()!=x['article'].casefold() or g['currencyIsoCode4217']!='CNY' or ps!={oldprices[x['nm_id']]}:raise ValueError('Seller price or article changed since PNG')
+     st=sm[x['article'].casefold()];result.update(price_cny=next(iter(ps)),stock_free=st['stock']-st['reserve'],cogs_rub=st.get('price',0)/100)
      minimum=e['minimums'][str(cid)+':'+x['placement']][x['nm_id']];result['minimum_minor']=minimum
      if x['kind']=='ad_set_bid':
       if x['target_minor']<minimum or x['target_minor']%cfg['cpcStep']:raise ValueError('Approved target below fresh minimum or outside step')
@@ -103,11 +112,15 @@ def main():
     batch=[x for x in eligible if x['campaign_id']==cid and x['kind']==kind]
     if not batch or stopped:continue
     approval(c);key=ROOT+':'+str(cid)+':'+kind+':execution'
-    if c.get(key):raise ValueError('Existing child; never repeat')
+    existing=c.get(key)
+    if existing:
+     if existing.get('status')=='verified':continue
+     raise ValueError('Existing unresolved child; never repeat')
     before=w.campaigns([cid])[str(cid)]
-    if projection(before)!=projection(campaigns[str(cid)]):raise ValueError('Campaign changed after preflight')
+    if before['status']!=9 or before['currency']!='CNY' or before['bid_type']!='manual' or before['settings']['payment_type']!='cpc' or any(before['settings']['placements'].get(x['placement'])is not True for x in batch):raise ValueError('Campaign mode changed after preflight')
+    if kind=='ad_exclude_sku' and before.get('restrictions',{}).get('can_change_nms')is not True:raise ValueError('Composition locked after preflight')
     target=expected(before,batch);path,body=mutation(cid,kind,batch);check_write(path,'PATCH',body,items)
-    step=dict(status='submitting',before=before,expected=target,items=batch,body=body,parent=ROOT+':execution',approval_key=ROOT+':approval',submitted_at=stamp())
+    step=dict(status='submitting',before=before,expected=target,items=batch,body=body,parent=ROOT+':execution',approval_key=ROOT+':approval',submitted_at=stamp(),preflight_projection_changed=projection(before)!=projection(campaigns[str(cid)]))
     if not c.create(key,step):raise ValueError('Duplicate child')
     e['steps'][str(cid)+':'+kind]=key;save()
     try:

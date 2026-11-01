@@ -57,31 +57,30 @@ def overview(bundle):
  import io
  from PIL import Image,ImageDraw
  from china_advertising_v2_png import font,NAVY,BG,INK
- W,H=2200,7000;files=[];im=Image.new('RGB',(W,H),BG);d=ImageDraw.Draw(im);y=170
+ W,H=2200,7000;files=[];actions=[];im=Image.new('RGB',(W,H),BG);d=ImageDraw.Draw(im);y=170
  def header():
   d.rectangle((0,0,W,140),fill=NAVY);d.text((40,25),'Китай · все направления рекламного разбора',font=font(42,True),fill='white');d.text((40,88),str(bundle.get('source_observed_at','Датированный срез')),font=font(25),fill='white')
  def finish():
-  buf=io.BytesIO();im.crop((0,0,W,min(y+40,H))).save(buf,format='PNG');files.append(dict(family='drr',bytes=buf.getvalue(),actions=[]))
+  buf=io.BytesIO();im.crop((0,0,W,min(y+40,H))).save(buf,format='PNG');files.append(dict(family='drr',bytes=buf.getvalue(),actions=copy.deepcopy(actions)))
  def line(text,size=27,bold=False):
-  nonlocal y,im,d
+  nonlocal y,im,d,actions
   words=str(text).split();row=''
   for word in words+['']:
    if row and(word==''or d.textlength(row+' '+word,font=font(size,bold))>W-100):
-    if y>H-120:finish();im=Image.new('RGB',(W,H),BG);d=ImageDraw.Draw(im);y=170;header()
+    if y>H-120:finish();im=Image.new('RGB',(W,H),BG);d=ImageDraw.Draw(im);y=170;actions=[];header()
     d.text((40,y),row,font=font(size,bold),fill=INK);y+=size+13;row=word
    else:row=(row+' '+word).strip()
  header()
- for section in bundle['recommendation_directions'].values():
-  line(section['label']+' · '+str(section['count']),32,True);line(section['note'])
+ for key,section in bundle['recommendation_directions'].items():
+  line(section['label'],32,True)
+  if not section['rows']:line('Пока нет готовых рекомендаций.'if section.get('status')=='unavailable'else'Пока без изменений.')
   for r in section['rows']:
-   line(r['article']+(' · РК '+str(r['campaign_id'])if r.get('campaign_id')else'')+' — '+r['decision'])
-   if r.get('economics'):
-    e=r['economics'];line('Предварительно до рекламы / созданный заказ: '+str(round(e.get('expected_margin_before_ads_cny',0),2))+' CNY; завершено '+str(e.get('sample_size','?'))+'; это не доказанная прибыль.',23)
+   a=r.get('action')or{};cid=r.get('campaign_id');suffix=' · РК '+str(cid)if cid else''
+   if key=='add':decision='Предложить ограниченный рекламный тест'+suffix+'.'
+   elif key=='exclude':decision='Исключить'+suffix+'.'
+   else:decision=('Повысить'if key=='raise'else'Снизить')+' '+str(a['old_minor']/100)+' → '+str(a['target_minor']/100)+' CNY'+suffix+'.'
+   line(r['article']+' — '+decision)
+   if a and r.get('ready'):actions.append(a)
   y+=25
- a=bundle['archive_expenses'];line('Архивные РК · учёт расходов',32,True)
- line('РК: '+(', '.join(map(str,a['campaign_ids']))or'нет')+'. Расход за период: '+str(round(a['totals']['spend'],2))+' CNY; атрибутированные заказы: '+str(int(a['totals']['orders']))+'.')
- if not a['complete']:line('Неполное покрытие: нет статистики РК '+', '.join(map(str,a['missing_stats_ids']))+'. Итог не полный, пропуски не нули.')
- line(a['rule']);line('Обзор не исполняется командой. Готовые действия привязаны к отдельным подробным PNG; новые добавления требуют точного плана.',23)
- if bundle.get('preview_note'):line(bundle['preview_note'],24,True)
  finish();return files
 

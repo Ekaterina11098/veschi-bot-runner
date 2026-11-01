@@ -1,9 +1,18 @@
 import unittest,copy
 from unittest.mock import patch
-from china_advertising_directions import attach,addition_shortlist
+from china_advertising_directions import attach,addition_shortlist,overview
 from china_advertising_growth import merge
 from china_advertising_v2 import include_archived,build
 class FourDirectionTests(unittest.TestCase):
+ def test_brief_png_retains_only_page_bound_ready_actions(self):
+  from PIL import ImageDraw
+  action=dict(kind='ad_set_bid',old_minor=31,target_minor=28)
+  bundle=dict(source_observed_at='02.11.2026',recommendation_directions={k:dict(label=k,count=0,status='checked',note='INTERNAL_DIAGNOSTIC',rows=[])for k in ['raise','add','reduce','exclude']})
+  bundle['recommendation_directions']['reduce']['rows']=[dict(article='423',campaign_id=12,action=action,ready=True,decision='INTERNAL_DIAGNOSTIC')]
+  captured=[];original=ImageDraw.ImageDraw.text
+  def text(draw,xy,value,*a,**kw):captured.append(str(value));return original(draw,xy,value,*a,**kw)
+  with patch.object(ImageDraw.ImageDraw,'text',text):files=overview(bundle)
+  self.assertEqual(files[0]['actions'],[action]);self.assertNotIn('INTERNAL_DIAGNOSTIC',' '.join(captured));self.assertEqual(len(files),1)
  def test_archive_totals_and_missing_not_zero(self):
   cs=[dict(id=1,status=9,focus=[]),dict(id=2,status=7,focus=[],period=dict(spend=7,amount=0,orders=0)),dict(id=3,status=7,focus=[],period=None,missing_stats=True)]
   out=attach(dict(campaigns=cs),dict(catalogue=dict(rows=[])))

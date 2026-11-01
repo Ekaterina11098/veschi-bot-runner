@@ -34,7 +34,7 @@ def recommendations(c):
    out.append(r['article']+': '+money(p['spend'])+' ¥, '+str(int(p.get('clicks',0)))+' кликов, '+str(int(p.get('orders',0)))+' заказов. Решение не готово: экономика/наличие не подтверждены.');continue
   if p.get('amount',0)>0 and p['spend']/p['amount']>.05:
    out.append(r['article']+': '+r['decision'])
- return out or ['Новых действий нет']
+ return out or ['Не требуется']
 
 def budget_column(c):
  """Owner-approved display only; execution conditions remain in the structured plan."""

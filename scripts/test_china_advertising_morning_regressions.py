@@ -161,7 +161,7 @@ class BudgetClarityTests(unittest.TestCase):
   visible=' '.join(' '.join(calls).split())
   self.assertNotIn('свежая собственная экономика',visible)
   self.assertIn('после исполнения рекомендаций РК',visible)
-  self.assertIn('Резерв 100 ¥',visible)
+  self.assertIn('Рекомендовано 100 ¥',visible)
   self.assertEqual(files[-1]['actions'],[])
  def test_disabled_third_png_returns_before_data_generation(self):
   import china_agent_reports

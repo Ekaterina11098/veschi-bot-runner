@@ -4,7 +4,9 @@ from datetime import datetime,timezone
 from china_cloud_cost_control import Cache,WB,validate_identity,stamp
 ROOT='china_agent:owner_overnight_fund:2026-11-02:v1'
 def digest(v):return hashlib.sha256(json.dumps(v,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-def project(c):return {k:c[k]for k in ['id','status','currency','bid_type','settings','nm_settings']}
+def project(c):
+ out={k:c[k]for k in ['id','status','currency','bid_type','settings']}
+ out['nm_settings']=sorted(c['nm_settings'],key=lambda n:n['nm_id']);return out
 def approval(c):
  a=c.get(ROOT+':approval')or{}
  if a.get('status')!='approved'or a.get('execution_authorized')is not True or a.get('owner_user_id')!=5122667182 or a.get('cabinet')!='token_3'or a.get('source_channel')!='codex':raise ValueError('Exact owner funding approval absent')
@@ -30,10 +32,15 @@ def budgets(w,ids):
 def main():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner'or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Wrong repository')
  c=Cache();a=approval(c);items=a['items'];ids=[i['campaign_id']for i in items]
- if c.get(ROOT+':execution'):print('Existing funding execution; no replay');return
+ prior=c.get(ROOT+':execution')
+ if prior:
+  if prior.get('status')!='blocked'or prior.get('wb_writes')!=0 or prior.get('steps'):print('Existing financial execution; no replay');return
+  if not c.create(ROOT+':preflight_recovery1',dict(at=stamp(),reason='Canonical membership order normalization; prior has zero deposits')):return
+  c.create(ROOT+':preflight_rejected:first',prior)
  w=ScopedWB(items);validate_identity(c,w)
  e=dict(status='preflight',approval_key=ROOT+':approval',scope_sha256=a['scope_sha256'],created_at=stamp(),steps={},items=[],wb_writes=0,total_verified_cny=0,bid_writes=0,price_writes=0,status_writes=0,telegram_calls=0)
- if not c.create(ROOT+':execution',e):return
+ if prior:put(c,ROOT+':execution',e)
+ elif not c.create(ROOT+':execution',e):return
  def save():put(c,ROOT+':execution',e)
  try:
   cs=w.campaigns(ids);bb=budgets(w,ids);cfg=w.req('/api/advert/v1/config');wallet=w.req('/adv/v1/balance');e.update(before=cs,budgets_before=bb,config=cfg,account_before=wallet)
@@ -41,7 +48,7 @@ def main():
   cash=dict(balance=wallet.get('balance',0),net=wallet.get('net',0));sources={}
   for i in items:
    cid=i['campaign_id'];cp=cs[str(cid)]
-   if cp['status']!=9 or project(cp)!=a['expected_campaigns'][str(cid)]:raise ValueError('Campaign changed since approved budget review')
+   if cp['status']!=9 or project(cp)!=project(a['expected_campaigns'][str(cid)]):raise ValueError('Campaign changed since approved budget review')
    if bb[cid]>i['balance_before']+2:raise ValueError('Campaign funded after proposal; prevent duplicate')
    if cfg['minTopUp']>i['amount_cny']*100:raise ValueError('Minimum deposit changed')
    source=0 if cash['balance']>=i['amount_cny']else 1 if cash['net']>=i['amount_cny']else None

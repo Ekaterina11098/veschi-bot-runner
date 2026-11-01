@@ -36,6 +36,7 @@ class ScopedWB(WB):
   if write and not any(mutation(x)==(path,method,body)for x in self.actions):raise ValueError('Unapproved mutation')
   return super().req(path,method,body,write)
 def put(c,k,v):
+ v=json.loads(json.dumps(v))
  c.put(k,v)
  if c.get(k)!=json.loads(json.dumps(v)):raise ValueError('Private receipt readback mismatch')
 def main():
@@ -44,7 +45,7 @@ def main():
  prior=c.get(ROOT+':execution')
  if prior:
   if prior.get('status')!='blocked' or prior.get('wb_writes')!=0 or prior.get('steps'):print('Existing execution; no replay');return
-  if not c.create(ROOT+':preflight_recovery_lease',dict(started_at=stamp())):return
+  if not c.create(ROOT+':preflight_recovery2_lease',dict(started_at=stamp())):return
  w=ScopedWB(a['actions']);validate_identity(c,w)
  e=dict(status='preflight',approval_key=ROOT+':approval',scope_sha256=a['scope_sha256'],steps={},wb_writes=0,budget_writes=0,price_writes=0,telegram_calls=0,created_at=stamp())
  if prior:e['prior_preflight_attempt']=prior;put(c,ROOT+':execution',e)

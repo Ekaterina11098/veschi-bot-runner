@@ -28,6 +28,8 @@ jobs:
       - run: pip install requests==2.32.5
       - name: Verify windows, pagination, money and no-write guard
         run: python scripts/test_china_hourly_sales_read.py
+      - name: Verify independent recovery clock and duplicate prevention
+        run: node --test scripts/test_china_hourly_clock.mjs
       - name: Collect private dated API snapshots; no marketplace writes or Telegram
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

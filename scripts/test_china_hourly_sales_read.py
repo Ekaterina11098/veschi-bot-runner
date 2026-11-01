@@ -37,7 +37,7 @@ class CollectorTest(unittest.TestCase):
                 self.put(key,body['payload']);return [self.row(key)]
         return C()
     def snapshot(self,cut,status='complete'):
-        return dict(status=status,cabinet='token_3',slot_msk=cut.isoformat(),observed_at=cut.isoformat(),completed_at=cut.isoformat(),orders={str(n):dict(status='complete') for n in (0,1,7)},advertising=dict(status='complete'))
+        return dict(status=status,cabinet='token_3',slot_msk=cut.isoformat(),observed_at=cut.isoformat(),completed_at=cut.isoformat(),orders={str(n):dict(status='complete') for n in (0,1,7)},advertising=dict(status='complete'),budgets=dict(status='complete'))
     def test_backup_skips_complete_hour_before_wb_identity_or_requests(self):
         clock=datetime.now(timezone.utc);cut=clock.astimezone(m.MSK).replace(minute=0,second=0,microsecond=0)
         c=self.cache();c.put(m.POLICY,dict(enabled=True,cabinet='token_3',wb_writes=0));c.put(m.slot_key(cut),self.snapshot(cut))
@@ -118,6 +118,17 @@ class CollectorTest(unittest.TestCase):
         self.assertTrue(result['past_period_is_full_day'])
         self.assertEqual(result['scope'],'all_sources')
         self.assertIn('2026-10-30T13',result['samehour_baseline_key'])
+    def test_partial_budget_is_not_complete(self):
+        cut=datetime(2026,11,1,20,tzinfo=m.MSK);value=self.snapshot(cut)
+        value['budgets']['status']='partial';self.assertFalse(m.complete_slot(value))
+    def test_requested_unavailable_funnel_is_not_complete(self):
+        cut=datetime(2026,11,1,20,tzinfo=m.MSK);value=self.snapshot(cut)
+        value.update(funnel_requested=True,general_funnel=dict(status='unavailable'))
+        self.assertFalse(m.complete_slot(value))
+    def test_requested_complete_funnel_is_complete(self):
+        cut=datetime(2026,11,1,20,tzinfo=m.MSK);value=self.snapshot(cut)
+        value.update(funnel_requested=True,general_funnel=dict(status='complete'))
+        self.assertTrue(m.complete_slot(value))
     def test_general_funnel_scope_is_bounded(self):
         reports=types.ModuleType('china_wb_evidence')
         reports.Reports=object; reports.FUNNEL='funnel';reports.normalize_funnel=lambda *a:None

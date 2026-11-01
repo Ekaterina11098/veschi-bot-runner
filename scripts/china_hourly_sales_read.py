@@ -41,7 +41,10 @@ def saved_slot(c, cut):
 def complete_slot(value):
     return bool(value and value.get('status')=='complete'
                 and all((value.get('orders',{}).get(str(n)) or {}).get('status')=='complete' for n in (0,1,7))
-                and value.get('advertising',{}).get('status')=='complete')
+                and value.get('advertising',{}).get('status')=='complete'
+                and value.get('budgets',{}).get('status')=='complete'
+                and (not (value.get('funnel_requested') or 'general_funnel' in value)
+                     or value.get('general_funnel',{}).get('status')=='complete'))
 
 
 def claim_slot(c,cut,run_id,clock):
@@ -179,7 +182,7 @@ def run():
     allowed = {int(r['nmID']) for r in catalog.get('rows', [])}
     e = dict(status='reading', cabinet='token_3', slot_msk=cut.isoformat(), observed_at=stamp(),
              wb_writes=0, telegram_calls=0, workflow_run=os.environ.get('GITHUB_RUN_ID'),
-             orders={}, advertising={}, grants_action_permission=False)
+             orders={}, advertising={}, funnel_requested=bool(policy.get('funnel_nm_ids')), grants_action_permission=False)
     def get(path, params=None):
         if path not in ('/api/v3/orders', '/api/v3/orders/new'):
             raise ValueError('FBS read-only endpoint guard')
@@ -268,7 +271,9 @@ def run():
             e['ad_comparisons'][str(offset)] = result
     except Exception as ex:
         e['advertising'] = dict(status='unavailable', reason=safe_error(ex), observed_at=stamp())
-    e.update(status='complete' if all(r['status']=='complete' for r in e['orders'].values()) and e['advertising']['status']=='complete' else 'partial', completed_at=stamp())
+    e.update(status='complete', completed_at=stamp())
+    if not complete_slot(e):
+        e['status']='partial'
     if not c.create(key, e):
         raise RuntimeError('Frozen slot conflict')
     if c.get(key) != e:

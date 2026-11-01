@@ -41,16 +41,22 @@ def put(c,k,v):
 def main():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Wrong repository')
  c=Cache();a=approval(c)
- if c.get(ROOT+':execution'):print('Existing execution; no replay');return
+ prior=c.get(ROOT+':execution')
+ if prior:
+  if prior.get('status')!='blocked' or prior.get('wb_writes')!=0 or prior.get('steps'):print('Existing execution; no replay');return
+  if not c.create(ROOT+':preflight_recovery_lease',dict(started_at=stamp())):return
  w=ScopedWB(a['actions']);validate_identity(c,w)
  e=dict(status='preflight',approval_key=ROOT+':approval',scope_sha256=a['scope_sha256'],steps={},wb_writes=0,budget_writes=0,price_writes=0,telegram_calls=0,created_at=stamp())
- if not c.create(ROOT+':execution',e):return
+ if prior:e['prior_preflight_attempt']=prior;put(c,ROOT+':execution',e)
+ elif not c.create(ROOT+':execution',e):return
  def save():put(c,ROOT+':execution',e)
  try:
   from china_advertising_state import AdvertisingIO
   from china_moysklad_read import read_stock
   items=[i for x in a['actions']for i in x.get('items',[])]
-  e['prices']=AdvertisingIO().prices([i['nm_id']for i in items]);e['stock']=read_stock([i['article']for i in items]);e['preflight_at']=stamp()
+  class Prices(AdvertisingIO):
+   def __init__(self,token):self.token=token
+  e['prices']=Prices(w.token).prices([i['nm_id']for i in items]);e['stock']=read_stock([i['article']for i in items]);e['preflight_at']=stamp()
   states=w.campaigns([x['campaign_id']for x in a['actions']]);e['before']=states;e['minimums']={}
   for x in a['actions']:
    expected(states[str(x['campaign_id'])],x)

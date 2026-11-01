@@ -40,7 +40,8 @@ def attach(bundle,source):
     sections['add']['rows'].append(dict(article=labels.get(nm,'WB '+str(nm)),nm_id=nm,decision='Предварительный кандидат без рекламы: собственная экономика/цена/остаток не подтверждены полностью. Готового добавления нет.',ready=False));continue
    if e['expected_margin_before_ads_cny']<=0 or e.get('stock_free',0)<=0:continue
    if e.get('buyout_fallback')or e.get('sample_size',0)<5:continue
-   sections['add']['rows'].append(dict(article=labels.get(nm,'WB '+str(nm)),nm_id=nm,campaign_id=(source.get('addition_targets')or{}).get(str(nm)),decision='Кандидат на ограниченный тест. Перед готовым планом проверить точную РК, минимум/шаг, опубликованный остаток и опыт. Без добавления и пополнения автоматически.',economics=e,ready=False))
+   quote=(source.get('addition_bid_quotes')or{}).get(str(nm))or{}
+   sections['add']['rows'].append(dict(article=labels.get(nm,'WB '+str(nm)),nm_id=nm,campaign_id=quote.get('campaign_id'),target_minor=quote.get('target_minor'),bid_verified=quote.get('bid_verified')is True,decision='Добавить только после отдельного согласования точного плана.',economics=e,ready=False))
   sections['add']['note']='Предварительные кандидаты; точная РК/ставка требуют проверки.'if sections['add']['rows']else'Проверены товары без активной рекламы; положительная подтверждённая экономика не выделила кандидатов.'
  for key,s in sections.items():
   if s['rows']and key!='add':s['note']=str(len(s['rows']))+' готовых предложений; только после согласования.'
@@ -65,7 +66,9 @@ def campaign_table(bundle):
    c=byid.get(cid)
    if not c or c['status']!=9:continue
    a=r.get('action')or{}
-   if key=='add':text='Предложить ограниченный рекламный тест.'
+   if key=='add':
+    if r.get('bid_verified')is not True or type(r.get('target_minor'))is not int:continue
+    text='Добавить · ставка '+str(r['target_minor']/100)+' CNY.'
    elif key=='exclude':text='Исключить из РК.'
    else:text=('Повысить'if key=='raise'else'Снизить')+' '+str(a['old_minor']/100)+' → '+str(a['target_minor']/100)+' CNY.'
    c['direction_recommendations'].append(r['article']+': '+text)
@@ -95,7 +98,9 @@ def overview(bundle):
   if not section['rows']:line('Пока нет готовых рекомендаций.'if section.get('status')=='unavailable'else'Пока без изменений.')
   for r in section['rows']:
    a=r.get('action')or{};cid=r.get('campaign_id');suffix=' · РК '+str(cid)if cid else''
-   if key=='add':decision='Предложить ограниченный рекламный тест'+suffix+'.'
+   if key=='add':
+    if r.get('bid_verified')is not True or type(r.get('target_minor'))is not int:continue
+    decision='Добавить · ставка '+str(r['target_minor']/100)+' CNY'+suffix+'.'
    elif key=='exclude':decision='Исключить'+suffix+'.'
    else:decision=('Повысить'if key=='raise'else'Снизить')+' '+str(a['old_minor']/100)+' → '+str(a['target_minor']/100)+' CNY'+suffix+'.'
    line(r['article']+' — '+decision)

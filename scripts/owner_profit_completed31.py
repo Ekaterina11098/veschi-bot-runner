@@ -39,8 +39,8 @@ def main():
 def reconcile_saved_inputs():
  from china_wb_evidence import Reports
  c=Cache()
- if c.get(ROOT+':result:v2'):return
- if not c.create(ROOT+':calculation_v2_lease',dict(started_at=datetime.now(timezone.utc).isoformat())):return
+ if c.get(ROOT+':result:v3'):return
+ if not c.create(ROOT+':calculation_v3_lease',dict(started_at=datetime.now(timezone.utc).isoformat())):return
  state=c.get(ROOT+':inputs')
  if not state or state['inputs']['orders'].get('cutoff_msk')!='2026-11-01T00:00:00+03:00':raise ValueError('Full day orders missing')
  own=(c.get('china_agent:owner_profit_now:2026-10-31:v1:collection')or{}).get('inputs',{}).get('own_products')
@@ -57,7 +57,13 @@ def reconcile_saved_inputs():
  try:
   state['inputs']['finance']=Reports(Work()).finance('2026-10-31','2026-10-31');state['errors'].pop('finance',None)
  except Exception as ex:state['errors']['finance']=type(ex).__name__
- state=json.loads(json.dumps(state));c.put(ROOT+':inputs:v2',state)
+ # Normalize documented case-insensitive currency and decimal-string money in a working copy.
+ for row in state.get('inputs',{}).get('finance',{}).get('rows',[]):
+  if str(row.get('currency','')).upper()!='CNY':raise ValueError('Finance currency unverified')
+  row['currency']='CNY'
+  for field in ['paidStorage','paidAcceptance','penalty','deduction','additionalPayment']:
+   if isinstance(row.get(field),str):row[field]=float(row[field])
+ state=json.loads(json.dumps(state));c.put(ROOT+':inputs:v3',state)
  result=calculate(state,c.get('china_agent:new_ad_economics_policy:v1')or{},c.get('china_agent:expected_profit_delivery_model:v1')or{},date(2026,10,31))
  # Saved own historical reverse logistics are a separate preliminary model, not final cohort charges.
  ownmap={int(r['nm_id']):r for r in own['rows']};fx=float(state['inputs']['fx']['rub_per_cny']);reverse=0.;missing_reverse=0
@@ -68,9 +74,9 @@ def reconcile_saved_inputs():
  result['totals']['model_reverse_logistics_cny']=reverse
  if result['totals']['forecast_profit_cny']is not None:
   result['totals']['forecast_profit_cny']-=reverse;result['totals']['forecast_profit_rub']=result['totals']['forecast_profit_cny']*fx
- result.update(source_key=ROOT+':inputs:v2',observed_at=datetime.now(timezone.utc).isoformat(),missing_reverse_model_orders=missing_reverse)
- result=json.loads(json.dumps(result));c.put(ROOT+':result:v2',result)
- if c.get(ROOT+':result:v2')!=result:raise ValueError('Calculation readback mismatch')
+ result.update(source_key=ROOT+':inputs:v3',observed_at=datetime.now(timezone.utc).isoformat(),missing_reverse_model_orders=missing_reverse)
+ result=json.loads(json.dumps(result));c.put(ROOT+':result:v3',result)
+ if c.get(ROOT+':result:v3')!=result:raise ValueError('Calculation readback mismatch')
  print(json.dumps({k:result.get(k)for k in ['status','modelled_orders','collection_errors','errors']}))
 if __name__=='__main__':
  main();reconcile_saved_inputs()

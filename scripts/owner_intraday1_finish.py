@@ -1,5 +1,5 @@
 """Resume the privately checkpointed read; never repeat completed input calls."""
-import json,requests
+import json,requests,time
 from datetime import datetime,date,timezone
 from zoneinfo import ZoneInfo
 from china_cloud_cost_control import Cache,WB,validate_identity
@@ -13,9 +13,15 @@ def main():
  if datetime.now(ZoneInfo('Europe/Moscow')).date()!=date(2026,11,1):raise ValueError('Expired dated reader')
  state=c.get(ROOT+':checkpoint');old=c.get('china_agent:owner_report_review:2026-11-01:v2:inputs')
  if not state or 'today' not in state or 'prices' not in state['inputs']:raise ValueError('Completed statistics and prices required')
- if not c.create(ROOT+':finish_lease',dict(started_at=stamp())):return
+ if not c.create(ROOT+':finish2_lease',dict(started_at=stamp())):return
  w=WB();validate_identity(c,w);original=requests.sessions.Session.request
- def save():c.put(ROOT+':checkpoint',json.loads(json.dumps(state)))
+ def save():
+  value=json.loads(json.dumps(state))
+  try:c.put(ROOT+':checkpoint',value)
+  except RuntimeError as ex:
+   if str(ex)!='Private state HTTP 500':raise
+   if c.get(ROOT+':checkpoint')==value:return
+   time.sleep(2);c.put(ROOT+':checkpoint',value)
  def guard(session,method,url,**kw):
   if url.startswith(c.url) and method.upper() in ['GET','POST','PATCH']:return original(session,method,url,**kw)
   body=kw.get('json')

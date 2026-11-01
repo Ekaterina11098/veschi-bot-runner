@@ -46,10 +46,12 @@ class EconomicsRefresh(unittest.TestCase):
    calls.append((topic,ids,first,last))
    data={'products':[dict(nm_id=10,is_payed=10,finish_as_return=2,finished_orders=20,total_commission_without_spp_in_sales=20)],'prices':[dict(nm_id=10,article='bag',seller_price=100)],'stock':[dict(article='bag',cost_rub=120,available=8)]}
    return dict(observed_at='2026-11-01T04:15:00Z',rows=data[topic])
-  with patch.dict('os.environ',dict(WB_TOKEN_3='fixture',MPSTATS_API_TOKEN='fixture',MOYSKLAD_API_TOKEN='fixture')),patch('china_analytic_dialog.Analyst.live',live),patch('china_intraday_analysis.rate',return_value=dict(rub_per_cny='12')):
+  price_input=dict(observed_at='2026-11-01T04:15:00Z',rows=[dict(nm_id=10,article='bag',seller_price=100)])
+  with patch.dict('os.environ',dict(WB_TOKEN_3='fixture',MPSTATS_API_TOKEN='fixture',MOYSKLAD_API_TOKEN='fixture')),patch('china_analytic_dialog.Analyst.live',live),patch('china_analytic_dialog.Analyst.collect',lambda self,topic,ids,first,last:live(self,topic,ids,str(first),str(last))),patch('china_morning_readiness.current_prices',return_value=price_input) as prices_read,patch('china_intraday_analysis.rate',return_value=dict(rub_per_cny='12')):
    result=enrich_economics(io,s,rough,'2026-11-01')
   r=result['economics']['rows']['10']
-  self.assertEqual([c for c in calls if c[0]=='prices'],[('prices',[],'2026-10-02','2026-10-31')])
+  prices_read.assert_called_once_with(io,[10])
+  self.assertEqual([c for c in calls if c[0]=='products'],[('products',[],'2026-10-02','2026-10-31')])
   self.assertEqual(r['stock_free'],8);self.assertEqual(r['sample_size'],20)
   self.assertAlmostEqual(r['expected_margin_before_ads_cny'],28.6666666667)
   self.assertTrue(r['unknown_reverse_and_shared_costs'])

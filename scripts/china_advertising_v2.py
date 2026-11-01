@@ -474,11 +474,10 @@ def prepare(io,day):
   if returned!=set(ids):raise ValueError('Incomplete campaign minima')
  from china_advertising_cards import enhance
  from china_advertising_growth import enrich
- return enrich(io,s,enhance(build(s,minimums),s))
-
-
-
-
-
-
+ from china_advertising_economic_review import apply as economic_review
+ result=economic_review(enrich(io,s,enhance(build(s,minimums),s)),s,minimums)
+ if s.get('morning_fresh_inputs',{}).get('errors') or result.get('economic_review_blockers'):
+  from china_morning_readiness import PendingAdvertisingDay
+  raise PendingAdvertisingDay('Recommendation inputs incomplete; preserve source and retry instead of freezing an unfinished report')
+ return result
 

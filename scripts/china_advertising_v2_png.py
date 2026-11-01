@@ -41,7 +41,7 @@ def budget_column(c):
  amount=c.get('budget_reserve_amount')
  if amount is None:return 'Сумма не рассчитана'
  return 'Рекомендовано '+str(int(amount))+' ¥\nпосле исполнения рекомендаций РК'
-def render(bundle):
+def _render_legacy(bundle):
  bundle=dict(bundle,campaigns=sorted([c for c in bundle['campaigns'] if not c.get('never_started')],key=lambda c:not any(r.get('action') for r in c.get('attention',[]))))
  W=2400;H=6500;xs=[44,355,650,870,1090,1700,2356];files=[]
  def canvas(title):
@@ -145,4 +145,9 @@ def render(bundle):
   parts=[f for f in files if f['family']==family]
   for i,f in enumerate(parts,1):f.update(kind=family+':'+str(i).zfill(3),page=i,total=len(parts))
  return files
+
+def render(bundle):
+ if not bundle.get('economic_review_complete'):return _render_legacy(bundle)
+ from china_advertising_review_png import pages
+ return pages(bundle)+[f for f in _render_legacy(bundle) if f['family']=='budgets']
 

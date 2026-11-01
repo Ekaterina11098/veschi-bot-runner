@@ -58,7 +58,8 @@ def ensure(io,source,report_day,source_key):
 
 def enrich_economics(io,source,rough,report_day):
  """At most30 actual candidates; fresh own inputs, no marketplace writes."""
- ids=sorted({r['nm'] for c in rough.get('campaigns',[]) for r in c.get('focus',[]) if not r.get('pending_first_day') and not r.get('done','').startswith('Исключён')},key=lambda nm:-max((r.get('period') or {}).get('spend',0) for c in rough['campaigns'] for r in c.get('focus',[]) if r['nm']==nm))[:30]
+ ids=sorted({r['nm'] for c in rough.get('campaigns',[]) for r in c.get('focus',[]) if not r.get('pending_first_day') and not r.get('done','').startswith('Исключён')})
+ if len(ids)>100:raise ValueError('Economic review exceeds bounded candidate scope')
  if not ids:return source
  if not all(os.environ.get(k) for k in ['WB_TOKEN_3','MPSTATS_API_TOKEN','MOYSKLAD_API_TOKEN']):
   source['morning_fresh_inputs']=dict(errors={'configuration':'Read credentials not configured'},wb_writes=0);return source
@@ -78,26 +79,35 @@ def enrich_economics(io,source,rough,report_day):
  values={};errors={}
  with reading():
   for topic in ['products','prices','stock']:
-   # A paginated price list avoids up to30 per-SKU requests and rate-limit failures.
-   try:values[topic]=an.live(topic,[] if topic=='prices' else ids,str(first),str(last))
+   try:
+    if topic=='prices':values[topic]=current_prices(io,ids)
+    elif topic=='products':values[topic]=an.live(topic,[],str(first),str(last))
+    else:values[topic]=dict(an.collect(topic,ids,first,last),observed_at=datetime.now(timezone.utc).isoformat())
    except Exception as ex:errors[topic]=type(ex).__name__
   try:fx=float(rate(w,last)['rub_per_cny'])
   except Exception as ex:fx=None;errors['fx']=type(ex).__name__
  source['morning_fresh_inputs']=dict(selected_nm_ids=ids,source_times={k:v.get('observed_at') for k,v in values.items()},errors=errors,own_period=[str(first),str(last)],wb_writes=0)
  if errors:return source
- own={int(p['nm_id']):p for p in values['products'].get('rows',[])};prices={int(p['nm_id']):p for p in values['prices'].get('rows',[])};stock={p['article'].casefold():p for p in values['stock'].get('rows',[])}
+ from china_advertising_economic_review import model_rows
+ values['products'].update(period_from=str(first),period_to=str(last));values['fx']=dict(rub_per_cny=fx)
  policy=io.get('china_agent:new_ad_economics_policy:v1') or {};model=io.get('china_agent:expected_profit_delivery_model:v1') or {}
- rows=source.setdefault('economics',{}).setdefault('rows',{})
- for nm in ids:
-  try:
-   p=own[nm];pr=prices[nm];st=stock[pr['article'].casefold()];b=buyout_from_product(p)
-   if b['source']=='fallback':continue
-   log=policy.get('logistics_by_nm',{}).get(str(nm)) or model.get('rows',{}).get(pr['article']) or {};q=float(b['probability'])
-   price=pr['seller_price'];cost=st['cost_rub']/fx;fee=p.get('total_commission_without_spp_in_sales')
-   if type(fee) not in (int,float) or not 0<=fee<100:continue
-   pre=q*(price*(1-(fee+policy['tax_pct'])/100)-cost)-log['delivery_cny']-policy['handling_rub']/fx
-   old=rows.get(str(nm)) or {}
-   rows[str(nm)]=dict(old,observed_at=values['products']['observed_at'],own_cogs_rub=st['cost_rub'],seller_revenue_rub=price*fx,stock_free=st['available'],stock_observed_at=values['stock']['observed_at'],seller_price_cny=price,expected_margin_before_ads_cny=pre,sample_reliable=b['sample_size']>=20,sample_size=b['sample_size'],buyout=q,owner_strategy_review=True,source_ids=[values[k].get('source_key',k) for k in values],unknown_reverse_and_shared_costs=True,period_from=str(first),period_to=str(last))
-  except (KeyError,TypeError,ValueError,ZeroDivisionError):continue
+ source['economics']=model_rows(values,policy,model)
  return source
+
+def current_prices(io,ids):
+ wanted=set(ids);found={}
+ for offset in range(0,20000,1000):
+  part=io.wb('/api/v2/list/goods/filter?limit=1000&offset='+str(offset)).get('listGoods')
+  if not isinstance(part,list):raise ValueError('Price pagination incomplete')
+  for p in part:
+   if p.get('nmID') not in wanted:continue
+   nm=p['nmID'];prices={r.get('discountedPrice') for r in p.get('sizes',[])}
+   if nm in found or p.get('currencyIsoCode4217')!='CNY' or len(prices)!=1:raise ValueError('Exact seller price ambiguous')
+   price=next(iter(prices))
+   if type(price) not in (int,float) or price<=0:raise ValueError('Exact seller price missing')
+   found[nm]=dict(nm_id=nm,article=p['vendorCode'],currency='CNY',seller_price=price)
+  if len(part)<1000:break
+ else:raise ValueError('Price page limit exceeded')
+ if set(found)!=wanted:raise ValueError('Exact candidate price coverage missing')
+ return dict(rows=list(found.values()),observed_at=datetime.now(timezone.utc).isoformat(),source='WB current exact candidate seller prices CNY')
 

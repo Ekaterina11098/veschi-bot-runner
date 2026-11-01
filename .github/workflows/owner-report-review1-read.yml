@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
-    if: github.repository == 'Ekaterina11098/veschi-bot-runner'
+    if: false # Dated input collection complete and privately verified
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

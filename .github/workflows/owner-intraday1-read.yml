@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
-    if: github.event_name == 'push'
+    if: false # Dated read completed, private final readback verified
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

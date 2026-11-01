@@ -73,13 +73,15 @@ def apply(bundle,source,minima):
    r['reason']=facts+' Экономика предварительная; ассоциированные заказы и неизвестные общие расходы не распределены.'
    if e.get('buyout_fallback'):r['reason']+=' Нет завершённой собственной выборки: выкуп50% — допущение, не факт.'
    base=dict(id=str(c['id'])+':'+str(r['nm']),campaign_id=c['id'],nm_id=r['nm'],placement=zone,old_minor=old,article=r['article'])
-   meaningful=p['clicks']>=100 and spend>=max(0,model_before,e['seller_price_cny']*.05)
+   meaningful=(p['clicks']>=100 or model_before<=0) and spend>=max(0,model_before,e['seller_price_cny']*.05)
    if old>minimum:
     r['action']=dict(base,kind='ad_set_bid',target_minor=minimum)
     r['decision']=f'Снизить {old/100:g} → {minimum/100:g} ¥ (минимум WB).'
    elif old==minimum and orders>0 and drr is not None and 5<drr<=6 and r['model_profit_for_attributed_orders_cny']>0:
     r['action']=None
-    r['decision']=f'Оставить минимум {old/100:g} ¥ только как отдельно согласованный тест ещё на 1 полный день; без повышения и пополнения.'
+    limit=round(min(model_before,e['seller_price_cny']*.05),2)
+    r['test_proposal']=dict(days=1,max_additional_spend_cny=limit,requires_separate_approval=True,execution_authorized=False)
+    r['decision']=f'Оставить минимум {old/100:g} ¥ только как отдельно согласованный тест на 1 полный день; лимит допрасхода {limit:g} ¥; без пополнения.'
     r['reason']+=' Цель5% превышена незначительно; это предложение исключения из лимита на один день, не разрешение продолжать автоматически.'
    elif old==minimum and meaningful and len(state['nm_settings'])>1 and state.get('restrictions',{}).get('can_change_nms') is True:
     r['action']=dict(base,kind='ad_exclude_sku');r['decision']='Исключить из этой РК: ставка уже на минимуме WB.'

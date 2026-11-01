@@ -28,6 +28,9 @@ class Review(unittest.TestCase):
  def test_low_traffic_not_automatically_excluded(self):
   b,s,m=fixture(spend=2,clicks=7);r=apply(b,s,m)['campaigns'][0]['focus'][0]
   self.assertIsNone(r['action']);self.assertIn('Сохранить',r['decision'])
+ def test_negative_pre_ad_model_does_not_require_spending_to_hundred_clicks(self):
+  b,s,m=fixture(spend=10,clicks=35);s['economics']['rows']['10']['expected_margin_before_ads_cny']=-5
+  r=apply(b,s,m)['campaigns'][0]['focus'][0];self.assertEqual(r['action']['kind'],'ad_exclude_sku')
  def test_stale_stock_blocks_action_and_report_completion(self):
   b,s,m=fixture();s['economics']['rows']['10']['stock_observed_at']=(datetime.now(timezone.utc)-timedelta(days=2)).isoformat()
   result=apply(b,s,m);self.assertFalse(result['economic_review_complete']);self.assertIsNone(result['campaigns'][0]['focus'][0]['action'])

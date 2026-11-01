@@ -36,6 +36,7 @@ def compact_execution_records(records):
 def read_price_experience(io,page_size=300,max_pages=100):
  """Load complete ordered price history; a page limit is not a total-history limit."""
  query='telegram_api_cache?cache_key=like.china_agent:experience:v1:*&payload->action->>kind=eq.price_change&select=action:payload->action,started_at:payload->>started_at&order=cache_key.asc&limit='+str(page_size)
+ query=query.replace('or=(', 'or=(cache_key.like.china_agent:*:execution,',1)
  records=[]
  for page_index in range(max_pages):
   page=io.db(query+'&offset='+str(page_index*page_size))
@@ -70,6 +71,15 @@ def refresh_budget_context(io,source,day):
   records+=page
   if len(page)<100:break
  else:raise ValueError('Current execution history incomplete')
+ # Canonical receipts can have recovery prefixes outside the historical scan.
+ # Never infer the latest change day from a prefix-filtered subset alone.
+ registry=io.get('china_agent:verified_campaign_state:v1') or {}
+ known={r.get('cache_key') for r in records}
+ for cid,key in registry.items():
+  if key in known:continue
+  receipt=io.get(key)
+  if receipt and receipt.get('status')=='verified' and str(receipt.get('after',{}).get('id'))==str(cid):
+   records.append(dict(cache_key=key,payload=receipt));known.add(key)
  s['executions']=compact_execution_records(records)
  s['experience']=read_price_experience(io)
  s['economics']=read_economics(io)
@@ -102,6 +112,7 @@ def collect(io,day,current=False):
  if 'executions' not in s:
   since=(date.fromisoformat(day)-timedelta(days=14)).isoformat()
   query='telegram_api_cache?or=(cache_key.like.china_agent:ad_rule_execution:*,cache_key.like.china_agent:loss_ad_execution:*,cache_key.like.china_agent:codex_*:execution,cache_key.like.china_agent:owner_*:execution,cache_key.like.china_agent:price_execution:v1:*,cache_key.like.china_agent:new_ad_execution:*,cache_key.like.china_agent:hourly_cloud:execution:*,cache_key.like.china_agent:daily_ad_execution:v2:*,cache_key.like.china_agent:advertising_dialog_execution:v1:*,cache_key.like.china_agent:bid_resume:*)&updated_at=gte.'+since+'&select=cache_key,payload&order=cache_key.asc&limit=100'
+  query=query.replace('or=(', 'or=(cache_key.like.china_agent:*:execution,',1)
   s['executions']=[]
   for offset in range(0,2000,100):
    page=io.db(query+'&offset='+str(offset));s['executions']+=page

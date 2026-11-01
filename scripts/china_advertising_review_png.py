@@ -30,7 +30,7 @@ def pages(bundle):
  im,d=canvas();y=300;actions=[]
  for c in sorted(bundle['campaigns'],key=lambda c:not bool(c.get('attention'))):
   for r in sorted(c['focus'],key=lambda r:not bool(r.get('action'))):
-   if r.get('pending_first_day'):continue
+   if r.get('pending_first_day') or r.get('already_excluded'):continue
    p=(r.get('comparison') or {}).get('after') or r['period']
    if p['spend']<=0:continue
    risk=p['orders']==0 or p['amount']<=0 or 100*p['spend']/p['amount']>5

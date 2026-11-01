@@ -49,6 +49,8 @@ def apply(bundle,source,minima):
   settings={r['nm_id']:r for r in state['nm_settings']}
   zone='search' if state['settings']['placements'].get('search') else 'recommendations'
   for r in c.get('focus',[]):
+   if r['nm'] not in settings:
+    r['action']=None;r['already_excluded']=True;continue
    if r.get('pending_first_day'):continue
    p=(r.get('comparison') or {}).get('after') or r['period'];spend=p['spend'];orders=p['orders'];amount=p['amount']
    risk=spend>0 and (orders==0 or amount<=0 or spend/amount>.05)

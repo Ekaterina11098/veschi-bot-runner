@@ -1,8 +1,8 @@
-name: Deliver reviewed existing Pavel18MSK report205 only
+name: Correct existing Pavel report205 to requested PNG table
 on:
   push:
     branches: [main]
-    paths: ['scripts/owner_report205_release.py']
+    paths: ['scripts/owner_report205_png.py']
 permissions:
   contents: read
 concurrency:
@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
-    if: false # Original report205 delivered once as message598; watch completed
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 pillow==11.3.0 python-dotenv simplejson==4.2.0
-      - name: Deliver only reviewed report205 via original receipts
+      - name: Reply once to message598 with reviewed PNG table; no WB changes
         env:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
@@ -39,4 +39,4 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: PYTHONPATH=scripts:source python scripts/owner_report205_release.py
+        run: PYTHONPATH=scripts:source python scripts/owner_report205_png.py

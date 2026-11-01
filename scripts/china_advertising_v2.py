@@ -338,6 +338,31 @@ def guard_sku_exclusion(row, evidence, context, report_day):
   row['reason']='; '.join(blockers)+'. Прямые заказы SKU не отражают весь результат РК.'
  return row
 
+def include_archived(io,source,day):
+ """Archive changes eligibility, never historical expense coverage. No budget reads for closed campaigns."""
+ s=copy.deepcopy(source)
+ inventory=http(io,'/adv/v1/promotion/count')
+ ids=sorted({x['advertId'] for g in inventory.get('adverts',[]) if g.get('status')==7 for x in g.get('advert_list',[])})
+ known={c['id'] for b in s['batches'].values() for c in b['campaigns'].get('adverts',[]) if c['status']==7}
+ missing=[cid for cid in ids if cid not in known]
+ # A campaign archived after the cached source was built must move, not duplicate.
+ for b in s['batches'].values():
+  b['campaigns']['adverts']=[c for c in b['campaigns'].get('adverts',[]) if c['id']not in missing]
+  b['stats']=[r for r in b['stats']if r['advertId']not in missing]
+  b['budgets']['adverts']=[r for r in b['budgets'].get('adverts',[])if r and r['advertId']not in missing]
+ for pos in range(0,len(missing),50):
+  batch=missing[pos:pos+50]
+  campaigns=http(io,'/api/advert/v2/adverts?ids='+','.join(map(str,batch)))
+  if {c['id'] for c in campaigns.get('adverts',[])}!=set(batch):raise ValueError('Archived campaign catalogue incomplete')
+  stats=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,batch))+'&beginDate='+s['period_from']+'&endDate='+s['period_to'])
+  s['batches']['archive:'+','.join(map(str,batch))]=dict(campaigns=campaigns,stats=stats,budgets=dict(adverts=[]))
+ s['ids']=sorted(set(s['ids'])|set(ids));s['archived_campaign_ids']=ids
+ returned={x['advertId'] for b in s['batches'].values() for x in b['stats']}
+ s['archived_missing_stats_ids']=[cid for cid in ids if cid not in returned]
+ s['archive_coverage_observed_at']=stamp()
+ save(io,'china_agent:advertising_source:'+day+':v2',s)
+ return s
+
 def build(s,minima=None):
  minima=minima or {};end=date.fromisoformat(s['period_to']);days=[str(end-timedelta(days=i)) for i in [2,1,0]];labels=price_map(s['catalogue']);changes=history(s['executions']);cs=[];budgets={};raw=[]
  for b in s['batches'].values():cs+=b['campaigns'].get('adverts',[]);raw+=b['stats'];budgets.update({x['advertId']:x for x in b['budgets'].get('adverts',[]) if x is not None})
@@ -377,9 +402,11 @@ def build(s,minima=None):
    for ds in byproduct.values():
     for i in range(7):ds.setdefault(str(end-timedelta(days=i)),dict(zeros))
   period=sums(byday[d] for d in days) if cp else None;last=byday.get(days[-1]);balance=budgets.get(c['id'])
-  if not balance or balance.get('currency')!='CNY':raise ValueError('Campaign balance missing')
+  if c['status']==7:balance=dict(total=None,currency='CNY') # not a zero budget or missing historical spend
+  elif not balance or balance.get('currency')!='CNY':raise ValueError('Campaign balance missing')
   focus=[]
   for n in c.get('nm_settings',[]):
+   if c['status']==7:continue # historical totals retained; never propose actions on archives
    if new:continue
    nm=n['nm_id'];ds=byproduct.get(nm,{})
    if not ds:continue
@@ -422,7 +449,7 @@ def build(s,minima=None):
   incomplete_composition=new or any(datetime.fromisoformat(x['at'].replace('Z','+00:00')).astimezone(MSK).date()+timedelta(days=1)>end for x in latest_adds)
   forecast=None if incomplete_composition else rate*3 if rate is not None else None
   bdrr=ratio(period);action=None;recommendation='Не пополнять: первый полный день нового состава ещё не оценён.' if incomplete_composition else 'Не пополнять сейчас.'
-  if c['status']!=9:recommendation='Сохранить текущую паузу/черновик; не пополнять.'
+  if c['status']!=9:recommendation='Архив: исторические расходы сохранены; не запускать и не пополнять.' if c['status']==7 else 'Сохранить текущую паузу/черновик; не пополнять.'
   elif cp and len(c['nm_settings'])==1 and period['orders']==0 and period['spend']>0 and not any(r.get('pending_first_day') for r in focus):
    nm=c['nm_settings'][0]['nm_id'];price=labels.get(nm,{}).get('price')
    if isinstance(price,(int,float)) and period['spend']>=price*.05 and not incomplete_composition:
@@ -457,7 +484,7 @@ def build(s,minima=None):
    funding_steps(payload)
   recent_funds=[f for f in funds if f[0][:10]>=days[-1]]
   funding_done='; '.join('+'+str(f[1])+' ¥ · '+datetime.fromisoformat(f[0].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m %H:%M') for f in sorted(set(recent_funds))) or 'Нет новых подтверждённых пополнений'
-  out.append(dict(budget_reference_need=rate*3 if rate is not None else None,budget_review_required=bool(c['status']==9 and rate is not None and rate*3>balance['total']),minimum_topup_cny=s['config']['minTopUp']/100,funding_done=funding_done,id=c['id'],name=c['settings']['name'],zone=zone,payment=bid,status=c['status'],period=period,last=last,drr=bdrr,focus=focus,balance=balance['total'],forecast=forecast,coverage=balance['total']/rate if rate and not incomplete_composition else None,budget_recommendation=recommendation,budget_action=action,new_composition=incomplete_composition,missing_stats=cp is None,created=created))
+  out.append(dict(budget_reference_need=rate*3 if rate is not None else None,budget_review_required=bool(c['status']==9 and rate is not None and rate*3>balance['total']),minimum_topup_cny=s['config']['minTopUp']/100,funding_done=funding_done,id=c['id'],name=c['settings']['name'],zone=zone,payment=bid,status=c['status'],period=period,last=last,drr=bdrr,focus=focus,balance=balance['total'],forecast=forecast,coverage=balance['total']/rate if c['status']!=7 and rate and not incomplete_composition else None,budget_recommendation=recommendation,budget_action=action,new_composition=incomplete_composition,missing_stats=cp is None,created=created))
  bundle=dict(version=VERSION,day=str(end+timedelta(days=1)),days=days,source_observed_at=datetime.fromisoformat(s['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m.%Y %H:%M МСК'),campaigns=out,wb_writes=0)
  if not out:return bundle
  from china_budget_reserve import attach_completed_evidence,apply
@@ -465,6 +492,7 @@ def build(s,minima=None):
 
 def prepare(io,day):
  s=dict(collect(io,day));s['intraday']=io.get('china_agent:advertising_intraday:'+day+':v1') or {};minimums={}
+ s=include_archived(io,s,day)
  s=refresh_budget_context(io,s,day)
  # Query minima only for existing products with a meaningful signal, on their actual campaign/placement.
  rough=build(s)
@@ -490,5 +518,10 @@ def prepare(io,day):
  if s.get('morning_fresh_inputs',{}).get('errors') or result.get('economic_review_blockers'):
   from china_morning_readiness import PendingAdvertisingDay
   raise PendingAdvertisingDay('Recommendation inputs incomplete; preserve source and retry instead of freezing an unfinished report')
- return result
+ from china_advertising_directions import attach
+ return attach(result,s)
+
+
+
+
 

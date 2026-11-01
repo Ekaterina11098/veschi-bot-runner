@@ -60,7 +60,6 @@ def enrich_economics(io,source,rough,report_day):
  """At most30 actual candidates; fresh own inputs, no marketplace writes."""
  ids=sorted({r['nm'] for c in rough.get('campaigns',[]) for r in c.get('focus',[]) if not r.get('pending_first_day') and not r.get('done','').startswith('Исключён')})
  if len(ids)>100:raise ValueError('Economic review exceeds bounded candidate scope')
- if not ids:return source
  if not all(os.environ.get(k) for k in ['WB_TOKEN_3','MPSTATS_API_TOKEN','MOYSKLAD_API_TOKEN']):
   source['morning_fresh_inputs']=dict(errors={'configuration':'Read credentials not configured'},wb_writes=0);return source
  from china_analytic_dialog import Analyst,reading
@@ -81,7 +80,13 @@ def enrich_economics(io,source,rough,report_day):
   for topic in ['products','prices','stock']:
    try:
     if topic=='prices':values[topic]=current_prices(io,ids)
-    elif topic=='products':values[topic]=an.live(topic,[],str(first),str(last))
+    elif topic=='products':
+     values[topic]=an.live(topic,[],str(first),str(last))
+     from china_advertising_directions import addition_shortlist
+     new=addition_shortlist(source,values[topic])
+     source['addition_candidate_ids']=new
+     ids=sorted(set(ids)|set(new))
+     if len(ids)>112:raise ValueError('Candidate economics scope exceeds bound')
     else:values[topic]=dict(an.collect(topic,ids,first,last),observed_at=datetime.now(timezone.utc).isoformat())
    except Exception as ex:errors[topic]=type(ex).__name__
   try:fx=float(rate(w,last)['rub_per_cny'])
@@ -92,6 +97,7 @@ def enrich_economics(io,source,rough,report_day):
  values['products'].update(period_from=str(first),period_to=str(last));values['fx']=dict(rub_per_cny=fx)
  policy=io.get('china_agent:new_ad_economics_policy:v1') or {};model=io.get('china_agent:expected_profit_delivery_model:v1') or {}
  source['economics']=model_rows(values,policy,model)
+ source['addition_scan']=dict(status='complete',period_from=str(first),period_to=str(last),observed_at=values['products']['observed_at'],candidate_ids=source.get('addition_candidate_ids',[]),catalogue_count=len(source['catalogue']['rows']))
  return source
 
 def current_prices(io,ids):
@@ -110,4 +116,6 @@ def current_prices(io,ids):
  else:raise ValueError('Price page limit exceeded')
  if set(found)!=wanted:raise ValueError('Exact candidate price coverage missing')
  return dict(rows=list(found.values()),observed_at=datetime.now(timezone.utc).isoformat(),source='WB current exact candidate seller prices CNY')
+
+
 

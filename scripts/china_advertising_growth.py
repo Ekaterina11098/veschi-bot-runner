@@ -120,7 +120,8 @@ def enrich(io,s,bundle):
  # Keep collection failures private; a missing raise never fills report cells with explanations.
  if not all(k in s for k in ['period_to','batches','config']):return bundle
  day=str(date.fromisoformat(s['period_to'])+timedelta(days=1));key=ROOT+day+':v1';prior=io.get(key)
- if prior:return merge(bundle,prior.get('actions',[]))
+ if prior:
+  result=merge(bundle,prior.get('actions',[]));result['growth_review']={k:v for k,v in prior.items()if k in ['status','reason','observed_at','period_to','scope']};return result
  rough=shortlist(s);record=dict(status='complete',observed_at=stamp(),period_to=s['period_to'],actions=[],wb_writes=0,telegram_calls=0)
  try:
   if rough:
@@ -130,7 +131,7 @@ def enrich(io,s,bundle):
     if action:record['actions'].append(action)
  except Exception as ex:record.update(status='blocked',reason=type(ex).__name__+(': '+str(ex)if isinstance(ex,ValueError)else''))
  if not io.create(key,record):record=io.get(key)
- return merge(bundle,record.get('actions',[]))
+ result=merge(bundle,record.get('actions',[]));result['growth_review']={k:v for k,v in record.items()if k in ['status','reason','observed_at','period_to','scope']};return result
 def merge(bundle,actions):
  bundle=copy.deepcopy(bundle)
  for a in actions:
@@ -141,6 +142,8 @@ def merge(bundle,actions):
   e=a['growth_evidence'];m=e['metrics']
   row=dict(nm=a['nm_id'],article=a['article'],action=a,decision=f"Повысить {a['old_minor']/100:g} → {a['target_minor']/100:g} CNY.",reason='',period=m,period_drr=m['spend']/m['amount']*100,done='Новый ограниченный тест',daily=[],growth=True)
   campaign.setdefault('attention',[]).append(row)
+  # Economic review and PNG rendering use focus; attention alone used to lose raises.
+  campaign['focus']=[r for r in campaign.get('focus',[]) if r.get('nm')!=a['nm_id']]+[copy.deepcopy(row)]
   # Recompute funding separately at the post-action composition; no auto deposit.
   campaign['growth_reserve_extra_cny']=campaign.get('growth_reserve_extra_cny',0)+m['clicks']/len(e['decision_days'])*3*(a['target_minor']-a['old_minor'])/100
   funding=campaign.get('budget_action')
@@ -173,3 +176,5 @@ def validate_raise(io,item,before):
  if g['vendorCode']!=item['article']or g['currencyIsoCode4217']!='CNY' or {z['discountedPrice']for z in g['sizes']}!={e['price_cny']}:raise ValueError('Raise price changed')
  sizes=[z['sizeID']for z in g['sizes']];rr=requests.post('https://marketplace-api.wildberries.ru/api/v3/stocks/2126188',headers={'Authorization':io.token},json={'chrtIds':sizes},timeout=40);rr.raise_for_status();stock=rr.json()['stocks']
  if {z['chrtId']for z in stock}!=set(sizes)or sum(z['amount']for z in stock)<=0:raise ValueError('Raise stock unavailable')
+
+

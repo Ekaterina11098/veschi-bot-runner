@@ -147,7 +147,17 @@ def _render_legacy(bundle):
  return files
 
 def render(bundle):
- if not bundle.get('economic_review_complete'):return _render_legacy(bundle)
- from china_advertising_review_png import pages
- return pages(bundle)+[f for f in _render_legacy(bundle) if f['family']=='budgets']
+ if not bundle.get('economic_review_complete'):files=_render_legacy(bundle)
+ else:
+  from china_advertising_review_png import pages
+  files=pages(bundle)+[f for f in _render_legacy(bundle) if f['family']=='budgets']
+ if bundle.get('recommendation_directions'):
+  from china_advertising_directions import overview
+  files=overview(bundle)+files
+ for family in ['drr','budgets']:
+  parts=[f for f in files if f['family']==family]
+  for index,f in enumerate(parts,1):f.update(kind=family+':'+str(index).zfill(3),page=index,total=len(parts))
+ return files
+
+
 

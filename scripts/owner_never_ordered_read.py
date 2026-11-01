@@ -18,7 +18,7 @@ def main():
  if datetime.now(MSK).date()!=date(2026,11,1):raise ValueError('Expired audit')
  c=Cache()
  if c.get(ROOT+':result'):return
- if not c.create(ROOT+':lease:resume2',dict(started_at=stamp())):return
+ if not c.create(ROOT+':lease:resume3',dict(started_at=stamp())):return
  w=WB();validate_identity(c,w);state=State(c);original=requests.sessions.Session.request
  def guard(session,method,url,*a,**kw):
   u=urlparse(url);m=method.upper()
@@ -57,18 +57,21 @@ def main():
     time.sleep(delay)
    if not source.get('complete'):raise ValueError('Funnel incomplete')
    coverage.append(source);c.put(ROOT+':checkpoint',dict(completed_periods=[[s['period_from'],s['period_to']]for s in coverage],wb_writes=0))
-  fbs={};cursor=0;seen=set();begin=datetime.combine(first,datetime.min.time(),MSK);cutoff=datetime.now(MSK)
-  for page in range(40):
-   response=requests.get('https://marketplace-api.wildberries.ru/api/v3/orders',headers={'Authorization':w.token},params=dict(limit=1000,next=cursor,dateFrom=int(begin.timestamp()),dateTo=int(cutoff.timestamp())),timeout=55);response.raise_for_status();data=response.json()
-   if not isinstance(data.get('orders'),list):raise ValueError('FBS page unavailable')
-   for order in data['orders']:
-    at=datetime.fromisoformat(order['createdAt'].replace('Z','+00:00')).astimezone(MSK)
-    if begin<=at<cutoff:fbs[order['id']]=order['nmId']
-   nxt=data.get('next')
-   if not data['orders']or not nxt:break
-   if nxt==cursor or nxt in seen:raise ValueError('FBS cursor incomplete')
-   seen.add(cursor);cursor=nxt;time.sleep(1)
-  else:raise ValueError('FBS pagination incomplete')
+  fbs={};begin=datetime.combine(first,datetime.min.time(),MSK);cutoff=datetime.now(MSK);window_start=begin;pages_total=0
+  while window_start<cutoff:
+   window_end=min(cutoff,window_start+timedelta(days=29));cursor=0;seen=set()
+   for page in range(40):
+    response=requests.get('https://marketplace-api.wildberries.ru/api/v3/orders',headers={'Authorization':w.token},params=dict(limit=1000,next=cursor,dateFrom=int(window_start.timestamp()),dateTo=int(window_end.timestamp())),timeout=55);response.raise_for_status();data=response.json();pages_total+=1
+    if not isinstance(data.get('orders'),list):raise ValueError('FBS page unavailable')
+    for order in data['orders']:
+     at=datetime.fromisoformat(order['createdAt'].replace('Z','+00:00')).astimezone(MSK)
+     if begin<=at<cutoff:fbs[order['id']]=order['nmId']
+    nxt=data.get('next')
+    if not data['orders']or not nxt:break
+    if nxt==cursor or nxt in seen:raise ValueError('FBS cursor incomplete')
+    seen.add(cursor);cursor=nxt;time.sleep(1)
+   else:raise ValueError('FBS pagination incomplete')
+   window_start=window_end;time.sleep(1)
   fbs_counts={}
   for nm in fbs.values():fbs_counts[nm]=fbs_counts.get(nm,0)+1
   zero=[];positive=[];unknown=[]
@@ -85,7 +88,7 @@ def main():
    if total>0 or row['fbs_created']>0:positive.append(row)
    elif missing:unknown.append(dict(row,missing_periods=missing))
    else:zero.append(row)
-  result=dict(status='complete',cabinet='token_3',period_from=str(first),period_to=str(last),observed_at=stamp(),fbs_cutoff_msk=cutoff.isoformat(),catalogue_count=len(cards),zero_count=len(zero),positive_count=len(positive),unknown_count=len(unknown),zero=zero,positive=positive,unknown=unknown,source_keys=[s['source_key']for s in coverage],fbs_total_orders=len(fbs),fbs_pages=page+1,fbs_complete=True,includes_today_partial=True,funnel_update_delay_hours=2,wb_writes=0,telegram_calls=0,grants_action_permission=False)
+  result=dict(status='complete',cabinet='token_3',period_from=str(first),period_to=str(last),observed_at=stamp(),fbs_cutoff_msk=cutoff.isoformat(),catalogue_count=len(cards),zero_count=len(zero),positive_count=len(positive),unknown_count=len(unknown),zero=zero,positive=positive,unknown=unknown,source_keys=[s['source_key']for s in coverage],fbs_total_orders=len(fbs),fbs_pages=pages_total,fbs_complete=True,includes_today_partial=True,funnel_update_delay_hours=2,wb_writes=0,telegram_calls=0,grants_action_permission=False)
   result=json.loads(json.dumps(result))
   if not c.create(ROOT+':result',result)or c.get(ROOT+':result')!=result:raise ValueError('Audit readback mismatch')
   print(json.dumps({k:result[k]for k in ['status','catalogue_count','zero_count','positive_count','unknown_count','wb_writes','telegram_calls']}))

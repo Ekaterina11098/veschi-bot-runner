@@ -12,6 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         cabinet: [china, ip, ooo, ozon]
+        day: ['20261030', '20261031', '20261101']
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -25,7 +26,7 @@ jobs:
           python-version: '3.12'
       - name: Inspect live daily sources and all linked documents
         env:
-          DAY_REVIEW_ROOT: 'fbs_day_review:20261029:'
+          DAY_REVIEW_ROOT: 'fbs_day_review:${{ matrix.day }}:'
           TARGET_CABINET: ${{ matrix.cabinet }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

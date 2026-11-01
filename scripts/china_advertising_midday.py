@@ -64,8 +64,8 @@ def current_report_context(io,source,day):
  manual=read_context(io.get,datetime.now(timezone.utc))
  return records,dict(verified_registry=pointers,manual_funding=manual,wb_writes=0)
 
-def prepare_midday(io,day):
- source=collect(io,day,current=True)
+def prepare_midday(io,day,source=None):
+ source=collect(io,day,current=True) if source is None else source
  records,context=current_report_context(io,source,day)
  labels=price_map(source['catalogue']);changes=history(records);out=[]
  for batch in source['batches'].values():
@@ -130,10 +130,17 @@ def only_completed_day_actions(bundle):
  out['recommendation_basis']='verified_completed_days_only;intraday_metrics_observational'
  return out
 
+def completed_recommendation(r):
+ e=r.get('closed_day_evidence')or{};m=e.get('metrics')
+ if m:
+  return r['article']+': полные '+e['period_from']+'—'+e['period_to']+', расход '+money(m['spend'])+' ¥; '+str(int(m['orders']))+' заказов; ДРР '+pct(m)+'. '+r['decision']
+ return r['article']+': за сегодня '+money(r['spend'])+' ¥, '+str(int(r['clicks']))+' кликов, 0 рекламных заказов. '+r['decision']
+
 def recommendations(c):
  # Only actionable recommendations belong in this column; metrics/unknown data stay in their own cells.
  if c['attention']:
-  return [r['article']+': за сегодня '+money(r['spend'])+' ¥, '+str(int(r['clicks']))+' кликов, 0 рекламных заказов. '+r['decision'] for r in c['attention']]
+  return [completed_recommendation(r) for r in c['attention']]
+ if c.get('completed_actions'):return ['Подтверждено ранее: '+x for x in c['completed_actions']]+['Новых действий нет.']
  return ['Нет']
 def render_midday(b):
  b=dict(b,campaigns=[c for c in b['campaigns'] if not c.get('draft')])
@@ -190,7 +197,9 @@ def run():
  if (io.get(key) or {}).get('status')=='delivered':print('already_delivered');return
  art='china_agent:advertising_midday_artifacts:'+day+':v1';saved=io.get(art)
  if not saved:
-  b=only_completed_day_actions(prepare_midday(io,day));files=[]
+  from china_midday_completed_review import attach,include_closed
+  current=include_closed(io,collect(io,day,current=True),day)
+  b=only_completed_day_actions(attach(io,prepare_midday(io,day,current),day));files=[]
   for i,f in enumerate(render_midday(b)):
    p=plan(io,day,f,i,slot='midday')
    files.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))
@@ -205,3 +214,5 @@ def run():
  r=deliver(io,day,files,telegram_sender(io),binder=lambda f,r:bind(io,f,r),delivery_key=key,expected_families={'drr'})
  print(json.dumps(dict(status=r['status'],day=day,wb_writes=0)))
 if __name__=='__main__':run()
+
+

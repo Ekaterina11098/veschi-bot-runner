@@ -1,1 +1,1 @@
-{"action":"verify","nonce":"china-dialog-final-future-only-20261026"}
+{"action":"reports","nonce":"reports-only-runtime-verification-20261101","reason":"Verify isolated due-report worker; completed assignments must not replay"}

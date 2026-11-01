@@ -7,6 +7,7 @@ permissions:
   contents: read
 jobs:
   read:
+    if: false # Dated results read verified; do not replay
     runs-on: ubuntu-latest
     timeout-minutes: 5
     concurrency:

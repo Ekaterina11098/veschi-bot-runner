@@ -1,5 +1,7 @@
 import copy
 import unittest
+from contextlib import nullcontext
+from unittest.mock import patch
 from datetime import datetime, timezone
 from conversion_watches import Worker, intent, parameters, next_due, unpack, report, split_message, PREFIX, DAILY, RECEIPTS
 
@@ -106,7 +108,9 @@ class Watches(unittest.TestCase):
         w=Memory();w.command(job('Сравнивай продажи за неделю и присылай отчёт ежедневно в 12:00'))
         _,v=w.watches()[0];self.assertEqual(v['kind'],'task');self.assertEqual(v['clock'],'12:00')
         w.dialog=lambda *a:('Продажи за неделю выросли.',[])
-        self.assertEqual(w.reports(),1);self.assertIn('Продажи за неделю выросли',w.sent[0][1]);self.assertEqual(w.reports(),0)
+        with patch('conversion_watches.saved_network_guard',return_value=nullcontext()):
+            self.assertEqual(w.reports(),1)
+        self.assertIn('Продажи за неделю выросли',w.sent[0][1]);self.assertEqual(w.reports(),0)
     def test_show_one_off_report_not_list(self):self.assertIsNone(intent('Покажи отчет по продажам за неделю'))
     def test_one_off_track_not_schedule(self):self.assertIsNone(intent('Отследи конверсию 52-NoelBag-fuchsia за последние 5 дней'))
     def test_generic_question_not_schedule(self):self.assertEqual(intent('Как ежедневно проверяй продажи в 12:00?'),'help')

@@ -68,4 +68,22 @@ class AutonomyTests(unittest.TestCase):
   r=Runner();r.now=NOW.replace(day=2,hour=1);self.assertEqual(r.reports(),1)
   self.assertIn(RECEIPTS+'report:a:2026-11-01',r.data)
   self.assertNotIn(RECEIPTS+'report:a:2026-11-02',r.data)
+
+class ReadOnlyGuardTests(unittest.TestCase):
+ def test_scheduled_transport_blocks_wb_mutations(self):
+  import os
+  from conversion_watches import saved_network_guard
+  class Session:
+   def request(self,method,url,*args,**kwargs):return 'allowed'
+  requests=types.SimpleNamespace(sessions=types.SimpleNamespace(Session=Session))
+  modules={'requests':requests}
+  for name in ['china_search_analytics','china_ad_cost_collect','china_ad_rule','china_analytic_dialog']:
+   modules[name]=types.SimpleNamespace(allowed_read=lambda *a:False)
+  with patch.dict(sys.modules,modules),patch.dict(os.environ,{'SUPABASE_URL':'https://example.supabase.co','CHINA_TELEGRAM_BOT_TOKEN':'test'}):
+   with saved_network_guard():
+    session=Session()
+    self.assertEqual(session.request('GET','https://example.supabase.co/rest/v1/telegram_api_cache'),'allowed')
+    for method,url in [('POST','https://advert-api.wildberries.ru/adv/v0/bids'),('PATCH','https://discounts-prices-api.wildberries.ru/api/v2/upload/task'),('POST','https://api.telegram.org/bottest/deleteMessage')]:
+     with self.assertRaises(PermissionError):session.request(method,url)
+
 if __name__=='__main__':unittest.main()

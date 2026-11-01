@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
-    if: github.event_name == 'push'
+    if: false # Original report205 delivered once as message598; watch completed
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:

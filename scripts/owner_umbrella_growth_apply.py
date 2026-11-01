@@ -147,7 +147,7 @@ def main():
    target=expected_bid(before,batch)if kind=='bids'else None
    step=dict(status='submitting',before=before,expected=target,items=batch,path=path,body=body,submitted_at=stamp(),parent=ROOT+':execution',approval_key=ROOT+':approval')
    if not c.create(key,step):raise ValueError('Concurrent child')
-   e['steps'][str(cid)+':'+kind]=key;save()
+   e['steps'][str(cid)+':'+kind+(':'+str(batch[0]['nm_id'])if kind=='add'else'')]=key;save()
    try:
     e['wb_writes']+=1;save();step['response']=wb.req(path,'PATCH',body,write=True);step['status']='accepted';put(c,key,step)
     for attempt in range(4):

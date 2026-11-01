@@ -76,6 +76,7 @@ def _render_legacy(bundle):
   return im,d
  im,d=table();y=365;actions=[]
  for c in bundle['campaigns']:
+  if c.get('status')==7:continue # archives contribute to totals below, not recommendation rows
   p=c.get('period');day=c.get('last');draft=c.get('never_started')
   cells=[str(c['id'])+'\n'+c['name'],'День: '+(money(day['spend'])+' ¥' if day else 'не запускалась' if draft else 'нет данных')+'\n3 дня: '+(money(p['spend'])+' ¥' if p else 'не запускалась' if draft else 'нет данных'),'Не применима' if draft else pct(p),'Не применима' if draft else pct(day),summary(c),'\n'.join(recommendations(c))]
   ls=[wrap(d,s,xs[i+1]-xs[i]-34,bold=(i==5 and bool(c.get('attention')))) for i,s in enumerate(cells)]
@@ -102,7 +103,7 @@ def _render_legacy(bundle):
  for x,label,value in [(44,'Общая ДРР 3 дня: ',p),(1050,'Общая ДРР день: ',day)]:
   d.text((x,y+132),label,font=font(29,True),fill=INK)
   d.text((x+d.textlength(label,font=font(29,True)),y+132),pct(value),font=font(29,True),fill=color(value))
- footer='ДРР = сумма расходов / сумма рекламных заказов до скидок WB. Дни без заказов входят в расходы. Нет заказов — сумма заказов 0, ДРР не вычисляется. Исторический расход исключённых сохранён. Атрибуция не равна выкупам и прибыли. Новые тесты отмечены; период может включать прежний состав. Итог относится только к кабинету Китай.'
+ footer='ДРР = сумма расходов / сумма рекламных заказов до скидок WB. Дни без заказов входят в расходы. Нет заказов — сумма заказов 0, ДРР не вычисляется. Исторические расходы исключённых товаров и архивных РК включены в итог. Атрибуция не равна выкупам и прибыли. Новые тесты отмечены; период может включать прежний состав. Итог относится только к кабинету Китай.'
  for j,line in enumerate(wrap(d,footer,W-88,24)):d.text((44,y+218+j*31),line,font=font(24),fill='#536b79')
  finish(im,y+240+len(wrap(d,footer,W-88,24))*31,'drr',actions)
  # Owner-approved three columns; no row without a known cash shortfall.
@@ -159,6 +160,7 @@ def render(bundle):
   parts=[f for f in files if f['family']==family]
   for index,f in enumerate(parts,1):f.update(kind=family+':'+str(index).zfill(3),page=index,total=len(parts))
  return files
+
 
 
 

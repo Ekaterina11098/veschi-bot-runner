@@ -4,7 +4,7 @@ from datetime import datetime,timezone,date
 from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
 from china_cloud_cost_control import Cache,WB,validate_identity,stamp
-ROOT='china_agent:owner_four_campaign_presence:2026-11-01:v1'
+ROOT='china_agent:owner_143_campaign_results:2026-11-01:v1'
 def main():
  c=Cache();request=c.get(ROOT+':request')
  if not request or request.get('cabinet')!='token_3' or request.get('read_only') is not True:raise ValueError('Private request required')
@@ -17,7 +17,7 @@ def main():
  def guard(session,method,url,*a,**kw):
   u=urlparse(url);m=method.upper()
   state=u.scheme=='https' and u.hostname==urlparse(c.url).hostname and u.path.startswith('/rest/v1/') and (m=='GET' or m=='POST' and u.path=='/rest/v1/telegram_api_cache')
-  read=u.scheme=='https' and u.hostname=='advert-api.wildberries.ru' and m=='GET' and u.path in ['/adv/v1/promotion/count','/api/advert/v2/adverts']
+  read=u.scheme=='https' and u.hostname=='advert-api.wildberries.ru' and m=='GET' and u.path in ['/adv/v1/promotion/count','/api/advert/v2/adverts','/adv/v3/fullstats']
   if not(state or read):raise PermissionError('Read-only scope')
   return original(session,method,url,*a,**kw)
  requests.sessions.Session.request=guard
@@ -34,7 +34,12 @@ def main():
    if matched and campaign.get('currency')!='CNY':raise ValueError('Unexpected currency')
    for item in matched:
     rows.append(dict(nm_id=item['nm_id'],article=request['articles'][str(item['nm_id'])],campaign_id=campaign['id'],status=campaign['status'],bid_type=campaign.get('bid_type'),currency=campaign['currency'],settings=campaign['settings'],bids_minor=item.get('bids_kopecks'),campaign_updated=campaign.get('timestamps',{}).get('updated')))
-  result=dict(status='complete',cabinet='token_3',started_at=c.get(ROOT+':lease')['started_at'],observed_at=stamp(),requested_nm_ids=ids,campaign_count=len(all_ids),inventory=inventory,campaigns=campaigns,rows=rows,wb_writes=0,telegram_calls=0,grants_action_permission=False)
+  stats=[]
+  for offset in range(0,len(all_ids),50):
+   part=wb.req('/adv/v3/fullstats?ids='+','.join(map(str,all_ids[offset:offset+50]))+'&beginDate=2026-10-31&endDate=2026-11-01')
+   if not isinstance(part,list):raise ValueError('Statistics unavailable')
+   stats.extend(part)
+  result=dict(statistics=stats,missing_stat_campaign_ids=sorted(set(all_ids)-{x['advertId']for x in stats}),status='complete',cabinet='token_3',started_at=c.get(ROOT+':lease')['started_at'],observed_at=stamp(),requested_nm_ids=ids,campaign_count=len(all_ids),inventory=inventory,campaigns=campaigns,rows=rows,wb_writes=0,telegram_calls=0,grants_action_permission=False)
   if not c.create(ROOT+':result',result) or c.get(ROOT+':result')!=result:raise ValueError('Private readback mismatch')
   print(json.dumps(dict(status='complete',campaigns=len(all_ids),matched_rows=len(rows),wb_writes=0,telegram_calls=0)))
  finally:requests.sessions.Session.request=original

@@ -1,4 +1,6 @@
 import copy,unittest
+from contextlib import nullcontext
+from unittest.mock import patch
 from datetime import datetime,timezone
 from china_once_report import prepare,requested
 from conversion_watches import Worker,intent
@@ -19,7 +21,7 @@ class OnceTests(unittest.TestCase):
   w=W();text=prepare(w,job());saved=next(iter(w.data.values()))
   self.assertEqual(intent(job()['request_text']),'create_once')
   self.assertEqual(saved['next_at'],'2026-11-01T15:00:00+00:00');self.assertFalse(saved['initial_pending'])
-  self.assertEqual(saved['kind'],'once_task');self.assertEqual(len(saved['nm_ids']),4);self.assertEqual(saved['scope_job_id'],201)
+  self.assertEqual(saved['output_format'],'png_table');self.assertEqual(saved['kind'],'once_task');self.assertEqual(len(saved['nm_ids']),4);self.assertEqual(saved['scope_job_id'],201)
   self.assertIn('2026-10-31',saved['task_text']);self.assertIn('2026-11-01',saved['task_text']);self.assertIn('разовый',text)
  def test_same_saved_job_does_not_duplicate(self):
   w=W();a=prepare(w,job());self.assertEqual(prepare(w,job()),a);self.assertEqual(len(w.data),1)
@@ -42,9 +44,10 @@ class OnceTests(unittest.TestCase):
    def get(self,k):return copy.deepcopy(self.data.get(k))
    def save(self,k,v,insert=False):self.data[k]=copy.deepcopy(v);return True
    def authorized(self,obj):return True
-   def dialog(self,j,h):self.sent.append(('generate',j));return 'Статистика за31Oct и1Nov до18MSK',[]
+   def dialog(self,j,h):self.sent.append(('generate',j));return '| Артикул | ДРР |\n|---|---|\n|143|12.34%|',[]
    def send_once(self,k,chat,text):self.sent.append(('deliver',k));return 'sent'
   r=Runner();self.assertEqual(r.reports(),0);self.assertFalse(r.sent)
-  r.now=datetime.fromisoformat('2026-11-01T15:00:00+00:00');self.assertEqual(r.reports(),1)
-  self.assertEqual(r.data[key]['status'],'completed');self.assertEqual(r.reports(),0);self.assertEqual(len([x for x in r.sent if x[0]=='deliver']),1)
+  r.now=datetime.fromisoformat('2026-11-01T15:00:00+00:00')
+  with patch('conversion_watches.saved_network_guard',return_value=nullcontext()):self.assertEqual(r.reports(),1)
+  self.assertEqual(r.data[key]['status'],'completed');self.assertEqual(r.reports(),0);self.assertEqual(len([x for x in r.sent if x[0]=='deliver']),3)
 if __name__=='__main__':unittest.main()

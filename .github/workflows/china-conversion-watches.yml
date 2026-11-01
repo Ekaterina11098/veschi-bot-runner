@@ -8,7 +8,7 @@ on:
       action:
         description: Process owner commands and due watches, or verify without sending
         type: choice
-        options: [run, verify, smoke, dialog]
+        options: [run, verify, smoke, dialog, reports]
         default: run
       job_id:
         description: Exact saved-data question job
@@ -66,6 +66,9 @@ jobs:
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_agent_reports.py
           python scripts/china_chat_migration.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_once_report.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_advertising_scheduled_png.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_advertising_report_autonomy.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_reply_*.py'
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_catalog_price_command.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_zero_orders_stock.py
@@ -92,6 +95,8 @@ jobs:
           fi
           if [ "$MODE" = dialog ]; then
             python scripts/conversion_watches.py --dialog-job "$DIALOG_JOB_ID"
+          elif [ "$MODE" = reports ]; then
+            python scripts/conversion_watches.py --reports-only
           elif [ "$MODE" = verify ]; then
             python scripts/conversion_watches.py --verify
           elif [ "$MODE" = smoke ]; then

@@ -644,36 +644,55 @@ class Worker:
             except Exception:pass  # A source outage must produce an explicit partial report.
         sent=0
         for key,w in due:
-            # Stop on cancellation or chat/owner reassignment before sending.
-            live=self.get(key)
-            if not live or not self.authorized(live) or live['status']!='active' or live['revision']!=w['revision']:continue
-            label='initial:'+str(w['revision']) if w.get('initial_pending') else self.now.astimezone(MSK).date().isoformat()
-            receipt_key='report:'+w['id']+':'+label
-            old=self.get(RECEIPTS+receipt_key)
-            if old:text=old['text']
-            elif w.get('kind') in ('task','once_task'):
-                scheduled=dict(id=0,agent_id='china',chat_id=w['chat_id'],sender_id=w['owner_user_id'],origin='scheduled',request_text='Сегодня '+self.now.astimezone(MSK).date().isoformat()+'. Выполни один текущий запуск сохранённого аналитического поручения. Ничего не планируй и не меняй в WB. Относительные даты считай от сегодня. Поручение: '+w['task_text'])
-                text,_=self.dialog(scheduled,[])
-                ending='Разовый отчёт; повторного ежедневного запуска нет.' if w.get('kind')=='once_task' else 'Ежедневно в '+w['clock']+' МСК. Отмена: «Отмени задание '+w['id']+'».'
-                text='Китай · задание '+w['id']+'\n'+text+'\n'+ending
-                # Freeze the complete generated answer before the first send.
-                self.save(RECEIPTS+receipt_key,dict(status='prepared',text=text,chat_id=w['chat_id']))
-            else:
-                daily,_=self.load_days(w);text=report(w,daily,self.now)
-            if not old:self.save(RECEIPTS+receipt_key,dict(status='prepared',text=text,chat_id=w['chat_id']))
-            status='sent'
-            from china_table_png import scheduled_parts
-            self.active_report_key=receipt_key
-            for index,part in enumerate(scheduled_parts(self,receipt_key,w['chat_id'],text,split_message)):
-                status=self.send_once(receipt_key+':part:'+str(index),w['chat_id'],part)
-                if status!='sent':break
-            if status=='sent':
-                w.update(initial_pending=False,next_at=next_due(w['clock'],self.now),last_sent_at=self.now.isoformat())
-                if w.get('kind')=='once_task':w.update(status='completed',next_at=None,completed_at=self.now.isoformat())
-                self.save(key,w);sent+=1
-            elif status in ('sending','uncertain'):
-                w.update(status='delivery_uncertain');self.save(key,w)
+            try:
+                sent+=self.deliver_report(key,w)
+            except Exception as exc:
+                # One broken source must not block other due assignments or erase the watch.
+                error_key='china_agent:scheduled_report_error:v1:'+w['id']
+                self.save(error_key,dict(status='retryable',watch_key=key,watch_id=w['id'],error_type=type(exc).__name__,error_code=str(exc) if str(exc)=='scheduled_png_table_required' else 'scheduled_report_failed',observed_at=self.now.isoformat(),wb_writes=0,telegram_sends=0))
         return sent
+
+    def deliver_report(self,key,w):
+        # Stop on cancellation or chat/owner reassignment before sending.
+        live=self.get(key)
+        if not live or not self.authorized(live) or live['status']!='active' or live['revision']!=w['revision']:return 0
+        label='initial:'+str(w['revision']) if w.get('initial_pending') else (datetime.fromisoformat(w['next_at']).astimezone(MSK).date().isoformat() if w.get('kind')=='once_task' else self.now.astimezone(MSK).date().isoformat())
+        receipt_key='report:'+w['id']+':'+label
+        old=self.get(RECEIPTS+receipt_key)
+        if old:text=old['text']
+        elif w.get('kind') in ('task','once_task'):
+            scheduled=dict(id=0,agent_id='china',chat_id=w['chat_id'],sender_id=w['owner_user_id'],origin='scheduled',created_at=self.now.isoformat(),request_text='Сегодня '+self.now.astimezone(MSK).date().isoformat()+'. Выполни один текущий запуск сохранённого аналитического поручения. Ничего не планируй и не меняй в WB. Относительные даты считай от сегодня. Поручение: '+w['task_text'])
+            with saved_network_guard():
+                text,_=self.dialog(scheduled,[])
+            if w.get('kind')=='once_task' or w.get('output_format')=='png_table':
+                from china_table_png import blocks
+                if not any(kind=='table' for kind,_ in blocks(text)):
+                    raise ValueError('scheduled_png_table_required')
+            ending='Разовый отчёт; повторного ежедневного запуска нет.' if w.get('kind')=='once_task' else 'Ежедневно в '+w['clock']+' МСК. Отмена: «Отмени задание '+w['id']+'».'
+            text='Китай · задание '+w['id']+'\n'+text+'\n'+ending
+            # Freeze the complete generated answer before the first send.
+            self.save(RECEIPTS+receipt_key,dict(status='prepared',text=text,chat_id=w['chat_id']))
+        else:
+            daily,_=self.load_days(w);text=report(w,daily,self.now)
+        if not old:self.save(RECEIPTS+receipt_key,dict(status='prepared',text=text,chat_id=w['chat_id']))
+        status='sent'
+        from china_table_png import scheduled_parts
+        self.active_report_key=receipt_key
+        for index,part in enumerate(scheduled_parts(self,receipt_key,w['chat_id'],text,split_message)):
+            status=self.send_once(receipt_key+':part:'+str(index),w['chat_id'],part)
+            if status!='sent':break
+        if status=='sent':
+            w.update(initial_pending=False,next_at=next_due(w['clock'],self.now),last_sent_at=self.now.isoformat())
+            if w.get('kind')=='once_task':w.update(status='completed',next_at=None,completed_at=self.now.isoformat())
+            self.save(key,w)
+            error_key='china_agent:scheduled_report_error:v1:'+w['id']
+            error=self.get(error_key)
+            if error:
+                error.update(status='recovered',recovered_at=self.now.isoformat());self.save(error_key,error)
+            return 1
+        elif status in ('sending','uncertain'):
+            w.update(status='delivery_uncertain');self.save(key,w)
+        return 0
 
 
 
@@ -820,7 +839,7 @@ def drain_saved_questions(w,requested_id,limit=10):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--verify',action='store_true');parser.add_argument('--smoke',action='store_true');parser.add_argument('--dialog-job',type=int);args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--verify',action='store_true');parser.add_argument('--smoke',action='store_true');parser.add_argument('--dialog-job',type=int);parser.add_argument('--reports-only',action='store_true');args=parser.parse_args()
     w=runtime()
     if args.dialog_job is not None:
         w.collect=None
@@ -838,6 +857,10 @@ def main():
         if not answer or not trace:raise RuntimeError('Dialog smoke incomplete')
         w.save('china_agent:dialog_smoke:'+os.environ.get('GITHUB_RUN_ID','manual'),dict(status='verified',answer=answer,trace=trace,telegram_calls=0,wb_writes=0))
         print(json.dumps(dict(status='dialog_verified',tool_calls=len(trace),telegram_calls=0,wb_writes=0)));return
+    if args.reports_only:
+        with saved_network_guard():sent=w.reports()
+        w.save('china_agent:scheduled_reports_run:v1:'+os.environ.get('GITHUB_RUN_ID','manual'),dict(status='checked',sent_reports=sent,checked_at=w.now.isoformat(),wb_writes=0,processed_commands=0))
+        print(json.dumps(dict(status='reports_checked',sent_reports=sent,processed_commands=0,wb_writes=0)));return
     jobs=w.jobs()
     try:sent=w.reports()
     except Exception:

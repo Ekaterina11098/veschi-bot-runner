@@ -73,3 +73,5 @@ jobs:
 # Activate positive-figurative-praise-20261029 in isolated workers.
 
 # Activate positive-verified-descriptions-20261031 with unchanged exact-once guards.
+
+# Activate verified complete positive fields 20261101; preserve exact-once guards.

@@ -134,6 +134,18 @@ class PolicyTests(unittest.TestCase):
      self.assertFalse(classify(self.review(**{key:value+suffix}))['eligible'],value+suffix)
   for value in ('Не милая','Не сшита качественно','Отказалась в пользу модели побольше, потому что ремень порвался','Хорошо работают молнии, но шов разошелся','Без повреждений, но пахнет','Сумка просто шик, не рекомендую'):
    self.assertFalse(classify(self.review(value))['eligible'],value)
+ def test_november1_verified_complete_fields(self):
+  cases=[{"text":"Рекомендую всем девчонкам эту сумочку  к покупке к этого продовца","pros":"Все отлично! Это Любовь с первого взгляда","cons":"Нет минусов"},{"text":"Очень симпатичная сумочка, качество супер, упакована в пыльник и пакет.","pros":"","cons":""},{"text":"зонтик очень прикольный вмещается несколько человек от дождя очень супер","pros":"","cons":""},{"text":"Она на фото не такая красивая, я когда открыла офигела!! Очень похожа на норку, а еще и 2100👌🏽💥🤩👍","pros":"","cons":""},{"text":"Сумка натуральная кожа.Хорошая.  Выбрали другой цвет","pros":"","cons":""},{"text":"","pros":"Огромный, красивый, всё понравилось","cons":""},{"text":"Красивая, вместительная сумочка, точно подошла под мои туфли, я рада.","pros":"","cons":""},{"text":"Сумочка супер, вместительная, под всё подходит","pros":"","cons":""},{"text":"Сумка просто бомбическая. Брала без единого отзыва. Поэтому сняла её и так и так. Цвет кофе с молоком, какао что-то такое. Мне очень она понравилась. Не очень большая, но и не мелкая. Кожа гладкая. Качество очень хорошее. По сравнению с ценами в магазине, ваша цена подарок. Взяла не долго думая. Ремешок есть, чтобы через плечо носить. Упакована на 100 из 100.порадовали. Такое отношение к покупателю огонь 🔥🔥🔥спасибо. Очень рекмендую","pros":"","cons":""},{"text":"Подошла идеально к моему пальто цвета кэмэл","pros":"","cons":""},{"text":"Хороший зонт, но цвет ыбрала другой","pros":"","cons":""}]
+  for fields in cases:
+   self.assertTrue(classify(self.review(**fields))['eligible'],fields)
+   for key in ('text','pros','cons'):
+    for complaint in (' Но молния заедает.',' Не натуральная кожа.','?'):
+     changed=dict(fields);changed[key]+=complaint
+     self.assertFalse(classify(self.review(**changed))['eligible'],changed)
+  for fields in cases:
+   for key,value in fields.items():
+    if value:
+     self.assertFalse(classify(self.review(**{key:'Не '+value}))['eligible'])
  def test_purchase_status_neutral(self):
   for status in ('buyout','rejected','returned',None):
    answer=answer_for(self.review(orderStatus=status))

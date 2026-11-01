@@ -6,13 +6,13 @@ from china_cloud_cost_control import Cache,WB,validate_identity,stamp
 from china_advertising_state import AdvertisingIO
 from china_moysklad_read import read_stock
 from china_profit_forecast import calculate
-from china_analytic_dialog import allowed_read
+from china_analytic_dialog import allowed_read,reading
 ROOT='china_agent:owner_profit_samehour:2026-11-01T23:v1'
 SOURCE='china_agent:hourly_sales_api:v1:snapshot:2026-11-01T23:MSK'
 def main():
  c=Cache()
  if c.get(ROOT+':result'):return
- if not c.create(ROOT+':lease',dict(started_at=stamp())):return
+ if not c.create(ROOT+':lease:v2',dict(started_at=stamp())):return
  wb=WB();validate_identity(c,wb);original=requests.sessions.Session.request
  def guard(session,method,url,*args,**kw):
   u=urlparse(url);m=method.upper();body=kw.get('json')
@@ -20,6 +20,7 @@ def main():
   status=m=='POST'and u.hostname=='marketplace-api.wildberries.ru'and u.path=='/api/v3/orders/status'and set(body or{})=={'orders'}
   if not(db or status or allowed_read(m,url,body)):raise PermissionError('Read-only comparison blocked write')
   return original(session,method,url,*args,**kw)
+ context=reading();context.__enter__()
  requests.sessions.Session.request=guard
  try:
   current=c.get(SOURCE);comparison=current['ad_comparisons']['1'];oldkey=comparison['source_key'];old=c.get(oldkey)
@@ -67,5 +68,6 @@ def main():
   if c.get(ROOT+':result')!=result:raise ValueError('Result readback mismatch')
   print(json.dumps(dict(status=result['status'],orders={k:v['totals']['orders']for k,v in results.items()})))
  except Exception as ex:c.put(ROOT+':error',dict(error=type(ex).__name__,message=str(ex)if isinstance(ex,(ValueError,PermissionError))else None,observed_at=stamp()));raise
- finally:requests.sessions.Session.request=original
+ finally:
+  requests.sessions.Session.request=original;context.__exit__(None,None,None)
 if __name__=='__main__':main()

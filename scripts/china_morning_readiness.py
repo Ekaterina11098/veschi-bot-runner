@@ -1,5 +1,6 @@
 """Reject collapsed daily WB counters, keep failed reads, allow next scheduled refresh."""
 import copy,hashlib,json,os
+from urllib.parse import urlencode
 from datetime import datetime,timezone,timedelta,date
 ROOT='china_agent:morning_readiness:v1:'
 class PendingAdvertisingDay(ValueError):pass
@@ -69,6 +70,9 @@ def enrich_economics(io,source,rough,report_day):
   now=datetime.now(timezone.utc)
   def get(self,k):return io.get(k)
   def save(self,k,v,**kw):return io.put(k,v)
+  def db(self,method,table,params=None):
+   if method!='GET' or table!='analytics_snapshots':raise ValueError('Morning context allows only analytics snapshot reads')
+   return io.db(table+'?'+urlencode(params or {}))
   def catalog(self):return [(str(r['nmID']),r['vendorCode']) for r in source['catalogue']['rows']]
  w=Work();an=Analyst(w,dict(request_text='Проверить экономику утренних рекламных кандидатов'),[])
  values={};errors={}

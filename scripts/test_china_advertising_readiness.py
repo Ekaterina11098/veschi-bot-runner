@@ -39,7 +39,10 @@ class EconomicsRefresh(unittest.TestCase):
   s=dict(catalogue=dict(rows=[dict(nmID=10,vendorCode='bag')]))
   rough=dict(campaigns=[dict(focus=[dict(nm=10,period=dict(spend=20))])])
   calls=[]
+  queries=[]
+  io.db=lambda path:queries.append(path) or []
   def live(self,topic,ids,first,last):
+   if topic=='products':self.w.db('GET','analytics_snapshots',params={'cabinet':'eq.token_3','period_from':'eq.'+first})
    calls.append((topic,ids,first,last))
    data={'products':[dict(nm_id=10,is_payed=10,finish_as_return=2,finished_orders=20,total_commission_without_spp_in_sales=20)],'prices':[dict(nm_id=10,article='bag',seller_price=100)],'stock':[dict(article='bag',cost_rub=120,available=8)]}
    return dict(observed_at='2026-11-01T04:15:00Z',rows=data[topic])
@@ -51,5 +54,6 @@ class EconomicsRefresh(unittest.TestCase):
   self.assertAlmostEqual(r['expected_margin_before_ads_cny'],28.6666666667)
   self.assertTrue(r['unknown_reverse_and_shared_costs'])
   self.assertEqual(result['morning_fresh_inputs']['wb_writes'],0)
+  self.assertEqual(queries,['analytics_snapshots?cabinet=eq.token_3&period_from=eq.2026-10-02'])
 if __name__=='__main__':unittest.main()
 

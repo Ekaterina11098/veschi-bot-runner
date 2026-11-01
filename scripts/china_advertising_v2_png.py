@@ -23,7 +23,24 @@ def summary(c):
  return ('День: '+str(int(day['orders']))+' рекламных заказов; сумма '+money(day['amount'])+' ¥.\n' if day else 'День: нет данных.\n')+'3 дня: '+str(int(p['orders']))+' рекламных заказов; сумма '+money(p['amount'])+' ¥; '+str(int(p['clicks']))+' кликов.'
 def recommendations(c):
  rows=[r for r in c.get('attention',[]) if r.get('action')]
- return [r['article']+': '+r['decision'] for r in rows] or ['Не требуется']
+ out=[r['article']+': '+r['decision'] for r in rows]
+ for r in c.get('focus',[]):
+  if r.get('action'):continue
+  p=(r.get('comparison') or {}).get('after') or r.get('period') or {}
+  if p.get('spend',0)<=0:continue
+  if r.get('pending_first_day'):
+   out.append(r['article']+': '+r['decision']);continue
+  if r.get('candidate_for_manual_review'):
+   out.append(r['article']+': '+money(p['spend'])+' ¥, '+str(int(p.get('clicks',0)))+' кликов, '+str(int(p.get('orders',0)))+' заказов. Решение не готово: экономика/наличие не подтверждены.');continue
+  if p.get('amount',0)>0 and p['spend']/p['amount']>.05:
+   out.append(r['article']+': '+r['decision'])
+ return out or ['Новых действий нет']
+
+def budget_column(c):
+ """Owner-approved display only; execution conditions remain in the structured plan."""
+ amount=c.get('budget_reserve_amount')
+ if amount is None:return 'Сумма не рассчитана'
+ return 'Рекомендовано '+str(int(amount))+' ¥\nпосле исполнения рекомендаций РК'
 def render(bundle):
  bundle=dict(bundle,campaigns=sorted([c for c in bundle['campaigns'] if not c.get('never_started')],key=lambda c:not any(r.get('action') for r in c.get('attention',[]))))
  W=2400;H=6500;xs=[44,355,650,870,1090,1700,2356];files=[]
@@ -52,7 +69,7 @@ def render(bundle):
   files.append(dict(family=family,bytes=b.getvalue(),actions=actions))
  def table():
   im,d=canvas('Китай · ДРР и рекламные расходы')
-  d.text((44,216),'Новых действий: '+str(sum(bool(r.get('action')) for c in bundle['campaigns'] for r in c.get('attention',[])))+' · рекомендации выделены и показаны первыми · ДРР: ≤ 5% зелёный, > 5% красный',font=font(24),fill=INK)
+  d.text((44,216),'Готовых действий: '+str(sum(bool(r.get('action')) for c in bundle['campaigns'] for r in c.get('attention',[])))+' · остальные решения указаны отдельно · ДРР: ≤ 5% зелёный, > 5% красный',font=font(24),fill=INK)
   for i,label in enumerate(['Кампания WB','Расход, CNY','ДРР 3 дня','ДРР день','Товары: данные за 3 дня','Рекомендации по 3 дням']):
    for j,line in enumerate(wrap(d,label,xs[i+1]-xs[i]-28,29)):d.text((xs[i],267+j*35),line,font=font(29,True),fill=NAVY)
   return im,d
@@ -95,7 +112,7 @@ def render(bundle):
  for c in selected:
   need=c.get('budget_reference_need');gap=c.get('budget_cash_gap')
   title=wrap(d,'РК '+str(c['id'])+' · '+c['name'],730,29,True)
-  decision=c.get('budget_short_note') or c['budget_recommendation']
+  decision=budget_column(c)
   advice=[]
   for index,line in enumerate(decision.splitlines()):advice+=wrap(d,line,714,31 if index==0 else 27)
   height=max(300,82+39*len(advice),46+36*len(title)+150)
@@ -121,14 +138,11 @@ def render(bundle):
   if c.get('budget_action'):actions.append(c['budget_action'])
  if not selected:
   d.text((44,y),'У действующих РК нет расчётной нехватки по завершённым дням.',font=font(29),fill=INK);y+=55
- footer='Резерв = средний расход за 3 завершённых дня МСК × 3 − свежий остаток. Сегодня — только справка. Округление вверх до 50 ¥; минимум WB — '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. Решение учитывает собственную экономику после verified изменений; Целевой потолок ДРР 5% для всех товаров. Превышение или расходы без заказов требуют проверки экономики и снижения ставки/исключения; продолжение — только отдельно согласованный ограниченный тест. Пополнение — после подтверждения.'
+ footer='Резерв на 3 дня = расход за 3 завершённых дня; нехватка = резерв − остаток. Сумма округлена вверх до 50 ¥, минимум WB '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. Пополнение — после исполнения рекомендаций РК. Подробные решения — в PNG рекомендаций.'
  for line in wrap(d,footer,W-88,24):d.text((44,y+10),line,font=font(24),fill='#536b79');y+=32
  finish(im,y,'budgets',actions)
  for family in ['drr','budgets']:
   parts=[f for f in files if f['family']==family]
   for i,f in enumerate(parts,1):f.update(kind=family+':'+str(i).zfill(3),page=i,total=len(parts))
  return files
-
-
-
 

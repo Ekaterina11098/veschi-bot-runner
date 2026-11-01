@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 from china_cloud_cost_control import Cache,WB,validate_identity,stamp
 from china_advertising_state import AdvertisingIO
 from china_moysklad_read import read_stock
+class PriceReader(AdvertisingIO):
+ def __init__(self,token):self.token=token
 ROOT='china_agent:owner_sales_decline:2026-11-01:evening:v1'
 def main():
  if datetime.now(ZoneInfo('Europe/Moscow')).date()!=date(2026,11,1):raise ValueError('Expired')
@@ -15,7 +17,7 @@ def main():
  if not request or request['cabinet']!='token_3' or not request['read_only']:raise ValueError('No scoped read request')
  nms=request['nm_ids']
  if not 1<=len(nms)<=15:raise ValueError('Diagnostic SKU bound')
- if not c.create(ROOT+':lease',dict(started_at=stamp())):return
+ if not c.create(ROOT+':lease:resume2',dict(started_at=stamp())):return
  wb=WB();validate_identity(c,wb);original=requests.sessions.Session.request
  state=dict(status='collecting',cabinet='token_3',observed_at=stamp(),errors={},wb_writes=0,telegram_calls=0,grants_action_permission=False)
  def save():c.put(ROOT+':checkpoint',json.loads(json.dumps(state)))
@@ -42,7 +44,7 @@ def main():
   state['statistics']=dict(rows=stats,missing_ids=sorted(set(ids)-{r['advertId']for r in stats}),observed_at=stamp());save()
   active=[int(cid)for cid,cp in campaigns.items()if cp['status']in[9,11]]
   state['budgets']=dict(rows=wb.req('/api/advert/v2/budget','POST',dict(advertIds=active)),observed_at=stamp());save()
-  io=AdvertisingIO();raw=io.prices(nms);prices=[];sizes=[]
+  io=PriceReader(wb.token);raw=io.prices(nms);prices=[];sizes=[]
   for nm in nms:
    p=raw[str(nm)]
    if p.get('currencyIsoCode4217')!='CNY':raise ValueError('Price currency')

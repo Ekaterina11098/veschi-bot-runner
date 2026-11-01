@@ -1,8 +1,8 @@
-name: Prepare existing Pavel18MSK report205 only
+name: Deliver reviewed existing Pavel18MSK report205 only
 on:
   push:
     branches: [main]
-    paths: ['scripts/owner_report205_prepare.py']
+    paths: ['scripts/owner_report205_release.py']
 permissions:
   contents: read
 concurrency:
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 pillow==11.3.0 python-dotenv simplejson==4.2.0
-      - name: Prepare exact four-SKU statistics without sending
+      - name: Deliver only reviewed report205 via original receipts
         env:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
@@ -39,4 +39,4 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: PYTHONPATH=scripts:source python scripts/owner_report205_prepare.py
+        run: PYTHONPATH=scripts:source python scripts/owner_report205_release.py

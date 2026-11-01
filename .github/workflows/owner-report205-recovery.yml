@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
-    if: github.event_name == 'push'
+    if: false # Completed and receipt verified; never replay
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:

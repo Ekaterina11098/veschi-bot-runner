@@ -112,6 +112,8 @@ def delivery_parts(w, job, answer, split):
     return parts
 
 def photo(w, chat, text):
+    if text.startswith('CHINA_SCHEDULED_TABLE_PNG:'):
+        return scheduled_photo(w, chat, text)
     if not text.startswith(PREFIX): return None
     key, index = text[len(PREFIX):].rsplit(':', 1); saved = w.get(key)
     if not saved or saved.get('status') != 'frozen' or saved['chat_id'] != chat or saved['job_id'] != getattr(w, 'active_question_id', None): raise PermissionError('Table PNG question scope')
@@ -121,3 +123,40 @@ def photo(w, chat, text):
     if hashlib.sha256(blob).hexdigest() != part['sha256']: raise ValueError('Table PNG hash')
     return blob, 'Таблица к аналитическому ответу. Изменения не применены.'
 
+
+def scheduled_parts(w, report_key, chat, answer, split):
+    """Freeze scheduled tables independently of human question IDs."""
+    key = KEY+'scheduled:'+report_key
+    saved = w.get(key)
+    digest = hashlib.sha256(answer.encode()).hexdigest()
+    if saved:
+        if saved.get('chat_id') != chat or saved.get('answer_sha256') != digest or saved.get('report_key') != report_key:
+            raise PermissionError('Scheduled table scope changed')
+        return saved['parts']
+    parsed = blocks(answer)
+    if not any(kind == 'table' for kind, _ in parsed): return split(answer)
+    if w.get('china_agent:conversion_watch_delivery:v1:'+report_key+':part:0'):
+        return split(answer)
+    files = []; parts = []
+    for kind, data in parsed:
+        if kind == 'text': parts.extend(split(data))
+        else:
+            for blob in render(*data):
+                index = len(files)
+                files.append(dict(sha256=hashlib.sha256(blob).hexdigest(), data=base64.b64encode(blob).decode()))
+                parts.append('CHINA_SCHEDULED_TABLE_PNG:'+key+':'+str(index))
+    saved = dict(status='frozen', report_key=report_key, chat_id=chat, answer_sha256=digest, files=files, parts=parts)
+    if not w.save(key, saved, insert=True):
+        return scheduled_parts(w, report_key, chat, answer, split)
+    return parts
+
+def scheduled_photo(w, chat, text):
+    key, index = text[len('CHINA_SCHEDULED_TABLE_PNG:'):].rsplit(':', 1)
+    saved = w.get(key)
+    if not saved or saved.get('status') != 'frozen' or saved.get('chat_id') != chat or saved.get('report_key') != getattr(w, 'active_report_key', None):
+        raise PermissionError('Scheduled table PNG scope')
+    i = int(index)
+    if not 0 <= i < len(saved['files']): raise ValueError('Scheduled table PNG index')
+    part = saved['files'][i]; blob = base64.b64decode(part['data'], validate=True)
+    if hashlib.sha256(blob).hexdigest() != part['sha256']: raise ValueError('Scheduled table PNG hash')
+    return blob, 'Таблица к плановому аналитическому отчёту. Изменения не применены.'

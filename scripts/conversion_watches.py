@@ -662,7 +662,9 @@ class Worker:
                 daily,_=self.load_days(w);text=report(w,daily,self.now)
             if not old:self.save(RECEIPTS+receipt_key,dict(status='prepared',text=text,chat_id=w['chat_id']))
             status='sent'
-            for index,part in enumerate(split_message(text)):
+            from china_table_png import scheduled_parts
+            self.active_report_key=receipt_key
+            for index,part in enumerate(scheduled_parts(self,receipt_key,w['chat_id'],text,split_message)):
                 status=self.send_once(receipt_key+':part:'+str(index),w['chat_id'],part)
                 if status!='sent':break
             if status=='sent':

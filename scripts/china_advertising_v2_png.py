@@ -22,6 +22,7 @@ def summary(c):
  if p is None:return 'Статистика отсутствует; числовой результат не подтверждён.'
  return ('День: '+str(int(day['orders']))+' рекламных заказов; сумма '+money(day['amount'])+' ¥.\n' if day else 'День: нет данных.\n')+'3 дня: '+str(int(p['orders']))+' рекламных заказов; сумма '+money(p['amount'])+' ¥; '+str(int(p['clicks']))+' кликов.'
 def recommendations(c):
+ if 'direction_recommendations' in c:return c['direction_recommendations'] or ['Без изменений.']
  rows=[r for r in c.get('attention',[]) if r.get('action')]
  out=[r['article']+': '+r['decision'] for r in rows]
  for r in c.get('focus',[]):
@@ -69,7 +70,7 @@ def _render_legacy(bundle):
   files.append(dict(family=family,bytes=b.getvalue(),actions=actions))
  def table():
   im,d=canvas('Китай · ДРР и рекламные расходы')
-  d.text((44,216),'Готовых действий: '+str(sum(bool(r.get('action')) for c in bundle['campaigns'] for r in c.get('attention',[])))+' · остальные решения указаны отдельно · ДРР: ≤ 5% зелёный, > 5% красный',font=font(24),fill=INK)
+  d.text((44,216),'Рекомендации по завершённым дням · ДРР: ≤ 5% зелёный, > 5% красный',font=font(24),fill=INK)
   for i,label in enumerate(['Кампания WB','Расход, CNY','ДРР 3 дня','ДРР день','Товары: данные за 3 дня','Рекомендации по 3 дням']):
    for j,line in enumerate(wrap(d,label,xs[i+1]-xs[i]-28,29)):d.text((xs[i],267+j*35),line,font=font(29,True),fill=NAVY)
   return im,d
@@ -148,8 +149,8 @@ def _render_legacy(bundle):
 
 def render(bundle):
  if bundle.get('recommendation_directions'):
-  from china_advertising_directions import overview
-  files=overview(bundle)+[f for f in _render_legacy(bundle) if f['family']=='budgets']
+  from china_advertising_directions import campaign_table
+  files=_render_legacy(campaign_table(bundle))
  elif not bundle.get('economic_review_complete'):files=_render_legacy(bundle)
  else:
   from china_advertising_review_png import pages

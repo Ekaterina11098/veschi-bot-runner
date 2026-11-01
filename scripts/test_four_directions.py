@@ -1,9 +1,15 @@
 import unittest,copy
 from unittest.mock import patch
-from china_advertising_directions import attach,addition_shortlist,overview
+from china_advertising_directions import attach,addition_shortlist,overview,campaign_table
 from china_advertising_growth import merge
 from china_advertising_v2 import include_archived,build
 class FourDirectionTests(unittest.TestCase):
+ def test_recommendations_stay_grouped_by_actual_campaign(self):
+  bundle=dict(campaigns=[dict(id=1,status=9),dict(id=2,status=7)],recommendation_directions={'add':dict(rows=[dict(article='new',campaign_id=1)]),'reduce':dict(rows=[dict(article='existing',campaign_id=1,action=dict(old_minor=31,target_minor=28))])})
+  out=campaign_table(bundle)
+  self.assertEqual(len(out['campaigns']),2)
+  self.assertEqual(len(out['campaigns'][0]['direction_recommendations']),2)
+  self.assertEqual(out['campaigns'][1]['direction_recommendations'],['Не запускать.'])
  def test_brief_png_retains_only_page_bound_ready_actions(self):
   from PIL import ImageDraw
   action=dict(kind='ad_set_bid',old_minor=31,target_minor=28)

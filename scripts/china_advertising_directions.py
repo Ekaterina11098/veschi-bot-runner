@@ -40,7 +40,7 @@ def attach(bundle,source):
     sections['add']['rows'].append(dict(article=labels.get(nm,'WB '+str(nm)),nm_id=nm,decision='Предварительный кандидат без рекламы: собственная экономика/цена/остаток не подтверждены полностью. Готового добавления нет.',ready=False));continue
    if e['expected_margin_before_ads_cny']<=0 or e.get('stock_free',0)<=0:continue
    if e.get('buyout_fallback')or e.get('sample_size',0)<5:continue
-   sections['add']['rows'].append(dict(article=labels.get(nm,'WB '+str(nm)),nm_id=nm,decision='Кандидат на ограниченный тест. Перед готовым планом проверить точную РК, минимум/шаг, опубликованный остаток и опыт. Без добавления и пополнения автоматически.',economics=e,ready=False))
+   sections['add']['rows'].append(dict(article=labels.get(nm,'WB '+str(nm)),nm_id=nm,campaign_id=(source.get('addition_targets')or{}).get(str(nm)),decision='Кандидат на ограниченный тест. Перед готовым планом проверить точную РК, минимум/шаг, опубликованный остаток и опыт. Без добавления и пополнения автоматически.',economics=e,ready=False))
   sections['add']['note']='Предварительные кандидаты; точная РК/ставка требуют проверки.'if sections['add']['rows']else'Проверены товары без активной рекламы; положительная подтверждённая экономика не выделила кандидатов.'
  for key,s in sections.items():
   if s['rows']and key!='add':s['note']=str(len(s['rows']))+' готовых предложений; только после согласования.'
@@ -50,6 +50,25 @@ def attach(bundle,source):
  missing=[c['id']for c in archives if c.get('period')is None or c.get('missing_stats')]
  totals={k:sum(c['period'][k]for c in archives if c.get('period')is not None)for k in ['spend','amount','orders']}
  out['archive_expenses']=dict(campaign_ids=[c['id']for c in archives],missing_stats_ids=missing,totals=totals,complete=not missing,rule='Архивные расходы включены в исторический итог. Отсутствующий ответ не равен нулю. Архивы не кандидаты на запуск/пополнение.')
+ return out
+
+def campaign_table(bundle):
+ """Preserve the approved campaign-row table. Only the recommendation cell is brief."""
+ out=copy.deepcopy(bundle);byid={c['id']:c for c in out['campaigns']}
+ for c in out['campaigns']:c['direction_recommendations']=['Не запускать.']if c['status']==7 else[]
+ for key,section in out['recommendation_directions'].items():
+  for r in section['rows']:
+   cid=r.get('campaign_id')
+   if key=='add'and not cid:
+    # The addition scan must select an evidenced actual campaign before display.
+    continue
+   c=byid.get(cid)
+   if not c or c['status']!=9:continue
+   a=r.get('action')or{}
+   if key=='add':text='Предложить ограниченный рекламный тест.'
+   elif key=='exclude':text='Исключить из РК.'
+   else:text=('Повысить'if key=='raise'else'Снизить')+' '+str(a['old_minor']/100)+' → '+str(a['target_minor']/100)+' CNY.'
+   c['direction_recommendations'].append(r['article']+': '+text)
  return out
 
 def overview(bundle):

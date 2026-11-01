@@ -85,6 +85,11 @@ def enrich_economics(io,source,rough,report_day):
      from china_advertising_directions import addition_shortlist
      new=addition_shortlist(source,values[topic])
      source['addition_candidate_ids']=new
+     subjects={int(r['nm_id']):r.get('subject_id') for r in values[topic].get('rows',[])}
+     source['addition_targets']={}
+     for nm in new:
+      targets=[cp['id'] for batch in source['batches'].values() for cp in batch['campaigns'].get('adverts',[]) if cp['status']==9 and cp['settings']['payment_type']=='cpc' and cp['settings']['placements'].get('recommendations') and {n['subject']['id'] for n in cp['nm_settings']}=={subjects.get(nm)}]
+      if targets:source['addition_targets'][str(nm)]=min(targets)
      ids=sorted(set(ids)|set(new))
      if len(ids)>112:raise ValueError('Candidate economics scope exceeds bound')
     else:values[topic]=dict(an.collect(topic,ids,first,last),observed_at=datetime.now(timezone.utc).isoformat())

@@ -34,3 +34,5 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
         run: python scripts/ooo_owner_apply_all_20261102.py
+
+# Recover the verified zero-write attempt; durable writes remain non-replayable.

@@ -72,6 +72,18 @@ def isolated_quotes():
  if not io.create(key,result):raise RuntimeError('Concurrent quote inputs')
  if io.get(key)!=result:raise RuntimeError('Quotes readback mismatch')
  print('Isolated read-only bid quotes saved')
+
+def rating():
+ key=ROOT+':rating584'
+ if io.get(key):return
+ from china_hourly_sales_read import collect_funnel,Cache
+ from zoneinfo import ZoneInfo
+ cut=datetime.now(ZoneInfo('Europe/Moscow')).replace(minute=0,second=0,microsecond=0)
+ result=collect_funnel(Cache(),cut,[1473245505])
+ if not io.create(key,result):raise RuntimeError('Concurrent rating input')
+ if io.get(key)!=result:raise RuntimeError('Rating readback mismatch')
+ print('Targeted WB product rating source saved')
 if __name__=='__main__':
  main()
  isolated_quotes()
+ rating()

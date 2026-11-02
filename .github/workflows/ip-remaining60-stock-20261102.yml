@@ -1,0 +1,86 @@
+name: IP remaining60 targeted free-stock preflight
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-remaining60-stock-20261102.yml']
+permissions: {}
+concurrency:
+  group: ip-wave1-preflight-20261102
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - name: MoySklad GET only; result private
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import os,json,re,urllib.request,urllib.error,urllib.parse,datetime,gzip,time,socket
+          KEY="ip_agent:expanded98:remaining60-stock:2026-11-02:v1"
+          MS="https://api.moysklad.ru/api/remap/1.2"
+          SB=os.environ["SUPABASE_URL"].rstrip("/")
+          def stamp():return datetime.datetime.now(datetime.timezone.utc).isoformat()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*a,**k):raise RuntimeError("Redirect blocked")
+          opener=urllib.request.build_opener(NoRedirect)
+          sh={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json"}
+          mh={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept-Encoding":"gzip","Accept":"application/json;charset=utf-8"}
+          def call(url,headers,method="GET",body=None):
+           req=urllib.request.Request(url,headers=headers,method=method,data=None if body is None else json.dumps(body).encode())
+           try:
+            with opener.open(req,timeout=120) as r:
+             raw=r.read()
+             return json.loads(gzip.decompress(raw) if r.headers.get("Content-Encoding")=="gzip" else raw) if raw else None
+           except urllib.error.HTTPError as e:raise RuntimeError("Remote HTTP "+str(e.code)+" RetryAfter "+str(e.headers.get("Retry-After",e.headers.get("X-Lognex-Retry-TimeInterval","unknown")))) from None
+          def read_cache(key):
+           rows=call(SB+"/rest/v1/telegram_api_cache?"+urllib.parse.urlencode({"cache_key":"eq."+key,"select":"payload"}),sh)
+           return rows[0]["payload"] if rows else None
+          def save(value):
+           headers=dict(sh,Prefer="resolution=merge-duplicates,return=minimal")
+           call(SB+"/rest/v1/telegram_api_cache?on_conflict=cache_key",headers,"POST",{"cache_key":KEY,"payload":value,"updated_at":stamp(),"expires_at":"2036-11-02T00:00:00Z"})
+          def ms_get(path,params):
+           if path not in ("/entity/store","/report/stock/all","/entity/product"):raise ValueError("GET path rejected")
+           out["stage"]=path;save(out)
+           for attempt in range(2):
+            try:return call(MS+path+"?"+urllib.parse.urlencode(params),mh)
+            except (TimeoutError,socket.timeout):
+             if attempt:raise
+             time.sleep(3)
+          def pages(path,params):
+           rows=[];offset=0
+           while True:
+            page=ms_get(path,dict(params,limit=1000,offset=offset))
+            part=page.get("rows");size=page.get("meta",{}).get("size")
+            if not isinstance(part,list) or type(size) is not int:raise ValueError("Coverage unknown")
+            rows.extend(part);offset+=len(part)
+            if offset>=size:return rows
+            if not part or offset>50000:raise ValueError("Pagination incomplete")
+          request=read_cache(KEY+":request")
+          if not request or request.get("status")!="approved_readonly_preflight":raise ValueError("Read scope missing")
+          ids=request["ids"]
+          if len(ids)!=60 or len({r["id"] for r in ids})!=60:raise ValueError("Scope mismatch")
+          if read_cache(KEY):raise SystemExit("Existing receipt preserved")
+          out={"status":"reading","started_at":stamp(),"run_id":os.environ["GITHUB_RUN_ID"],"wb_calls":0,"moysklad_writes":0,"telegram_calls":0}
+          save(out)
+          try:
+           warehouse=read_cache("ip_agent:wave1_msk_short:2026-11-02:v1")
+           if not warehouse or warehouse.get("status")!="complete" or not warehouse.get("warehouse_id"):raise ValueError("Verified current-day MSK identity missing")
+           sid=warehouse["warehouse_id"]
+           params={"filter":"assortmentId="+",".join(r["id"] for r in ids)+";storeId="+sid,"stockType":"freeStock","include":"zeroLines"}
+           rows=call(MS+"/report/stock/bystore/current?"+urllib.parse.urlencode(params),mh)
+           if not isinstance(rows,list):raise ValueError("Unexpected short report")
+           out.update(warehouse_id=sid,raw=rows,rows=[])
+           for r in ids:
+            found=[x for x in rows if x.get("assortmentId")==r["id"] and x.get("storeId")==sid]
+            v=found[0].get("freeStock") if len(found)==1 else None
+            out["rows"].append(dict(r,status="verified" if type(v) in (int,float) else "unknown",stock_minus_reserve=v))
+           out["status"]="complete" if all(r["status"]=="verified" for r in out["rows"]) else "partial"
+          except Exception as e:
+           out.update(status="failed",error_type=type(e).__name__,error=str(e) if isinstance(e,(ValueError,RuntimeError)) else "Read failed")
+          out["finished_at"]=stamp();save(out)
+          print(json.dumps({"status":out["status"],"wb_calls":0,"moysklad_writes":0,"telegram_calls":0}))

@@ -1,0 +1,108 @@
+name: IP exact FBO60 read only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-fbo60-preflight-20261102.yml']
+permissions: {}
+concurrency:
+  group: ip-fbo60-read-20261102
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Existing same-seller FBO read path only
+        shell: python
+        env:
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import os,json,time,gzip,hashlib,base64,datetime,urllib.request,urllib.error,urllib.parse,math
+          KEY='ip_agent:expanded98:fbo60:2026-11-02:v1'
+          SB=os.environ['SUPABASE_URL'].rstrip('/');secret=os.environ['SUPABASE_SECRET_KEY']
+          SH={'apikey':secret,'Content-Type':'application/json'}
+          if not secret.startswith('sb_secret_'):SH['Authorization']='Bearer '+secret
+          def stamp():return datetime.datetime.now(datetime.timezone.utc).isoformat()
+          class NR(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*a,**k):raise RuntimeError('Redirect blocked')
+          opener=urllib.request.build_opener(NR)
+          def http(url,headers,method='GET',body=None):
+           req=urllib.request.Request(url,headers=headers,method=method,data=None if body is None else json.dumps(body).encode())
+           with opener.open(req,timeout=90) as r:
+            b=r.read()
+            if r.headers.get('Content-Encoding')=='gzip':b=gzip.decompress(b)
+            return json.loads(b) if b else None
+          def get(k):
+           r=http(SB+'/rest/v1/telegram_api_cache?'+urllib.parse.urlencode({'cache_key':'eq.'+k,'select':'payload'}),SH)
+           return r[0]['payload'] if r else None
+          def put(k,p):
+           http(SB+'/rest/v1/telegram_api_cache?on_conflict=cache_key',dict(SH,Prefer='resolution=merge-duplicates'),'POST',{'cache_key':k,'payload':p,'updated_at':stamp(),'expires_at':'2036-11-02T00:00:00Z'})
+          def claims(v):return json.loads(base64.urlsafe_b64decode(v.split('.')[1]+'==='))
+          if get(KEY):raise SystemExit('Existing read preserved')
+          request=get(KEY+':request')
+          if not request or request['status']!='owner_authorized_fbo_preflight' or len(request['scope'])!=60:raise ValueError('Scope missing')
+          writer=os.environ['WB_TOKEN_2'];token=os.environ.get('WB_FINANCE_TOKEN_2') or writer
+          if not claims(writer).get('sid') or claims(writer)['sid']!=claims(token).get('sid'):raise ValueError('Reader seller mismatch')
+          if claims(token).get('exp',0)<=time.time():raise ValueError('Reader expired')
+          scope={x['nm']:x['sku'] for x in request['scope']}
+          out={'status':'reading','started_at':stamp(),'run_id':os.environ['GITHUB_RUN_ID'],'wb_writes':0,'telegram_sends':0,'wb_reads':0,'reader_role':'existing_same_seller_finance' if token!=writer else 'existing_primary','rows':[]};put(KEY,out)
+          def read(path,method='GET',body=None,params=None):
+           host='seller-analytics-api.wildberries.ru'
+           group=path
+           if '/warehouse_remains/tasks/' in group:group='/api/v1/warehouse_remains/tasks/{task}/'+group.rsplit('/',1)[-1]
+           pause='wb-pause:'+hashlib.sha256((token+host+group).encode()).hexdigest();saved=get(pause) or {}
+           if float(saved.get('until',0))>time.time():raise RuntimeError('Existing analytics cooldown; no request')
+           out['wb_reads']+=1;put(KEY,out)
+           try:return http('https://'+host+path+('?' +urllib.parse.urlencode(params) if params else ''),{'Authorization':token,'Content-Type':'application/json','Accept-Encoding':'gzip'},method,body)
+           except urllib.error.HTTPError as e:
+            retry=e.headers.get('Retry-After') or e.headers.get('X-Ratelimit-Retry')
+            if e.code==429 and retry:
+             try:
+              seconds=float(retry);until=max(float(saved.get('until',0)),time.time()+seconds+1)
+              put(pause,{'until':until,'basis':'provider_header'});out['next_allowed_at']=datetime.datetime.fromtimestamp(until,datetime.timezone.utc).isoformat()
+             except ValueError:pass
+            raise RuntimeError('FBO source HTTP '+str(e.code)) from None
+          try:
+           totals={}
+           if claims(token).get('acc')!=1:
+            reply=read('/api/analytics/v1/stocks-report/wb-warehouses','POST',{'nmIds':sorted(scope),'limit':250000,'offset':0})
+            items=(reply or {}).get('data',{}).get('items')
+            if not isinstance(items,list) or len(items)>=250000:raise ValueError('FBO pagination incomplete')
+            seen={}
+            for row in items:
+             nm,chrt,wh=(int(row[k]) for k in ('nmId','chrtId','warehouseId'));qty=float(row['quantity'])
+             if nm not in scope or not math.isfinite(qty) or qty<0 or qty!=int(qty):raise ValueError('Invalid scoped stock')
+             ident=(nm,chrt,wh)
+             if ident in seen:
+              if seen[ident]!=qty:raise ValueError('Conflicting stock')
+              continue
+             seen[ident]=qty;totals[nm]=totals.get(nm,0)+int(qty)
+           else:
+            created=read('/api/v1/warehouse_remains',params={'locale':'ru','groupBySa':'true','groupByNm':'true','groupByBarcode':'false','groupBySize':'false','filterPics':0,'filterVolume':0})
+            from uuid import UUID
+            task=str(UUID(created['data']['taskId']));out['task_id']=task;put(KEY,out);time.sleep(20)
+            status=read('/api/v1/warehouse_remains/tasks/'+task+'/status')
+            if status.get('data',{}).get('status')!='done':raise RuntimeError('FBO report not yet ready; no repeated polling')
+            data=read('/api/v1/warehouse_remains/tasks/'+task+'/download')
+            if not isinstance(data,list):raise ValueError('Invalid complete FBO report')
+            seen=set()
+            for row in data:
+             nm=row.get('nmId');whs=row.get('warehouses')
+             if type(nm)is not int or nm in seen or not isinstance(whs,list):raise ValueError('Ambiguous grouped FBO report')
+             seen.add(nm);values={}
+             for w in whs:
+              name=w.get('warehouseName');q=w.get('quantity')
+              if not isinstance(name,str) or name in values or type(q) not in (int,float) or not math.isfinite(q) or q<0 or int(q)!=q:raise ValueError('Invalid warehouse quantity')
+              values[name]=int(q)
+             total=values.get('Всего находится на складах')
+             if total is None:total=sum(q for n,q in values.items() if not n.startswith('В пути') and not n.startswith('Всего') and n!='Маркетплейс')
+             if nm in scope:totals[nm]=total
+           out['rows']=[{'nm':nm,'sku':sku,'fbo_available':totals.get(nm,0),'basis':'complete FBO source; no FBS or MSK'} for nm,sku in scope.items()]
+           out['status']='complete';out['coverage']=60
+          except Exception as e:out.update(status='blocked',error=str(e) if isinstance(e,(ValueError,RuntimeError)) else type(e).__name__)
+          out['finished_at']=stamp();put(KEY,out)
+          print(json.dumps({'status':out['status'],'coverage':out.get('coverage',0),'wb_writes':0,'telegram_sends':0}))
+          

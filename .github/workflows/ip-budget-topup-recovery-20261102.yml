@@ -2,13 +2,14 @@ name: IP approved budget funding-source diagnosis and bounded recovery
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/ip-budget-topup-recovery-20261102.yml']
+    paths: ['.github/disabled/ip-budget-topup-recovery-20261102.never']
 permissions: {}
 concurrency:
   group: wb-ip-only-authorized-budget-writer
   cancel-in-progress: false
 jobs:
   apply:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:

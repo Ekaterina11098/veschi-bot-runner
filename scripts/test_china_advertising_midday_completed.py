@@ -12,9 +12,9 @@ class CompletedMidday(unittest.TestCase):
  def test_incomplete_day_cannot_become_action_evidence(self):
   r=self.review();r['days']=['2026-11-01']
   with self.assertRaises(ValueError):merge_completed(dict(day='2026-11-01',campaigns=[dict(id=1)]),r,'source')
- def test_pending_action_is_shown_as_confirmed_history_not_repeated(self):
+ def test_pending_history_remains_private_and_not_recommended(self):
   r=self.review();r['campaigns'][0]['focus'][0].update(pending_first_day=True,done='Ставка снижена · 01.11')
   out=merge_completed(dict(day='2026-11-01',campaigns=[dict(id=1)]),r,'source')
-  self.assertEqual([],out['campaigns'][0]['attention']);self.assertIn('Подтверждено ранее',recommendations(out['campaigns'][0])[0])
+  self.assertEqual([],out['campaigns'][0]['attention']);self.assertEqual(['Нет новых действий.'],recommendations(out['campaigns'][0]));self.assertTrue(out['campaigns'][0]['completed_actions'])
 if __name__=='__main__':unittest.main()
 

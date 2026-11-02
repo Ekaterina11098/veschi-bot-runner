@@ -14,7 +14,7 @@ def get(key):
     return rows[0]['payload'] if rows else None
 def put(key,value):
     database('POST','telegram_api_cache',params={'on_conflict':'cache_key'},body={'cache_key':key,'payload':value,'updated_at':stamp(),'expires_at':'2036-11-02T00:00:00Z'})
-    if get(key)!=value:raise RuntimeError('Private receipt readback mismatch')
+    if get(key)!=json.loads(json.dumps(value)):raise RuntimeError('Private receipt readback mismatch')
 def claim(value):
     secret=os.environ['SUPABASE_SECRET_KEY']
     h={'apikey':secret,'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=representation'}
@@ -219,7 +219,11 @@ def main():
 if __name__=='__main__':
     if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise PermissionError('Public main only')
     state={'status':'starting','started_at':stamp(),'run_id':os.environ['GITHUB_RUN_ID'],'authorization_sha256':HASH,'steps':{},'telegram_calls':0}
-    if not claim(state):print('Existing executor receipt preserved; no replay');sys.exit(0)
+    if not claim(state):
+        previous=get(KEY) or {}
+        if previous.get('run_id')=='41469488891' and previous.get('status')=='attention' and previous.get('error')=='Private receipt readback mismatch' and previous.get('steps')=={}:
+            state['recovered_readonly_run']='41469488891';save()
+        else:print('Existing executor receipt preserved; no replay');sys.exit(0)
     try:main()
     except Exception as e:state.update(status='attention',error=str(e) if isinstance(e,(RuntimeError,ValueError,PermissionError)) else type(e).__name__);save()
     print(json.dumps({'status':state['status'],'accepted_writes':sum(v['status']=='accepted' for v in state['steps'].values()),'telegram_calls':0}),flush=True)

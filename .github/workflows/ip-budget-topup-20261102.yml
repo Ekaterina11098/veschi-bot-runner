@@ -1,0 +1,70 @@
+name: IP one owner approved budget deposit readback
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-budget-topup-20261102.yml']
+permissions: {}
+concurrency:
+  group: wb-ip-only-authorized-budget-writer
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: One exact owner approved deposit, returned budget receipt, no other WB changes
+        env:
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import urllib.request,hashlib,json,time,datetime,os
+          url='https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/356e2247e20d903815f61be5eaf103b8807f31e7/scripts/ip_owner_finish_20261102.py'
+          source=urllib.request.urlopen(url,timeout=45).read()
+          if hashlib.sha256(source).hexdigest()!='8c6100ff5a6066e63157271ba2f7931155f301e49aaa903fb8296fe5c9ee5c98':raise ValueError('Source integrity')
+          ns={'__name__':'budget_deposit_worker'};exec(compile(source,url,'exec'),ns)
+          t=ns['FinishTransport']();t.deadline=time.time()+1800;t.cadence={}
+          key='ip_agent:budget_topup:2026-11-02:37363108:2000:v1';ek=key+':execution'
+          p=t.get(key)
+          if not p or p.get('status')!='owner_authorized' or p.get('campaign')!=37363108 or p.get('amount_rub')!=2000 or p.get('currency')!='RUB' or p.get('funding_type')!=0 or p.get('allow_other_changes') is not False:raise PermissionError('Exact owner approval missing')
+          state={'status':'preflight','approval_key':key,'started_at':ns['stamp'](),'run_id':os.environ['GITHUB_RUN_ID'],'wb_write_attempts':0,'telegram_sends':0}
+          if not t.create(ek,state):raise SystemExit('Existing execution retained; no duplicate deposit')
+          def save():t.save(ek,state)
+          def progress(path,until):
+           state.update(status='waiting_provider_cooldown',next_allowed_at=datetime.datetime.fromtimestamp(until,datetime.timezone.utc).isoformat());save()
+          t.progress=progress
+          def no_other_writer():
+           # Previous owner explicitly transferred pending work to manual execution.
+           # The old running job is inside read-only exception recovery; queued old approval rejects before WB.
+           for version in ('v1','v2'):
+            old=t.get('ip_agent:expanded98:finish:2026-11-02:'+version)
+            if not old or old.get('status')!='manual_handoff':raise PermissionError('Prior mutation authority still active')
+           if t.get(key)!=p:raise PermissionError('Deposit approval changed')
+          try:
+           t.identity();no_other_writer()
+           baseline=t.get(p['baseline_key']) or {}
+           stamp=baseline.get('observed_at');age=time.time()-datetime.datetime.fromisoformat(stamp).timestamp() if stamp else float('inf')
+           rows=baseline.get('reply',{}).get('adverts',[])
+           before=[r for r in rows if r.get('advertId')==37363108 and r.get('currency')=='RUB']
+           if not (0<=age<=1800 and len(before)==1):
+            baseline={'observed_at':ns['stamp'](),'reply':t.wb('/api/advert/v2/budget','POST',{'advertIds':[37363108]})}
+            before=baseline['reply'].get('adverts',[])
+           if len(before)!=1 or before[0].get('advertId')!=37363108 or before[0].get('currency')!='RUB' or type(before[0].get('total')) not in (int,float):raise ValueError('Balance unknown; no deposit')
+           state.update(before=before[0],before_observed_at=baseline['observed_at']);save()
+           no_other_writer()
+           body={'sum':2000,'type':0,'return':True}
+           state.update(status='submitting',request={'path':'/adv/v1/budget/deposit?id=37363108','body':body},wb_write_attempts=1,submitted_at=ns['stamp']());save()
+           r=t.wb('/adv/v1/budget/deposit?id=37363108','POST',body,write=True)
+           state.update(status='accepted',response=r,accepted_at=ns['stamp']());save()
+           if isinstance(r,dict) and r.get('currency')=='RUB' and type(r.get('total')) in (int,float) and r['total']>=0:
+            state.update(status='verified',after=r,verification='WB deposit return=true updated-budget receipt',verified_at=ns['stamp']())
+           else:
+            rb=t.wb('/api/advert/v2/budget','POST',{'advertIds':[37363108]})
+            result=rb.get('adverts',[])
+            if len(result)!=1 or result[0].get('advertId')!=37363108 or result[0].get('currency')!='RUB' or type(result[0].get('total')) not in (int,float):raise ValueError('Deposit accepted; balance readback unavailable; never redeposit')
+            state.update(status='verified',after=result[0],verification='accepted exact deposit plus subsequent balance readback',verified_at=ns['stamp']())
+          except Exception as e:
+           state.update(status='attention_no_replay',error=str(e) if isinstance(e,(ValueError,RuntimeError,PermissionError)) else type(e).__name__)
+          state['finished_at']=ns['stamp']();save()
+          print(json.dumps({'status':state['status'],'wb_write_attempts':state['wb_write_attempts'],'telegram_sends':0}))

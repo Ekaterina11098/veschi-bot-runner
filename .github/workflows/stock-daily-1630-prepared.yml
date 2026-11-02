@@ -30,6 +30,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          sparse-checkout: content_group_destination.py
+          sparse-checkout-cone-mode: false
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI

@@ -1,0 +1,36 @@
+name: Stock reserve key diagnosis read only
+on:
+  push:
+    paths: ['.github/workflows/stock-reserve-key-diagnosis-20261102.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 4217a7d1fc4fa5b58a479e519c648583989d1c6a
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - run: pip install requests==2.32.5
+      - name: Compute only nonsecret ledger identifiers, no service calls
+        env:
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python - <<'PY'
+          import os,json
+          from stock_current_order_reserve import ledger_key
+          from stock_operation_store import digest
+          g=type('G',(),{})()
+          g.cabinet_tokens=lambda:tuple(os.environ['WB_TOKEN_'+str(i)] for i in (1,2,3))
+          g.STOCK_APPROVED_WAREHOUSES=[[1863255],[854652],[2126188]]
+          for ozon in (False,True):
+              source={'warehouses':g.STOCK_APPROVED_WAREHOUSES}
+              if ozon:source['ozon']={'locations':{}}
+              key=ledger_key(g,source)
+              print(json.dumps({'ozon':ozon,'ledger_row':'technical:stock-shared:v1:'+digest(key)}))
+          PY

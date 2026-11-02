@@ -140,8 +140,7 @@ def recommendations(c):
  # Only actionable recommendations belong in this column; metrics/unknown data stay in their own cells.
  if c['attention']:
   return [completed_recommendation(r) for r in c['attention']]
- if c.get('completed_actions'):return ['Подтверждено ранее: '+x for x in c['completed_actions']]+['Новых действий нет.']
- return ['Нет']
+ return ['Нет новых действий.']
 def render_midday(b):
  b=dict(b,campaigns=[c for c in b['campaigns'] if not c.get('draft')])
  W=2400;H=6500;xs=[44,480,780,1050,1650,2356];files=[];green='#196b44'

@@ -1,0 +1,22 @@
+name: Diagnose China token metadata only
+on:
+  push:
+    paths: ['.github/workflows/stock-china-token-metadata-20261102.yml']
+permissions:
+  contents: read
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check expiry and same-account binding without API calls
+        env:
+          WRITER: ${{ secrets.WB_TOKEN_3 }}
+          READER: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+        run: |
+          python3 - <<'PY'
+          import os,json,base64,time,datetime
+          def decode(value):
+              return json.loads(base64.urlsafe_b64decode(value.split('.')[1]+'==='))
+          w=decode(os.environ['WRITER']); raw=os.environ.get('READER') or os.environ['WRITER'];r=decode(raw)
+          print(json.dumps({'reader_configured':bool(os.environ.get('READER')),'same_account':bool(w.get('sid')) and w.get('sid')==r.get('sid'),'writer_expired':w.get('exp',0)<time.time(),'reader_expired':r.get('exp',0)<time.time(),'reader_expires_utc':datetime.datetime.fromtimestamp(r['exp'],datetime.timezone.utc).isoformat(),'reader_acc':r.get('acc'),'reader_permissions_mask':r.get('s'),'writer_permissions_mask':w.get('s'),'same_token':raw==os.environ['WRITER']}))
+          PY

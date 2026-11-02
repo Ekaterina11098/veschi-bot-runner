@@ -496,6 +496,11 @@ class Worker:
         def patch(body):
             if not self.db('PATCH','business_agent_jobs',params={'id':'eq.'+str(job_id),'lease_token':'eq.'+lease},body=body,prefer='return=representation'):raise RuntimeError('Question lease lost')
         try:
+            from china_owner_reply_guard import resolved, growth_reply
+            owner_resolution=resolved(self,job)
+            if owner_resolution:
+                patch({'status':'done','answer':owner_resolution['answer'],'error':None,'completed_at':datetime.now(timezone.utc).isoformat(),'lease_until':None})
+                return 'superseded_by_owner'
             from china_chat_migration import previous_chats
             chats=[cfg['chat_id']]+previous_chats(self.db,cfg)
             history=self.db('GET','business_agent_jobs',params={'agent_id':'eq.china','chat_id':'in.('+','.join(map(str,chats))+')','sender_id':'eq.'+str(job['sender_id']),'status':'eq.done','id':'lt.'+str(job_id),'select':'id,agent_id,chat_id,sender_id,request_text,answer,tool_trace','order':'id.desc','limit':10}) or []
@@ -520,6 +525,10 @@ class Worker:
             if checked_answer!=answer or checked_trace!=trace:
                 answer,trace=checked_answer,checked_trace
                 patch({'answer':answer,'tool_trace':trace})
+            useful_answer=growth_reply(job,answer,trace)
+            if useful_answer!=answer:
+                answer=useful_answer
+                patch({'answer':answer,'tool_trace':trace})
             from china_shared_memory import record_turn
             try:record_turn(self,job,answer,trace)
             except Exception:
@@ -530,6 +539,10 @@ class Worker:
             self.reply_id=marker.get('message_id');outcome='sent'
             from china_table_png import delivery_parts
             for index,part in enumerate(delivery_parts(self,job,answer,split_message)):
+                owner_resolution=resolved(self,job)
+                if owner_resolution:
+                    patch({'status':'done','answer':owner_resolution['answer'],'error':None,'completed_at':datetime.now(timezone.utc).isoformat(),'lease_until':None})
+                    return 'superseded_by_owner'
                 outcome=self.send_once('question:'+str(job_id)+':'+str(index),job['chat_id'],part)
                 if outcome!='sent':break
             patch({'status':'done' if outcome=='sent' else ('pending' if outcome in ('waiting','rejected') else 'failed'),'retry_at':(self.now+timedelta(minutes=5)).isoformat(),'error':None if outcome=='sent' else 'delivery_'+outcome,'completed_at':self.now.isoformat() if outcome=='sent' else None,'lease_until':None})

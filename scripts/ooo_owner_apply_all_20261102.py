@@ -40,7 +40,10 @@ def req(path,method='GET',body=None,step=None):
     reads={('GET','/adv/v1/promotion/count'),('GET','/api/advert/v2/adverts'),('GET','/adv/v1/balance'),('POST','/api/advert/v2/budget'),('POST','/api/advert/v1/bids/min'),('GET','/api/advert/v0/daily-limits')}
     writes={('PATCH','/adv/v0/auction/nms'),('PATCH','/api/advert/v1/bids'),('POST','/adv/v2/seacat/save-ad'),('PUT','/api/advert/v0/daily-limits'),('POST','/adv/v1/budget/deposit'),('GET','/adv/v0/start')}
     if (method,bare) not in (writes if step else reads):raise PermissionError('Endpoint outside frozen scope')
-    if step and step in state['steps']:raise RuntimeError('Write replay refused: '+step)
+    if step and step in state['steps']:
+        old=state['steps'][step]
+        if old.get('status')=='accepted':return old['response']
+        if old.get('status')!='rejected_429':raise RuntimeError('Ambiguous write replay refused: '+step)
     pausekey='wb-pause:'+hashlib.sha256((TOKEN+HOST+bare).encode()).hexdigest()
     for attempt in range(4):
         wait_until(float((get(pausekey) or {}).get('until',0)),bare)
@@ -63,8 +66,8 @@ def req(path,method='GET',body=None,step=None):
         if r.status_code==429:
             if step:
                 state['steps'][step].update(status='rejected_429');save()
-                # A money/create request is never resubmitted by this executor.
-                raise RuntimeError('Write explicitly rejected 429; retained for reviewed continuation')
+                # Explicit rejection is distinct from an ambiguous transport outcome.
+                if bare=='/adv/v1/budget/deposit':raise RuntimeError('Deposit rejected 429; retained for reviewed continuation')
             continue
         if not r.ok:
             if step:state['steps'][step].update(status='rejected',http_status=r.status_code);save()
@@ -90,7 +93,10 @@ def minima(cid,ids,placements):
     if set(out)!=set(ids):raise RuntimeError('Incomplete exact SKU minima')
     state.setdefault('minimums',{})[str(cid)]=j;save()
     return out
-def inventory():
+def inventory(force=False):
+    prior=state.get('inventory',{})
+    if not force and prior.get('observed_at') and time.time()-datetime.datetime.fromisoformat(prior['observed_at']).timestamp()<5400:
+        return {int(k):v for k,v in prior['statuses'].items()}
     j=req('/adv/v1/promotion/count');out={}
     for group in j.get('adverts',[]):
         for c in group.get('advert_list',[]):out[c['advertId']]=group['status']
@@ -212,7 +218,7 @@ def main():
     if after!=funding:raise RuntimeError('Funding readback mismatch; no starts')
     state['funding_verified_at']=stamp();state['funding_after']=after;save()
     for cid in funding:req('/adv/v0/start?id='+str(cid),step='start_'+str(cid))
-    statuses=inventory()
+    statuses=inventory(force=True)
     if any(statuses.get(cid)!=9 for cid in funding) or statuses.get(39605582)!=11:raise RuntimeError('Activation status readback pending or mismatched')
     state.update(status='complete',completed_at=stamp(),drr_target_pct=5,drr_control_order=['campaign','sku'],first_full_post_change_day=(datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date()+datetime.timedelta(days=1)).isoformat())
     save()
@@ -223,6 +229,10 @@ if __name__=='__main__':
         previous=get(KEY) or {}
         if previous.get('run_id')=='41469488891' and previous.get('status')=='attention' and previous.get('error')=='Private receipt readback mismatch' and previous.get('steps')=={}:
             state['recovered_readonly_run']='41469488891';save()
+        elif previous.get('run_id')=='41469696965' and previous.get('status')=='attention' and previous.get('error')=='Write explicitly rejected 429; retained for reviewed continuation' and {k:v.get('status') for k,v in previous.get('steps',{}).items()}=={'remove_cpm_11':'accepted','create_G06':'accepted','create_G07':'rejected_429'}:
+            state=previous
+            state.update(status='resuming',run_id=os.environ['GITHUB_RUN_ID'],recovered_run='41469696965')
+            state.pop('error',None);save()
         else:print('Existing executor receipt preserved; no replay');sys.exit(0)
     try:main()
     except Exception as e:state.update(status='attention',error=str(e) if isinstance(e,(RuntimeError,ValueError,PermissionError)) else type(e).__name__);save()

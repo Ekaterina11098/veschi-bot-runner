@@ -69,7 +69,9 @@ def enrich_economics(io,source,rough,report_day):
  class Work:
   now=datetime.now(timezone.utc)
   def get(self,k):return io.get(k)
-  def save(self,k,v,**kw):return io.put(k,v)
+  def save(self,k,v,**kw):
+   from china_advertising_v2 import save
+   return save(io,k,v)
   def db(self,method,table,params=None):
    if method!='GET' or table!='analytics_snapshots':raise ValueError('Morning context allows only analytics snapshot reads')
    return io.db(table+'?'+urlencode(params or {}))

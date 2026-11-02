@@ -30,4 +30,43 @@ def main():
  if not c.create(ROOT,result):raise RuntimeError('Concurrent immutable inputs')
  if c.get(ROOT)!=result:raise RuntimeError('Private input readback mismatch')
  print(json.dumps(dict(status=result['status'],comparisons=result['comparisons'],wb_writes=0)))
-if __name__=='__main__':main()
+
+
+def diagnose():
+ from china_advertising_state import AdvertisingIO
+ from china_analytic_dialog import Analyst,reading
+ from china_advertising_v2 import http,history,read_price_experience
+ from china_advertising_economic_review import model_rows
+ from datetime import date,timezone
+ class IO(AdvertisingIO):
+  def wb(self,*a,**k):raise RuntimeError('No WB mutations')
+ io=IO()
+ key=ROOT+':diagnosis'
+ if io.get(key):return
+ source=io.get('china_agent:advertising_source:2026-11-02:v2')
+ ids=[1473243903,1473244336,1473244359,1473245517,1473243094,1473246044,1473242754,1473242587]
+ class Work:
+  now=datetime.now(timezone.utc)
+  def get(self,k):return io.get(k)
+  def save(self,k,v,**kw):
+   if io.get(k) is None:io.create(k,v)
+   else:io.put(k,v)
+  def catalog(self):return [(str(r['nmID']),r['vendorCode']) for r in source['catalogue']['rows']]
+ an=Analyst(Work(),dict(request_text='Адресная проверка просадок заказов за завершённый1Nov'),[])
+ with reading():
+  prices=an.collect('prices',ids,date(2026,10,3),date(2026,11,1))
+  stock=an.collect('stock',ids,date(2026,10,3),date(2026,11,1))
+ for v in (prices,stock):v['observed_at']=datetime.now(timezone.utc).isoformat()
+ campaigns=http(io,'/api/advert/v2/adverts?ids='+','.join(map(str,source['ids'])))['adverts']
+ cids=[c['id'] for c in campaigns if c['status']==9 and any(n['nm_id'] in ids for n in c['nm_settings'])]
+ budgets=http(io,'/api/advert/v2/budget','POST',dict(advertIds=cids)) if cids else {}
+ products=io.get('china_agent:analytic_read:v1:893557e46ce1918d55ff958ce88fd1f202ee06e10e60792aeabbbb67cd857b35')
+ economics=model_rows(dict(products=products,prices=prices,stock=stock,fx=io.get('china_agent:cbr_cny:v1:2026-11-01')),io.get('china_agent:new_ad_economics_policy:v1')or{},io.get('china_agent:expected_profit_delivery_model:v1')or{})
+ events=[e for e in history(source['executions']) if e.get('nm') in ids]
+ result=dict(status='complete',observed_at=stamp(),prices=prices,stock=stock,economics=economics,events=events,campaigns=[dict(c,nm_settings=[n for n in c['nm_settings'] if n['nm_id'] in ids])for c in campaigns if any(n['nm_id'] in ids for n in c['nm_settings'])],budgets=budgets,wb_writes=0,telegram_calls=0,grants_action_permission=False)
+ if not io.create(key,result):raise RuntimeError('Concurrent immutable diagnosis')
+ if io.get(key)!=result:raise RuntimeError('Diagnosis readback mismatch')
+ print(json.dumps(dict(status='diagnosiscomplete',wb_writes=0)))
+if __name__=='__main__':
+ main()
+ diagnose()

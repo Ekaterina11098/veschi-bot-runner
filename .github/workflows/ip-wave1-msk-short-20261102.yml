@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 14
     steps:

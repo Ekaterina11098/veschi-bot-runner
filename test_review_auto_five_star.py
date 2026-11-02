@@ -153,6 +153,11 @@ class PolicyTests(unittest.TestCase):
     self.assertFalse(classify(self.review(**{key:text+' Но молния заедает.'}))['eligible'])
     self.assertFalse(classify(self.review(**{key:text+'?'}))['eligible'])
   self.assertFalse(classify(self.review('Хорошая сумка, кожаная, нашла гораздо дешевле'))['eligible'])
+ def test_november2_china_praise(self):
+  for text in ["Шоколадка, отличная сумочка","Шикарная сумка, я влюбилась!) Нежно-розовый оттенок, очень приятный, не выглядит приторно, наоборот, благородно. Фурнитура добротная. Очень тщательно была упакована, плюс дополнительный тканевый мешочек (типа атласа). Считаю, что по цене чуть меньше 3000 приобрести качественную сумку из натуральной зернистой кожи это удача) благодарю продавца!✨","Шикарное качество по доступной цене. Удобная и красивая модель.","Приятная сумочка, довольно вместительная.Пришла очень хорошо упакованая, в пыльнике.","Качество на высоте!!!!!!!!!!!!!!!!!\nСтильная, аккуратная, фурнитура дорогая!!!!!!!","Очень хорошая сумка, мягкая, держит форму, размер идеальный","Классная сумочка, я ещё раздумывала брать или не брать.Увидела и влюбилась.","Сумка очень понравилась!!! \nНеграмоская но и немаленькая Спасибо!!!"]:
+   self.assertTrue(classify(self.review(text))['eligible'])
+   self.assertFalse(classify(self.review(text+' Но молния заедает.'))['eligible'])
+   self.assertFalse(classify(self.review(text+'?'))['eligible'])
  def test_purchase_status_neutral(self):
   for status in ('buyout','rejected','returned',None):
    answer=answer_for(self.review(orderStatus=status))

@@ -139,7 +139,7 @@ jobs:
            else:
             template=t.request(m.MS,'entity/salesreturn/new','PUT',{'demand':m.meta(basis)})
             tps=template['positions']['rows'];rps=[]
-            assert len(tps)==template['positions']['meta']['size'],'Incomplete return template'
+            if 'meta' in template['positions']:assert len(tps)==template['positions']['meta']['size'],'Incomplete return template'
             for a,q in items.items():
              matched=[p for p in tps if norm(p['assortment'])==norm(products[a][0])];assert len(matched)==1 and matched[0]['quantity']>=q
              p=matched[0];rps.append({**makepos(a,q),'vat':p.get('vat',0),'vatEnabled':p.get('vatEnabled',template.get('vatEnabled',False))})

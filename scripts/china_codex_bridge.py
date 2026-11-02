@@ -8,17 +8,18 @@ CHAT=-1004342917488
 BOT=8780468043
 def stamp():return datetime.now(timezone.utc).isoformat()
 def question(text):
- m=re.match(r'^/codex(?:@[A-Za-z0-9_]+)?(?:\s+|$)([\s\S]*)$',text or '',re.I)
+ m=re.match(r'^(?:/codex(?:@[A-Za-z0-9_]+)?(?:\s+|$)|Кодекс\s*[,,:]\s*)([\s\S]*)$',text or '',re.I)
  return m.group(1).strip() if m else None
 
 def handle(w,job,cfg):
  text=question(job.get('request_text'))
+ marker=next((x for x in job.get('tool_trace') or [] if x.get('name')=='china_saved_question'),{})
+ if marker.get('codex_bridge') is True:text=marker.get('bridge_request_text') or text or job.get('request_text','')
  if text is None:return None
  p=w.get(ROOT+'policy') or {}
  if not p.get('enabled'):return None
  # Prefix remains exclusively reserved during the enabled pilot, even for rejected senders.
  if p.get('thread_id')!=THREAD or p.get('chat_id')!=CHAT or p.get('bot_id')!=BOT:raise ValueError('Codex bridge scope mismatch')
- marker=next((x for x in job.get('tool_trace') or [] if x.get('name')=='china_saved_question'),{})
  if job.get('chat_id')!=CHAT or cfg.get('chat_id')!=CHAT or marker.get('bot_id')!=BOT:return 'codex_bridge_scope_rejected'
  if job.get('sender_id') not in p.get('allowed_sender_ids',[]):return 'codex_bridge_sender_rejected'
  now=datetime.now(timezone.utc)

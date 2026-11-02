@@ -1,0 +1,11 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {route,THREAD} from './codex-route.mjs';
+const p={enabled:true,thread_id:THREAD,chat_id:-1004342917488,bot_id:8780468043,allowed_sender_ids:[5122667182,307200273],expires_at:'2026-11-03T12:00:00Z'};
+const m={chat:{id:p.chat_id},from:{id:5122667182}};const now=Date.parse('2026-11-02T19:00:00Z');
+test('default exact chat',()=>assert.equal(route('Рассчитай прибыль',p,m,now).kind,'codex'));
+test('Russian Codex address',()=>assert.deepEqual(route('Кодекс, рассчитай прибыль',p,m,now),{kind:'codex',text:'рассчитай прибыль'}));
+test('Russian agent address',()=>assert.deepEqual(route('Агент, рассчитай прибыль',p,m,now),{kind:'legacy_explicit',text:'рассчитай прибыль'}));
+test('slash agent',()=>assert.equal(route('/agent вопрос',p,m,now).kind,'legacy_explicit'));
+test('slash codex',()=>assert.equal(route('/codex вопрос',p,m,now).text,'вопрос'));
+test('disabled no takeover',()=>assert.equal(route('вопрос',{...p,enabled:false},m,now).kind,'legacy'));
+test('unknown sender unchanged',()=>assert.equal(route('вопрос',p,{...m,from:{id:7}},now).kind,'legacy'));
+test('expiry no silent fallback to agent',()=>assert.equal(route('вопрос',p,m,Date.parse('2026-11-04')).kind,'expired'));

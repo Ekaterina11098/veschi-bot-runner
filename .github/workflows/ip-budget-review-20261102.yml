@@ -1,0 +1,46 @@
+name: IP requested batch budget review read only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-budget-review-20261102.yml']
+permissions: {}
+concurrency:
+  group: ip-budget-review-read-20261102
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: One batch WB budget read, no marketplace writes or Telegram
+        env:
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import urllib.request,hashlib,json,datetime,time
+          url='https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/356e2247e20d903815f61be5eaf103b8807f31e7/scripts/ip_owner_finish_20261102.py'
+          source=urllib.request.urlopen(url,timeout=45).read()
+          if hashlib.sha256(source).hexdigest()!='8c6100ff5a6066e63157271ba2f7931155f301e49aaa903fb8296fe5c9ee5c98':raise ValueError('Pinned source mismatch')
+          ns={'__name__':'budget_reader'};exec(compile(source,url,'exec'),ns)
+          t=ns['FinishTransport']();t.deadline=time.time()+900;t.cadence={}
+          key='ip_agent:budget_review:2026-11-02:evening:v1'
+          request=t.get(key+':request')
+          if not request or request.get('status')!='owner_authorized_readonly_review' or request.get('wb_writes') is not False:raise PermissionError('No read approval')
+          if t.get(key):raise SystemExit('Existing review retained')
+          state={'status':'reading','started_at':ns['stamp'](),'run_id':__import__('os').environ['GITHUB_RUN_ID'],'wb_writes':0,'telegram_sends':0}
+          if not t.create(key,state):raise SystemExit('Read already claimed')
+          def progress(path,until):
+           state.update(status='waiting_provider_cooldown',next_allowed_at=datetime.datetime.fromtimestamp(until,datetime.timezone.utc).isoformat());t.save(key,state)
+          t.progress=progress
+          try:
+           t.identity();ids=request['campaign_ids']
+           if len(ids)!=10 or len(set(ids))!=10 or any(type(i)is not int for i in ids):raise ValueError('Invalid exact scope')
+           reply=t.wb('/api/advert/v2/budget','POST',{'advertIds':ids})
+           rows=reply.get('adverts',[])
+           if len(rows)!=len(ids) or {r.get('advertId') for r in rows}!=set(ids) or any(r.get('currency')!='RUB' or type(r.get('total')) not in (int,float) or r['total']<0 for r in rows):raise ValueError('Missing budget/currency; no zero substitution')
+           state.update(status='complete',observed_at=ns['stamp'](),reply=reply)
+          except Exception as e:state.update(status='blocked',error=str(e) if isinstance(e,(ValueError,RuntimeError,PermissionError)) else type(e).__name__)
+          state['finished_at']=ns['stamp']();t.save(key,state)
+          print(json.dumps({'status':state['status'],'wb_writes':0,'telegram_sends':0}))

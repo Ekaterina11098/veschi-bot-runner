@@ -146,6 +146,13 @@ class PolicyTests(unittest.TestCase):
    for key,value in fields.items():
     if value:
      self.assertFalse(classify(self.review(**{key:'Не '+value}))['eligible'])
+ def test_november2_verified_praise(self):
+  for text in ["Внешне соответствует описанию, упаковка супер. Без дефектов.","Сумку купила летом 2025, сейчас ноябрь 2026, сумка как новая при ежедневной носке. Качество очень хорошее. Знакомая заказала такую же с *** а в несколько раз дешевле, так она через месяц вся развалилась, так что цена имеет значение"]:
+   for key in ('text','pros','cons'):
+    self.assertTrue(classify(self.review(**{key:text}))['eligible'])
+    self.assertFalse(classify(self.review(**{key:text+' Но молния заедает.'}))['eligible'])
+    self.assertFalse(classify(self.review(**{key:text+'?'}))['eligible'])
+  self.assertFalse(classify(self.review('Хорошая сумка, кожаная, нашла гораздо дешевле'))['eligible'])
  def test_purchase_status_neutral(self):
   for status in ('buyout','rejected','returned',None):
    answer=answer_for(self.review(orderStatus=status))

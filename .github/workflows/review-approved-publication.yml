@@ -75,3 +75,5 @@ jobs:
 # Activate positive-verified-descriptions-20261031 with unchanged exact-once guards.
 
 # Activate verified complete positive fields 20261101; preserve exact-once guards.
+
+# Activate verified positive fields 20261102.

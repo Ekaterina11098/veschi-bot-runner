@@ -1,8 +1,6 @@
 name: Owner OOO focused completed periods read only
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/ooo-owner-focused-20261102.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

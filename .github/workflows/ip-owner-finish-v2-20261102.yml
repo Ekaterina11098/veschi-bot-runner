@@ -2,13 +2,14 @@ name: IP independent approved new campaigns continuation 2026-11-02
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/ip-owner-finish-v2-20261102.yml']
+    paths: ['.github/disabled/ip-owner-finish-v2-20261102.never']
 permissions: {}
 concurrency:
   group: wb-ip-advertising-agent
   cancel-in-progress: false
 jobs:
   apply:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 270
     steps:

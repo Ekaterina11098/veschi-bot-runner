@@ -1,0 +1,27 @@
+name: IP independent approved new campaigns continuation 2026-11-02
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-owner-finish-v2-20261102.yml']
+permissions: {}
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 270
+    steps:
+      - name: Execute exact private owner approval with shared cooldown and readback
+        env:
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import urllib.request,hashlib
+          url='https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/bf3e6347dd246efdf63aeb8178342d0109642553/scripts/ip_owner_finish_v2_20261102.py'
+          source=urllib.request.urlopen(url,timeout=45).read()
+          if hashlib.sha256(source).hexdigest()!='381328a6e609ec199925ec2fd4922ce6c04b8d07ecd81cf790a66ec5cc8bc747':raise ValueError('Pinned source checksum differs')
+          exec(compile(source,url,'exec'),{'__name__':'__main__'})

@@ -1,0 +1,16 @@
+name: Verify minimal stock runner checkout
+on:
+  push:
+    paths: ['.github/workflows/stock-runner-sparse-check-20261102.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: content_group_destination.py
+          sparse-checkout-cone-mode: false
+      - run: python -m py_compile content_group_destination.py

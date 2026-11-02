@@ -5,7 +5,9 @@ class W:
  def __init__(self):
   self.values={ROOT+'policy':dict(enabled=True,thread_id=THREAD,chat_id=CHAT,bot_id=BOT,allowed_sender_ids=[5122667182,307200273],expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())};self.sends=[];self.patches=[]
  def get(self,k):return self.values.get(k)
- def save(self,k,v):self.values[k]=v
+ def save(self,k,v,insert=False):
+  if insert and k in self.values:return False
+  self.values[k]=v;return True
  def db(self,*a,**kw):self.patches.append(kw['body']);return [dict(id=224)]
  def send_once(self,k,chat,text):
   self.sends.append((k,chat,text));self.values['china_agent:conversion_watch_delivery:v1:'+k]=dict(status='sent',message_id=641);return 'sent'
@@ -34,4 +36,9 @@ class Bridge(unittest.TestCase):
   with self.assertRaises(ValueError):prepare_analytics(w,job(),{})
  def test_plain_marked_message_routes_here(self):
   w=W();j=job();j['request_text']='прибыль';j['tool_trace'][0].update(codex_bridge=True,bridge_request_text='прибыль');self.assertEqual(handle(w,j,{'chat_id':CHAT}),'codex_bridge_queued')
+ def test_big_table_uses_png_receipt(self):
+  w=W();answer='Итог.\n\n| Товар | Заказы |\n|---|---|\n'+'\n'.join('| Товар'+str(i)+' | '+str(i)+' |' for i in range(8))
+  w.save(ROOT+'outbox:224',dict(status='ready',thread_id=THREAD,chat_id=CHAT,job_id=224,input_message_id=641,answer=answer))
+  self.assertEqual(handle(w,job(),{'chat_id':CHAT}),'codex_bridge_delivered')
+  self.assertTrue(any('CHINA_TABLE_PNG:' in text for _,_,text in w.sends));self.assertGreater(w.get(ROOT+'outbox:224')['parts_count'],1)
 if __name__=='__main__':unittest.main()

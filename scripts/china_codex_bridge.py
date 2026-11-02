@@ -71,14 +71,23 @@ def handle(w,job,cfg):
  if not out:
   prepare_analytics(w,job,inbox)
   patch(dict(status='pending',lease_until=None,retry_at=(now+timedelta(minutes=1)).isoformat(),error=None));return 'codex_bridge_queued'
- if (out.get('status') not in ('ready','delivered') or out.get('thread_id')!=THREAD or out.get('chat_id')!=CHAT or out.get('input_message_id')!=marker['message_id'] or out.get('job_id')!=job['id'] or not isinstance(out.get('answer'),str) or not 0<len(out['answer'])<=3500):
+ if (out.get('status') not in ('ready','delivered') or out.get('thread_id')!=THREAD or out.get('chat_id')!=CHAT or out.get('input_message_id')!=marker['message_id'] or out.get('job_id')!=job['id'] or not isinstance(out.get('answer'),str) or not 0<len(out['answer'])<=12000):
   patch(dict(status='failed',lease_until=None,error='codex_bridge_invalid_reply'));return 'codex_bridge_invalid_reply'
  w.active_question_id=job['id'];w.reply_id=marker['message_id']
- outcome=w.send_once('codex_bridge:'+str(job['id'])+':0',CHAT,out['answer'])
- receipt=w.get('china_agent:conversion_watch_delivery:v1:codex_bridge:'+str(job['id'])+':0') or {}
- if outcome=='sent' and receipt.get('status')=='sent' and receipt.get('message_id'):
-  w.save(ROOT+'outbox:'+str(job['id']),out|dict(status='delivered',message_id=receipt['message_id'],delivered_at=stamp(),receipt_key='china_agent:conversion_watch_delivery:v1:codex_bridge:'+str(job['id'])+':0'))
-  w.save(key,inbox|dict(status='delivered',message_id=receipt['message_id'],delivered_at=stamp()))
+ from china_table_png import delivery_parts
+ parts=delivery_parts(w,job,out['answer'],lambda text:[text[i:i+3500] for i in range(0,len(text),3500)])
+ message_ids=[];outcome='sent'
+ for index,part in enumerate(parts):
+  delivery_key='codex_bridge:'+str(job['id'])+':'+str(index)
+  outcome=w.send_once(delivery_key,CHAT,part)
+  receipt=w.get('china_agent:conversion_watch_delivery:v1:'+delivery_key) or {}
+  if outcome!='sent' or receipt.get('status')!='sent' or not receipt.get('message_id'):
+   if outcome=='sent':outcome='uncertain'
+   break
+  message_ids.append(receipt['message_id'])
+ if outcome=='sent' and len(message_ids)==len(parts) and message_ids:
+  w.save(ROOT+'outbox:'+str(job['id']),out|dict(status='delivered',message_id=message_ids[0],message_ids=message_ids,delivered_at=stamp(),receipt_key='china_agent:conversion_watch_delivery:v1:codex_bridge:'+str(job['id'])+':0',parts_count=len(parts)))
+  w.save(key,inbox|dict(status='delivered',message_id=message_ids[0],message_ids=message_ids,delivered_at=stamp()))
   patch(dict(status='done',answer=out['answer'],lease_until=None,error=None,completed_at=stamp()));return 'codex_bridge_delivered'
  patch(dict(status='pending' if outcome in ('waiting','rejected') else 'failed',lease_until=None,error='codex_bridge_delivery_'+outcome,retry_at=(now+timedelta(minutes=5)).isoformat()))
  return 'codex_bridge_delivery_'+outcome

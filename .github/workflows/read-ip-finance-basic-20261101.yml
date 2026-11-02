@@ -11,7 +11,7 @@ concurrency:
 jobs:
   read:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 55
     steps:
       - name: Read complete period details into private storage
         shell: python
@@ -35,11 +35,11 @@ jobs:
            with op.open(req,timeout=60) as r:assert r.status in (200,201,204)
           proof={"status":"reading","started_at":now(),"run_id":os.environ["GITHUB_RUN_ID"],"dateFrom":"2026-11-01","dateTo":"2026-11-01","method":"POST sales-reports/detailed","secret_name":"WB_FINANCE_TOKEN_2","chunks":[],"pages":[],"rows":0}
           put("source_proof:v1",proof)
-          cursor=0;seen=set();last_request=0
+          cursor=0;seen=set();last_request=0;next_allowed=0;proof["attempts"]=[]
           while True:
            body={"dateFrom":"2026-11-01","dateTo":"2026-11-01","limit":100000,"rrdId":cursor}
-           for attempt in range(4):
-            time.sleep(max(0,62-(time.monotonic()-last_request)))
+           for attempt in range(7):
+            time.sleep(max(0,next_allowed-time.monotonic(),62-(time.monotonic()-last_request) if last_request else 0))
             last_request=time.monotonic()
             req=urllib.request.Request(URL,method="POST",data=json.dumps(body).encode(),headers={"Authorization":os.environ["WB_FINANCE_TOKEN_2"],"Content-Type":"application/json","Accept-Encoding":"gzip"})
             try:
@@ -50,10 +50,25 @@ jobs:
              break
             except urllib.error.HTTPError as e:
              status=e.code;raw=e.read()
+             rate_headers={k:e.headers.get(k) for k in ("X-RateLimit-Retry","Retry-After","X-RateLimit-Limit","X-RateLimit-Remaining","X-RateLimit-Reset") if e.headers.get(k) is not None}
              if e.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
              try:data=json.loads(raw)
              except Exception:data={"error":"non-json error"}
-             if status not in (429,500,502,503,504) or attempt==3:break
+             delay=62
+             if status==429:
+              values=[]
+              for key in ("X-RateLimit-Retry","Retry-After"):
+               try:values.append(float(rate_headers.get(key,"")))
+               except ValueError:pass
+              delay=max([62]+[v+3 for v in values]) if values else min(120*(2**attempt),600)
+             proof["attempts"].append({"at":now(),"http":status,"cursor":cursor,"attempt":attempt+1,"headers":rate_headers,"retry_seconds":delay})
+             proof["status"]="rate_limited" if status==429 else "reading"
+             proof["next_allowed_at"]=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=delay)).isoformat()
+             put("source_proof:v1",proof)
+             if status not in (429,500,502,503,504) or attempt==6:break
+             if delay>1200:
+              proof["status"]="waiting_for_server_retry";put("source_proof:v1",proof);raise SystemExit()
+             next_allowed=time.monotonic()+delay
            proof["pages"].append({"at":now(),"http":status,"cursor":cursor})
            if status==204 or (status==200 and data==[]):
             proof.update(status="complete",pagination_exhausted=True,completed_at=now());put("source_proof:v1",proof);break

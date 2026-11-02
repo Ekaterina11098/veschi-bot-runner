@@ -19,4 +19,11 @@ jobs:
               return json.loads(base64.urlsafe_b64decode(value.split('.')[1]+'==='))
           w=decode(os.environ['WRITER']); raw=os.environ.get('READER') or os.environ['WRITER'];r=decode(raw)
           print(json.dumps({'reader_configured':bool(os.environ.get('READER')),'same_account':bool(w.get('sid')) and w.get('sid')==r.get('sid'),'writer_expired':w.get('exp',0)<time.time(),'reader_expired':r.get('exp',0)<time.time(),'reader_expires_utc':datetime.datetime.fromtimestamp(r['exp'],datetime.timezone.utc).isoformat(),'reader_acc':r.get('acc'),'reader_permissions_mask':r.get('s'),'writer_permissions_mask':w.get('s'),'same_token':raw==os.environ['WRITER']}))
+          import urllib.request,urllib.error
+          for label,value in [('reader',raw),('writer',os.environ['WRITER'])]:
+              req=urllib.request.Request('https://seller-analytics-api.wildberries.cn/ping',headers={'Authorization':value})
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as response: status=response.status
+              except urllib.error.HTTPError as exc: status=exc.code
+              print(json.dumps({'analytics_ping_token':label,'status':status}))
           PY

@@ -1,0 +1,68 @@
+name: IP approved budget funding-source diagnosis and bounded recovery
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-budget-topup-recovery-20261102.yml']
+permissions: {}
+concurrency:
+  group: wb-ip-only-authorized-budget-writer
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: One exact owner approved deposit, returned budget receipt, no other WB changes
+        env:
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import urllib.request,hashlib,json,time,datetime,os,urllib.error,math
+          url='https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/356e2247e20d903815f61be5eaf103b8807f31e7/scripts/ip_owner_finish_20261102.py'
+          source=urllib.request.urlopen(url,timeout=45).read()
+          if hashlib.sha256(source).hexdigest()!='8c6100ff5a6066e63157271ba2f7931155f301e49aaa903fb8296fe5c9ee5c98':raise ValueError('Pinned source integrity')
+          ns={'__name__':'budget_recovery'};exec(compile(source,url,'exec'),ns)
+          t=ns['FinishTransport']();t.deadline=time.time()+1800;t.cadence={}
+          key='ip_agent:budget_topup_recovery:2026-11-02:37363108:2000:v1';ek=key+':execution';p=t.get(key)
+          if not p or p.get('status')!='owner_authorized_same_amount_recovery' or p.get('campaign')!=37363108 or p.get('amount_rub')!=2000:raise PermissionError('Exact recovery approval missing')
+          state={'status':'reading_funding_sources','started_at':ns['stamp'](),'run_id':os.environ['GITHUB_RUN_ID'],'wb_write_attempts':0,'telegram_sends':0}
+          if not t.create(ek,state):raise SystemExit('Existing recovery retained')
+          def save():t.save(ek,state)
+          def progress(path,until):
+           state.update(status='waiting_provider_cooldown',next_allowed_at=datetime.datetime.fromtimestamp(until,datetime.timezone.utc).isoformat());save()
+          t.progress=progress
+          try:
+           t.identity()
+           parent=t.get(p['parent_approval']+':execution') or {}
+           if parent.get('status')!='attention_no_replay' or not parent.get('finished_at') or parent.get('error')!='WB HTTP 400; retry None' or parent.get('accepted_at') or parent.get('response'):raise PermissionError('Prior deposit not definitively rejected; never repeat unknown')
+           for v in ('v1','v2'):
+            if (t.get('ip_agent:expanded98:finish:2026-11-02:'+v) or {}).get('status')!='manual_handoff':raise PermissionError('Old mutation authority active')
+           t.pause('/adv/v1/balance')
+           try:balance=t.raw(ns['HOST']+'/adv/v1/balance',{'Authorization':t.token,'Content-Type':'application/json'})
+           except urllib.error.HTTPError as e:
+            state['funding_source_error_private']=e.read(2048).decode(errors='replace').replace(t.token,'[REDACTED]');raise RuntimeError('Funding source HTTP '+str(e.code)) from None
+           state.update(funding_source_response=balance,funding_observed_at=ns['stamp']());save()
+           if balance.get('currency')!='RUB' or any(type(balance.get(k)) not in (int,float) or not math.isfinite(balance[k]) for k in ('balance','net')):raise ValueError('Funding source/currency unknown')
+           if balance['balance']>=2000:raise ValueError('Account source appears sufficient; prior400 cause unresolved, no blind retry')
+           if balance['net']<2000:raise ValueError('Insufficient available funds for2000RUB; no external payment')
+           baseline=t.get('ip_agent:budget_review:2026-11-02:evening:v1') or {}
+           age=time.time()-datetime.datetime.fromisoformat(baseline['observed_at']).timestamp()
+           if age>1800:
+            state['fresh_before']=t.wb('/api/advert/v2/budget','POST',{'advertIds':[37363108]});save()
+           if t.get(key)!=p:raise PermissionError('Recovery approval changed')
+           state.update(status='submitting',request={'path':'/adv/v1/budget/deposit?id=37363108','body':{'sum':2000,'type':1,'return':True}},wb_write_attempts=1,submitted_at=ns['stamp']());save()
+           try:reply=t.wb('/adv/v1/budget/deposit?id=37363108','POST',{'sum':2000,'type':1,'return':True},write=True)
+           except RuntimeError:
+            raise
+           state.update(status='accepted',response=reply,accepted_at=ns['stamp']());save()
+           if isinstance(reply,dict) and reply.get('currency')=='RUB' and type(reply.get('total')) in (int,float) and reply['total']>=0:
+            state.update(status='verified',after=reply,verified_at=ns['stamp'](),verification='WB accepted exact2000RUB transfer and returned updated budget')
+           else:
+            fresh=t.wb('/api/advert/v2/budget','POST',{'advertIds':[37363108]});rows=fresh.get('adverts',[])
+            if len(rows)!=1 or rows[0].get('currency')!='RUB' or rows[0].get('advertId')!=37363108:raise ValueError('Accepted but readback unknown; no redeposit')
+            state.update(status='verified',after=rows[0],verified_at=ns['stamp']())
+          except Exception as e:state.update(status='attention_no_replay',error=str(e) if isinstance(e,(ValueError,RuntimeError,PermissionError)) else type(e).__name__)
+          state['finished_at']=ns['stamp']();save()
+          print(json.dumps({'status':state['status'],'wb_write_attempts':state['wb_write_attempts'],'telegram_sends':0}))

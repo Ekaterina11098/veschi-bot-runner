@@ -1,7 +1,7 @@
 """Carry calculated completed-day recommendations into the current-day report."""
 import copy
 from datetime import date,timedelta,datetime,timezone
-from china_advertising_v2 import collect,refresh_budget_context,build,http,save,history,MSK
+from china_advertising_v2 import collect,refresh_budget_context,build,http,save,history,MSK,never_started_draft
 def include_closed(io,source,day):
  source=copy.deepcopy(source)
  inventory=http(io,'/adv/v1/promotion/count')
@@ -41,7 +41,7 @@ def attach(io,bundle,day):
  saved_stats={r['advertId']:copy.deepcopy(r) for b in source['batches'].values() for r in b['stats']}
  source['ids']=list(current['ids']);source['batches']=copy.deepcopy(current['batches'])
  for batch in source['batches'].values():
-  ids=[c['id']for c in batch['campaigns']['adverts']]
+  ids=[c['id']for c in batch['campaigns']['adverts'] if not never_started_draft(c)]
   missing=[cid for cid in ids if cid not in saved_stats]
   if missing:
    extra=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,missing))+'&beginDate='+source['period_from']+'&endDate='+end)

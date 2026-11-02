@@ -20,6 +20,9 @@ jobs:
           WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
           WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          OLD_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
+          OLD_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          OLD_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
         run: |
           python - <<'PY'
           import os,json
@@ -28,6 +31,16 @@ jobs:
           g=type('G',(),{})()
           g.cabinet_tokens=lambda:tuple(os.environ['WB_TOKEN_'+str(i)] for i in (1,2,3))
           g.STOCK_APPROVED_WAREHOUSES=[[1863255],[854652],[2126188]]
+          import itertools,base64
+          current=g.cabinet_tokens()
+          for combo in itertools.product((0,1),repeat=3):
+              tokens=tuple((os.environ.get('OLD_'+str(i+1)) or current[i]) if combo[i] else current[i] for i in range(3))
+              def sid(t):return json.loads(base64.urlsafe_b64decode(t.split('.')[1]+'===' )).get('sid')
+              if any(sid(a)!=sid(b) for a,b in zip(tokens,current)):continue
+              g.cabinet_tokens=lambda:tokens
+              source={'warehouses':g.STOCK_APPROVED_WAREHOUSES,'ozon':{'locations':{}}}
+              print(json.dumps({'reader_substitution':combo,'ledger_row':'technical:stock-shared:v1:'+digest(ledger_key(g,source))}))
+          g.cabinet_tokens=lambda:current
           for ozon in (False,True):
               source={'warehouses':g.STOCK_APPROVED_WAREHOUSES}
               if ozon:source['ozon']={'locations':{}}

@@ -38,10 +38,16 @@ def attach(io,bundle,day):
  end=str(date.fromisoformat(day)-timedelta(days=1))
  if source.get('day_quality',{}).get('usable')is not True or source['period_to']!=end:raise ValueError('Usable completed-day source required')
  source=refresh_budget_context(io,source,day)
+ saved_stats={r['advertId']:copy.deepcopy(r) for b in source['batches'].values() for r in b['stats']}
  source['ids']=list(current['ids']);source['batches']=copy.deepcopy(current['batches'])
  for batch in source['batches'].values():
   ids=[c['id']for c in batch['campaigns']['adverts']]
-  batch['stats']=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,ids))+'&beginDate='+source['period_from']+'&endDate='+end)
+  missing=[cid for cid in ids if cid not in saved_stats]
+  if missing:
+   extra=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,missing))+'&beginDate='+source['period_from']+'&endDate='+end)
+   saved_stats.update({r['advertId']:r for r in extra})
+  if any(cid not in saved_stats for cid in ids):raise ValueError('Completed-day campaign history incomplete')
+  batch['stats']=[copy.deepcopy(saved_stats[cid]) for cid in ids]
  source['observed_at']=datetime.now(timezone.utc).isoformat();source['budget_balance_observed_at_iso']=current.get('completed_at',current['observed_at'])
  rough=build(source);source=enrich_economics(io,source,rough,day)
  if source.get('morning_fresh_inputs',{}).get('errors'):raise ValueError('Fresh completed-day recommendation inputs incomplete')

@@ -20,13 +20,20 @@ def http(io,path,method='GET',body=None):
 def compact_execution_records(records):
  """Keep exactly the receipt fields consumed by history() and verified funding summaries."""
  fields=('status','kind','amount_cny','before','after','verified_at','completed_at','items','groups','campaigns','readback','selection','request','cid','nm','old','target','steps')
+ def shrink(value):
+  if isinstance(value,list):return [shrink(x) for x in value]
+  if not isinstance(value,dict):return value
+  if isinstance(value.get('id'),int) and isinstance(value.get('nm_settings'),list):
+   return dict(id=value['id'],status=value.get('status'),currency=value.get('currency'),settings=dict(placements=(value.get('settings')or{}).get('placements',{})),nm_settings=[dict(nm_id=n['nm_id'],bids_kopecks=n.get('bids_kopecks',{}))for n in value['nm_settings']])
+  if any(k in value for k in ('status','before','after')):return {k:shrink(v)for k,v in value.items()if k in fields or k in ('path','body','submitted_at')}
+  return {k:shrink(v)for k,v in value.items()}
  out=[]
  for record in records:
   payload=record.get('payload',record)
   # Unanchored legacy maps are traversed generically; retain them without assumptions.
   if not isinstance(payload,dict) or not any(k in payload for k in ('status','before','after')):
    out.append(copy.deepcopy(record));continue
-  compact={k:copy.deepcopy(payload[k]) for k in fields if k in payload}
+  compact={k:shrink(payload[k]) for k in fields if k in payload}
   if 'payload' in record:
    value=copy.deepcopy({k:v for k,v in record.items() if k!='payload'});value['payload']=compact
   else:value=compact

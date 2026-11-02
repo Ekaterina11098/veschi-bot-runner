@@ -1,0 +1,37 @@
+name: Identify saved stock cooldowns without API calls
+on:
+  push:
+    paths: ['.github/workflows/stock-cooldown-identify-20261102.yml']
+permissions:
+  contents: read
+jobs:
+  identify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Match existing cooldown hashes in memory only
+        env:
+          W1: ${{ secrets.WB_TOKEN_1 }}
+          W2: ${{ secrets.WB_TOKEN_2 }}
+          W3: ${{ secrets.WB_TOKEN_3 }}
+          R1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
+          R2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          R3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+        run: |
+          python - <<'PY'
+          import os,hashlib,json
+          wanted={'83a0c9836796af9db7fb4774d605418e24fdc98f406d067216bfb735b667a7fe','da96f8dc682a06470bc0084b5b244ab882bea1b68cc6fdc3ea8fda35e7c75dc5'}
+          paths={'statistics-api':['/api/v1/supplier/orders','/api/v1/supplier/stocks','/api/v1/supplier/sales'],'seller-analytics-api':['/api/v1/warehouse_remains','/api/analytics/v1/stocks-report/wb-warehouses'],'content-api':['/content/v2/get/cards/list'],'marketplace-api':['marketplace']}
+          found=set()
+          for label in ('W1','W2','W3','R1','R2','R3'):
+              token=os.environ.get(label)
+              if not token:continue
+              for host,groups in paths.items():
+                  for domain in ('wildberries.ru','wildberries.cn'):
+                      netloc=host+'.'+domain
+                      for group in groups:
+                          key=hashlib.sha256((token+netloc+group).encode()).hexdigest()
+                          if key in wanted:
+                              found.add(key)
+                              print(json.dumps({'cooldown_hash':key,'cabinet_index':int(label[1])-1,'credential_role':label[0],'endpoint':netloc+group}))
+          print(json.dumps({'matched_cooldowns':len(found),'expected':len(wanted),'marketplace_calls':0}))
+          PY

@@ -6,6 +6,7 @@ on:
 permissions: {contents: read}
 jobs:
   apply:
+    if: ${{ false }} # Current decline diagnosis saved; retired.
     runs-on: ubuntu-latest
     timeout-minutes: 12
     concurrency: {group: china-dialog-data, cancel-in-progress: false}

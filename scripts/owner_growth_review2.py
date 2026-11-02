@@ -54,4 +54,24 @@ def main():
  if not io.create(ROOT,result):raise RuntimeError('Concurrent immutable growth review')
  if io.get(ROOT)!=result:raise RuntimeError('Growth review readback mismatch')
  print(json.dumps(dict(status='complete',economic_missing=economics['missing'],quote_errors=errors,wb_writes=0)))
-if __name__=='__main__':main()
+
+
+def isolated_quotes():
+ key=ROOT+':quotes2'
+ if io.get(key):return
+ import time
+ result=dict(observed_at=datetime.now(timezone.utc).isoformat(),quotes={},errors={},wb_writes=0)
+ for nm in [1473245505,1473243909]:
+  time.sleep(3)
+  r=requests.post('https://advert-api.wildberries.ru/api/advert/v1/bids/min',json=dict(advert_id=40933588,nm_ids=[nm],payment_type='cpc',placement_types=['recommendation']),headers={'Authorization':io.token},timeout=45)
+  if r.ok:result['quotes'][str(nm)]=r.json()
+  else:
+   try:body=r.json()
+   except Exception:body={}
+   result['errors'][str(nm)]=dict(status=r.status_code,error=body.get('detail')or body.get('title')or body.get('message')or body.get('error')or body.get('errors'))
+ if not io.create(key,result):raise RuntimeError('Concurrent quote inputs')
+ if io.get(key)!=result:raise RuntimeError('Quotes readback mismatch')
+ print('Isolated read-only bid quotes saved')
+if __name__=='__main__':
+ main()
+ isolated_quotes()

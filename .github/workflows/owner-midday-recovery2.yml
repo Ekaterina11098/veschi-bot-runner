@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   daily:
-    if: github.run_attempt == 1
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

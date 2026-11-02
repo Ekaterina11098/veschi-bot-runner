@@ -38,7 +38,7 @@ def wait_until(until,path):
 def req(path,method='GET',body=None,step=None):
     bare=path.split('?')[0]
     reads={('GET','/adv/v1/promotion/count'),('GET','/api/advert/v2/adverts'),('GET','/adv/v1/balance'),('POST','/api/advert/v2/budget'),('POST','/api/advert/v1/bids/min'),('GET','/api/advert/v0/daily-limits')}
-    writes={('PATCH','/adv/v0/auction/nms'),('PATCH','/api/advert/v1/bids'),('POST','/adv/v2/seacat/save-ad'),('PUT','/api/advert/v0/daily-limits'),('POST','/adv/v1/budget/deposit'),('GET','/adv/v0/start')}
+    writes={('PATCH','/adv/v0/auction/nms'),('PATCH','/api/advert/v1/bids'),('POST','/adv/v2/seacat/save-ad'),('PUT','/api/advert/v0/daily-limits'),('POST','/adv/v1/budget/deposit'),('GET','/adv/v0/start'),('GET','/adv/v0/pause')}
     if (method,bare) not in (writes if step else reads):raise PermissionError('Endpoint outside frozen scope')
     if step and step in state['steps']:
         old=state['steps'][step]
@@ -70,6 +70,7 @@ def req(path,method='GET',body=None,step=None):
                 if bare=='/adv/v1/budget/deposit':raise RuntimeError('Deposit rejected 429; retained for reviewed continuation')
             continue
         if not r.ok:
+            state['last_api_error']={'path':bare,'http_status':r.status_code,'body':r.text[:2000]};save()
             if step:state['steps'][step].update(status='rejected',http_status=r.status_code);save()
             raise RuntimeError('WB HTTP '+str(r.status_code)+' at '+bare)
         value=r.json() if r.content else {}
@@ -154,6 +155,14 @@ def main():
         if not isinstance(cid,int) or cid in before or cid in new_specs:raise RuntimeError('Creation result ambiguous; no replay')
         new_specs[cid]={'group':g,'name':name,'ids':groups[g],'budget':a['new_and_returned_budget_kgs'][g]}
         state['new_campaigns']={str(k):v for k,v in new_specs.items()};save()
+    # Membership is required by WB before quoting an exact SKU. Pause active
+    # campaigns so added products cannot spend with unverified default bids.
+    for cid in (39605581,39605579):req('/adv/v0/pause?id='+str(cid),step='pause_for_membership_'+str(cid))
+    early_memberships=[
+        {'advert_id':39605581,'nms':{'add':sorted(set(groups['G05'])-member_ids(before[39605581])),'delete':[]}},
+        {'advert_id':39605579,'nms':{'add':sorted(set(groups['G11'])-member_ids(before[39605579])),'delete':[]}},
+        {'advert_id':40385586,'nms':{'add':sorted(set(groups['G04'])-member_ids(before[40385586])),'delete':sorted(member_ids(before[40385586])-set(groups['G04']))}}]
+    req('/adv/v0/auction/nms','PATCH',{'nms':early_memberships},'prepare_memberships_before_minimums')
     updates={};expected={cid:member_ids(c) for cid,c in before.items()}
     expected[39605582]-=set(remove)
     memberships=[]
@@ -193,15 +202,18 @@ def main():
         for nm in spec['ids']:add_bid(cid,nm,'search',325)
         expected[cid]=set(spec['ids'])
     state['expected_memberships']={str(k):sorted(v) for k,v in expected.items()};state['bid_updates']=updates;save()
-    req('/adv/v0/auction/nms','PATCH',{'nms':memberships},'update_memberships')
+    if deletes:req('/adv/v0/auction/nms','PATCH',{'nms':[{'advert_id':39605581,'nms':{'add':[],'delete':deletes}}]},'remove_143_minimum_above_approved')
     bids=[{'advert_id':cid,'nm_bids':[{'nm_id':nm,'bid_kopecks':v,'placement':p} for nm,ps in ns.items() for p,v in ps.items()]} for cid,ns in updates.items()]
     req('/api/advert/v1/bids','PATCH',{'bids':bids},'apply_approved_bids')
     funding={40385586:a['new_and_returned_budget_kgs']['G04']}|{cid:s['budget'] for cid,s in new_specs.items()}
     if sum(funding.values())!=12000 or sum(funding.values())>a['max_new_and_returned_campaign_budget_kgs']:raise PermissionError('Funding ceiling')
     for cid,amount in funding.items():req('/api/advert/v0/daily-limits','PUT',dict(advertIds=[cid],enabled=True,dailyLimit=amount*100,carryOverEnabled=False),'limit_'+str(cid))
     cs=configs(sorted(expected))
-    verify(cs,before,expected,updates,new_specs)
+    paused_before=copy.deepcopy(before)
+    for cid in (39605581,39605579):paused_before[cid]['status']=11
+    verify(cs,paused_before,expected,updates,new_specs)
     state['configuration_readback']={str(k):v for k,v in cs.items()};state['configuration_verified_at']=stamp();save()
+    for cid in (39605581,39605579):req('/adv/v0/start?id='+str(cid),step='restore_existing_'+str(cid))
     limits=req('/api/advert/v0/daily-limits?advertIds='+','.join(map(str,funding))).get('adverts',[])
     if {r['advertId'] for r in limits}!=set(funding):raise RuntimeError('Incomplete daily limits')
     for r in limits:
@@ -219,7 +231,7 @@ def main():
     state['funding_verified_at']=stamp();state['funding_after']=after;save()
     for cid in funding:req('/adv/v0/start?id='+str(cid),step='start_'+str(cid))
     statuses=inventory(force=True)
-    if any(statuses.get(cid)!=9 for cid in funding) or statuses.get(39605582)!=11:raise RuntimeError('Activation status readback pending or mismatched')
+    if any(statuses.get(cid)!=9 for cid in list(funding)+[39605581,39605579]) or statuses.get(39605582)!=11:raise RuntimeError('Activation status readback pending or mismatched')
     state.update(status='complete',completed_at=stamp(),drr_target_pct=5,drr_control_order=['campaign','sku'],first_full_post_change_day=(datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date()+datetime.timedelta(days=1)).isoformat())
     save()
 if __name__=='__main__':
@@ -232,6 +244,10 @@ if __name__=='__main__':
         elif previous.get('run_id')=='41469696965' and previous.get('status')=='attention' and previous.get('error')=='Write explicitly rejected 429; retained for reviewed continuation' and {k:v.get('status') for k,v in previous.get('steps',{}).items()}=={'remove_cpm_11':'accepted','create_G06':'accepted','create_G07':'rejected_429'}:
             state=previous
             state.update(status='resuming',run_id=os.environ['GITHUB_RUN_ID'],recovered_run='41469696965')
+            state.pop('error',None);save()
+        elif previous.get('run_id')=='41473271011' and previous.get('status')=='attention' and previous.get('error')=='WB HTTP 400 at /api/advert/v1/bids/min' and set(previous.get('steps',{}))=={'remove_cpm_11','create_G06','create_G07','create_G08','create_G09','create_G10'} and all(v.get('status')=='accepted' for v in previous['steps'].values()):
+            state=previous
+            state.update(status='resuming',run_id=os.environ['GITHUB_RUN_ID'],recovered_run='41473271011')
             state.pop('error',None);save()
         else:print('Existing executor receipt preserved; no replay');sys.exit(0)
     try:main()

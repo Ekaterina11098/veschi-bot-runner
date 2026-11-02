@@ -46,3 +46,5 @@ def main():
  e.update(status='completed',completed_at=now());io.put(ROOT,e)
  print(json.dumps(dict(status=e['status'],message_ids=e['message_ids'],wb_writes=0)))
 if __name__=='__main__':main()
+
+# Pinned image dependencies in owner workflow.

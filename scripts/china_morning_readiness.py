@@ -83,7 +83,7 @@ def enrich_economics(io,source,rough,report_day):
     elif topic=='products':
      values[topic]=an.live(topic,[],str(first),str(last))
      from china_advertising_directions import addition_shortlist
-     new=addition_shortlist(source,values[topic])
+     new=addition_shortlist(dict(source,period_to=str(last)),values[topic])
      source['addition_candidate_ids']=new
      subjects={int(r['nm_id']):r.get('subject_id') for r in values[topic].get('rows',[])}
      source['addition_targets']={}

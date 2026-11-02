@@ -8,7 +8,9 @@ def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
  local=datetime.now(ZoneInfo('Europe/Moscow'));day=local.date().isoformat();io=IO()
  prepare_only=local.hour*60+local.minute<450 or os.environ.get('CHINA_AD_PREPARE_ONLY')=='true'
- if local.hour>=10:
+ manual=io.get('china_agent:advertising_manual_delivery:'+day+':v1') or {}
+ manual_ok=manual.get('owner_user_id')==5122667182 and manual.get('source_channel')=='codex' and manual.get('report_day')==day and manual.get('authorized') is True and datetime.now().timestamp()<datetime.fromisoformat(manual.get('expires_at','1970-01-01T00:00:00+00:00')).timestamp()
+ if local.hour>=10 and not manual_ok:
   io.put('china_agent:advertising_missed_slot:'+day+':v1',dict(status='late_send_blocked',observed_at=local.isoformat(),reason='Morning report must not arrive as stale afternoon report'))
   print('Morning delivery window closed; no stale Telegram send');return
  if (io.get('china_agent:advertising_delivery:'+day+':v1') or {}).get('status')=='delivered':

@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 LABELS={'raise':'Повышение ставок','add':'Добавление товаров','reduce':'Снижение ставок','exclude':'Исключение из РК'}
 def addition_shortlist(source,products):
  from china_advertising_v2 import history,event_time
- active={n['nm_id'] for b in source['batches'].values() for c in b['campaigns'].get('adverts',[]) if c['status']in[9,11] for n in c.get('nm_settings',[])}
+ active={n['nm_id'] for b in source.get('batches',{}).values() for c in b['campaigns'].get('adverts',[]) if c['status']in[9,11] for n in c.get('nm_settings',[])}
  end=date.fromisoformat(source['period_to']);changed=set();removed=set()
  for event in history(source.get('executions',[])):
   if event['kind']=='excluded':removed.add(event['nm']) # reinstatement needs a separate owner review

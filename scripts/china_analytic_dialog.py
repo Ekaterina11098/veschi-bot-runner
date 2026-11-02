@@ -425,7 +425,7 @@ def answer(w,job,history):
      from china_agent_reports import catalog
      result=catalog()
     elif name=='make_report':
-     if not re.search(r'отч[её]т|пришли|покаж|PNG|ПНГ|повтор|таблиц|формат',job['request_text'],re.I):raise ValueError('Нет явной просьбы сформировать или повторить отчёт')
+     if not re.search(r'отч[её]т|пришли|покаж|PNG|ПНГ|повтор|таблиц|формат|реклам.*бюджет|бюджет.*реклам',job['request_text'],re.I):raise ValueError('Нет явной просьбы сформировать или повторить отчёт')
      if any(n not in {int(i) for i,_ in w.catalog()} for n in args['nm_ids']):raise ValueError('Неизвестный nmID Китая')
      from china_agent_reports import make
      with reading():result=make(w,job,**args)

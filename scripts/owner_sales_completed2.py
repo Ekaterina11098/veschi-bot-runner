@@ -41,10 +41,10 @@ def diagnose():
  class IO(AdvertisingIO):
   def wb(self,*a,**k):raise RuntimeError('No WB mutations')
  io=IO()
- key=ROOT+':diagnosis'
+ key=ROOT+':today-diagnosis'
  if io.get(key):return
  source=io.get('china_agent:advertising_source:2026-11-02:v2')
- ids=[1473243903,1473244336,1473244359,1473245517,1473243094,1473246044,1473242754,1473242587]
+ ids=[1473245510,1473245492,1473243915,1473245512,1473244354,1535337776,1473245494,1473245505]
  class Work:
   now=datetime.now(timezone.utc)
   def get(self,k):return io.get(k)

@@ -1,5 +1,8 @@
 name: Owner OOO all approved advertising changes
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ooo-owner-apply-all-20261102.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -32,4 +35,4 @@ jobs:
           WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
         run: python scripts/ooo_owner_apply_all_20261102.py
 
-# Continue only explicitly rejected writes; preserve accepted creation.
+# Correct membership-before-quote dependency; preserve all five accepted creates.

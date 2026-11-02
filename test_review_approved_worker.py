@@ -56,5 +56,20 @@ class Tests(unittest.TestCase):
         self.repo.put('intents','i',self.i)
         other=dict(self.i,id='verify',status='verify',created_at=200);self.repo.put('intents','verify',other);self.conn.commit()
         self.assertEqual(due_intents(self.repo,cfg)[0]['id'],'verify')
+    def test_empty_unknown_result_yields_to_other_approved_work_without_resend(self):
+        self.fail=True
+        self.e.run('i')
+        outcome=self.e.run('i')
+        self.assertEqual(outcome['status'],'verify')
+        self.assertEqual(outcome['verification_empty_at'],self.now)
+        self.now+=61
+        cfg={'cutover':50,'owner_id':'owner','chat_id':'chat'}
+        self.assertEqual(due_intents(self.repo,cfg,now=self.now)[0]['id'],'i')
+        other=dict(self.i,id='other',item_id='other-review',created_at=200)
+        self.repo.put('intents','other',other);self.conn.commit()
+        self.assertEqual(due_intents(self.repo,cfg,now=self.now)[0]['id'],'other')
+        self.e.run('i')
+        self.assertEqual(len(self.posts),1)
+        self.assertEqual(self.repo.get('intents','i')['status'],'verify')
 if __name__=='__main__':unittest.main()
 

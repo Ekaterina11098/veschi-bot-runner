@@ -92,5 +92,5 @@ class Executor:
         if not isinstance(actual,str):return self.save(intent,'verify',retry_at=self.a.clock()+60,verification_error_type='InvalidAnswerType')
         if actual==intent['answer']:return self.save(intent,'confirmed',actual_answer_sha256=sha(actual),confirmed_at=self.a.clock())
         if actual.strip():return self.save(intent,'manual_present',actual_answer_sha256=sha(actual))
-        return self.save(intent,'verify',retry_at=self.a.clock()+60)
+        return self.save(intent,'verify',retry_at=self.a.clock()+60,verification_empty_at=self.a.clock())
 

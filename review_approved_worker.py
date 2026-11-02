@@ -15,7 +15,7 @@ def due_intents(repo,cfg,cabinet=None,now=None):
             i.get('created_at',0)<cfg['cutover'] or str(i.get('owner_id'))!=str(cfg['owner_id']) or str(i.get('chat_id')) not in {str(cfg['chat_id']),str(cfg.get('content_group_chat_id',''))}):continue
         groups[i['cabinet']].append(i)
     # Finish a cabinet's current write/readback before consuming its GET quota on another review.
-    return [sorted(rows,key=lambda i:(0 if i['status']=='verify' else 1 if i.get('preflight_verified_at') else 2,i['created_at']))[0] for rows in groups.values() if rows]
+    return [sorted(rows,key=lambda i:(3 if i['status']=='verify' and i.get('verification_empty_at') is not None else 0 if i['status']=='verify' else 1 if i.get('preflight_verified_at') else 2,i['created_at']))[0] for rows in groups.values() if rows]
 
 def main():
     import psycopg,requests,wildberries as wb

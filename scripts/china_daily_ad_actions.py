@@ -36,6 +36,8 @@ def handle(w,job):
  p=w.get(PLAN+b['plan_id'])
  if not p or p.get('chat_id')!=CHAT or p['plan_sha256']!=digest(p['items']) or b['plan_sha256']!=p['plan_sha256']:raise ValueError('Daily plan hash mismatch')
  if m.get('reply_message_id') not in p['report_message_ids']:raise ValueError('Daily reply not bound')
+ if p.get('owner_budget_resolution'):
+  return (p['owner_budget_resolution'],[])
  if p.get('owner_completed_budget_receipts'):
   return ('Все пополнения этого PNG уже выполнены и проверены WB по поручению владельца. Повторно бюджеты не пополняю. Для нового пополнения нужны свежий расчёт и отдельное подтверждение.',[])
  if w.now>datetime.fromisoformat(p['expires_at']):return ('План устарел. Нужен свежий отчёт и подтверждение обновлённых действий.',[])
@@ -44,6 +46,8 @@ def handle(w,job):
  if not p['items']:return ('В этом PNG нет новых действий. Уже выполненное и наблюдение повторно не запускаю.',[])
  a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)
  w.save(APPROVAL+str(job['id']),a,insert=True)
+ conditional=sum(x.get('kind')=='approve_budget_reserve' for x in p['items'])
+ if conditional:return ('Принято: '+str(conditional)+' сумм резерва согласованы условно; готовых действий '+str(len(p['items'])-conditional)+'. Сумма резерва не означает выполненное пополнение. Проверю условия и сообщу результат отдельно.',[dict(name='daily_ad_actions_approval',plan_id=p['plan_id'])])
  return ('Принято: только '+str(len(p['items']))+' новых действий этого PNG. Проверю текущие параметры и результат WB. Цены и автопополнение не меняю.',[dict(name='daily_ad_actions_approval',plan_id=p['plan_id'])])
 
 def execute(io,a,p):
@@ -93,7 +97,17 @@ def execute(io,a,p):
   state=dict(id=item['id'],status='preflight');e['items'].append(state);save()
   try:
    if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']):raise ValueError('Plan expired')
-   cid=item['campaign_id'];before=campaign(cid);state['before']=before;save()
+   cid=item['campaign_id']
+   if item['kind']=='approve_budget_reserve':
+    policy=io.get('china_agent:budget_owner_policy:v1')or{}
+    if str(cid) in policy.get('do_not_fund',{}):raise ValueError('Owner forbids funding this campaign')
+    pending_key='china_agent:budget_amount_approval:v1:'+p['plan_id']+':'+str(cid)
+    record=dict(status='approved_pending_conditions',campaign_id=cid,amount_cny=item['amount_cny'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],approval=a,conditions=item,created_at=datetime.now(timezone.utc).isoformat(),wb_writes=0)
+    prior=io.get(pending_key)
+    if not prior and not io.create(pending_key,record):raise ValueError('Concurrent reserve approval')
+    if prior and (prior.get('amount_cny')!=item['amount_cny'] or prior.get('plan_sha256')!=p['plan_sha256']):raise ValueError('Reserve approval scope changed')
+    state.update(status='approved_pending_conditions',approval_key=pending_key,reason=item.get('conditions_reason','Нужна проверка условий'));save();continue
+   before=campaign(cid);state['before']=before;save()
    if before['status']!=9:raise ValueError('Campaign no longer active')
    kind=item['kind'];method='PATCH'
    if kind in ['topup_campaign','pause_campaign'] and sorted(n['nm_id'] for n in before['nm_settings'])!=item['nm_ids']:raise ValueError('Campaign composition changed since PNG')
@@ -117,6 +131,7 @@ def execute(io,a,p):
      path='/adv/v0/auction/nms';body=dict(nms=[dict(advert_id=cid,nms=dict(add=[],delete=[item['nm_id']]))])
    elif kind=='pause_campaign':path='/adv/v0/pause?id='+str(cid);method='GET';body=None
    elif kind=='topup_campaign':
+    if str(cid) in (io.get('china_agent:budget_owner_policy:v1')or{}).get('do_not_fund',{}):raise ValueError('Owner forbids funding this campaign')
     b=budget(cid);state['before_budget']=b;state['after_budget']=b;save()
     if b>=item['target_balance']:state.update(status='verified',already_done=True,after=before);save();continue
     if b>item['balance_before']+2:raise ValueError('Budget was funded after PNG; refresh plan')
@@ -134,7 +149,7 @@ def execute(io,a,p):
    save()
   except Exception as ex:
    state.update(status='uncertain' if state['status']=='submitting' else state['status'] if state['status']=='accepted' else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__);save()
- e['status']='done' if all(x['status'] in ['verified','blocked'] for x in e['items']) else 'attention';e['completed_at']=datetime.now(timezone.utc).isoformat();save()
+ e['status']='done' if all(x['status'] in ['verified','blocked','approved_pending_conditions'] for x in e['items']) else 'attention';e['completed_at']=datetime.now(timezone.utc).isoformat();save()
  from china_execution_notice import deliver_result
  deliver_result(io,a,p,e)
  notice=io.get('china_agent:daily_ad_result:v2:'+p['plan_id'])

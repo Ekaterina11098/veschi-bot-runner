@@ -538,7 +538,8 @@ def prepare(io,day):
   from china_morning_readiness import PendingAdvertisingDay
   raise PendingAdvertisingDay('Recommendation inputs incomplete; preserve source and retry instead of freezing an unfinished report')
  from china_advertising_directions import attach
- return attach(result,s)
+ from china_budget_page_actions import owner_policy
+ return owner_policy(io,attach(result,s))
 
 
 

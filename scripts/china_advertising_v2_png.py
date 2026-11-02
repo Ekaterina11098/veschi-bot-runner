@@ -39,6 +39,7 @@ def recommendations(c):
 
 def budget_column(c):
  """Owner-approved display only; execution conditions remain in the structured plan."""
+ if c.get('owner_budget_refused'):return 'Пока не пополнять'
  amount=c.get('budget_reserve_amount')
  if amount is None:return 'Сумма не рассчитана'
  return 'Рекомендовано '+str(int(amount))+' ¥\nпосле исполнения рекомендаций РК'
@@ -139,7 +140,9 @@ def _render_legacy(bundle):
   d.text((1630,y+16),'Рекомендация по пополнению',font=font(27,True),fill=NAVY)
   for j,line in enumerate(advice):d.text((1630,y+65+j*39),line,font=font(31 if j==0 else 27,j==0),fill=RED if j==0 and decision.startswith('Не пополнять') else INK)
   y+=height+18
-  if c.get('budget_action'):actions.append(c['budget_action'])
+  from china_budget_page_actions import page_action
+  action=page_action(c,bundle)
+  if action:actions.append(action)
  if not selected:
   d.text((44,y),'У действующих РК нет расчётной нехватки по завершённым дням.',font=font(29),fill=INK);y+=55
  footer='Резерв на 3 дня = расход за 3 завершённых дня; нехватка = резерв − остаток. Сумма округлена вверх до 50 ¥, минимум WB '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. Пополнение — после исполнения рекомендаций РК. Подробные решения — в PNG рекомендаций.'

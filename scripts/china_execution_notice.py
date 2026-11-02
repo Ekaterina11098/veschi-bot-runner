@@ -34,7 +34,7 @@ def deliver_result(io,a,p,e):
  if any(s.get('id') not in byid for s in states):return None
  ready=all(proven(byid[s['id']],s) for s in states)
  pending=any(s.get('status') in ['accepted','submitting','uncertain','running','preflight'] or s.get('status')=='verified' and not proven(byid[s['id']],s) for s in states)
- phase='verified' if ready else 'uncertain' if pending else 'partial' if any(proven(byid[s['id']],s) for s in states) else 'blocked'
+ phase='verified' if ready else 'uncertain' if pending else 'partial' if any(proven(byid[s['id']],s) for s in states) else 'approved_pending_conditions' if any(s.get('status')=='approved_pending_conditions' for s in states) else 'blocked'
  key=PREFIX+p['plan_id']+(':uncertain' if phase=='uncertain' else '')
  if io.get(key):return None
  lines=['Результат команды:']
@@ -46,6 +46,7 @@ def deliver_result(io,a,p,e):
    elif item['kind']=='topup_campaign':out='пополнение подтверждено чтением бюджета WB.'
    else:out='действие подтверждено WB.'
    if state.get('already_done'):out='уже было выполнено; состояние проверено WB, повторной записи нет.'
+  elif state.get('status')=='approved_pending_conditions':out='сумма '+str(item['amount_cny'])+' CNY согласована; пополнение не выполнено. '+state.get('reason','Сначала проверка условий.')
   elif state.get('status')=='blocked':out='не выполнено: '+state.get('reason','проверка условий не пройдена')
   else:out='результат пока не подтверждён WB; повторно действие не запускаю.'
   lines.append(label+': '+out)

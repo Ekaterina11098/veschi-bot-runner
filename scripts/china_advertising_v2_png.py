@@ -129,9 +129,11 @@ def _render_legacy(bundle):
   d.text((44,left+88),'Нехватка: '+money(gap)+' ¥',font=font(27),fill=INK)
   d.text((860,y+16),'Расходы и ДРР',font=font(29,True),fill=NAVY)
   bp=c.get('budget_period')
-  for offset,label,value in [(64,'Вчера, '+__import__('datetime').date.fromisoformat(bundle['budget_days'][-1]).strftime('%d.%m')+': ',c['last']['spend'] if c.get('last') else None),(104,'Расход завершённых 3 дней: ',bp['spend'] if bp else None),(144,'Средний расход в день: ',c.get('budget_average_daily'))]:
+  budget_days=bundle.get('budget_days') or ([] if bundle.get('intraday') else bundle.get('days',[]))
+  budget_day_label=__import__('datetime').date.fromisoformat(budget_days[-1]).strftime('%d.%m') if budget_days else 'неизвестную дату'
+  for offset,label,value in [(64,'Вчера, '+budget_day_label+': ',c['last']['spend'] if c.get('last') else None),(104,'Расход завершённых 3 дней: ',bp['spend'] if bp else None),(144,'Средний расход в день: ',c.get('budget_average_daily'))]:
    d.text((860,y+offset),label+money(value)+' ¥',font=font(27),fill=INK)
-  for offset,label,value in [(200,'ДРР завершённых дней: ',bp),(242,'ДРР за '+__import__('datetime').date.fromisoformat(bundle['budget_days'][-1]).strftime('%d.%m')+': ',c.get('last'))]:
+  for offset,label,value in [(200,'ДРР завершённых дней: ',bp),(242,'ДРР за '+budget_day_label+': ',c.get('last'))]:
    d.text((860,y+offset),label,font=font(27),fill=INK)
    d.text((860+d.textlength(label,font=font(27)),y+offset),pct(value),font=font(27,True),fill=color(value))
   d.text((1630,y+16),'Рекомендация по пополнению',font=font(27,True),fill=NAVY)

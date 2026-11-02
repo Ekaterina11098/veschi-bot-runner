@@ -30,7 +30,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          sparse-checkout: content_group_destination.py
+          sparse-checkout: |
+            content_group_destination.py
+            stock_deploy_support.py
           sparse-checkout-cone-mode: false
       - uses: actions/checkout@v4
         with:
@@ -70,6 +72,7 @@ jobs:
           TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
           AUTO_STOCK_FAIL_FAST: '1'
         run: |
+          python -c "import stock_deploy_support, stock_regular_job"
           python content_group_destination.py private-source/stock_regular_job.py
       - uses: actions/upload-artifact@v4
         if: always()

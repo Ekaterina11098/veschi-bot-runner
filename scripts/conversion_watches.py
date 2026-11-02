@@ -487,6 +487,9 @@ class Worker:
         if not question_allowed(job,cfg):raise PermissionError('Question scope mismatch')
         if job['status'] not in ('pending','running'):return job['status']
         if job['status']=='running' and (not job.get('lease_until') or datetime.fromisoformat(job['lease_until'])>self.now):return 'busy'
+        from china_codex_bridge import handle as codex_bridge_handle
+        bridge_outcome=codex_bridge_handle(self,job,cfg)
+        if bridge_outcome is not None:return bridge_outcome
         if job.get('retry_at') and datetime.fromisoformat(job['retry_at'])>self.now:return 'waiting'
         if job.get('attempts',0)>=3:return 'attempts_exhausted'
         lease=str(uuid.uuid4());filters={'id':'eq.'+str(job_id),'status':'eq.'+job['status']}

@@ -7,6 +7,7 @@ on:
     - cron: '7-57/5 * * * *'
 permissions:
   contents: read
+  actions: write
 concurrency:
   group: review-approved-publication
   cancel-in-progress: false
@@ -61,19 +62,29 @@ jobs:
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
 
-# Durable inbox, idempotent Telegram UI repair and actual WB rate headers; no legacy queues.
-
-
-# Capacity tests resolve approval modules from the production directory layout.
-
-# Activate positive-natural-descriptions-20261027 with exact-once guards.
-
-# Activate positive-descriptions-20261028 in all cabinet processes.
-
-# Activate positive-figurative-praise-20261029 in isolated workers.
-
-# Activate positive-verified-descriptions-20261031 with unchanged exact-once guards.
-
-# Activate verified complete positive fields 20261101; preserve exact-once guards.
-
-# Activate November2 China verified praise.
+  continue-approved-work:
+    needs: approved-replies
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: |
+            review_approved_watchdog.py
+            review_approved_worker.py
+            test_review_approved_watchdog.py
+            review-approval-preparation/review_telegram_approval.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10'
+      - run: python -m unittest test_review_approved_watchdog.py
+      - name: Continue pending approvals after all cabinet processes finish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          REVIEW_PUBLICATION_FINISHED_RUN_ID: ${{ github.run_id }}
+        run: python review_approved_watchdog.py

@@ -1,10 +1,10 @@
 """Restart only the isolated approved publisher; never call WB or modify approvals."""
 import os,json,time,hmac,hashlib,urllib.request
 WORKFLOW='review-approved-publication.yml'
-def should_dispatch(cfg,pending,runs):
+def should_dispatch(cfg,pending,runs,finishing_run_id=None):
     if not all(cfg.get(k) for k in ('enabled','publication_enabled','destination_verified')):return False
     if not pending:return False
-    return not any(r.get('status') in ('queued','in_progress','waiting','pending','requested') for r in runs)
+    return not any(r.get('status') in ('queued','in_progress','waiting','pending','requested') for r in runs if finishing_run_id is None or str(r.get('id'))!=str(finishing_run_id))
 def main():
     import psycopg
     from review_approved_worker import due_intents
@@ -22,7 +22,11 @@ def main():
         base='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/workflows/'+WORKFLOW
         headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
         with urllib.request.urlopen(urllib.request.Request(base+'/runs?per_page=100',headers=headers),timeout=30) as response:runs=json.load(response)['workflow_runs']
-        dispatch=should_dispatch(cfg,pending,runs)
+        finishing_run_id=os.getenv('REVIEW_PUBLICATION_FINISHED_RUN_ID') or None
+        # Only the final dependent job may exclude its own still-running parent.
+        if finishing_run_id and finishing_run_id!=os.getenv('GITHUB_RUN_ID'):
+            raise RuntimeError('Continuation run binding mismatch')
+        dispatch=should_dispatch(cfg,pending,runs,finishing_run_id)
         if dispatch:
             # A single dispatch under the controller lock. If HTTP is uncertain,
             # the next event checks active runs before it can dispatch again.

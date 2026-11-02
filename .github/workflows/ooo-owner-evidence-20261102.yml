@@ -1,8 +1,6 @@
 name: Owner OOO API evidence read only
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/ooo-owner-evidence-20261102.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

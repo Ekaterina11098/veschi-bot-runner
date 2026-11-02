@@ -12,6 +12,7 @@ def now():return datetime.now(timezone.utc).isoformat()
 class IO(AdvertisingIO):
  def wb(self,*a,**k):raise RuntimeError('NoWBcapability')
 def main():
+ os.environ.setdefault('WB_TOKEN_3','unused-no-wb-capability')
  io=IO();a=io.get(ROOT+':approval')or{}
  if a.get('status')!='approved' or a.get('owner_id')!=5122667182 or a.get('message_ids')!=[628,629]:raise ValueError('Exactapprovalabsent')
  if io.get(ROOT):raise ValueError('Priorattempt;neverblindTelegramretry')
@@ -46,5 +47,3 @@ def main():
  e.update(status='completed',completed_at=now());io.put(ROOT,e)
  print(json.dumps(dict(status=e['status'],message_ids=e['message_ids'],wb_writes=0)))
 if __name__=='__main__':main()
-
-# Pinned image dependencies in owner workflow.

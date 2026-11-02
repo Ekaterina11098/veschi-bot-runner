@@ -58,7 +58,7 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
           WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
-          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           WB_STOCK_WAREHOUSE_1: ${{ vars.WB_STOCK_WAREHOUSE_1 }}
           WB_STOCK_WAREHOUSE_2: ${{ vars.WB_STOCK_WAREHOUSE_2 }}
           WB_STOCK_WAREHOUSE_3: ${{ vars.WB_STOCK_WAREHOUSE_3 }}

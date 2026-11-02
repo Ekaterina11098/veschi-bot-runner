@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime,timedelta,timezone
-from china_codex_bridge import handle,question,ROOT,THREAD,CHAT,BOT
+from china_codex_bridge import handle,question,prepare_analytics,ROOT,THREAD,CHAT,BOT
 class W:
  def __init__(self):
   self.values={ROOT+'policy':dict(enabled=True,thread_id=THREAD,chat_id=CHAT,bot_id=BOT,allowed_sender_ids=[5122667182,307200273],expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())};self.sends=[];self.patches=[]
@@ -27,4 +27,11 @@ class Bridge(unittest.TestCase):
   w=W();w.save(ROOT+'outbox:224',dict(status='ready',thread_id=THREAD,chat_id=CHAT,job_id=224,input_message_id=641,answer='a'));self.assertEqual(handle(w,job(),{'chat_id':CHAT}),'codex_bridge_delivered');self.assertEqual(w.get(ROOT+'outbox:224')['message_id'],641)
  def test_disabled_keeps_existing(self):
   w=W();w.values[ROOT+'policy']['enabled']=False;self.assertIsNone(handle(w,job(),{'chat_id':CHAT}));self.assertFalse(w.patches)
+ def test_no_unrequested_collection(self):
+  w=W();prepare_analytics(w,job(),{});self.assertNotIn(ROOT+'analytics:224',w.values)
+ def test_reject_foreign_data_request(self):
+  w=W();w.save(ROOT+'data_request:224',dict(status='requested',kind='preliminary_profit',job_id=224,thread_id='foreign',chat_id=CHAT))
+  with self.assertRaises(ValueError):prepare_analytics(w,job(),{})
+ def test_plain_marked_message_routes_here(self):
+  w=W();j=job();j['request_text']='прибыль';j['tool_trace'][0].update(codex_bridge=True,bridge_request_text='прибыль');self.assertEqual(handle(w,j,{'chat_id':CHAT}),'codex_bridge_queued')
 if __name__=='__main__':unittest.main()

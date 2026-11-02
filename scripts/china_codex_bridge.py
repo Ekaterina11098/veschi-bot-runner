@@ -7,6 +7,35 @@ THREAD='01a14b40-d7b4-76b1-a8eb-9bc1eea36335'
 CHAT=-1004342917488
 BOT=8780468043
 def stamp():return datetime.now(timezone.utc).isoformat()
+def prepare_analytics(w,job,inbox):
+ req=w.get(ROOT+'data_request:'+str(job['id'])) or {}
+ if not req or req.get('status')!='requested':return
+ if req.get('job_id')!=job['id'] or req.get('thread_id')!=THREAD or req.get('chat_id')!=CHAT or req.get('kind')!='preliminary_profit':raise ValueError('Unapproved bridge read scope')
+ from datetime import date
+ day=date.fromisoformat(req['day_msk'])
+ from zoneinfo import ZoneInfo
+ today=datetime.now(ZoneInfo('Europe/Moscow')).date()
+ if not 0<=(today-day).days<=14:raise ValueError('Bridge forecast date outside scope')
+ try:
+  from china_profit_forecast import collect,calculate
+  state,key=collect(w,job,day)
+  result=calculate(state,w.get('china_agent:new_ad_economics_policy:v1') or {},w.get('china_agent:expected_profit_delivery_model:v1') or {},day)
+  # Keep the same historical reverse-logistics allowance used in owner forecasts.
+  own={int(p['nm_id']):p for p in state['inputs'].get('own_products',{}).get('rows',[])};reverse=0.;missing=0
+  fx=float(state['inputs']['fx']['rub_per_cny'])
+  for row in result.get('details',[]):
+   p=own.get(row['nm_id'],{});n=p.get('finished_orders');v=p.get('backwardlogisticsum')
+   if n and type(v) in (int,float):reverse+=v/n/fx
+   else:missing+=1
+  result['totals']['model_reverse_logistics_cny']=reverse
+  if result['totals'].get('forecast_profit_cny') is not None:
+   result['totals']['forecast_profit_cny']-=reverse;result['totals']['forecast_profit_rub']=result['totals']['forecast_profit_cny']*fx
+  result['missing_reverse_model_orders']=missing
+  value=dict(status='calculated',job_id=job['id'],thread_id=THREAD,chat_id=CHAT,source_key=key,result=result,created_at=stamp(),wb_writes=0,telegram_sends=0)
+ except Exception as e:value=dict(status='failed',job_id=job['id'],thread_id=THREAD,chat_id=CHAT,error=type(e).__name__,created_at=stamp(),wb_writes=0,telegram_sends=0)
+ w.save(ROOT+'analytics:'+str(job['id']),value)
+ w.save(ROOT+'data_request:'+str(job['id']),req|dict(status='complete' if value['status']=='calculated' else 'failed',completed_at=stamp()))
+ w.save(ROOT+'inbox:'+str(job['id']),inbox|dict(status='queued',analytics_key=ROOT+'analytics:'+str(job['id'])))
 def question(text):
  m=re.match(r'^(?:/codex(?:@[A-Za-z0-9_]+)?(?:\s+|$)|Кодекс\s*[,,:]\s*)([\s\S]*)$',text or '',re.I)
  return m.group(1).strip() if m else None
@@ -40,6 +69,7 @@ def handle(w,job,cfg):
   w.save(key,inbox)
  out=w.get(ROOT+'outbox:'+str(job['id'])) or {}
  if not out:
+  prepare_analytics(w,job,inbox)
   patch(dict(status='pending',lease_until=None,retry_at=(now+timedelta(minutes=1)).isoformat(),error=None));return 'codex_bridge_queued'
  if (out.get('status') not in ('ready','delivered') or out.get('thread_id')!=THREAD or out.get('chat_id')!=CHAT or out.get('input_message_id')!=marker['message_id'] or out.get('job_id')!=job['id'] or not isinstance(out.get('answer'),str) or not 0<len(out['answer'])<=3500):
   patch(dict(status='failed',lease_until=None,error='codex_bridge_invalid_reply'));return 'codex_bridge_invalid_reply'

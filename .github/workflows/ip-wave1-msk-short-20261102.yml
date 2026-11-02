@@ -63,7 +63,7 @@ jobs:
           request=read_cache(KEY+":request")
           if not request or request.get("status")!="approved_readonly":raise ValueError("Read scope missing")
           ids=request["ids"]
-          if len(ids)!=24 or len({r["id"] for r in ids})!=24:raise ValueError("Scope mismatch")
+          if len(ids)!=23 or len({r["id"] for r in ids})!=23:raise ValueError("Scope mismatch")
           if read_cache(KEY):raise SystemExit("Existing receipt preserved")
           out={"status":"reading","started_at":stamp(),"run_id":os.environ["GITHUB_RUN_ID"],"wb_calls":0,"moysklad_writes":0,"telegram_calls":0}
           save(out)

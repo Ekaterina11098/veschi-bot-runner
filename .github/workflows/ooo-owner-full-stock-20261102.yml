@@ -1,8 +1,6 @@
 name: Owner full OOO stock and cost read only
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/ooo-owner-full-stock-20261102.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

@@ -15,6 +15,24 @@ def minimum_map(raw,ids,placement):
   out[r['nm_id']]=found[0]['value']
  if set(out)!=set(ids):raise ValueError('Minimum coverage incomplete')
  return out
+def minimum_group(c,nm):
+ rows=[n for n in c['nm_settings'] if n['nm_id']==nm]
+ if len(rows)!=1 or type(rows[0].get('subject',{}).get('id')) is not int:raise ValueError('Exact subject missing')
+ payment=c['settings']['payment_type'];placement='recommendation' if payment=='cpm' else 'search'
+ return (rows[0]['subject']['id'],payment,placement,c['currency'],c['bid_type'])
+def representatives(c,wanted,known):
+ missing={}
+ for nm in wanted:
+  group=minimum_group(c,nm)
+  if group not in known:missing.setdefault(group,nm)
+ return list(missing.values())
+def remember_minimums(c,values,known):
+ pending=dict(known)
+ for nm,value in values.items():
+  group=minimum_group(c,nm)
+  if group in pending and pending[group]!=value:raise ValueError('Category minimum conflict; fresh category check required')
+  pending[group]=value
+ return pending
 def allowed_subset(before,after,selected):
  observed=copy.deepcopy(before)
  for a in selected:
@@ -133,20 +151,22 @@ def run():
  try:
   t.identity()
   scope=p['scope'];ids=sorted({a['campaign'] for a in scope if a.get('campaign')});before=t.configs(ids)
-  state['before']=before;state['configuration_observed_at']=stamp();save();mins={}
+  state['before']=before;state['configuration_observed_at']=stamp();save();mins={};category_minima={}
   for cid in ids:
    c=before[str(cid)];nms={n['nm_id'] for n in c['nm_settings']};wanted=[a['nm'] for a in scope if a.get('campaign')==cid and a['kind'] in ('raise_bid','lower_bid') and a['nm'] in nms]
    if not wanted:continue
-   placement='recommendation' if c['settings']['payment_type']=='cpm' else 'search'
+   placement='recommendation' if c['settings']['payment_type']=='cpm' else 'search';sample=representatives(c,wanted,category_minima)
    try:
-    j=t.wb('/api/advert/v1/bids/min','POST',{'advert_id':cid,'nm_ids':wanted,'payment_type':c['settings']['payment_type'],'placement_types':[placement]})
-    mm=minimum_map(j,wanted,placement)
-    for nm,value in mm.items():mins[(str(cid),nm)]=value
-    state.setdefault('minimum_receipts',[]).append({'campaign':cid,'response':j,'observed_at':stamp()});save()
+    if sample:
+     j=t.wb('/api/advert/v1/bids/min','POST',{'advert_id':cid,'nm_ids':sample,'payment_type':c['settings']['payment_type'],'placement_types':[placement]})
+     mm=minimum_map(j,sample,placement);category_minima=remember_minimums(c,mm,category_minima)
+     state.setdefault('minimum_receipts',[]).append({'campaign':cid,'response':j,'observed_at':stamp(),'basis':'owner_confirmed_uniform_subject_minimum'})
+    for nm in wanted:mins[(str(cid),nm)]=category_minima[minimum_group(c,nm)]
+    state['category_minimum_reuse']=[{'subject':k[0],'payment_type':k[1],'placement':k[2],'currency':k[3],'bid_type':k[4],'minimum_minor':v} for k,v in category_minima.items()];save()
    except (ValueError,RuntimeError) as e:
     state.setdefault('minimum_failures',[]).append({'campaign':cid,'error':str(e)});save()
     if 'cooldown exceeds' in str(e):break
-   time.sleep(12)
+   if sample:time.sleep(12)
   selected,expected,items=select(scope,before,mins);state.update(items=items,selected=selected,expected=expected,status='writing');save()
   groups=[]
   deletes={}

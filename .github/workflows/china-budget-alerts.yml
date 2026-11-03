@@ -14,17 +14,27 @@ concurrency:
   cancel-in-progress: false
 jobs:
   budgets:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install requests==2.32.5 > /tmp/dependencies.log 2>&1
+      - run: pip install requests==2.32.5 openai==3.42.1 > /tmp/dependencies.log 2>&1
       - name: Read active campaigns and send only budget-risk notices
         run: python scripts/china_budget_alerts.py
         env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

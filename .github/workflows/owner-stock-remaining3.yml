@@ -1,0 +1,62 @@
+name: Owner exact remaining stock check 3Nov
+on:
+  push:
+    paths: ['.github/workflows/owner-stock-remaining3.yml']
+permissions:
+  contents: read
+concurrency:
+  group: owner-stock-remaining3
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Read exact four stock identities; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          from datetime import datetime,timezone
+          from china_price_apply import IO
+          from china_moysklad_read import read_stock
+          from china_morning_readiness import current_prices,published_stock
+          key='china_agent:owner_stock_check:2026-11-03:remaining4:v1'
+          targets={1473245510:'590-PamelaBag-brown',1473242763:'330-BeatriceBag-blue',1473244000:'549-GloriaBag-darkbrown',1473246049:'643-MelanieBag-brown'}
+          class ReadIO(IO):
+              def wb(self,path,method='GET',body=None):
+                  if method!='GET':raise ValueError('No WB mutations')
+                  return super().wb(path,method,body)
+              def tg(self,*args,**kwargs):raise ValueError('No Telegram')
+          io=ReadIO()
+          if io.get(key):raise ValueError('Exact dated stock check already exists; do not duplicate')
+          ms=read_stock(list(targets.values()))
+          prices=current_prices(io,list(targets))
+          if any(targets[r['nm_id']]!=r['article']for r in prices['rows']):raise ValueError('Article identity mismatch')
+          pub=published_stock(io,prices,list(targets))
+          lookup={r['article'].casefold():r for r in ms['rows']}
+          rows=[]
+          for nm,article in targets.items():
+              m=lookup.get(article.casefold())
+              stock=m.get('stock') if m else None;reserve=m.get('reserve') if m else None
+              free=stock-reserve if type(stock)in(int,float)and type(reserve)in(int,float)else None
+              rows.append(dict(nm_id=nm,article=article,msk_stock=stock,msk_reserve=reserve,msk_free=free,published_wb=pub['amounts'].get(str(nm))))
+          result=dict(status='complete' if ms['coverage_complete']and not pub['missing_nm_ids']else'partial',cabinet='token_3',observed_at=datetime.now(timezone.utc).isoformat(),msk_observed_at=ms['observed_at'],wb_observed_at=pub['observed_at'],wb_warehouse_id=2126188,rows=rows,missing_msk=ms['missing_articles'],missing_wb=pub['missing_nm_ids'],wb_writes=0,moysklad_writes=0,telegram_calls=0,model_calls=0,grants_action_permission=False)
+          if not io.create(key,result):raise ValueError('Concurrent dated result')
+          if io.get(key)!=result:raise ValueError('Private readback mismatch')
+          print('Exact four-product stock readback saved privately; no model, mutations or sends')
+          PY

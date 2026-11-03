@@ -32,7 +32,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          sparse-checkout: scripts
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -43,6 +49,15 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: source
           persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
       - name: Install pinned read transport
         run: pip install requests==2.32.5 Pillow==12.3.0 openai==3.42.1 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
       - name: Adapt isolated dialog and test without credentials
@@ -96,7 +111,7 @@ jobs:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          BUSINESS_AI_MODEL: ${{ vars.BUSINESS_AI_MODEL || 'gpt-4o-mini' }}
+          CHINA_ANALYSIS_BACKEND: managed_codex
           PYTHONPATH: source
         run: |
           MODE="$ACTION"
@@ -142,7 +157,15 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 Pillow==11.3.0
@@ -167,5 +190,6 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
 

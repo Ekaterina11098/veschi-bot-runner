@@ -10,13 +10,21 @@ def stamp():return datetime.now(timezone.utc).isoformat()
 def prepare_analytics(w,job,inbox):
  req=w.get(ROOT+'data_request:'+str(job['id'])) or {}
  if not req or req.get('status')!='requested':return
- if req.get('job_id')!=job['id'] or req.get('thread_id')!=THREAD or req.get('chat_id')!=CHAT or req.get('kind')!='preliminary_profit':raise ValueError('Unapproved bridge read scope')
+ if req.get('job_id')!=job['id'] or req.get('thread_id')!=THREAD or req.get('chat_id')!=CHAT or req.get('kind')not in ('preliminary_profit','read'):raise ValueError('Unapproved bridge read scope')
  from datetime import date
- day=date.fromisoformat(req['day_msk'])
+ day=date.fromisoformat(req.get('day_msk') or req.get('date_to'))
  from zoneinfo import ZoneInfo
  today=datetime.now(ZoneInfo('Europe/Moscow')).date()
- if not 0<=(today-day).days<=14:raise ValueError('Bridge forecast date outside scope')
+ if req.get('kind')=='preliminary_profit' and not 0<=(today-day).days<=14:raise ValueError('Bridge forecast date outside scope')
  try:
+  if req.get('kind')=='read':
+   from china_codex_read_broker import collect as collect_read
+   result=collect_read(w,job,req)
+   value=dict(status='calculated',kind='read',job_id=job['id'],thread_id=THREAD,chat_id=CHAT,result=result,read_round=req.get('read_round'),created_at=stamp(),wb_writes=0,telegram_sends=0)
+   w.save(ROOT+'analytics:'+str(job['id']),value)
+   w.save(ROOT+'data_request:'+str(job['id']),req|dict(status='complete',completed_at=stamp()))
+   w.save(ROOT+'inbox:'+str(job['id']),inbox|dict(status='queued',analytics_key=ROOT+'analytics:'+str(job['id'])))
+   return
   from china_profit_forecast import collect,calculate
   state,key=collect(w,job,day)
   result=calculate(state,w.get('china_agent:new_ad_economics_policy:v1') or {},w.get('china_agent:expected_profit_delivery_model:v1') or {},day)
@@ -31,8 +39,8 @@ def prepare_analytics(w,job,inbox):
   if result['totals'].get('forecast_profit_cny') is not None:
    result['totals']['forecast_profit_cny']-=reverse;result['totals']['forecast_profit_rub']=result['totals']['forecast_profit_cny']*fx
   result['missing_reverse_model_orders']=missing
-  value=dict(status='calculated',job_id=job['id'],thread_id=THREAD,chat_id=CHAT,source_key=key,result=result,created_at=stamp(),wb_writes=0,telegram_sends=0)
- except Exception as e:value=dict(status='failed',job_id=job['id'],thread_id=THREAD,chat_id=CHAT,error=type(e).__name__,created_at=stamp(),wb_writes=0,telegram_sends=0)
+  value=dict(status='calculated',job_id=job['id'],thread_id=THREAD,chat_id=CHAT,source_key=key,result=result,read_round=req.get('read_round'),created_at=stamp(),wb_writes=0,telegram_sends=0)
+ except Exception as e:value=dict(status='failed',job_id=job['id'],thread_id=THREAD,chat_id=CHAT,error=type(e).__name__,read_round=req.get('read_round'),created_at=stamp(),wb_writes=0,telegram_sends=0)
  w.save(ROOT+'analytics:'+str(job['id']),value)
  w.save(ROOT+'data_request:'+str(job['id']),req|dict(status='complete' if value['status']=='calculated' else 'failed',completed_at=stamp()))
  w.save(ROOT+'inbox:'+str(job['id']),inbox|dict(status='queued',analytics_key=ROOT+'analytics:'+str(job['id'])))

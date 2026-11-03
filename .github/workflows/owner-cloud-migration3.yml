@@ -60,29 +60,9 @@ jobs:
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_conversion_watches.py'
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_codex_*.py'
           node --test scripts/test_codex_route.mjs scripts/test_codex_inbox.mjs scripts/test_cloud_migration_route.mjs
-      - name: Install preserved real pricing collectors for preview
-        working-directory: source
-        run: |
-          python ../scripts/china_chat_migration.py --root .
-          python ../scripts/install_china_order_coverage.py
-          python ../scripts/check_china_installed_price_step.py china_agent/demand.py
-          cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
-          cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
-          cp ../scripts/china_price_brief.py china_agent/price_brief.py
-          cp ../scripts/china_buyer_price_forecast.py china_agent/buyer_price_forecast.py
-          cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
-          cp ../scripts/china_daily_expected_control.py china_agent/daily_expected_control.py
-          cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py
-          cp ../scripts/china_expected_order_profit.py china_agent/expected_order_profit.py
-          cp ../scripts/china_price_experiment_result.py china_agent/price_experiment_result.py
-          cp ../scripts/china_price_economic_target.py china_agent/price_economic_target.py
-      - name: Dated live cloud validation; marketplace read-only, publication separately reviewed
+      - name: Publish visually reviewed cloud report; no marketplace credentials
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CHINA_TELEGRAM_BOT_TOKEN: disabled
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
         run: PYTHONPATH=scripts:source python -u scripts/owner_cloud_migration3_live.py

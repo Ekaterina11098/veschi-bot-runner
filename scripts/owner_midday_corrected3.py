@@ -51,8 +51,37 @@ def prepare(io):
   print('Prepared privately; Telegram not sent')
  except Exception as ex:
   state.update(status='blocked',error=type(ex).__name__+': '+str(ex),completed_at=stamp());save(io,ROOT+':preparation',state);raise
+def review_prepared(io):
+ if io.get(ROOT+':reviewed_artifacts'):print('Already reviewed');return
+ from china_advertising_economic_review import apply
+ from china_advertising_directions import attach as attach_directions
+ from china_midday_completed_review import merge_completed
+ art=io.get(ROOT+':artifacts');completed=io.get(ROOT+':completed_review')
+ if not art or not completed:raise ValueError('Prepared source missing')
+ source=completed['source'];old=completed['review']
+ minima={str(c['id'])+':'+str(r['nm']):r['minimum_bid_minor']for c in old['campaigns']for r in c.get('focus',[])if type(r.get('minimum_bid_minor'))is int}
+ reviewed=attach_directions(apply(old,source,minima),source)
+ if reviewed.get('economic_review_complete')is not True:raise ValueError('Reviewed economics incomplete')
+ if not io.create(ROOT+':reviewed_completed',dict(source=source,review=reviewed,status='complete',observed_at=stamp(),wb_writes=0)):raise ValueError('Concurrent reviewed source')
+ b=only_completed_day_actions(merge_completed(art['bundle'],reviewed,ROOT+':reviewed_completed'))
+ files=[]
+ for index,f in enumerate(render_midday(b)):
+  p=plan(io,DAY,f,index,slot='midday-corrected-owner3-reviewed')
+  files.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),sha256=hashlib.sha256(f['bytes']).hexdigest(),b64=base64.b64encode(f['bytes']).decode()))
+ for f in art['files']:
+  key='china_agent:loss_plan:v1:'+f['plan_id'];p=io.get(key)
+  if p and not p.get('report_message_ids'):
+   p.update(invalidated_at=stamp(),invalidation_reason='Superseded by owner final evidence review before any delivery');io.put(key,p)
+ value=dict(art,bundle=b,files=files,reviewed_at=stamp())
+ if not io.create(ROOT+':reviewed_artifacts',value):raise ValueError('Concurrent reviewed artifacts')
+ total=b['fresh_current_totals'];t=event_time(b['observed_at']).astimezone(MSK).strftime('%H:%M')
+ reply='На '+t+' МСК: расходы '+f"{total['spend']:.2f}".replace('.',',')+' CNY, ДРР '+f"{100*total['spend']/total['amount']:.2f}".replace('.',',')+'%.'
+ manifest=dict(status='reviewed',observed_at=b['observed_at'],artifact_sha256=hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest(),page_count=len(files),action_count=sum(f['action_count']for f in files),directions={k:{x:v.get(x)for x in ['status','count','note']}for k,v in b['recommendation_directions'].items()},totals=total,pavel_reply=reply,wb_writes=0,telegram_calls=0)
+ if not io.create(ROOT+':review_manifest',manifest):raise ValueError('Concurrent manifest')
+ print('Reviewed privately; no Telegram sends')
+
 def publish(io,a):
- art=io.get(ROOT+':artifacts')
+ art=io.get(ROOT+':reviewed_artifacts')
  if not art or art.get('status')!='prepared':raise ValueError('Reviewed artifacts missing')
  if (datetime.now(timezone.utc)-event_time(art['observed_at'])).total_seconds()>1800:raise ValueError('Prepared source stale; do not publish')
  if a.get('artifact_sha256')!=hashlib.sha256(json.dumps(art,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest():raise ValueError('Reviewed artifact hash mismatch')
@@ -93,6 +122,7 @@ def main():
  if a.get('owner_user_id')!=5122667182 or a.get('chat_id')!=CHAT or a.get('bot_id')!=BOT or a.get('wb_writes_authorized')is not False or datetime.now(timezone.utc)>=event_time(a.get('expires_at')):raise ValueError('Current owner scope missing')
  if datetime.now(MSK).date().isoformat()!=DAY:raise ValueError('Dated correction only')
  if a.get('phase')=='prepare_fast':prepare(io)
+ elif a.get('phase')=='review_fast':review_prepared(io)
  elif a.get('phase')=='publish_fast':publish(io,a)
  else:raise ValueError('Unknown correction phase')
 if __name__=='__main__':main()

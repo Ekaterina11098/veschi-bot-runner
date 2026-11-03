@@ -1,6 +1,6 @@
 """Single explicit owner test question; no direct TG/WB calls."""
 import os,json,time
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 from urllib.request import Request,urlopen
 from urllib.parse import urlencode
 from openai import OpenAI
@@ -21,7 +21,7 @@ def get(key):
     rows=api('GET','telegram_api_cache',{'cache_key':'eq.'+key,'select':'payload'})
     return rows[0]['payload'] if rows else None
 def once(key,value):
-    api('POST','telegram_api_cache',body={'cache_key':key,'payload':value,'updated_at':stamp()})
+    api('POST','telegram_api_cache',body={'cache_key':key,'payload':value,'updated_at':stamp(),'expires_at':(datetime.now(timezone.utc)+timedelta(days=30)).isoformat()})
     if get(key)!=value:raise RuntimeError('Exact readback mismatch')
 def valid(inbox,job):
     marker=next((v for v in job.get('tool_trace',[]) if v.get('name')=='china_saved_question'),{})

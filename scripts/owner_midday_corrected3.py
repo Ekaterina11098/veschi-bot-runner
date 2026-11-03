@@ -89,7 +89,7 @@ def publish(io,a):
  for f in art['files']:
   raw=base64.b64decode(f['b64'],validate=True)
   if hashlib.sha256(raw).hexdigest()!=f['sha256']:raise ValueError('PNG hash mismatch')
-  cap='Китай · исправленный промежуточный отчёт · 03.11 · '+str(f['page'])+'/'+str(f['total'])+'. Заменяет отчёт №661. '
+  cap='Китай · исправленный промежуточный отчёт · 03.11 · '+str(f['page'])+'/'+str(f['total'])+'. Заменяет отчёт №661. Рекомендации — по завершённым дням до 02.11 включительно. '
   cap+=('Ответьте «Сделай всё» для '+str(f['action_count'])+' новых действий только этого PNG.'if f['action_count']else'Новых действий для исполнения нет.')
   files.append(dict(f,bytes=raw,caption=cap))
  delivery=deliver(io,DAY,files,telegram_sender(io),binder=lambda f,r:bind(io,f,r),delivery_key=ROOT+':delivery',expected_families={'drr'})

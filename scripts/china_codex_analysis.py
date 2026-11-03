@@ -39,7 +39,7 @@ class Core:
   rows=latest_notes(rows);result=[];size=0
   for row in rows:
    count=len(json.dumps(row,ensure_ascii=False))
-   if size+count>85000:break
+   if size+count>30000:continue
    result.append(row);size+=count
   return result
  def ask(self,identity,kind,data,contract,validate,force=False):

@@ -99,6 +99,30 @@ def price_preview():
    requests.sessions.Session.request=worker.original_http
  put(io,ROOT+':price_preview_result',dict(status='verified',modes=[v['kind']for v in results],completed_at=stamp(),wb_writes=0,telegram_calls=0))
  print('Actual pricing acquisition and cloud review verified; no sends/writes')
+
+def growth_check():
+ from china_price_apply import IO
+ from china_morning_readiness import enrich_economics
+ from china_advertising_v2 import http,history
+ class ReadIO(IO):
+  def __init__(self):os.environ.setdefault('CHINA_TELEGRAM_BOT_TOKEN','disabled');super().__init__()
+  def wb(self,path,method='GET',body=None):
+   if method!='GET':raise ValueError('No marketplace writes')
+   return super().wb(path,method,body)
+  def tg(self,*a,**kw):raise ValueError('No Telegram in growth check')
+ io=ReadIO();saved=io.get(ROOT+':live_completed')
+ if not saved or saved.get('status')!='complete':raise ValueError('Exact completed source missing')
+ targets=[(40933588,1473243894),(41296359,1473242584),(41187173,1560230895),(41298169,1473243896),(40933588,1473244357)]
+ rough=dict(campaigns=[dict(focus=[dict(nm=nm)for _,nm in targets])])
+ source=enrich_economics(io,copy.deepcopy(saved['source']),rough,DAY);quotes={};errors={}
+ for cid,nm in targets:
+  try:
+   raw=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=['search'if cid in [41296359,41298169]else'recommendation']))
+   quotes[str(cid)+':'+str(nm)]=raw
+  except Exception as ex:errors[str(nm)]=type(ex).__name__
+ value=dict(status='complete',observed_at=stamp(),source=source,minima=quotes,quote_errors=errors,targets=targets,history=history(source.get('executions',[])),wb_writes=0,telegram_calls=0)
+ put(io,ROOT+':growth_economics',value);print('Five exact growth candidates reviewed with fresh economics/stock and bid quotes, no writes/sends')
+
 def main():
  p=DB().get(ROOT+':approval')or{}
  if p.get('owner_user_id')!=5122667182:raise ValueError('Owner migration scope missing')
@@ -106,5 +130,6 @@ def main():
  if stage=='prepare_live':prepare()
  elif stage=='publish_live':publish()
  elif stage=='price_preview':price_preview()
+ elif stage=='growth_check':growth_check()
  else:raise ValueError('Unknown live validation stage')
 if __name__=='__main__':main()

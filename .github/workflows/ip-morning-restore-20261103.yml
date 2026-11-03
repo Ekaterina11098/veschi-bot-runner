@@ -2,7 +2,7 @@ name: Restore requested IP morning report Nov2 missing only
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/ip-morning-restore-20261103.yml']
+    paths: ['.github/disabled/ip-morning-restore-20261103.never']
 permissions:
   contents: read
 concurrency:
@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   restore:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:

@@ -1,0 +1,30 @@
+name: Owner black Panama bid 3Nov
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-panama2-raise3.yml']
+permissions: {contents: read}
+concurrency:
+  group: china-dialog-data
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - name: Fetch three pinned modules
+        run: |
+          mkdir -p scripts
+          for f in china_cloud_cost_control.py china_moysklad_read.py owner_panama2_raise3.py; do
+            curl --fail --location --retry 2 --max-time 60 https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/f16cf6cf4d526d3984040c07a722d833738f4a68/scripts/$f -o scripts/$f
+          done
+          python -m pip install requests==2.32.5
+      - name: Exact approved bid with fresh own stock and verified WB result
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: python -u scripts/owner_panama2_raise3.py

@@ -47,6 +47,11 @@ def run():
   ec=(c.get('china_agent:hourly_economics:v1') or {}).get(cid,{})
   decision=budget_decision(cid,a,ec,funding_context,balances[cid])
   text=f"Бюджет РК {cid}\nОстаток: {balances[cid]:.2f} CNY\nРасход сегодня: {today[cid]['spend']:.2f} CNY\nДРР сегодня: {dr}\nПри текущем темпе остатка может не хватить до {nextcheck.strftime('%d.%m %H:%M')} МСК.\n{decision}\nСрез {t.strftime('%d.%m %H:%M')} МСК. Прогноз предварительный; автопополнения нет."
+  from china_codex_analysis import active,DB,text_review
+  if (c.get('china_agent:analysis_backend:v1')or{}).get('status')=='active':
+   text,analysis_receipt=text_review('budget:'+day+':'+cid,'Кратко сообщи фактический риск бюджета этой РК и конкретный следующий шаг. Только данные; не блокируй тест по незавершённой ДРР, не повторяй verified пополнение или отозванное действие.',
+    dict(snapshot=row,forecast_until=nextcheck.isoformat(),current_day_partial=True,previous_completed_days=(t.date()-timedelta(days=3)).isoformat()+'—'+(t.date()-timedelta(days=1)).isoformat(),owner_funding_context=funding_context,provisional_template=text))
+   c.put(ROOT+'analysis:'+slot+':'+cid,dict(receipt=analysis_receipt,source_channel='codex_cloud',wb_writes=0))
   if not c.create(nk,dict(status='preparing',text=text)):continue
   bot=os.environ['CHINA_TELEGRAM_BOT_TOKEN'];me=requests.get('https://api.telegram.org/bot'+bot+'/getMe',timeout=20).json()
   if not me.get('ok') or me['result']['id']!=8780468043:raise RuntimeError('Bot identity mismatch')

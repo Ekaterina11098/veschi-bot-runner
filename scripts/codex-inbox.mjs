@@ -5,7 +5,7 @@ export async function acceptCodex(config,message,text,updateId,database) {
  if(selected.kind==='legacy')return {};
  if(selected.kind==='legacy_explicit')return {legacy_text:selected.text};
  const boundReply=message.reply_to_message?.from?.id===config.bot_id&&Number.isSafeInteger(message.reply_to_message?.message_id);
- const confirmation= /^(?:сделай|делай|выполни|выполняй|примени|применяй|поднимай|повышай|подтверждаю)(?:\s+(?:все|всё|все изменения|все рекомендации|изменения|рекомендации))?[.!]?$/iu.test(selected.text||text)||/^(?:выполни|сделай|выполнить)\s+только\s+\d+\s+(?:по\s+списку\s+)?(?:предложение|пункт)\b/iu.test(selected.text||text);
+ const confirmation= /^(?:сделай|делай|выполни|выполняй|примени|применяй|поднимай|повышай|подтверждаю)(?:\s+(?:все|всё|все изменения|все рекомендации|изменения|рекомендации))?[.!]?$/iu.test(selected.text||text)||/^(?:выполни|сделай|выполнить)\s+только\s+\d+\s+(?:по\s+списку\s+)?(?:предложение|пункт)(?:\s|[.!]|$)/iu.test(selected.text||text);
  if(policy?.legacy_analysis_enabled===false&&selected.kind!=='expired'&&boundReply&&confirmation)return {legacy_text:selected.text||text,execution_only:true};
  if(selected.kind==='expired')return {response:Response.json({method:'sendMessage',chat_id:config.chat_id,text:'Облачная обработка временно недоступна; запрос не обработан.'})};
  if(!Number.isSafeInteger(updateId)||updateId<0||!Number.isSafeInteger(message.message_id)||selected.text.length>4000||!selected.text)return {response:new Response('Invalid update',{status:400})};

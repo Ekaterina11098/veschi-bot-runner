@@ -229,7 +229,7 @@ class Worker:
     def run(self):
         p=self.db.get(ROOT+'policy') or {};cloud=self.db.get(CLOUD+'policy') or {}
         if not valid_scope(p) or cloud.get('enabled') is not True:return {'status':'disabled'}
-        rows=self.db.api('GET','telegram_api_cache',{'cache_key':'like.'+ROOT+'inbox:*','payload->>status':'in.(queued,collecting,cloud_processing)','order':'updated_at.asc,cache_key.asc','limit':1,'select':'cache_key,payload'})
+        rows=self.db.api('GET','telegram_api_cache',{'cache_key':'like.'+ROOT+'inbox:*','payload->>status':'in.(queued,collecting,cloud_processing)','order':'payload->>created_at.asc,cache_key.asc','limit':1,'select':'cache_key,payload'})
         if not rows:return {'status':'idle','observed_at':stamp()}
         row=rows[0]
         try:

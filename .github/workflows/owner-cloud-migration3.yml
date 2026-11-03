@@ -11,24 +11,58 @@ jobs:
   verify:
     if: github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 22
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           filter: blob:none
           sparse-checkout-cone-mode: false
-          sparse-checkout: /scripts/
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install openai==3.42.1 requests==2.32.5 pillow==11.3.0
-      - name: Test cloud protocol and guarded report contracts without credentials
-        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_codex_*.py'
-      - name: Live managed cloud review without marketplace or Telegram credentials
+      - run: pip install openai==3.42.1 requests==2.32.5 pillow==11.3.0 python-dotenv simplejson==4.2.0 pyyaml==6.0.2
+      - name: Validate preserved clocks and installed pricing review without credentials
+        run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+          python scripts/install_china_codex_price.py --root source
+          python -m compileall -q scripts source/china_agent
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          for p in Path('.github/workflows').glob('china-*.yml'):
+              yaml.safe_load(p.read_text())
+          print('China workflows parsed')
+          PY
+      - name: Full advertising, dialog, cloud and route regression without credentials
+        run: |
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_conversion_watches.py'
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_codex_*.py'
+          node --test scripts/test_codex_route.mjs scripts/test_codex_inbox.mjs scripts/test_cloud_migration_route.mjs
+      - name: Live managed cloud proof without marketplace or Telegram credentials
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: PYTHONPATH=scripts python -u scripts/owner_cloud_migration3.py
-
-# Revalidate saved cloud completion; keep detailed reasoning private.

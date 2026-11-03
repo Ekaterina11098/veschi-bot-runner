@@ -29,6 +29,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
       - name: Validate exact dated request
         id: request
         env:
@@ -60,13 +67,22 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: source
           persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
       - uses: actions/setup-python@v5
         if: steps.request.outputs.allowed == 'true'
         with:
           python-version: '3.12'
       - name: Install pinned transport and existing worker dependencies
         if: steps.request.outputs.allowed == 'true'
-        run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 > "$RUNNER_TEMP/install.log" 2>&1
+        run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 openai==3.42.1 > "$RUNNER_TEMP/install.log" 2>&1
       - name: Deliver exact China intraday report
         if: steps.request.outputs.allowed == 'true'
         working-directory: source
@@ -76,9 +92,12 @@ jobs:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PYTHONPATH: ../scripts:.
           REPORT_ACTION: ${{ steps.request.outputs.action }}
         run: |
           python ../scripts/china_chat_migration.py --root .
+          python ../scripts/install_china_codex_price.py --root .
           python ../scripts/install_china_order_coverage.py
           python ../scripts/install_china_buyout.py
           python ../scripts/check_china_installed_price_step.py china_agent/demand.py

@@ -90,3 +90,5 @@ jobs:
         run: python review_approved_watchdog.py
 
 # Activate verified November 3 positive review fields in all cabinet workers.
+
+# Activate explicit owner-authorized rejected-write reconciliation after fresh empty read.

@@ -71,5 +71,26 @@ class Tests(unittest.TestCase):
         self.e.run('i')
         self.assertEqual(len(self.posts),1)
         self.assertEqual(self.repo.get('intents','i')['status'],'verify')
+    def recovery_auth(self):
+        auth=dict(enabled=True,rejected_http_status=401,intent_id='i',answer_sha256=self.i['answer_sha256'],source_sha256=self.i['source_sha256'],version=self.i['version'])
+        self.repo.put('events','owner-rejected-write-recovery:i',auth)
+        self.i.update(status='verify');self.repo.put('intents','i',self.i);self.conn.commit()
+    def test_owner_recovery_reads_empty_before_allowing_single_retry(self):
+        self.recovery_auth()
+        self.assertEqual(self.e.run('i')['status'],'awaiting_preflight')
+        self.assertEqual(self.posts,[])
+        self.assertTrue(self.repo.get('events','owner-rejected-write-recovery:i')['consumed_at'])
+        self.assertEqual(self.e.run('i')['status'],'confirmed')
+        self.assertEqual(len(self.posts),1)
+    def test_owner_recovery_existing_answer_never_resends(self):
+        self.recovery_auth();self.actual='approved'
+        self.assertEqual(self.e.run('i')['status'],'confirmed');self.assertEqual(self.posts,[])
+    def test_owner_recovery_wrong_hash_or_consumed_stays_read_only(self):
+        for field,value in [('answer_sha256','wrong'),('consumed_at',900)]:
+            self.recovery_auth()
+            auth=self.repo.get('events','owner-rejected-write-recovery:i');auth[field]=value
+            self.repo.put('events','owner-rejected-write-recovery:i',auth);self.conn.commit()
+            self.assertEqual(self.e.run('i')['status'],'verify')
+            self.assertEqual(self.posts,[])
 if __name__=='__main__':unittest.main()
 

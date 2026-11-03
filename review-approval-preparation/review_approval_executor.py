@@ -92,5 +92,30 @@ class Executor:
         if not isinstance(actual,str):return self.save(intent,'verify',retry_at=self.a.clock()+60,verification_error_type='InvalidAnswerType')
         if actual==intent['answer']:return self.save(intent,'confirmed',actual_answer_sha256=sha(actual),confirmed_at=self.a.clock())
         if actual.strip():return self.save(intent,'manual_present',actual_answer_sha256=sha(actual))
+        # Explicit owner-authorized recovery of one recorded rejection only.
+        # This branch is reached only after a fresh successful empty WB read.
+        key='owner-rejected-write-recovery:'+intent['id']
+        auth=self.repo.get('events',key) or {}
+        if (auth.get('enabled') is True and auth.get('rejected_http_status')==401
+            and auth.get('intent_id')==intent['id']
+            and auth.get('answer_sha256')==intent['answer_sha256']
+            and auth.get('source_sha256')==intent['source_sha256']
+            and auth.get('version')==intent['version'] and not auth.get('consumed_at')):
+            recovered=False
+            with self.repo.transaction():
+                auth=self.repo.get('events',key,lock=True) or {}
+                if not auth.get('consumed_at'):
+                    auth.update(consumed_at=self.a.clock(),empty_verified_at=self.a.clock())
+                    self.repo.put('events',key,auth)
+                    item=self.repo.get('items',intent['ref'],lock=True)
+                    intent.update(status='awaiting_preflight',preflight_verified_at=self.a.clock(),
+                        retry_at=self.a.clock()+self.wb.pause(intent['cabinet']),owner_rejected_write_recovery=key)
+                    self.repo.put('intents',intent['id'],intent)
+                    item['status']='approved';self.repo.put('items',intent['ref'],item)
+                    recovered=True
+            if recovered:
+                if self.repo.get('intents',intent['id'])!=intent:raise RuntimeError('Recovery readback mismatch')
+                if self.preserve:self.preserve()
+                return intent
         return self.save(intent,'verify',retry_at=self.a.clock()+60,verification_empty_at=self.a.clock())
 

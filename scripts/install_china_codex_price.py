@@ -24,6 +24,9 @@ def install(root):
                 self.job=saved[0]
 """
  text=text.replace(needle,patch+needle)
+ rejected="                    source, normalized = normalize(observation, cabinet)\n"
+ if text.count(rejected)!=1:raise RuntimeError('Price source validation hook changed')
+ text=text.replace(rejected,"                    try:\n                        source, normalized = normalize(observation, cabinet)\n                    except ValueError as exc:\n                        self.audit['errors'].append(dict(stage='mpstats_validation',status='rejected',reason=str(exc)[:200],raw_snapshot_id=raw[0]['id'] if raw else None))\n                        return\n")
  path.write_text(text,encoding='utf-8')
 if __name__=='__main__':
  parser=argparse.ArgumentParser();parser.add_argument('--root',default='source');args=parser.parse_args();install(args.root);print('Pricing acquisition/delivery retained; cloud final-analysis hooks installed')

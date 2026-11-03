@@ -3,7 +3,7 @@ from datetime import datetime,timezone
 from zoneinfo import ZoneInfo
 from china_cloud_cost_control import Cache,WB,validate_identity,projection,stamp
 from china_moysklad_read import read_stock
-ROOT='china_agent:owner_panama2_raise:2026-11-03:v1'
+ROOT='china_agent:owner_panama2_raise:2026-11-03:v2'
 CID=41325622
 NM=1535337770
 BODY={'bids':[{'advert_id':CID,'nm_bids':[{'nm_id':NM,'placement':'search','bid_kopecks':12}]}]}
@@ -32,7 +32,7 @@ def main():
   for k in (c.get('china_agent:verified_campaign_state:v1') or {}).values():
    rc=c.get(k) or {};at=rc.get('verified_at')
    if rc.get('status')!='verified' or not at:continue
-   if datetime.fromisoformat(at.replace('Z','+00:00')).astimezone(ZoneInfo('Europe/Moscow')).date()!=datetime.now(ZoneInfo('Europe/Moscow')).date():continue
+   if datetime.fromisoformat(at.replace('Z','+00:00').replace(' UTC','+00:00')).astimezone(ZoneInfo('Europe/Moscow')).date()!=datetime.now(ZoneInfo('Europe/Moscow')).date():continue
    old={n['nm_id']:n for n in (rc.get('before') or {}).get('nm_settings',[])}
    for n in (rc.get('after') or {}).get('nm_settings',[]):
     if n['nm_id']==NM and (NM not in old or any(n['bids_kopecks'].get(p,0)>old[NM]['bids_kopecks'].get(p,0) for p in ['search','recommendations'])):raise ValueError('Product already raised today')

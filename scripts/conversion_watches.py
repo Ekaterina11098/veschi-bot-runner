@@ -323,6 +323,8 @@ class Worker:
             note='Конверсия: заказы воронки / просмотры. Сумма заказов воронки может отличаться от заказов WB. Пропуски не равны нулю. Наблюдение и расписание не созданы.')
 
     def saved_question(self,job,history):
+        from china_codex_routing import cloud_only
+        if cloud_only(self):raise RuntimeError('Legacy analysis disabled; route question through cloud Codex')
         # Explicit price commands precede read-only analysis and ad approvals.
         from china_catalog_price_command import handle as catalog_price_handle
         catalog_price=catalog_price_handle(self,job,history)
@@ -487,8 +489,12 @@ class Worker:
         if not question_allowed(job,cfg):raise PermissionError('Question scope mismatch')
         if job['status'] not in ('pending','running'):return job['status']
         if job['status']=='running' and (not job.get('lease_until') or datetime.fromisoformat(job['lease_until'])>self.now):return 'busy'
+        from china_codex_routing import cloud_only,bound_execution,promote
+        cloud_primary=cloud_only(self);execution_only=cloud_primary and bound_execution(self,job)
+        if cloud_primary and not marker.get('codex_bridge') and not execution_only:
+            job=promote(self,job);marker=question_marker(job)
         from china_codex_bridge import handle as codex_bridge_handle
-        bridge_outcome=codex_bridge_handle(self,job,cfg)
+        bridge_outcome=None if execution_only else codex_bridge_handle(self,job,cfg)
         if bridge_outcome is not None:return bridge_outcome
         if job.get('retry_at') and datetime.fromisoformat(job['retry_at'])>self.now:return 'waiting'
         if job.get('attempts',0)>=3:return 'attempts_exhausted'
@@ -514,7 +520,10 @@ class Worker:
                 history=[x for x in history if x.get('answer')]
             if job.get('answer') is not None:answer=job['answer'];trace=job.get('tool_trace') or []
             else:
-                if intent(job['request_text']) and self.authorized(job):
+                if execution_only:
+                    from china_codex_routing import execute_acknowledgement
+                    answer,trace=execute_acknowledgement(self,job)
+                elif intent(job['request_text']) and self.authorized(job):
                     answer=self.command(job);trace=[]
                 elif intent(job['request_text']):
                     answer='Управлять заданиями могут действующие участники этой группы. Вопросы по сохранённым данным доступны всем участникам.';trace=[]
@@ -524,11 +533,11 @@ class Worker:
                 trace=[marker]+trace
                 patch({'answer':answer,'tool_trace':trace})
             from china_reply_evidence import reconcile
-            checked_answer,checked_trace=reconcile(self,job,history,answer,trace)
+            checked_answer,checked_trace=(answer,trace) if execution_only else reconcile(self,job,history,answer,trace)
             if checked_answer!=answer or checked_trace!=trace:
                 answer,trace=checked_answer,checked_trace
                 patch({'answer':answer,'tool_trace':trace})
-            useful_answer=growth_reply(job,answer,trace)
+            useful_answer=answer if execution_only else growth_reply(job,answer,trace)
             if useful_answer!=answer:
                 answer=useful_answer
                 patch({'answer':answer,'tool_trace':trace})
@@ -572,6 +581,8 @@ class Worker:
             return 'error_reported' if outcome=='sent' else 'error_delivery_'+outcome
 
     def dialog(self,job,history):
+        from china_codex_routing import cloud_only
+        if cloud_only(self):raise RuntimeError('Legacy dialog disabled; use managed cloud task')
         from china_new_ads import handle as new_ad_handle
         new_ad_answer=new_ad_handle(self,job,history)
         if new_ad_answer is not None:return new_ad_answer
@@ -678,8 +689,13 @@ class Worker:
         if old:text=old['text']
         elif w.get('kind') in ('task','once_task'):
             scheduled=dict(id=0,agent_id='china',chat_id=w['chat_id'],sender_id=w['owner_user_id'],origin='scheduled',created_at=self.now.isoformat(),request_text='Сегодня '+self.now.astimezone(MSK).date().isoformat()+'. Выполни один текущий запуск сохранённого аналитического поручения. Ничего не планируй и не меняй в WB. Относительные даты считай от сегодня. Поручение: '+w['task_text'])
-            with saved_network_guard():
-                text,_=self.dialog(scheduled,[])
+            from china_codex_tasks import enabled,run_task
+            if enabled(self):
+                text,analysis_receipt=run_task(self,w,receipt_key)
+                self.save('china_agent:codex_scheduled_analysis:v1:'+receipt_key,analysis_receipt)
+            else:
+                with saved_network_guard():
+                    text,_=self.dialog(scheduled,[])
             if w.get('kind')=='once_task' or w.get('output_format')=='png_table':
                 from china_table_png import blocks
                 if not any(kind=='table' for kind,_ in blocks(text)):
@@ -689,7 +705,12 @@ class Worker:
             # Freeze the complete generated answer before the first send.
             self.save(RECEIPTS+receipt_key,dict(status='prepared',text=text,chat_id=w['chat_id']))
         else:
-            daily,_=self.load_days(w);text=report(w,daily,self.now)
+            from china_codex_tasks import enabled,run_task
+            if enabled(self):
+                text,analysis_receipt=run_task(self,w,receipt_key)
+                self.save('china_agent:codex_scheduled_analysis:v1:'+receipt_key,analysis_receipt)
+            else:
+                daily,_=self.load_days(w);text=report(w,daily,self.now)
         if not old:self.save(RECEIPTS+receipt_key,dict(status='prepared',text=text,chat_id=w['chat_id']))
         status='sent'
         from china_table_png import scheduled_parts

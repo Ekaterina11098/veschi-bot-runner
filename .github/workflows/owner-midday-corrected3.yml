@@ -46,3 +46,5 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
         run: PYTHONPATH=../scripts:. python ../scripts/owner_midday_corrected3.py
+
+# Owner final evidence review of prepared fresh data.

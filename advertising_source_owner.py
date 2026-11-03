@@ -134,7 +134,8 @@ def wanted(tool,args,purpose=None):
   if obs.get('observation_status')=='received':return None
   retry=float(obs.get('retry_after') or 0)
   if not retry or (now-datetime.fromisoformat(obs['observed_at'])).total_seconds()<retry:return None
- return dict(key=key,cabinet='token_2',tool=tool,arguments=args)
+ priority=100 if tool=='wbbidder_campaigns' else 95 if tool=='lk_wb_products' and a==b==str(end) else 0
+ return dict(key=key,cabinet='token_2',tool=tool,arguments=args,priority=priority)
 def campaign_day_gaps(snapshots,campaign_id,first,last,refresh_days=()):
  from datetime import date,timedelta
  covered=set()
@@ -372,7 +373,7 @@ try:
      if cat.get('report')=='stats':pages[cat.get('start_row')]=cat
     rows=[r for offset,cat in sorted(pages.items()) for r in cat.get('rows',[])]
     full=bool(pages.get(0)) and len(rows)==pages[0].get('total') and len({r['id'] for r in rows})==len(rows)
-    if full and not any(x['status']!='received' for x in results):
+    if full:  # Unrelated historical order gaps do not block exact-day campaign metrics.
      configuration=read('analytics_snapshots',dict(source='eq.advertising_active_configuration',cabinet='eq.token_2',select='payload,collected_at',order='id.desc',limit=1)) or []
      cp=configuration[0]['payload'] if configuration else {}
      wbactive=set(cp.get('campaign_ids',[])) if isinstance(cp,dict) else set()
@@ -386,7 +387,7 @@ try:
      if os.environ.get('IP_DAILY_TABLE_REPORTS')=='true':
       for cid in active:
        req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,report='products',d1=str(end),d2=str(end)))
-       if req:more.append(req)
+       if req:req['priority']=100;more.append(req)
      if os.environ.get('IP_DAILY_TABLE_REPORTS')=='true':
       empty_saved=database('GET','analytics_snapshots',params={'source':'eq.mpstats_wbbidder_campaign_stats','cabinet':'eq.token_2','period_from':'eq.'+str(end),'period_to':'eq.'+str(end),'payload->0->arguments->>report':'eq.products','payload->0->data->>returned':'eq.0','select':'id,cid:payload->0->arguments->>campaign_id,totals:payload->0->data->totals','order':'id.desc','limit':100}) or []
       fallback_ids={int(x['cid']) for x in empty_saved if x.get('cid') and x.get('totals') is None}

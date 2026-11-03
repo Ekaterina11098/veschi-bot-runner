@@ -92,7 +92,7 @@ def main():
  io=ReadIO();a=io.get(ROOT+':approval')or{}
  if a.get('owner_user_id')!=5122667182 or a.get('chat_id')!=CHAT or a.get('bot_id')!=BOT or a.get('wb_writes_authorized')is not False or datetime.now(timezone.utc)>=event_time(a.get('expires_at')):raise ValueError('Current owner scope missing')
  if datetime.now(MSK).date().isoformat()!=DAY:raise ValueError('Dated correction only')
- if a.get('phase')=='prepare':prepare(io)
- elif a.get('phase')=='publish':publish(io,a)
+ if a.get('phase')=='prepare_fast':prepare(io)
+ elif a.get('phase')=='publish_fast':publish(io,a)
  else:raise ValueError('Unknown correction phase')
 if __name__=='__main__':main()

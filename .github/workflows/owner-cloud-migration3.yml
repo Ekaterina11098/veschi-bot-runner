@@ -1,0 +1,32 @@
+name: Owner China cloud Codex migration verification
+on:
+  push:
+    paths: ['.github/workflows/owner-cloud-migration3.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-cloud-migration3
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install openai==3.42.1 requests==2.32.5 pillow==11.3.0
+      - name: Test cloud protocol and guarded report contracts without credentials
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_codex_*.py'
+      - name: Live managed cloud review without marketplace or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: PYTHONPATH=scripts python -u scripts/owner_cloud_migration3.py

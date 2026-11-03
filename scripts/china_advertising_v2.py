@@ -96,6 +96,15 @@ def collect(io,day,current=False):
  policy=io.get(FORMAT)
  if not policy or policy.get('status')!='approved' or policy.get('version')!=VERSION:raise ValueError('Approved daily advertising format missing')
  key=('china_agent:advertising_midday_source:' if current else 'china_agent:advertising_source:')+day+':v2';s=io.get(key)
+ if current and s:
+  try:
+   age=(datetime.now(timezone.utc)-event_time(s.get('observed_at'))).total_seconds()
+   fresh=0<=age<=1800 and s.get('period_from')==day and s.get('period_to')==day
+  except (ValueError,TypeError,AttributeError):fresh=False
+  if not fresh:
+   # Preserve the source that produced an earlier report; never relabel it as current.
+   save(io,key+':rejected_stale:'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f'),s)
+   s=None
  if s and s.get('status')=='complete':
   if not current:
    from china_morning_readiness import ensure

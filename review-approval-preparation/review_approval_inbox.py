@@ -18,7 +18,25 @@ def process_update(approval,bridge,telegram,update,preserve=None,**options):
     with approval.repo.transaction():
         approval.repo.put('events',key,dict(status='received',update=update,received_at=approval.clock()))
     # Never wait for WB while accepting/serializing Telegram decisions.
-    result=process(approval,bridge,telegram,None,update,publication_enabled=False,preserve=preserve,**options)
+    try:
+        result=process(approval,bridge,telegram,None,update,publication_enabled=False,preserve=preserve,**options)
+    except Rejected as exc:
+        # A durable terminal receipt must not look like a click still waiting.
+        # Temporary canonical outages remain retryable and keep the original click.
+        if str(exc)=='Canonical state temporarily unavailable':raise
+        q=update.get('callback_query') or {}
+        action=str(q.get('data') or '').rsplit(':',1)[-1]
+        needs_attention=action in ('p1','p2') or action.startswith('ok.')
+        failure=dict(status='rejected',publication_created=False,error=str(exc)[:300],requires_attention=needs_attention)
+        with approval.repo.transaction():
+            approval.repo.put('events',key,dict(status='rejected',update=update,result=failure,rejected_at=approval.clock()))
+        if preserve:preserve()
+        if needs_attention and q.get('id'):
+            try:
+                telegram.call('answerCallbackQuery',dict(callback_query_id=q['id'],show_alert=True,
+                    text='Ответ не поставлен на отправку. Карточка отложена, изменена или уже обработана. Проверьте её состояние.'))
+            except Exception:pass
+        raise
     if result.get('ui_delivery')=='uncertain':
         with approval.repo.transaction():
             approval.repo.put('events',key,dict(status='ui_pending',update=update,result=result,checked_at=approval.clock()))

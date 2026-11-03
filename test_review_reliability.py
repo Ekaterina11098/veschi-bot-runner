@@ -132,4 +132,24 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(called,['next']);self.assertEqual(first['status'],'generate')
         self.assertEqual(prepare_candidate(first,fail,save,str,clock=lambda:self.now),'waiting');self.assertEqual(fail.call_count,1)
 
+    def test_rejected_confirmation_is_terminal_visible_and_never_publishes(self):
+        token=self.card()
+        process_update(self.a,self.bridge,self.tg,self.update(token,'hold',1))
+        update=self.update(token,'p1',2)
+        with self.assertRaises(Rejected):process_update(self.a,self.bridge,self.tg,update)
+        saved=self.repo.get('events','telegram-ingress:'+sha(update))
+        self.assertEqual(saved['status'],'rejected')
+        self.assertTrue(saved['result']['requires_attention'])
+        self.assertFalse(saved['result']['publication_created'])
+        self.assertEqual(self.repo.count('intents'),0)
+        self.assertTrue(any(c.args[0]=='answerCallbackQuery' and c.args[1].get('show_alert') for c in self.tg.call.call_args_list))
+        replay=process_update(self.a,self.bridge,self.tg,update)
+        self.assertTrue(replay['already_processed'])
+        self.assertEqual(self.repo.count('intents'),0)
+    def test_temporary_canonical_failure_does_not_terminally_drop_confirmation(self):
+        token=self.card();update=self.update(token,'p1')
+        with patch('review_approval_process.process',side_effect=Rejected('Canonical state temporarily unavailable')):
+            with self.assertRaises(Rejected):process_update(self.a,self.bridge,self.tg,update)
+        self.assertEqual(self.repo.get('events','telegram-ingress:'+sha(update))['status'],'received')
+        self.assertEqual(self.repo.count('intents'),0)
 if __name__=='__main__':unittest.main()

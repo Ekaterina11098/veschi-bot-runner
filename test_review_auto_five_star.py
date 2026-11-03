@@ -221,4 +221,12 @@ class PolicyTests(unittest.TestCase):
   intent=self.repo.get('intents',result['intent_id'])
   self.assertEqual(notify_owner_receipt(self.app,NoTelegram(),intent)['status'],'suppressed')
   self.assertEqual(cleanup_completed(self.app,NoTelegram())['deleted'],0)
+class November3PositiveRegression(unittest.TestCase):
+ def test_exact_positive_fields_and_complaint_boundaries(self):
+  texts=["Отличная , но выбрала бордо без замши. Спасибо. Всем рекомендую 👍","Девочки прекрасная сумка 👜 рекомендую 👌","Прекрасно упаковано в два мешка и пыльник,внутри вложение с тремя карманами на молнии. Качество отличное, размер и цвет тоже","Классная,модная сумочка,все норма,упаковка идеальная👌продавец молодец🙏🏻","Такая прелесть. Подойдет модницам на все сезоны года. То что нет ничего лишнего, малышка подойдет под многие образы и любой возраст. Цвет не кричащий, цепочка добавила дорогой вид.","выглядит дорого","Маленькая прелесть. \nСтильная, ничего лишнего. Мне очень нравиться сумочка. \nДоставка, упаковка на +.","Сумка отличная, цвет очень яркий насыщенный, качество супер!"]
+  for text in texts:
+   with self.subTest(text=text):
+    self.assertTrue(classify(dict(productValuation=5,text=text,pros='',cons=''))['eligible'])
+    self.assertFalse(classify(dict(productValuation=5,text=text,pros='',cons='Порван ремень'))['eligible'])
+    self.assertFalse(classify(dict(productValuation=5,text=text+' Но молния сломалась',pros='',cons=''))['eligible'])
 if __name__=='__main__':unittest.main()

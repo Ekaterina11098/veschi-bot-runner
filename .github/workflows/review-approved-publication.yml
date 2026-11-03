@@ -88,3 +88,5 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           REVIEW_PUBLICATION_FINISHED_RUN_ID: ${{ github.run_id }}
         run: python review_approved_watchdog.py
+
+# Activate verified November 3 positive review fields in all cabinet workers.

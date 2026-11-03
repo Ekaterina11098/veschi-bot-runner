@@ -89,6 +89,8 @@ NO_CONS={'','нет','нет.','нет!','не обнаружено','не об�
 def field(item,key):
  value=item.get(key)
  return '' if value is None else value if isinstance(value,str) else None
+VERIFIED_POSITIVE_FIELDS |= frozenset(normalized_verified_field(v) for v in ["Отличная , но выбрала бордо без замши. Спасибо. Всем рекомендую 👍","Девочки прекрасная сумка 👜 рекомендую 👌","Прекрасно упаковано в два мешка и пыльник,внутри вложение с тремя карманами на молнии. Качество отличное, размер и цвет тоже","Классная,модная сумочка,все норма,упаковка идеальная👌продавец молодец🙏🏻","Такая прелесть. Подойдет модницам на все сезоны года. То что нет ничего лишнего, малышка подойдет под многие образы и любой возраст. Цвет не кричащий, цепочка добавила дорогой вид.","выглядит дорого","Маленькая прелесть. \nСтильная, ничего лишнего. Мне очень нравиться сумочка. \nДоставка, упаковка на +.","Сумка отличная, цвет очень яркий насыщенный, качество супер!"])
+
 def classify(item,kind='feedbacks'):
  if kind!='feedbacks' or item.get('productValuation')!=5:return {'eligible':False,'reason':'not_five_star_review'}
  if item.get('answer') is not None and not isinstance(item['answer'],dict):return {'eligible':False,'reason':'unsupported_answer'}

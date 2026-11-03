@@ -1,10 +1,8 @@
-name: China persistent cloud Codex conversation
+name: China cloud Codex verification
 on:
   push:
     branches: [main]
     paths: ['.github/workflows/china-codex-cloud.yml']
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
 permissions:
   contents: read
@@ -34,4 +32,3 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python -u scripts/china_codex_cloud.py --bootstrap
-          python -u scripts/china_codex_cloud.py

@@ -7,6 +7,7 @@ on:
       SUPABASE_URL: {required: true}
       SUPABASE_SECRET_KEY: {required: true}
       WB_TOKEN_3: {required: true}
+      OPENAI_API_KEY: {required: false}
   workflow_dispatch:
   push:
     branches: [main]
@@ -22,7 +23,15 @@ jobs:
     timeout-minutes: 9
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false, sparse-checkout: scripts}
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5
@@ -36,3 +45,29 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
         run: python scripts/china_hourly_sales_read.py
+
+  analyze:
+    needs: read
+    if: needs.read.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install openai==3.42.1
+      - name: Cloud Codex analysis of saved evidence only; no WB/TG credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: PYTHONPATH=scripts python scripts/china_codex_hourly.py

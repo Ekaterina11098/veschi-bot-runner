@@ -1,9 +1,6 @@
-name: Repair exactly49 skipped Ozon stock articles 3Nov
+name: Completed owner repair49 3Nov - manual audit only
 on:
-  push:
-    paths: ['.github/workflows/stock-owner-layout-repair49-20261103.yml']
-  schedule:
-    - cron: '*/10 * 3 11 *'
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

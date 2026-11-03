@@ -67,3 +67,5 @@ jobs:
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
 
+
+# Resume same owner-approved journal after provider deadline; 2026-11-03 08:45 MSK.

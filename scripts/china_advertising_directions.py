@@ -36,6 +36,7 @@ def attach(bundle,source):
   sections['add']['period']=[scan['period_from'],scan['period_to']]
   for nm in scan.get('candidate_ids',[]):
    e=(source.get('economics',{}).get('rows')or{}).get(str(nm))or{}
+   if e and isinstance(e.get('stock_free'),(int,float)) and e['stock_free']<=0:continue
    if not e or e.get('expected_margin_before_ads_cny')is None:
     sections['add']['rows'].append(dict(article=labels.get(nm,'WB '+str(nm)),nm_id=nm,decision='Предварительный кандидат без рекламы: собственная экономика/цена/остаток не подтверждены полностью. Готового добавления нет.',ready=False));continue
    if e['expected_margin_before_ads_cny']<=0 or e.get('stock_free',0)<=0:continue

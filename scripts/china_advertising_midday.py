@@ -162,7 +162,7 @@ def render_midday(b):
   coverage=[]
   for key,label in labels.items():
    section=sections.get(key,{})
-   state='проверка не завершена' if not section or section.get('status')=='unavailable' else str(section.get('count',0))+(' кандидатов' if key=='add' else '')
+   state='нет готовых (неполные данные)' if not section or section.get('status')=='unavailable' else str(section.get('count',0))+(' кандидатов' if key=='add' else '')
    coverage.append(label+': '+state)
   d.text((44,205),' · '.join(coverage),font=font(24),fill=green)
   for i,label in enumerate(['Кампания WB','Расход, CNY','ДРР сегодня','Результат сегодня','Рекомендации']):

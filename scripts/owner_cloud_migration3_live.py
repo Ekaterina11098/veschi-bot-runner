@@ -121,7 +121,12 @@ def growth_check():
    quotes[str(cid)+':'+str(nm)]=raw
   except Exception as ex:errors[str(nm)]=type(ex).__name__
  value=dict(status='complete',observed_at=stamp(),source=source,minima=quotes,quote_errors=errors,targets=targets,history=history(source.get('executions',[])),wb_writes=0,telegram_calls=0)
- put(io,ROOT+':growth_economics',value);print('Five exact growth candidates reviewed with fresh economics/stock and bid quotes, no writes/sends')
+ put(io,ROOT+':growth_economics',value)
+ from china_advertising_midday import render_midday
+ art=io.get(ROOT+':live_artifacts');pages=render_midday(art['bundle'])
+ if len(pages)!=1 or pages[0]['actions']!=io.get('china_agent:loss_plan:v1:'+art['files'][0]['plan_id'])['items']:raise ValueError('Unchanged action-plan identity required')
+ f=pages[0];clean=dict(status='review_ready',b64=base64.b64encode(f['bytes']).decode(),sha256=hashlib.sha256(f['bytes']).hexdigest(),message_id=667,plan_id=art['files'][0]['plan_id'],wb_writes=0,telegram_calls=0)
+ put(io,ROOT+':clean_png',clean);print('Five exact growth candidates reviewed with fresh economics/stock and bid quotes, no writes/sends')
 
 def main():
  p=DB().get(ROOT+':approval')or{}

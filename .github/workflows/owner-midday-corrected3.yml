@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: china-owner-midday-corrected3
+  group: china-owner-midday-corrected3-fast
   cancel-in-progress: false
 jobs:
   corrected:
@@ -14,7 +14,11 @@ jobs:
     timeout-minutes: 22
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+        with:
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -22,6 +26,11 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: source
           persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /*.py
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0 > "$RUNNER_TEMP/install.log" 2>&1

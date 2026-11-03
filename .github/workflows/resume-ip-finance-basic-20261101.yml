@@ -92,3 +92,4 @@ jobs:
           proof["keys"]=list(data[0]);proof["status"]="page_saved_waiting_next_cursor";proof["http_status"]=200
           put("source_proof:v1",proof);print("Complete page saved privately; next cursor scheduled after server window.")
           
+# Resume authorized saved cursor after 2026-11-03 cooldown.

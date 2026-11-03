@@ -50,13 +50,18 @@ def review_advertising(io,bundle,source,identity,observational=None,force=False,
  if core is None and not force and (io.get(POLICY)or{}).get('status')!='active':return bundle
  core=core or Core()
  if not force and not active(core.db):return bundle
- actions={};subjects={};funding={}
+ actions={};subjects={};funding={};readiness_blocks=[]
  blocked=(core.db.get(POLICY)or{}).get('owner_withdrawn_actions',[])
  def withdrawn(a):return any(a.get('campaign_id')==x.get('campaign_id') and a.get('nm_id')==x.get('nm_id') and a.get('kind')==x.get('kind')for x in blocked)
  for c in bundle['campaigns']:
   for r in c.get('focus',[])+c.get('attention',[]):
    a=r.get('action')
    if not a or withdrawn(a):continue
+   e=r.get('economics')or a.get('growth_evidence')or{}
+   if (core.db.get(POLICY)or{}).get('require_published_stock') and e.get('published_stock')is None:
+    readiness_blocks.append(dict(id=a.get('id'),article=r['article'],blocker='Current published WB stock not confirmed'));continue
+   if direction(a)in('raise','add')and e.get('published_stock')==0:
+    readiness_blocks.append(dict(id=a.get('id'),article=r['article'],blocker='Current published WB stock zero'));continue
    key=a.get('id')or str(c['id'])+':'+str(a.get('nm_id'))
    if direction(a) is None:continue
    if key in actions and actions[key]!=a:raise ValueError('Conflicting exact candidate')
@@ -68,7 +73,7 @@ def review_advertising(io,bundle,source,identity,observational=None,force=False,
  labels={int(x['nmID']):x['vendorCode']for x in source.get('catalogue',{}).get('rows',[])}
  campaigns={c['id']for c in bundle['campaigns']}
  contract=dict(kind='advertising_review',decisions=[dict(id='exact allowed_actions key',note='Короткое действие без чисел/ставок: параметры возьмутся из immutable action',reason='Private reasoning')],directions={d:dict(status='checked|unavailable',note='Private coverage conclusion')for d in DIRECTIONS},research=[dict(nm_id='known nm',campaign_id='known campaign',direction='raise|add',note='Краткая непроверенная идея без конкретной непроверенной ставки')],summary='Private concise analysis')
- data=dict(report=bundle,completed_source=compact_source(source),intraday_observation=observational,allowed_actions=actions,candidate_evidence=subjects,
+ data=dict(report=bundle,completed_source=compact_source(source),intraday_observation=observational,allowed_actions=actions,candidate_evidence=subjects,readiness_blocks=readiness_blocks,
   instruction='Самостоятельно проверь все направления и экономику. Черновые кандидаты не рекомендация. Отбери только обоснованные; маленькую собственную выборку/разовый ноль не объявляй доказательством. Предложи исследовать рост по другим товарам, если есть конкретные данные. Готовые действия — только exact allowed_actions. Сегодняшний день не основание снижения/исключения. Funding допускает только3-дневный расчёт.')
  result,receipt=core.ask(identity,'advertising',data,contract,lambda v:ad_validate(v,actions,campaigns,labels),force)
  selected={r['id']:r for r in result['decisions']};out=copy.deepcopy(bundle)

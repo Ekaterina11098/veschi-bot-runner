@@ -1,0 +1,90 @@
+name: Owner China cloud Codex migration verification
+on:
+  push:
+    paths: ['.github/workflows/owner-cloud-migration3.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-cloud-migration3
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install openai==3.42.1 requests==2.32.5 pillow==11.3.0 python-dotenv simplejson==4.2.0 pyyaml==6.0.2
+      - name: Validate preserved clocks and installed pricing review without credentials
+        run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+          python scripts/install_china_codex_price.py --root source
+          python -m compileall -q scripts source/china_agent
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          for p in Path('.github/workflows').glob('china-*.yml'):
+              yaml.safe_load(p.read_text())
+          print('China workflows parsed')
+          PY
+      - name: Full advertising, dialog, cloud and route regression without credentials
+        run: |
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_conversion_watches.py'
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_codex_*.py'
+          node --test scripts/test_codex_route.mjs scripts/test_codex_inbox.mjs scripts/test_cloud_migration_route.mjs
+      - name: Install preserved real pricing collectors for preview
+        working-directory: source
+        run: |
+          python ../scripts/china_chat_migration.py --root .
+          python ../scripts/install_china_order_coverage.py
+          python ../scripts/check_china_installed_price_step.py china_agent/demand.py
+          cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
+          cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
+          cp ../scripts/china_price_brief.py china_agent/price_brief.py
+          cp ../scripts/china_buyer_price_forecast.py china_agent/buyer_price_forecast.py
+          cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
+          cp ../scripts/china_daily_expected_control.py china_agent/daily_expected_control.py
+          cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py
+          cp ../scripts/china_expected_order_profit.py china_agent/expected_order_profit.py
+          cp ../scripts/china_price_experiment_result.py china_agent/price_experiment_result.py
+          cp ../scripts/china_price_economic_target.py china_agent/price_economic_target.py
+      - name: Dated live cloud validation; marketplace read-only, publication separately reviewed
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: PYTHONPATH=scripts:source python -u scripts/owner_cloud_migration3_live.py
+
+# Owner funded API and requested economical completion: probe + remaining compact price reviews only.

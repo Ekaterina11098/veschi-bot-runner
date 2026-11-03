@@ -30,3 +30,5 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: PYTHONPATH=scripts python -u scripts/owner_cloud_migration3.py
+
+# Verify bounded managed-analysis submission contract revision2.

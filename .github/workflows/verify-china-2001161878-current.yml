@@ -1,0 +1,47 @@
+name: Read-only final document verification China November 1
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/verify-china-2001161878-current.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - name: Verify existing documents without modifications
+        shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,collections
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          class R(m.Transport):
+           def request(self,base,path,method="GET",body=None,params=None):
+            if base==m.MS and method!="GET":raise m.Stop("MS writes prohibited")
+            return super().request(base,path,method,body,params)
+          t=R();db=m.Cache(t);w=m.Worker(t,db,{})
+          root="weekly_report_review:china:20261101:";plan=db.get(root+"plan:v1");state=db.get(root+"ms_documents:v1");prep=db.get(root+"ms_preflight:v1");checks=[]
+          def norm(x):return m.href(x).split("?")[0]
+          for ref in state["documents"]:
+           kind=ref["type"];d=t.request(m.MS,"entity/"+kind+"/"+ref["id"]);ps=w.ms_rows("entity/"+kind+"/"+ref["id"]+"/positions",{"expand":"assortment"});counts=collections.Counter()
+           for p in ps:counts[(p["assortment"].get("article") or "").strip().casefold()]+=p["quantity"]
+           expected=plan["returns"] if kind=="salesreturn" else plan["sales"]
+           assert dict(counts)==expected and d["applicable"] and d["sum"]==0 and all(p["price"]==0 for p in ps)
+           assert all(norm(d[k])==norm(prep[k]) for k in ("organization","agent","store"))
+           assert len(w.ms_rows("entity/"+kind,{"filter":"externalCode="+d["externalCode"]}))==1
+           checks.append({**ref,"posted":True,"prices_zero":True,"quantity":sum(counts.values()),"positions":len(ps),"comment":d.get("description",""),"state":d.get("state"),"customerOrder":d.get("customerOrder"),"demand":d.get("demand")})
+          state.update(status="needs_valuation",checks=checks,all_posted=True,all_prices_zero=True,duplicate_check=True,last_verified_at=m.now())
+          db.put(root+"ms_documents:v1",state);db.put(root+"document_status:v1",{"status":"needs_valuation","documents":state["documents"],"all_posted":True,"all_prices_zero":True,"verified_at":state["last_verified_at"]})
+          print("Existing documents verified; valuation remains unresolved; no MS writes.")
+          

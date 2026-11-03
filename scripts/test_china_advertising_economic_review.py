@@ -29,7 +29,7 @@ class Review(unittest.TestCase):
   b,s,m=fixture(spend=2,clicks=7);r=apply(b,s,m)['campaigns'][0]['focus'][0]
   self.assertIsNone(r['action']);self.assertIn('Сохранить',r['decision'])
  def test_negative_pre_ad_model_does_not_require_spending_to_hundred_clicks(self):
-  b,s,m=fixture(spend=10,clicks=35);s['economics']['rows']['10']['expected_margin_before_ads_cny']=-5
+  b,s,m=fixture(spend=10,clicks=35);s['economics']['rows']['10'].update(expected_margin_before_ads_cny=-5,sample_size=20)
   r=apply(b,s,m)['campaigns'][0]['focus'][0];self.assertEqual(r['action']['kind'],'ad_exclude_sku')
  def test_stale_stock_blocks_action_and_report_completion(self):
   b,s,m=fixture();s['economics']['rows']['10']['stock_observed_at']=(datetime.now(timezone.utc)-timedelta(days=2)).isoformat()
@@ -55,5 +55,18 @@ class Review(unittest.TestCase):
   s['economics']['rows']['10'].update(sample_size=12,buyout_fallback=False)
   self.assertEqual('ad_exclude_sku',apply(b,s,m)['campaigns'][0]['focus'][0]['action']['kind'])
 
+ def test_small_zero_order_exposure_above_minimum_is_not_automatic_cut(self):
+  b,s,m=fixture(spend=13.33,orders=0,clicks=43,bid=31)
+  s['economics']['rows']['10'].update(expected_margin_before_ads_cny=35.64,sample_size=6)
+  self.assertIsNone(apply(b,s,m)['campaigns'][0]['focus'][0]['action'])
+ def test_two_unpaid_orders_do_not_prove_negative_unit_economics(self):
+  b,s,m=fixture(spend=11.48,orders=0,clicks=41)
+  s['economics']['rows']['10'].update(expected_margin_before_ads_cny=-15.8,sample_size=2,commission_policy_fallback=True)
+  self.assertIsNone(apply(b,s,m)['campaigns'][0]['focus'][0]['action'])
+ def test_positive_completed_economics_clears_inherited_cut_even_under_drr_target(self):
+  b,s,m=fixture(spend=30,orders=10,amount=1000,bid=34)
+  s['economics']['rows']['10'].update(sample_size=20)
+  b['campaigns'][0]['focus'][0]['action']=dict(kind='ad_set_bid',old_minor=34,target_minor=28)
+  self.assertIsNone(apply(b,s,m)['campaigns'][0]['focus'][0]['action'])
 if __name__=='__main__':unittest.main()
 

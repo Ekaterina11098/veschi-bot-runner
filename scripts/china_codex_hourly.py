@@ -22,7 +22,11 @@ def main():
  zero_budgets=sorted(r['advertId'] for r in (source.get('budgets')or{}).get('rows',[]) if r.get('total')==0)
  prior=db.get(ROOT+'latest')or{}
  new_zero=set(zero_budgets)-set(prior.get('zero_budget_campaigns',[]))
- if db.get(daily_key) and not material and not new_zero:
+ worst=min([float(v[k]['pct']) for v in comparisons.values() for k in ['count','amount_cny'] if v.get('count',{}).get('baseline',0)>=30 and v.get(k,{}).get('pct') is not None]or[0])
+ band=int(max(0,-worst)//10) if material else 0
+ prior_band=prior.get('sales_signal_band',0)
+ signal_changed=(band>=2 and (prior_band<2 or band>prior_band))or(band<2 and prior_band>=2)
+ if db.get(daily_key) and not signal_changed and not new_zero:
   print('Hourly data saved; unchanged full-day basis, no paid model call');return
  ctx=Worker(db).context(dict(job_id=0,sender_id=5122667182,request_text='Почасовое наблюдение продаж и рекламы: диагностика, бюджет и новые возможности по завершённым дням. Никаких действий и отправок.'))
  ctx.pop('work_notes',None) # Core loads the authoritative bounded notes once.
@@ -32,7 +36,7 @@ def main():
   return v
  result,receipt=Core(db).ask('hourly:'+source['slot_msk'],'hourly_observation',ctx,
   dict(kind='hourly_review',material=False,summary='Только новые существенные факты; обе базы продаж, окна/суммы/статусы совместимы. Нет сопоставимых данных явно. Не повторять уже сообщённое/verified/отозванное.',directions={k:'checked|unavailable с кратким обоснованием; готовое действие только при всех текущих проверках'for k in ['raise','add','reduce','exclude']},new_candidates=[]),validate)
- value=dict(status='complete',source_key=key,slot_msk=source['slot_msk'],observed_at=source['observed_at'],completed_at=datetime.now(timezone.utc).isoformat(),analysis=result,receipt=receipt,source_channel='codex_cloud',zero_budget_campaigns=zero_budgets,wb_writes=0,telegram_calls=0,grants_action_permission=False)
+ value=dict(status='complete',source_key=key,slot_msk=source['slot_msk'],observed_at=source['observed_at'],completed_at=datetime.now(timezone.utc).isoformat(),analysis=result,receipt=receipt,source_channel='codex_cloud',zero_budget_campaigns=zero_budgets,sales_signal_band=band,wb_writes=0,telegram_calls=0,grants_action_permission=False)
  if db.get(result_key):db.update(result_key,value)
  else:db.once(result_key,value)
  if not db.get(daily_key):db.once(daily_key,dict(status='complete',source_key=key,receipt=receipt))

@@ -4,8 +4,8 @@ export function route(text,policy,message,now=Date.now()) {
  if(policy.thread_id!==THREAD||policy.chat_id!==-1004342917488||policy.bot_id!==8780468043)throw Error('Bridge scope mismatch');
  if(message.chat.id!==policy.chat_id||!policy.allowed_sender_ids.includes(message.from.id))return {kind:'legacy',text};
  const legacy=/^(?:Агент\s*[,,:]\s*|\/agent(?:@[A-Za-z0-9_]+)?\s+)([\s\S]+)$/iu.exec(text);
- if(legacy)return {kind:'legacy_explicit',text:legacy[1].trim()};
+ if(legacy&&policy.legacy_analysis_enabled!==false)return {kind:'legacy_explicit',text:legacy[1].trim()};
  if(!Number.isFinite(Date.parse(policy.expires_at))||now>=Date.parse(policy.expires_at))return {kind:'expired',text};
  const addressed=/^(?:Кодекс\s*[,,:]\s*|\/codex(?:@[A-Za-z0-9_]+)?\s+)([\s\S]+)$/iu.exec(text);
- return {kind:'codex',text:addressed?addressed[1].trim():text};
+ return {kind:'codex',text:addressed?addressed[1].trim():legacy?legacy[1].trim():text};
 }

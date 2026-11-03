@@ -2,7 +2,7 @@
 import os,json,base64,io as bio
 from datetime import datetime,timezone,timedelta,date
 from PIL import Image,ImageDraw
-from china_advertising_v2 import collect,build,http,price_map,history,daily_metrics,sums,ratio,MSK,never_started_draft
+from china_advertising_v2 import collect,build,http,price_map,history,daily_metrics,sums,ratio,MSK,never_started_draft,event_time
 from china_advertising_v2_png import font,money,pct,color
 ZERO=dict(spend=0,amount=0,orders=0,views=0,clicks=0)
 
@@ -10,7 +10,7 @@ def post_change_pending(changes,cid,nm,day,campaign=None):
  # SKU changes apply across placements; explicit campaign launch protects every member.
  cutoff=date.fromisoformat(day)
  def pending(at):
-  changed=datetime.fromisoformat(at.replace('Z','+00:00'))
+  changed=event_time(at)
   if changed.tzinfo is None:raise ValueError('Change timestamp has no timezone')
   return cutoff<=changed.astimezone(MSK).date()+timedelta(days=1)
  started=(campaign or {}).get('timestamps',{}).get('started')
@@ -39,9 +39,9 @@ def revise_midday_bundle(bundle,source,records):
    blocked=[x for x in removed if x['campaign_id']==row['id']]
    notes=[]
    for action in blocked:
-    dates=[datetime.fromisoformat(x['at'].replace('Z','+00:00')).astimezone(MSK).date() for x in changes if x.get('nm')==action['nm_id'] and x.get('kind') in ['bid','added','price','returned','relaunch']]
+    dates=[event_time(x['at']).astimezone(MSK).date() for x in changes if x.get('nm')==action['nm_id'] and x.get('kind') in ['bid','added','price','returned','relaunch']]
     started=campaign.get('timestamps',{}).get('started')
-    if started:dates.append(datetime.fromisoformat(started.replace('Z','+00:00')).astimezone(MSK).date())
+    if started:dates.append(event_time(started).astimezone(MSK).date())
     review=max(dates)+timedelta(days=2)
     notes.append(action['article']+': сохраняем до завершения полного дня; оценка '+review.strftime('%d.%m')+'.')
    row['post_change_note']=' '.join(notes)

@@ -128,6 +128,38 @@ def growth_check():
  f=pages[0];clean=dict(status='review_ready',b64=base64.b64encode(f['bytes']).decode(),sha256=hashlib.sha256(f['bytes']).hexdigest(),message_id=667,plan_id=art['files'][0]['plan_id'],wb_writes=0,telegram_calls=0)
  put(io,ROOT+':clean_png',clean);print('Five exact growth candidates reviewed with fresh economics/stock and bid quotes, no writes/sends')
 
+
+def correct_png():
+ import requests
+ from china_price_apply import IO
+ from china_advertising_midday import render_midday
+ os.environ.setdefault('WB_TOKEN_3','disabled')
+ io=IO();approval=io.get(ROOT+':approval')or{}
+ if approval.get('owner_user_id')!=5122667182 or approval.get('stage')!='correct_png':raise ValueError('Owner correction scope missing')
+ key=ROOT+':png667_cleanup'
+ if io.get(key):raise ValueError('Existing correction receipt: do not repeat uncertain edits')
+ art=io.get(ROOT+':live_artifacts');bundle=copy.deepcopy(art['bundle'])
+ for row in bundle['campaigns']:row['codex_research_recommendations']=[]
+ pages=render_midday(bundle)
+ plan=io.get('china_agent:loss_plan:v1:'+art['files'][0]['plan_id'])
+ if len(pages)!=1 or pages[0]['actions']!=plan['items']or plan['report_message_ids']!=[667]:raise ValueError('Action plan must remain identical')
+ content=pages[0]['bytes'];sha=hashlib.sha256(content).hexdigest()
+ if io.tg('getMe',{}).get('id')!=8780468043:raise ValueError('Wrong bot')
+ if not io.create(key,dict(status='submitting',message_id=667,sha256=sha,started_at=stamp(),wb_writes=0)):raise ValueError('Correction already claimed')
+ try:
+  r=requests.post('https://api.telegram.org/bot'+io.bot+'/editMessageMedia',data={'chat_id':'-1004342917488','message_id':'667','media':json.dumps(dict(type='photo',media='attach://photo',caption='Китай · 03.11 · срез 17:30 МСК. Расход 1 127,98 CNY; ДРР 3,89%. Только три готовых действия. Ответьте «Сделай всё» для действий этого PNG.'),ensure_ascii=False)},files={'photo':('report.png',content,'image/png')},timeout=60)
+  j=r.json()
+  if not r.ok or not j.get('ok')or j['result'].get('message_id')!=667:raise RuntimeError('PNG correction not verified')
+  proof=dict(status='verified',message_id=667,sha256=sha,receipt=j['result'],completed_at=stamp(),wb_writes=0,actions_unchanged=True)
+  io.put(key,proof)
+ except Exception as ex:
+  io.put(key,dict(status='uncertain',message_id=667,error_type=type(ex).__name__,wb_writes=0));raise
+ io.create(ROOT+':before_png667_cleanup',art)
+ art['bundle']=bundle;art['files'][0].update(b64=base64.b64encode(content).decode(),sha256=sha);art['correction_receipt']=key
+ io.put(ROOT+':live_artifacts',art);io.put('china_agent:advertising_midday_artifacts:'+DAY+':v1',art)
+ io.put(ROOT+':clean_png',dict(status='verified',b64=base64.b64encode(content).decode(),sha256=sha,message_id=667,wb_writes=0))
+ print('Existing PNG667 corrected; three bound actions unchanged; no marketplace actions')
+
 def main():
  p=DB().get(ROOT+':approval')or{}
  if p.get('owner_user_id')!=5122667182:raise ValueError('Owner migration scope missing')
@@ -136,5 +168,6 @@ def main():
  elif stage=='publish_live':publish()
  elif stage=='price_preview':price_preview()
  elif stage=='growth_check':growth_check()
+ elif stage=='correct_png':correct_png()
  else:raise ValueError('Unknown live validation stage')
 if __name__=='__main__':main()

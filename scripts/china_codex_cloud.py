@@ -170,8 +170,10 @@ class Worker:
         return ctx
     def generate(self,sid,message,submission):
         text=[];completed=False
+        if len(message.encode('utf-8'))>3800000:raise ValueError('Cloud message exceeds bounded request scope')
+        content=[{'type':'input_text','text':message[i:i+400000]}for i in range(0,len(message),400000)]
         with self.sdk().beta.agents.sessions.events.stream(sid) as events:
-            self.sdk().beta.agents.sessions.events.create(sid,idempotency_key=submission,events=[{'type':'agent.session.input.message','input':[{'role':'user','content':[{'type':'input_text','text':message}]}]}])
+            self.sdk().beta.agents.sessions.events.create(sid,idempotency_key=submission,events=[{'type':'agent.session.input.message','input':[{'role':'user','content':content}]}])
             for event in events:
                 if event.type.endswith('output_text.delta'):text.append(event.to_dict().get('delta',''))
                 if event.type=='agent.session.turn.completed' and event.turn.subagent_id is None:completed=True;break

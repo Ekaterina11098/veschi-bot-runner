@@ -73,7 +73,7 @@ def campaign_table(bundle):
    elif key=='exclude':text='Исключить из РК.'
    else:text=('Повысить'if key=='raise'else'Снизить')+' '+str(a['old_minor']/100)+' → '+str(a['target_minor']/100)+' CNY.'
    c['direction_recommendations'].append(r['article']+': '+text)
- for c in out['campaigns']:c['direction_recommendations']+=c.get('codex_research_recommendations',[])
+ # Unready research stays in the private Codex analysis journal.
  return out
 
 def overview(bundle):

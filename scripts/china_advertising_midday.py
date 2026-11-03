@@ -136,7 +136,7 @@ def completed_recommendation(r):
 def recommendations(c):
  rows=[completed_recommendation(r)for r in c['attention']]
  rows+=c.get('addition_review_notes',[])
- rows+=c.get('codex_research_recommendations',[])
+ # Unready research stays in the private analysis journal.
  return rows or ['Нет новых действий.']
 def render_midday(b):
  b=dict(b,campaigns=[c for c in b['campaigns'] if not c.get('draft')])

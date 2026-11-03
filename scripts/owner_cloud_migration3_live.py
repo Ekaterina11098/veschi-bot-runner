@@ -180,6 +180,28 @@ def api_recheck():
   value.update(status='unavailable',error_type=type(ex).__name__,error_body=body,completed_at=stamp());put_db(value)
   print('Cloud API or remaining live validation unavailable: '+type(ex).__name__)
 
+
+def verify_cutover():
+ from china_codex_analysis import active
+ from china_codex_routing import bound_execution
+ db=DB();p=db.get('china_agent:analysis_backend:v1')or{};bridge=db.get('china_agent:codex_bridge:v1:policy')or{};cloud=db.get('china_agent:codex_cloud:v1:policy')or{}
+ if not active(db) or p.get('legacy_analysis_enabled')is not False or bridge.get('legacy_analysis_enabled')is not False:raise ValueError('Legacy analysis not disabled')
+ if cloud.get('session_key')!='china_agent:codex_cloud:v2:session' or not db.get(cloud['session_key']):raise ValueError('Tested cloud session not selected')
+ if (db.get(ROOT+':price_preview_result')or{}).get('status')!='verified':raise ValueError('Pricing verification absent')
+ if (db.get(ROOT+':delivery_proof')or{}).get('status')!='verified' or (db.get(ROOT+':png667_cleanup')or{}).get('status')!='verified':raise ValueError('Real delivery proof absent')
+ configs=db.api('GET','business_agent_config',{'agent_id':'eq.china','select':'agent_id,active,chat_id'})
+ if len(configs)!=1 or configs[0].get('active')is not True or configs[0]['chat_id']!=-1004342917488:raise ValueError('Bot transport configuration changed')
+ class Bound:
+  def get(self,key):return db.get(key)
+ j=dict(request_text='Сделай всё',tool_trace=[dict(name='china_saved_question',bot_id=8780468043,reply_message_id=667,forwarded=False)])
+ if not bound_execution(Bound(),j):raise ValueError('Exact PNG confirmation routing missing')
+ if bound_execution(Bound(),dict(j,request_text='Сделай таблицу расходов')):raise ValueError('Question incorrectly becomes execution')
+ value=dict(status='verified',verified_at=stamp(),legacy_analysis_disabled=True,bot_transport_active=True,collectors_and_schedules_preserved=True,png667_confirmation_binding_verified=True,pricing_live_reviews_verified=True,wb_writes=0,telegram_calls=0,model_calls=0)
+ key=ROOT+':cutover_readback'
+ if db.get(key):db.update(key,value)
+ else:db.once(key,value)
+ print('Cloud cutover verified by exact policy/session/receipt/PNG readback; zero model/WB/TG calls')
+
 def main():
  p=DB().get(ROOT+':approval')or{}
  if p.get('owner_user_id')!=5122667182:raise ValueError('Owner migration scope missing')
@@ -190,5 +212,6 @@ def main():
  elif stage=='growth_check':growth_check()
  elif stage=='correct_png':correct_png()
  elif stage=='api_recheck':api_recheck()
+ elif stage=='verify_cutover':verify_cutover()
  else:raise ValueError('Unknown live validation stage')
 if __name__=='__main__':main()

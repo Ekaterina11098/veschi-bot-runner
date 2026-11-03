@@ -28,6 +28,15 @@ def merge_completed(bundle,review,source_ref):
    m=(row.get('comparison')or{}).get('after')or row['period']
    c['attention'].append(dict(article=row['article'],decision=row['decision'],action=row['action'],spend=m['spend'],clicks=m['clicks'],closed_day_evidence=dict(period_from=days[0],period_to=days[-1],verified=True,source_ref=source_ref,postclick_reviewed=True,metrics=m)))
   c['completed_actions']=list(dict.fromkeys(done))
+ out['recommendation_directions']=copy.deepcopy(review.get('recommendation_directions',{}))
+ out['growth_review']=copy.deepcopy(review.get('growth_review',{}))
+ for c in out['campaigns']:
+  c['addition_review_notes']=[]
+ for row in out['recommendation_directions'].get('add',{}).get('rows',[]):
+  campaign=next((c for c in out['campaigns']if c['id']==row.get('campaign_id')),None)
+  if campaign and row.get('bid_verified')is True:
+   campaign['addition_review_notes'].append(row['article']+': кандидат на добавление; требуется отдельный точный план.')
+
  out['recommendation_basis']='completed_days_with_fresh_economics_and_current_state'
  return out
 def attach(io,bundle,day):
@@ -64,7 +73,25 @@ def attach(io,bundle,day):
    if len(values)!=1:raise ValueError('Unverified current minimum')
    found.add(row['nm_id']);minima[str(c['id'])+':'+str(row['nm_id'])]=values[0]
   if found!=set(ids):raise ValueError('Incomplete current minima')
- review=apply(enhance(build(source,minima),source),source,minima)
+ from china_advertising_growth import enrich as growth_enrich
+ from china_advertising_directions import attach as attach_directions
+ # Use the same four-direction review as the morning report. Missing evidence remains unavailable.
+ source['addition_bid_quotes']={};source['addition_quote_errors']={}
+ for nm in source.get('addition_candidate_ids',[]):
+  cid=(source.get('addition_targets')or{}).get(str(nm))
+  if not cid:continue
+  try:
+   raw=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=['recommendation']))
+   values=[v['value']for row in raw.get('bids',[])if row.get('nm_id')==nm for v in row.get('bids',[])if v.get('type')=='recommendation'and v.get('currency')=='CNY']
+   if len(values)!=1 or type(values[0])is not int or values[0]<=0 or values[0]%source['config']['cpcStep']:raise ValueError('Exact addition minimum unavailable')
+   source['addition_bid_quotes'][str(nm)]=dict(campaign_id=cid,target_minor=values[0],bid_verified=True,observed_at=source['observed_at'])
+  except Exception as ex:source['addition_quote_errors'][str(nm)]=type(ex).__name__
+ class MiddayGrowthIO:
+  # Morning proposals can predate today's verified changes. Do not reuse that journal.
+  def get(self,key):return io.get(key+':midday' if key.startswith('china_agent:daily_growth:')else key)
+  def create(self,key,value):return io.create(key+':midday' if key.startswith('china_agent:daily_growth:')else key,value)
+  def __getattr__(self,name):return getattr(io,name)
+ review=attach_directions(apply(growth_enrich(MiddayGrowthIO(),source,enhance(build(source,minima),source)),source,minima),source)
  if not review.get('economic_review_complete'):raise ValueError('Incomplete economic review; do not freeze empty recommendations')
  key='china_agent:advertising_midday_completed:'+day+':v1';save(io,key,dict(source=source,review=review,status='complete',observed_at=source['observed_at'],wb_writes=0))
  return merge_completed(bundle,review,key)

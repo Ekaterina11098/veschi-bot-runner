@@ -60,6 +60,11 @@ def execute_day(get,put,stages,run_id,now=None,single_writer=False,*,resume_from
    state.update(status='incomplete',failed_stage=name,reason='timeout',error_type=type(exc).__name__);save();return state
   except Exception as exc:
    if getattr(exc,'telemetry',None) is not None:merge_telemetry(state,run_id,name,exc.telemetry)
+   # Missing live membership after429 is an explicit independent limitation,
+   # never permission to mutate WB or a reason to discard saved daily analytics.
+   if name=='membership' and (getattr(exc,'summary',{}) or {}).get('error_type')=='RateLimited':
+    state['stages'].append(dict(name=name,status='incomplete',reason='membership_read_rate_limited',read_only_limit=True,wb_execution_allowed=False))
+    save();continue
    if name in ('budgets','budget_completion'):
     record=dict(name=name,status='failed',reason=str(exc)[:300],error_type=type(exc).__name__)
     if budget_only:

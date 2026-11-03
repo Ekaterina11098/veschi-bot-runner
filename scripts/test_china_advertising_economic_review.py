@@ -42,5 +42,18 @@ class Review(unittest.TestCase):
    def wb(self,path):return dict(listGoods=[dict(nmID=99,currencyIsoCode4217='RUB',sizes=[]),dict(nmID=10,vendorCode='bag',currencyIsoCode4217='CNY',sizes=[dict(discountedPrice=100)])])
   self.assertEqual(current_prices(IO(),[10])['rows'][0]['seller_price'],100)
 
+ def test_positive_own_economics_does_not_hit_artificial_six_percent_cliff(self):
+  for spend in (59.9,60.3,100):
+   for bid in (28,34):
+    b,s,m=fixture(spend=spend,orders=10,amount=1000,bid=bid)
+    s['economics']['rows']['10'].update(sample_size=12,buyout_fallback=False,commission_policy_fallback=False)
+    row=apply(b,s,m)['campaigns'][0]['focus'][0]
+    self.assertIsNone(row['action'])
+    self.assertGreater(row['model_profit_for_attributed_orders_cny'],0)
+ def test_loss_still_allows_exclusion_with_orders(self):
+  b,s,m=fixture(spend=250,orders=10,amount=1000)
+  s['economics']['rows']['10'].update(sample_size=12,buyout_fallback=False)
+  self.assertEqual('ad_exclude_sku',apply(b,s,m)['campaigns'][0]['focus'][0]['action']['kind'])
+
 if __name__=='__main__':unittest.main()
 

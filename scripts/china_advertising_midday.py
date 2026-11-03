@@ -131,16 +131,12 @@ def only_completed_day_actions(bundle):
  return out
 
 def completed_recommendation(r):
- e=r.get('closed_day_evidence')or{};m=e.get('metrics')
- if m:
-  return r['article']+': полные '+e['period_from']+'—'+e['period_to']+', расход '+money(m['spend'])+' ¥; '+str(int(m['orders']))+' заказов; ДРР '+pct(m)+'. '+r['decision']
- return r['article']+': за сегодня '+money(r['spend'])+' ¥, '+str(int(r['clicks']))+' кликов, 0 рекламных заказов. '+r['decision']
+ return r['article']+': '+r['decision']
 
 def recommendations(c):
- # Only actionable recommendations belong in this column; metrics/unknown data stay in their own cells.
- if c['attention']:
-  return [completed_recommendation(r) for r in c['attention']]
- return ['Нет новых действий.']
+ rows=[completed_recommendation(r)for r in c['attention']]
+ rows+=c.get('addition_review_notes',[])
+ return rows or ['Нет новых действий.']
 def render_midday(b):
  b=dict(b,campaigns=[c for c in b['campaigns'] if not c.get('draft')])
  W=2400;H=6500;xs=[44,480,780,1050,1650,2356];files=[];green='#196b44'
@@ -160,19 +156,27 @@ def render_midday(b):
   d.text((44,100),'Текущий день: '+b['day']+' · с 00:00 МСК · цель ДРР 5%',font=font(29,True),fill='white')
   obs=datetime.fromisoformat(b['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m.%Y %H:%M МСК')
   d.text((44,150),'Фактический срез: '+obs,font=font(24),fill='white')
+  sections=b.get('recommendation_directions',{})
+  labels={'raise':'Повысить','add':'Добавить','reduce':'Снизить','exclude':'Исключить'}
+  coverage=[]
+  for key,label in labels.items():
+   section=sections.get(key,{})
+   state='проверка не завершена' if not section or section.get('status')=='unavailable' else str(section.get('count',0))+(' кандидатов' if key=='add' else '')
+   coverage.append(label+': '+state)
+  d.text((44,205),' · '.join(coverage),font=font(24),fill=green)
   for i,label in enumerate(['Кампания WB','Расход, CNY','ДРР сегодня','Результат сегодня','Рекомендации']):
-   for j,line in enumerate(wrap(d,label,xs[i+1]-xs[i]-30,29)):d.text((xs[i],235+j*35),line,font=font(29,True),fill=green)
+   for j,line in enumerate(wrap(d,label,xs[i+1]-xs[i]-30,29)):d.text((xs[i],280+j*35),line,font=font(29,True),fill=green)
   return im,d
  def finish(im,y,acts):
   f=bio.BytesIO();im.crop((0,0,W,min(H,y+30))).save(f,format='PNG');files.append(dict(family='drr',bytes=f.getvalue(),actions=acts))
- im,d=canvas();y=330;acts=[]
+ im,d=canvas();y=390;acts=[]
  for c in b['campaigns']:
   p=c['today'];draft=c['draft']
   result='Не запускалась' if draft else 'Нет данных' if p is None else 'Рекламные заказы: '+str(int(p['orders']))+'\nСумма: '+money(p['amount'])+' ¥\nКлики: '+str(int(p['clicks']))
   cells=[str(c['id'])+'\n'+c['name'],'Не запускалась' if draft else money(p['spend'] if p else None)+' ¥','Не применима' if draft else pct(p),result,'\n'.join(recommendations(c))]
   ls=[wrap(d,s,xs[i+1]-xs[i]-36) for i,s in enumerate(cells)];h=max(145,max(map(len,ls))*35+36)
   if h>4800:raise ValueError('Midday row too long')
-  if y+h>5500:finish(im,y,acts);im,d=canvas();y=330;acts=[]
+  if y+h>5500:finish(im,y,acts);im,d=canvas();y=390;acts=[]
   d.rounded_rectangle((24,y,W-24,y+h),18,fill='white')
   for i,lines in enumerate(ls):
    for j,line in enumerate(lines):d.text((xs[i],y+18+j*35),line,font=font(27),fill=color(p) if i==2 else '#111111')

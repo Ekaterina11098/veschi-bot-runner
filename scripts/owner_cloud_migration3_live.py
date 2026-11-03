@@ -160,6 +160,26 @@ def correct_png():
  io.put(ROOT+':clean_png',dict(status='verified',b64=base64.b64encode(content).decode(),sha256=sha,message_id=667,wb_writes=0))
  print('Existing PNG667 corrected; three bound actions unchanged; no marketplace actions')
 
+
+def api_recheck():
+ from china_codex_cloud import Worker
+ db=DB();worker=Worker(db)
+ value=dict(status='checking',observed_at=stamp(),model='gpt-6-astra',wb_writes=0,telegram_calls=0)
+ put_db=lambda val:db.update(ROOT+':api_recheck_latest',val) if db.get(ROOT+':api_recheck_latest') else db.once(ROOT+':api_recheck_latest',val)
+ put_db(value)
+ try:
+  with worker.sdk().beta.agents.sessions.create(agent={'model':'gpt-6-astra','instructions':'Ответь только ОК.'},environment={'type':'none'},input='Проверка доступности API: ответь ОК.',stream=True).with_result_collection() as events:
+   for event in events:
+    if event.type.endswith(('.failed','.cancelled')):raise RuntimeError('Availability probe failed')
+   sid=events.get_final_result().session_id
+  value.update(status='available',session_id=sid,completed_at=stamp());put_db(value)
+  print('Actual managed API request available')
+  price_preview()
+ except Exception as ex:
+  body=getattr(ex,'body',None)
+  value.update(status='unavailable',error_type=type(ex).__name__,error_body=body,completed_at=stamp());put_db(value)
+  print('Cloud API or remaining live validation unavailable: '+type(ex).__name__)
+
 def main():
  p=DB().get(ROOT+':approval')or{}
  if p.get('owner_user_id')!=5122667182:raise ValueError('Owner migration scope missing')
@@ -169,5 +189,6 @@ def main():
  elif stage=='price_preview':price_preview()
  elif stage=='growth_check':growth_check()
  elif stage=='correct_png':correct_png()
+ elif stage=='api_recheck':api_recheck()
  else:raise ValueError('Unknown live validation stage')
 if __name__=='__main__':main()

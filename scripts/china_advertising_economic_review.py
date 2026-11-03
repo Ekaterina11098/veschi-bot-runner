@@ -76,7 +76,13 @@ def apply(bundle,source,minima):
    if e.get('buyout_fallback'):r['reason']+=' Нет завершённой собственной выборки: выкуп50% — допущение, не факт.'
    base=dict(id=str(c['id'])+':'+str(r['nm']),campaign_id=c['id'],nm_id=r['nm'],placement=zone,old_minor=old,article=r['article'])
    meaningful=(p['clicks']>=100 or model_before<=0) and spend>=max(0,model_before,e['seller_price_cny']*.05)
-   if old>minimum:
+   positive_own_model=(orders>0 and r['model_profit_for_attributed_orders_cny']>0 and not e.get('buyout_fallback') and not e.get('commission_policy_fallback') and e.get('sample_size',0)>=5)
+   if positive_own_model:
+    # A target DRR is not a break-even threshold; preserve uncertainty and a finite review.
+    r['action']=None
+    r['decision']=f'Сохранить {old/100:g} ¥ до оценки следующего полного дня: предварительная экономика положительна.'
+    r['reason']+=' Расчёт не доказывает закрытую прибыль; превышение цели ДРР само по себе не основание для снижения или исключения.'
+   elif old>minimum:
     r['action']=dict(base,kind='ad_set_bid',target_minor=minimum)
     r['decision']=f'Снизить {old/100:g} → {minimum/100:g} ¥ (минимум WB).'
    elif old==minimum and orders>0 and drr is not None and 5<drr<=6 and r['model_profit_for_attributed_orders_cny']>0:

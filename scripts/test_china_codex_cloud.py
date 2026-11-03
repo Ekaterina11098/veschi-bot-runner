@@ -91,4 +91,30 @@ class Tests(unittest.TestCase):
         db.api=fake;db.get=lambda key:saved.get('payload')
         db.once('test',{'status':'ok'})
         self.assertIn('expires_at',saved)
+    def test_midday_context_preserves_delivery_and_source_clock_without_image(self):
+        i=inbox();db=FakeDB(i);day=str(c.today())
+        db.values['china_agent:shared_memory:policy:v1']={'enabled':True}
+        prefix='china_agent:'
+        db.values[prefix+'advertising_midday_source:'+day+':v2']={'status':'complete','observed_at':'2026-11-02T21:20:00+00:00'}
+        db.values[prefix+'advertising_midday_artifacts:'+day+':v1']={'files':[{'b64':'SECRET_IMAGE'}],'bundle':{'campaigns':[{'id':7,'today':{'spend':13.18}}]}}
+        db.values[prefix+'advertising_midday_delivery:'+day+':v1']={'status':'delivered','parts':[{'status':'sent','message_id':661}]}
+        source=prefix+'hourly_sales_api:v1:snapshot:2026-11-03T15:MSK:attempt:1'
+        db.values[prefix+'hourly_sales_api:v1:latest']={'source_key':source}
+        db.values[source]={'slot_msk':'2026-11-03T15:MSK','status':'complete'}
+        ctx=c.Worker(db).context(i)
+        self.assertEqual(ctx[prefix+'advertising_midday_delivery:'+day+':v1']['parts'][0]['message_id'],661)
+        self.assertEqual(ctx[prefix+'advertising_midday_artifacts:'+day+':v1']['campaigns'][0]['today']['spend'],13.18)
+        self.assertEqual(ctx['latest_hourly_snapshot']['source_key'],source)
+        self.assertNotIn('SECRET_IMAGE',json.dumps(ctx))
+        self.assertIn('21:20:00',ctx[prefix+'advertising_midday_source:'+day+':v2']['observed_at'])
+    def test_original_quoted_report_reaches_model(self):
+        i=inbox();db=FakeDB(i)
+        db.original['tool_trace'][0].update(reply_message_id=661,reply_text='Промежуточный отчёт')
+        w=FakeWorker(db);captured=[]
+        def generate(sid,message,token):
+            captured.append(json.loads(message));return '{"kind":"answer","answer":"Срез устарел."}'
+        w.generate=generate
+        w.process(c.ROOT+'inbox:231',i)
+        self.assertEqual(captured[0]['dated_work_context']['telegram_reply_context']['reply_message_id'],661)
+
 if __name__=='__main__':unittest.main()

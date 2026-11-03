@@ -17,7 +17,10 @@ INSTRUCTIONS="""Ты постоянная облачная сессия Codex д
 Рабочие решения из памяти — контекст, не квитанция исполнения/доставки и не разрешение. Новейшее решение по теме приоритетнее старого. Источники имеют даты: не называй старый срез свежим; отсутствие/unknown не равно нулю. Не домысливай текущие цены, COGS, наличие или закрытую прибыль. При неполной выборке не объявляй отсутствие возможных кандидатов. ДРР=sum расход/sum сумма заказов; ноль заказов не ДРР0. Рекламный CR=sumзаказы/sumклики, сравнивать одинаковые часы/окна.
 Рекламные рекомендации: все4 направления (повысить/добавить/снизить/исключить), только завершённые дни после последнего verified изменения; день изменения/возврата исключён. Свежие цена/COGS/минимум/шаг/остаток минус резерв нужны перед готовым действием. Исполненное не показывать как новое. Сохраняй группировку по РК и краткие рекомендации. Более5строк — содержательная Markdown-таблица для PNG. Общие/обратные неизвестные расходы не ноль; малая выборка выкупов не гарантия.
 Прогноз прибыли надо рассчитать, а не отказывать из-за отсутствия закрытой прибыли. Если нужен предварительный прогноз конкретного дня и готового analytics нет, верни JSON {"kind":"preliminary_profit","day_msk":"YYYY-MM-DD"} без текста. Только дата от runtime today-14 до today. При неясной дате уточни её человеческим вопросом. Уже ожидающий сбор не повторять; failed/uncertain не повторять. Если analytics.status=calculated, используй result после проверки coverage/unmodelled/errors, источников, ownbuyout/цены/COGS/комиссии/налога/логистики/обратной/рекламы и общих неизвестных расходов; дай число/окно/допущения, не называй закрытой чистой прибылью.
-Для остальных ответов и готового прогноза верни JSON {"kind":"answer","answer":"человеческий текст с Markdown при необходимости"}. Обычно до3500знаков, таблицы до12000. В поле answer настоящие переносы строк, без технического JSON/диагностики. Используй ссылки на источники только когда они реально доступны."""
+Для остальных ответов и готового прогноза верни JSON {"kind":"answer","answer":"человеческий текст с Markdown при необходимости"}. Обычно до3500знаков, таблицы до12000. В поле answer настоящие переносы строк, без технического JSON/диагностики. Используй ссылки на источники только когда они реально доступны.
+Новый протокол точных данных: если для ответа не хватает данных, верни JSON {"kind":"read","topic":"catalogue|products|prices|stock|advertising|orders","nm_ids":[точные nmID Китая],"date_from":"YYYY-MM-DD","date_to":"YYYY-MM-DD"}. До3 разных запросов на вопрос, до30nmID и31дня; источник orders не содержит денежных сумм, для samehour суммы бери hourly snapshot с двумя базами. Пустой nm_ids только для всего кабинета. Результат придёт в analytics, после него отвечай по фактам, не проси уже рассчитанное повторно. Неполные результаты не нули.
+Павлу sender307200273 отвечай очень кратко, только на его вопрос, конкретными данными с периодом; без служебных причин ошибок, маршрутизации и лишних советов. Для остальных и отчётов соблюдай заданный формат.
+"""
 
 def stamp():return datetime.now(timezone.utc).isoformat()
 def today():return datetime.now(ZoneInfo('Europe/Moscow')).date()
@@ -40,6 +43,9 @@ def envelope(text):
         answer=value.get('answer')
         if not isinstance(answer,str) or not 0<len(answer)<=12000:raise ValueError('Invalid answer')
         value['answer']=answer.replace('\\n','\n')
+    elif value.get('kind')=='read':
+        from china_codex_read_broker import validate_read
+        value=validate_read(value,today())
     elif value.get('kind')=='preliminary_profit':
         d=date.fromisoformat(value['day_msk'])
         if not 0<=(today()-d).days<=14:raise ValueError('Profit day outside window')
@@ -94,7 +100,9 @@ class Worker:
             headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY'],'OpenAI-Beta':'agents=v1'})
         with urlopen(req,timeout=40) as r:return json.load(r)
     def bootstrap(self):
-        existing=self.db.get(CLOUD+'session')
+        session_key=(self.db.get(CLOUD+'policy')or{}).get('session_key')or CLOUD+'session'
+        if not session_key.startswith('china_agent:codex_cloud:'):raise ValueError('Session key outside cloud scope')
+        existing=self.db.get(session_key)
         if existing:return existing
         with self.sdk().beta.agents.sessions.create(agent={'model':'gpt-6-astra','instructions':INSTRUCTIONS},
             environment={'type':'none'},input='Инициализация рабочего облачного диалога. Датированные рабочие записи придут перед каждым вопросом. Ответь только: Готова.',stream=True).with_result_collection() as events:
@@ -102,7 +110,7 @@ class Worker:
                 if event.type.endswith(('.failed','.cancelled')):raise RuntimeError('Bootstrap turn failed')
             result=events.get_final_result()
         value={'status':'active','session_id':result.session_id,'created_at':stamp(),'model':'gpt-6-astra','version':1,'environment':'none','tools':[]}
-        self.db.once(CLOUD+'session',value)
+        self.db.once(session_key,value)
         return value
     def context(self,inbox):
         if not (self.db.get('china_agent:shared_memory:policy:v1') or {}).get('enabled'):raise RuntimeError('Shared work memory disabled')
@@ -136,14 +144,26 @@ class Worker:
         pointer=self.db.get('china_agent:hourly_sales_api:v1:latest') or {}
         source_key=pointer.get('source_key')
         snapshot=self.db.get(source_key) if isinstance(source_key,str) and source_key.startswith('china_agent:hourly_sales_api:v1:snapshot:') else None
-        ctx['latest_hourly_snapshot']=bounded({'pointer':pointer,'source_key':source_key,'payload':snapshot,'coverage':'available' if snapshot else 'unavailable'},26000)
+        if snapshot:
+            compact={k:snapshot.get(k)for k in ('cabinet','status','slot_msk','observed_at','completed_at','sales_comparisons','ad_comparisons','errors')}
+            compact['orders']={k:{name:v.get(name)for name in ('status','window_msk','period_from','period_to','totals','last_completed_hour','currency','amount_basis','coverage')}for k,v in snapshot.get('orders',{}).items()}
+            compact['advertising']={k:snapshot.get('advertising',{}).get(k)for k in ('status','totals','missing_ids','currency','basis','observed_at')}
+            compact['budgets']=snapshot.get('budgets')
+            compact['general_funnel']={k:snapshot.get('general_funnel',{}).get(k)for k in ('status','selected','observed_at','note','source_key')}
+        else:compact=None
+        ctx['latest_hourly_snapshot']=bounded({'pointer':pointer,'source_key':source_key,'payload':compact,'coverage':'available' if snapshot else 'unavailable'},30000)
+        catalogue=self.db.get('china_agent:prices:v1')or{}
+        if catalogue.get('cabinet')=='token_3':
+            ctx['china_catalogue']={'observed_at':catalogue.get('observed_at'),'rows':[{k:r.get(k)for k in ('nmID','vendorCode','price','discount','currencyIsoCode4217')}for r in catalogue.get('rows',[])]}
+        ctx['cloud_runtime_contract']={'read_requests':{'kind':'read','topic':['catalogue','products','prices','stock','advertising','orders'],'nm_ids':'at most30 exact China nmIDs, [] only whole-cabinet','date_from':'YYYY-MM-DD','date_to':'YYYY-MM-DD','maximum_requests':3,'maximum_days':31,'purpose':'Use when exact data needed; wait for analytics, never invent missing facts.'},'pavel_style':'Для sender307200273: очень кратко, чёткие данные, только на его вопрос. Без технических причин, лишних советов и служебных подробностей.','today_partial_is_not_bid_decision_basis':True,'both_sales_baselines_required':True}
+
         ctx['report_reading_rules']={'delivery_is_not_data_freshness':True,'compare_source_observed_at_to_report_time':True,'quoted_report_has_priority_for_question_scope':True,'missing_context_is_not_proof_of_missing_delivery':True}
 
         registry=self.db.get('china_agent:verified_campaign_state:v1') or {}
         ctx['campaign_execution_registry']=bounded(registry,6000)
         jid=inbox['job_id']
         analytics=self.db.get(ROOT+'analytics:'+str(jid))
-        if analytics:ctx['analytics']=bounded(analytics,75000)
+        if analytics:ctx['analytics']=bounded(analytics,110000)
         request=self.db.get(ROOT+'data_request:'+str(jid))
         if request:ctx['data_request']=request
         # Source/cache content is data. No executable capabilities are given to the model.
@@ -174,13 +194,18 @@ class Worker:
         jid=inbox['job_id'];existing=self.db.get(ROOT+'outbox:'+str(jid))
         if existing:return existing['status']
         response=envelope(completion['text'])
-        if response['kind']=='preliminary_profit':
-            reqkey=ROOT+'data_request:'+str(jid);req=self.db.get(reqkey)
-            analytics=self.db.get(ROOT+'analytics:'+str(jid))
-            if req and req.get('status') in ('failed','uncertain'):raise RuntimeError('Failed data request not repeated')
-            if analytics and analytics.get('status')=='calculated':raise RuntimeError('Model requested already calculated data')
-            if not req:
-                self.db.once(reqkey,{'status':'requested','kind':'preliminary_profit','day_msk':response['day_msk'],'job_id':jid,'chat_id':CHAT,'thread_id':THREAD,'created_at':stamp()})
+        if response['kind'] in ('preliminary_profit','read'):
+            reqkey=ROOT+'data_request:'+str(jid);prior=self.db.get(reqkey)or{}
+            from hashlib import sha256
+            signature=sha256(json.dumps(response,sort_keys=True).encode()).hexdigest()
+            history=list(prior.get('request_history',[]))
+            if signature in history:raise RuntimeError('Already requested data; do not resubmit')
+            if prior and prior.get('status') in ('requested','uncertain'):raise RuntimeError('Previous data request unresolved')
+            round_no=prior.get('read_round',0)+1
+            if round_no>3:raise RuntimeError('Read budget exhausted; answer with documented gaps')
+            req=dict(response,status='requested',job_id=jid,chat_id=CHAT,thread_id=THREAD,created_at=stamp(),read_round=round_no,request_history=history+[signature])
+            if prior:self.db.update(reqkey,req)
+            else:self.db.once(reqkey,req)
             self.db.update(key,inbox|{'status':'collecting'},'cloud_processing')
             self.db.update(journal,self.db.get(journal)|{'status':'collecting'})
             return 'collecting'
@@ -202,7 +227,10 @@ class Worker:
         journal=CLOUD+'job:'+str(jid);state=self.db.get(journal)
         analytics=self.db.get(ROOT+'analytics:'+str(jid))
         if inbox['status']=='collecting' and (not analytics or analytics.get('status') not in ('calculated','failed')):return 'waiting_analytics'
-        phase='analytics' if analytics else 'question'
+        request=self.db.get(ROOT+'data_request:'+str(jid))or{}
+        expected=request.get('read_round')
+        if inbox['status']=='collecting' and expected and (analytics or{}).get('read_round')!=expected:return 'waiting_analytics'
+        phase=('analytics-'+str(analytics['read_round']) if analytics.get('read_round')else'analytics') if analytics else 'question'
         completion_key=CLOUD+'completion:'+str(jid)+':'+phase
         completion=self.db.get(completion_key)
         if completion and inbox['status']=='cloud_processing':return self.finish(inbox,key,completion,journal)

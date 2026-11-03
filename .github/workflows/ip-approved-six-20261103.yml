@@ -1,0 +1,32 @@
+name: Apply owner-approved IP six item batch Nov3
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-approved-six-20261103.yml']
+permissions:
+  contents: read
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 5a4b4f8e5abb2128d1ad935e8a111e0a13c3e2cd
+          sparse-checkout: |
+            ip_apply_six_20261103.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply only frozen private six-item approval and verify current WB
+        run: python ip_apply_six_20261103.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'

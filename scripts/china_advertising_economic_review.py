@@ -54,7 +54,9 @@ def apply(bundle,source,minima):
    if r.get('pending_first_day'):continue
    p=(r.get('comparison') or {}).get('after') or r['period'];spend=p['spend'];orders=p['orders'];amount=p['amount']
    risk=spend>0 and (orders==0 or amount<=0 or spend/amount>.05)
-   if not risk:continue
+   existing=r.get('action')or{}
+   cost_action=existing.get('kind')=='ad_exclude_sku' or (existing.get('kind')=='ad_set_bid' and existing.get('target_minor',0)<existing.get('old_minor',0))
+   if not risk and not cost_action:continue
    e=economics.get(str(r['nm']),{});old=settings[r['nm']]['bids_kopecks'][zone];minimum=minima.get(str(c['id'])+':'+str(r['nm']))
    r['current_bid_minor']=old;r['minimum_bid_minor']=minimum
    if finite(e.get('stock_free')) and e['stock_free']<=0 and dated(e.get('stock_observed_at'),24):
@@ -75,14 +77,16 @@ def apply(bundle,source,minima):
    r['reason']=facts+' Экономика предварительная; ассоциированные заказы и неизвестные общие расходы не распределены.'
    if e.get('buyout_fallback'):r['reason']+=' Нет завершённой собственной выборки: выкуп50% — допущение, не факт.'
    base=dict(id=str(c['id'])+':'+str(r['nm']),campaign_id=c['id'],nm_id=r['nm'],placement=zone,old_minor=old,article=r['article'])
-   meaningful=(p['clicks']>=100 or model_before<=0) and spend>=max(0,model_before,e['seller_price_cny']*.05)
+   own_model=e.get('sample_size',0)>=5 and not e.get('buyout_fallback') and not e.get('commission_policy_fallback')
+   meaningful=(p['clicks']>=100 or own_model and model_before<=0 and p['clicks']>=30) and spend>=max(0,model_before,e['seller_price_cny']*.05)
+   bounded_loss=orders==0 and p['clicks']>=30 and own_model and model_before>0 and spend>=max(model_before,e['seller_price_cny']*.05)
    positive_own_model=(orders>0 and r['model_profit_for_attributed_orders_cny']>0 and not e.get('buyout_fallback') and not e.get('commission_policy_fallback') and e.get('sample_size',0)>=5)
    if positive_own_model:
     # A target DRR is not a break-even threshold; preserve uncertainty and a finite review.
     r['action']=None
     r['decision']=f'Сохранить {old/100:g} ¥ до оценки следующего полного дня: предварительная экономика положительна.'
     r['reason']+=' Расчёт не доказывает закрытую прибыль; превышение цели ДРР само по себе не основание для снижения или исключения.'
-   elif old>minimum:
+   elif old>minimum and (meaningful or bounded_loss):
     r['action']=dict(base,kind='ad_set_bid',target_minor=minimum)
     r['decision']=f'Снизить {old/100:g} → {minimum/100:g} ¥ (минимум WB).'
    elif old==minimum and orders>0 and drr is not None and 5<drr<=6 and r['model_profit_for_attributed_orders_cny']>0:

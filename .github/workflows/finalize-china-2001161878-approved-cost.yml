@@ -1,0 +1,105 @@
+name: Finalize China November 1 with explicitly approved historical cost
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/finalize-china-2001161878-approved-cost.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-weekly-2001161878-documents
+  cancel-in-progress: false
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - name: Change only approved demand comment and verify existing chain
+        shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,collections,datetime
+          from decimal import Decimal,ROUND_FLOOR
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          ROOT="weekly_report_review:china:20261101:"
+          class T(m.Transport):
+           def request(self,base,path,method="GET",body=None,params=None):
+            if base==m.MS and method!="GET":
+             if method!="PUT" or path!="entity/demand/"+self.allowed_demand or set(body or {})!={"description"}:raise m.Stop("Only authorized existing demand comment may change")
+            return super().request(base,path,method,body,params)
+          t=T();db=m.Cache(t);w=m.Worker(t,db,{})
+          plan=db.get(ROOT+"plan:v1");prep=db.get(ROOT+"ms_preflight:v1");state=db.get(ROOT+"ms_documents:v1");audit=db.get(ROOT+"valuation_audit:v1")
+          approval=plan["valuation_approval"];assert approval["approved"] and plan["valuation_issue"]["override_authorized"]
+          assert approval["approved_on"]==datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date().isoformat()
+          def norm(x):return m.href(x).split("?")[0]
+          def rows(path,params=None):return w.ms_rows(path,params)
+          def ps(kind,uid,stock=False):
+           if not stock:return rows("entity/"+kind+"/"+uid+"/positions",{"expand":"assortment"})
+           out=[];offset=0
+           while True:
+            data=t.request(m.MS,"entity/"+kind+"/"+uid+"/positions",params={"expand":"assortment","fields":"stock","limit":50,"offset":offset});batch=data["rows"];out+=batch;offset+=len(batch)
+            if offset==data["meta"]["size"]:return out
+            assert batch
+          def counts(items):
+           c=collections.Counter()
+           for p in items:c[(p["assortment"].get("article") or "").strip().casefold()]+=p["quantity"]
+           return dict(c)
+          refs={r["type"]:r for r in state["documents"]};assert set(refs)=={"customerorder","demand","salesreturn"} and len(state["documents"])==3
+          t.allowed_demand=refs["demand"]["id"]
+          live={}
+          delivered=[s for s in prep["states"] if s["name"]=="Доставлен"];assert len(delivered)==1
+          for kind,ref in refs.items():
+           d=t.request(m.MS,"entity/"+kind+"/"+ref["id"]);positions=ps(kind,d["id"])
+           assert d["applicable"] and d["sum"]==0 and all(p["price"]==0 for p in positions)
+           assert all(norm(d[k])==norm(prep[k]) for k in ("organization","agent","store"))
+           assert counts(positions)==(plan["returns"] if kind=="salesreturn" else plan["sales"])
+           assert len(rows("entity/"+kind,{"filter":"externalCode="+d["externalCode"]}))==1
+           live[kind]=d
+          assert norm(live["customerorder"]["state"])==norm(delivered[0])
+          assert [norm(x) for x in live["customerorder"].get("demands",[])]==[norm(live["demand"])]
+          assert norm(live["demand"]["customerOrder"])==norm(live["customerorder"])
+          assert norm(live["salesreturn"]["demand"]).split("/")[-1] in set(plan["basis"].values())
+          verified_history=[]
+          for h in audit["history"]:
+           for p in h["positions"]:
+            q=Decimal(str(p["quantity"]));cost=Decimal(str(p["stock"]["cost"]));unit=int((cost/q).to_integral_value(rounding=ROUND_FLOOR))
+            if unit==approval["unit_kopecks"]:verified_history.append(h["id"])
+          assert len(set(verified_history))>=2
+          total=Decimal(0);proof=[]
+          for p in ps("demand",t.allowed_demand,True):
+           a=p["assortment"]["article"].strip().casefold();q=Decimal(str(p["quantity"]));cost=Decimal(str(p.get("stock",{}).get("cost") or 0));actual=(cost/q).to_integral_value(rounding=ROUND_FLOOR);applied=actual;source="actual demand valuation"
+           if a==approval["article"] and actual<=0:
+            assert q==1;applied=Decimal(approval["unit_kopecks"]);source="user approved historical unit cost, verified in two prior demands"
+           assert applied>0
+           total+=applied*q;proof.append({"article":a,"quantity":str(q),"actual_stock_cost_kopecks":str(cost),"unit_price_kopecks":str(applied),"source":source})
+          total/=100;returns=Decimal(str(plan["returns_rub"]));net=total-returns
+          assert total==Decimal(approval["wholesale_rub"]) and returns==Decimal(approval["returns_rub"]) and net==Decimal(approval["net_rub"])
+          def money(x):return format(x,",.2f").replace(","," ").replace(".",",")
+          comment="Опт: "+money(total)+" руб − рыжие возвраты "+money(returns)+" руб = "+money(net)+" руб"
+          assert live["demand"].get("description","") in (plan["comment"],comment),"Document comment changed outside this run"
+          if live["demand"].get("description")!=comment:t.request(m.MS,"entity/demand/"+t.allowed_demand,"PUT",{"description":comment})
+          checks=[]
+          for kind,ref in refs.items():
+           d=t.request(m.MS,"entity/"+kind+"/"+ref["id"]);positions=ps(kind,d["id"])
+           assert d["applicable"] and d["sum"]==0 and all(p["price"]==0 for p in positions)
+           assert counts(positions)==(plan["returns"] if kind=="salesreturn" else plan["sales"])
+           assert all(norm(d[k])==norm(prep[k]) for k in ("organization","agent","store"))
+           if kind=="demand":assert d["description"]==comment and norm(d["customerOrder"])==norm(live["customerorder"])
+           if kind=="customerorder":assert norm(d["state"])==norm(delivered[0]) and d["description"]==plan["comment"]
+           if kind=="salesreturn":assert d["description"]=="рыжие возвраты из "+plan["comment"] and norm(d["demand"]).split("/")[-1] in set(plan["basis"].values())
+           checks.append({**ref,"posted":True,"all_prices_zero":True,"quantity":sum(p["quantity"] for p in positions),"positions":len(positions),"comment":d["description"],"state":"Доставлен" if kind=="customerorder" else None})
+          assert len(rows("entity/customerorder",{"filter":"name="+plan["name"]}))==1
+          state.update(status="complete",completed_at=m.now(),checks=checks,valuation_positions=proof,wholesale_rub=str(total),returns_rub=str(returns),net_rub=str(net),demand_comment=comment,all_posted=True,all_prices_zero=True,duplicate_check=True,zero_cost_articles=[],historical_override_applied=approval)
+          db.put(ROOT+"ms_documents:v1",state);db.put(ROOT+"document_status:v1",{"status":"complete","documents":state["documents"],"completed_at":state["completed_at"],"all_posted":True,"all_prices_zero":True})
+          plan.update(status="complete",completed_at=state["completed_at"]);db.put(ROOT+"plan:v1",plan)
+          print("Approved existing demand comment finalized and all existing documents verified.")
+          

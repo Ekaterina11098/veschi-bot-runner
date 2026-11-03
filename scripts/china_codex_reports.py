@@ -1,6 +1,6 @@
 """Cloud Codex decides report contents; deterministic collectors/guards/renderers remain."""
 import copy,json,re
-from china_codex_analysis import Core,active,digest,text_review
+from china_codex_analysis import Core,active,digest,text_review,POLICY
 DIRECTIONS=('raise','add','reduce','exclude')
 def direction(a):
  k=a.get('kind')
@@ -45,6 +45,7 @@ def ad_validate(value,actions,campaigns,labels):
   if not isinstance(r.get('note'),str)or not 0<len(r['note'])<=110:raise ValueError('Brief unready research note required')
  return value
 def review_advertising(io,bundle,source,identity,observational=None,force=False,core=None):
+ if core is None and not force and (io.get(POLICY)or{}).get('status')!='active':return bundle
  core=core or Core()
  if not force and not active(core.db):return bundle
  actions={};subjects={};funding={}
@@ -79,7 +80,8 @@ def review_advertising(io,bundle,source,identity,observational=None,force=False,
     if group!='attention' or r.get('action'):kept.append(r)
    c[group]=kept
   fid='funding:'+str(c['id'])
-  if c.get('budget_action')and fid not in selected:
+  rejected_composition=any(a.get('campaign_id')==c['id'] and direction(a)in('reduce','exclude') and k not in selected for k,a in actions.items())
+  if c.get('budget_action')and (fid not in selected or rejected_composition):
    c['budget_action']=None;c['budget_recommendation']='Потребность в бюджете требует отдельной проверки.'
   c['codex_research_recommendations']=[labels[r['nm_id']]+': проверить '+('повышение'if r['direction']=='raise'else'добавление')+'; '+r['note'] for r in result.get('research',[])if r['campaign_id']==c['id']]
  from china_advertising_directions import attach
@@ -101,6 +103,7 @@ def price_parts(draft):
   index+=1
  return candidates,tables,plain
 def review_price(worker,draft,trace,force=False,core=None):
+ if core is None and not force and (worker.get(POLICY)or{}).get('status')!='active':return draft,trace
  core=core or Core()
  if not force and not active(core.db):return draft,trace
  rows,tables,plain=price_parts(draft)

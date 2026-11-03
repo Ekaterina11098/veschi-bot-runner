@@ -44,7 +44,7 @@ jobs:
           path: source
           persist-credentials: false
       - name: Install pinned read transport
-        run: pip install requests==2.32.5 Pillow==12.3.0 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
+        run: pip install requests==2.32.5 Pillow==12.3.0 openai==3.42.1 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
       - name: Adapt isolated dialog and test without credentials
         run: |
           python scripts/install_china_dialog.py
@@ -73,6 +73,13 @@ jobs:
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_reply_*.py'
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_catalog_price_command.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_zero_orders_stock.py
+      - name: Continue owner-authorized persistent cloud Codex conversation
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python -u scripts/china_codex_cloud.py
+
       - name: Process owner watch commands and due conversion reports
         env:
           EVENT_NAME: ${{ github.event_name }}

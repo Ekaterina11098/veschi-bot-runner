@@ -45,7 +45,7 @@ class Core:
  def ask(self,identity,kind,data,contract,validate,force=False):
   p=config(self.db)
   if p.get('enabled')is not True or (p.get('status')!='active' and not(force and p.get('status')=='shadow')):raise RuntimeError('Cloud analysis not activated')
-  payload=dict(identity=identity,kind=kind,data=data,contract=contract,work_notes=self.notes(),wb_action_permission=False)
+  payload=dict(analysis_contract_version=2,identity=identity,kind=kind,data=data,contract=contract,work_notes=self.notes(),wb_action_permission=False)
   if len(json.dumps(payload,ensure_ascii=False,default=str))>1300000:raise ValueError('Analysis scope too large; compact by product/day')
   fingerprint=digest(payload);key=ROOT+digest([identity,fingerprint]);state=self.db.get(key)
   if state:
@@ -68,13 +68,13 @@ class Core:
      for event in events:
       if event.type.endswith(('.failed','.cancelled')):raise RuntimeError('Analysis bootstrap failed')
      sid=events.get_final_result().session_id
-    token='veschi-analysis-'+fingerprint
+    token='veschi-analysis-'+fingerprint[:40]
     state.update(status='running',session_id=sid,job_token=token,submission_key=token,started_at=stamp())
     self.db.update(key,state)
     raw=self.worker.generate(sid,json.dumps(dict(payload,job_token=token),ensure_ascii=False,default=str),token)
     self.db.once(key+':completion',dict(text=raw,recovered=False,observed_at=stamp()))
    except Exception as ex:
-    state.update(status='uncertain',error_type=type(ex).__name__,failed_at=stamp());self.db.update(key,state)
+    state.update(status='request_rejected' if getattr(ex,'status_code',None) in (400,401,403,404,422) else 'uncertain',error_type=type(ex).__name__,error_status=getattr(ex,'status_code',None),error_body=getattr(ex,'body',None),failed_at=stamp());self.db.update(key,state)
     raise RuntimeError('Cloud analysis incomplete; no legacy fallback')from None
   try:value=validate(parse(raw))
   except Exception as ex:

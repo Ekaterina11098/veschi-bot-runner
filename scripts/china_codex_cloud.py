@@ -112,11 +112,11 @@ class Worker:
         recent=self.db.api('GET','telegram_api_cache',{'cache_key':'like.'+ROOT+'outbox:*','payload->>chat_id':'eq.'+str(CHAT),'payload->>status':'eq.delivered','order':'updated_at.desc','limit':8,'select':'cache_key,payload,updated_at'})
         ctx['recent_delivered_replies']=bounded(recent,18000)
         day=str(today())
-        for family,version in [('advertising_source','v2'),('advertising_artifacts','v2'),('advertising_delivery','v1')]:
+        for family,version in [('advertising_source','v2'),('advertising_artifacts','v2'),('advertising_delivery','v1'),('advertising_midday_source','v2'),('advertising_midday_artifacts','v1'),('advertising_midday_delivery','v1')]:
             key='china_agent:'+family+':'+day+':'+version
             value=self.db.get(key)
             if not value:continue
-            if family=='advertising_source':
+            if family in ('advertising_source','advertising_midday_source'):
                 compact={k:value.get(k) for k in ('status','day_quality','observed_at','period_from','period_to','addition_scan','addition_candidate_ids','addition_quote_errors','archived_missing_stats_ids')}
                 economics=value.get('economics',{})
                 rows=economics.get('rows',{}) if isinstance(economics,dict) else {}
@@ -125,16 +125,20 @@ class Worker:
                 compact['economics_rows']=bounded(chosen or dict(list(rows.items())[:30]),35000)
                 compact['economics_total_rows']=len(rows)
                 ctx[key]=bounded(compact,50000)
-            elif family=='advertising_artifacts':
+            elif family in ('advertising_artifacts','advertising_midday_artifacts'):
                 bundle=value.get('bundle',{})
                 camps=bundle.get('campaigns',[])
-                compact={'day':bundle.get('day'),'days':bundle.get('days'),'growth_review':bundle.get('growth_review'),'recommendation_directions':bundle.get('recommendation_directions')}
-                compact['campaigns']=[{k:c.get(k) for k in ('id','name','zone','status','balance','period','last','yesterday','drr','notes','focus','attention','budget_action','budget_drr','budget_period')} for c in camps]
+                compact={'day':bundle.get('day'),'days':bundle.get('days'),'observed_at':bundle.get('observed_at'),'recommendation_basis':bundle.get('recommendation_basis'),'growth_review':bundle.get('growth_review'),'recommendation_directions':bundle.get('recommendation_directions')}
+                compact['campaigns']=[{k:c.get(k) for k in ('id','name','zone','status','balance','period','last','yesterday','today','drr','notes','focus','attention','budget_action','budget_drr','budget_period')} for c in camps]
                 ctx[key]=bounded(compact,55000)
             else:
                 ctx[key]={'status':value.get('status'),'completed_at':value.get('completed_at'),'parts':[{k:p.get(k) for k in ('kind','status','message_id','sent_at')} for p in value.get('parts',[])]}
-        hours=self.db.api('GET','telegram_api_cache',{'cache_key':'like.china_agent:hourly_sales_api:v1:snapshot:*','order':'updated_at.desc','limit':1,'select':'cache_key,payload,updated_at'})
-        ctx['latest_hourly_snapshot']=bounded(hours,26000)
+        pointer=self.db.get('china_agent:hourly_sales_api:v1:latest') or {}
+        source_key=pointer.get('source_key')
+        snapshot=self.db.get(source_key) if isinstance(source_key,str) and source_key.startswith('china_agent:hourly_sales_api:v1:snapshot:') else None
+        ctx['latest_hourly_snapshot']=bounded({'pointer':pointer,'source_key':source_key,'payload':snapshot,'coverage':'available' if snapshot else 'unavailable'},26000)
+        ctx['report_reading_rules']={'delivery_is_not_data_freshness':True,'compare_source_observed_at_to_report_time':True,'quoted_report_has_priority_for_question_scope':True,'missing_context_is_not_proof_of_missing_delivery':True}
+
         registry=self.db.get('china_agent:verified_campaign_state:v1') or {}
         ctx['campaign_execution_registry']=bounded(registry,6000)
         jid=inbox['job_id']
@@ -220,6 +224,9 @@ class Worker:
         if self.db.get(journal):self.db.update(journal,state)
         else:self.db.once(journal,state)
         ctx=self.context(inbox)
+        markers=[m for m in jobs[0].get('tool_trace',[]) if isinstance(m,dict) and m.get('name')=='china_saved_question']
+        if markers:
+            ctx['telegram_reply_context']={k:markers[-1].get(k) for k in ('message_id','reply_message_id','thread_id','reply_text','original_request_text')}
         message=json.dumps({'runtime_scope':{'job_token':token,'today_msk':str(today()),'time_msk':datetime.now(ZoneInfo('Europe/Moscow')).isoformat(),'chat_id':CHAT,'sender_id':inbox['sender_id'],'wb_action_permission':False},
               'dated_work_context':ctx,'untrusted_telegram_question':inbox['request_text']},ensure_ascii=False)
         text=self.generate(sid,message,token)

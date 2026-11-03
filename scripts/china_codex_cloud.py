@@ -116,7 +116,7 @@ class Worker:
         if not (self.db.get('china_agent:shared_memory:policy:v1') or {}).get('enabled'):raise RuntimeError('Shared work memory disabled')
         rows=self.db.api('GET','telegram_api_cache',{'cache_key':'like.china_agent:shared_memory:v1:work:note:*','select':'cache_key,payload,updated_at','order':'updated_at.desc,cache_key.desc','limit':300})
         notes=latest_notes(rows)
-        ctx={'work_notes':bounded(notes,85000),'notes_scan_limit':300,'today_msk':str(today()),'observed_at':stamp()}
+        ctx={'work_notes':bounded(notes,30000),'notes_scan_limit':300,'today_msk':str(today()),'observed_at':stamp()}
         recent=self.db.api('GET','telegram_api_cache',{'cache_key':'like.'+ROOT+'outbox:*','payload->>chat_id':'eq.'+str(CHAT),'payload->>status':'eq.delivered','order':'updated_at.desc','limit':8,'select':'cache_key,payload,updated_at'})
         ctx['recent_delivered_replies']=bounded(recent,18000)
         day=str(today())

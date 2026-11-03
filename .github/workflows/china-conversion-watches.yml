@@ -79,7 +79,9 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: python -u scripts/china_codex_cloud.py
+        run: |
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_codex_cloud.py
+          python -u scripts/china_codex_cloud.py
 
       - name: Process owner watch commands and due conversion reports
         env:

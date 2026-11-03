@@ -31,4 +31,4 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: PYTHONPATH=scripts python -u scripts/owner_cloud_migration3.py
 
-# Verify bounded managed-analysis submission contract revision2.
+# Managed input content safely split below the per-item 1MiB limit.

@@ -1,0 +1,27 @@
+name: Owner bounded funding 3Nov
+on:
+  push:
+    branches: [main]
+    paths: ['owner-fund-all3-request.json']
+permissions:
+  contents: read
+concurrency:
+  group: china-dialog-data
+  cancel-in-progress: false
+jobs:
+  fund:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Owner-authorized deposits only with durable readback
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          PYTHONPATH: scripts
+        run: python -u scripts/owner_fund_all3.py

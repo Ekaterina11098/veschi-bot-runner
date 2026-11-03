@@ -2,13 +2,14 @@ name: IP requested batch budget review read only
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/ip-budget-review-20261103-1320.yml']
+    paths: ['.github/disabled/ip-budget-review-20261103-1320.never']
 permissions: {}
 concurrency:
   group: ip-budget-review-read-20261103-1320
   cancel-in-progress: false
 jobs:
   read:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 18
     steps:

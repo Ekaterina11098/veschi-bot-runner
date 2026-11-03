@@ -8,8 +8,10 @@ def install(root):
  preview="            answer, trace = self.prepare(preview=True)\n"
  live="                answer, trace = self.prepare()\n"
  if text.count(preview)!=1 or text.count(live)!=1:raise RuntimeError('Price worker analysis hook changed; review source')
- text=text.replace(preview,preview+"            "+marker+"\n            from china_codex_reports import review_price\n            answer, trace = review_price(self, answer, trace)\n")
- text=text.replace(live,live+"                from china_codex_reports import review_price\n                answer, trace = review_price(self, answer, trace)\n")
+ guarded_preview="            try:\n                answer, trace = self.prepare(preview=True)\n            except RuntimeError as exc:\n                if str(exc) not in ('Completed period mismatch','Daily report was not generated'):raise\n                self.audit['source_blocker']=str(exc)\n                answer='Ценовые изменения не предлагаю: нет проверенного среза за требуемые завершённые дни. Сравнение с вчера и неделей ранее: нет сопоставимых данных.'\n                trace=[dict(name='china_price_source_unavailable',reason=str(exc))]\n"
+ text=text.replace(preview,guarded_preview+"            "+marker+"\n            from china_codex_reports import review_price\n            answer, trace = review_price(self, answer, trace)\n")
+ guarded_live="                try:\n                    answer, trace = self.prepare()\n                except RuntimeError as exc:\n                    if str(exc) not in ('Completed period mismatch','Daily report was not generated'):raise\n                    self.audit['source_blocker']=str(exc)\n                    answer='Ценовые изменения не предлагаю: нет проверенного среза за требуемые завершённые дни. Сравнение с вчера и неделей ранее: нет сопоставимых данных.'\n                    trace=[dict(name='china_price_source_unavailable',reason=str(exc))]\n"
+ text=text.replace(live,guarded_live+"                from china_codex_reports import review_price\n                answer, trace = review_price(self, answer, trace)\n")
  # An old prepared answer may be reused only if delivery already started; never regenerate uncertain parts.
  needle="            import business_agents.conversation as conv\n"
  if text.count(needle)!=1:raise RuntimeError('Price delivery hook changed')

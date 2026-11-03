@@ -30,6 +30,9 @@ def merge_completed(bundle,review,source_ref):
   c['completed_actions']=list(dict.fromkeys(done))
  out['recommendation_directions']=copy.deepcopy(review.get('recommendation_directions',{}))
  out['growth_review']=copy.deepcopy(review.get('growth_review',{}))
+ if review.get('codex_analysis'):out['codex_analysis']=copy.deepcopy(review['codex_analysis'])
+ for c in out['campaigns']:
+  c['codex_research_recommendations']=copy.deepcopy((closed.get(c['id'])or{}).get('codex_research_recommendations',[]))
  for c in out['campaigns']:
   c['addition_review_notes']=[]
  for row in out['recommendation_directions'].get('add',{}).get('rows',[]):
@@ -92,6 +95,8 @@ def attach(io,bundle,day):
   def create(self,key,value):return io.create(key+':midday' if key.startswith('china_agent:daily_growth:')else key,value)
   def __getattr__(self,name):return getattr(io,name)
  review=attach_directions(apply(growth_enrich(MiddayGrowthIO(),source,enhance(build(source,minima),source)),source,minima),source)
+ from china_codex_reports import review_advertising
+ review=review_advertising(io,review,source,'advertising:'+day+':midday',bundle)
  if not review.get('economic_review_complete'):raise ValueError('Incomplete economic review; do not freeze empty recommendations')
  key='china_agent:advertising_midday_completed:'+day+':v1';save(io,key,dict(source=source,review=review,status='complete',observed_at=source['observed_at'],wb_writes=0))
  return merge_completed(bundle,review,key)

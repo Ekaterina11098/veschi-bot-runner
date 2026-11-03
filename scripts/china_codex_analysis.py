@@ -45,7 +45,7 @@ class Core:
  def ask(self,identity,kind,data,contract,validate,force=False):
   p=config(self.db)
   if p.get('enabled')is not True or (p.get('status')!='active' and not(force and p.get('status')=='shadow')):raise RuntimeError('Cloud analysis not activated')
-  payload=dict(analysis_contract_version=2,identity=identity,kind=kind,data=data,contract=contract,work_notes=self.notes(),wb_action_permission=False)
+  payload=dict(analysis_contract_version=3,identity=identity,kind=kind,data=data,contract=contract,work_notes=self.notes(),wb_action_permission=False)
   if len(json.dumps(payload,ensure_ascii=False,default=str))>1300000:raise ValueError('Analysis scope too large; compact by product/day')
   fingerprint=digest(payload);key=ROOT+digest([identity,fingerprint]);state=self.db.get(key)
   if state:

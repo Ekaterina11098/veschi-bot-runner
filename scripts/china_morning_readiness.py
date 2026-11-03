@@ -96,14 +96,22 @@ def enrich_economics(io,source,rough,report_day):
      if len(ids)>112:raise ValueError('Candidate economics scope exceeds bound')
     else:values[topic]=dict(an.collect(topic,ids,first,last),observed_at=datetime.now(timezone.utc).isoformat())
    except Exception as ex:errors[topic]=type(ex).__name__
-  try:fx=float(rate(w,last)['rub_per_cny'])
+  try:fx=float(rate(w,date.fromisoformat(report_day))['rub_per_cny'])
   except Exception as ex:fx=None;errors['fx']=type(ex).__name__
  source['morning_fresh_inputs']=dict(selected_nm_ids=ids,source_times={k:v.get('observed_at') for k,v in values.items()},errors=errors,own_period=[str(first),str(last)],wb_writes=0)
  if errors:return source
  from china_advertising_economic_review import model_rows
- values['products'].update(period_from=str(first),period_to=str(last));values['fx']=dict(rub_per_cny=fx)
+ values['products'].update(period_from=str(first),period_to=str(last));values['fx']=dict(rub_per_cny=fx,date=report_day)
  policy=io.get('china_agent:new_ad_economics_policy:v1') or {};model=io.get('china_agent:expected_profit_delivery_model:v1') or {}
  source['economics']=model_rows(values,policy,model)
+ try:
+  pub=published_stock(io,values['prices'],ids)
+  source['morning_fresh_inputs']['published_stock_observed_at']=pub['observed_at']
+  source['morning_fresh_inputs']['published_stock_missing_nm_ids']=pub['missing_nm_ids']
+  for nm,e in source['economics'].get('rows',{}).items():
+   e.update(published_stock=pub['amounts'].get(str(nm)),published_stock_observed_at=pub['observed_at'],fx_rub_per_cny=fx,fx_date=report_day)
+ except Exception as ex:
+  source['morning_fresh_inputs']['errors']['published_stock']=type(ex).__name__
  source['addition_scan']=dict(status='complete',period_from=str(first),period_to=str(last),observed_at=values['products']['observed_at'],candidate_ids=source.get('addition_candidate_ids',[]),catalogue_count=len(source['catalogue']['rows']))
  return source
 
@@ -118,7 +126,7 @@ def current_prices(io,ids):
    if nm in found or p.get('currencyIsoCode4217')!='CNY' or len(prices)!=1:raise ValueError('Exact seller price ambiguous')
    price=next(iter(prices))
    if type(price) not in (int,float) or price<=0:raise ValueError('Exact seller price missing')
-   found[nm]=dict(nm_id=nm,article=p['vendorCode'],currency='CNY',seller_price=price)
+   found[nm]=dict(nm_id=nm,article=p['vendorCode'],currency='CNY',seller_price=price,size_ids=[x['sizeID']for x in p.get('sizes',[])])
   if len(part)<1000:break
  else:raise ValueError('Price page limit exceeded')
  if set(found)!=wanted:raise ValueError('Exact candidate price coverage missing')
@@ -126,3 +134,22 @@ def current_prices(io,ids):
 
 
 
+
+def published_stock(io,prices,ids):
+ """One bounded, read-only published-stock request for exact current price size IDs."""
+ import requests
+ mapping={size:r['nm_id']for r in prices['rows']for size in r.get('size_ids',[])}
+ if not mapping or len(mapping)>1000:raise ValueError('Published-stock size scope incomplete')
+ r=requests.post('https://marketplace-api.wildberries.ru/api/v3/stocks/2126188',headers={'Authorization':io.token},json={'chrtIds':sorted(mapping)},timeout=45)
+ if not r.ok:raise RuntimeError('Published-stock read HTTP '+str(r.status_code))
+ rows=r.json().get('stocks')
+ if not isinstance(rows,list):raise ValueError('Published-stock response missing')
+ seen=set();amounts={}
+ for x in rows:
+  size=x.get('chrtId')
+  if size not in mapping or size in seen or type(x.get('amount'))is not int:raise ValueError('Published-stock identity or amount ambiguous')
+  seen.add(size);nm=str(mapping[size]);amounts[nm]=amounts.get(nm,0)+x['amount']
+ missing={str(n)for n in ids}-{str(mapping[s])for s in seen}
+ for size in set(mapping)-seen:
+  nm=str(mapping[size]);missing.add(nm);amounts.pop(nm,None)
+ return dict(observed_at=datetime.now(timezone.utc).isoformat(),amounts=amounts,missing_nm_ids=sorted(missing))

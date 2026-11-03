@@ -9,10 +9,14 @@ def cloud_only(w):
 def bound_execution(w,job):
  from china_loss_control import is_all,marker
  from china_advertising_plans import bid_confirmation
+ from china_daily_selected import selected_command
  text=job.get('request_text','')
- if not is_all(text) and not bid_confirmation(text):return False
+ if not is_all(text) and not bid_confirmation(text) and not selected_command(text):return False
  m=marker(job)
  if m.get('bot_id')!=BOT or m.get('forwarded')or not m.get('reply_message_id'):return False
+ if selected_command(text) and m.get('parent_job_id'):
+  receipt=w.get('china_agent:conversion_watch_delivery:v1:question:'+str(m['parent_job_id'])+':0')or{}
+  if receipt.get('status')=='sent' and receipt.get('chat_id')==CHAT and receipt.get('message_id')==m['reply_message_id']:return True
  return any((w.get(k+str(m['reply_message_id']))or{}).get('chat_id')==CHAT for k in BINDINGS)
 def execute_acknowledgement(w,job):
  if not bound_execution(w,job):raise ValueError('No exact current human-bound execution plan')

@@ -51,10 +51,12 @@ def review_advertising(io,bundle,source,identity,observational=None,force=False,
  core=core or Core()
  if not force and not active(core.db):return bundle
  actions={};subjects={};funding={}
+ blocked=(core.db.get(POLICY)or{}).get('owner_withdrawn_actions',[])
+ def withdrawn(a):return any(a.get('campaign_id')==x.get('campaign_id') and a.get('nm_id')==x.get('nm_id') and a.get('kind')==x.get('kind')for x in blocked)
  for c in bundle['campaigns']:
   for r in c.get('focus',[])+c.get('attention',[]):
    a=r.get('action')
-   if not a:continue
+   if not a or withdrawn(a):continue
    key=a.get('id')or str(c['id'])+':'+str(a.get('nm_id'))
    if direction(a) is None:continue
    if key in actions and actions[key]!=a:raise ValueError('Conflicting exact candidate')
@@ -84,7 +86,7 @@ def review_advertising(io,bundle,source,identity,observational=None,force=False,
   fid='funding:'+str(c['id'])
   rejected_composition=any(a.get('campaign_id')==c['id'] and direction(a)in('reduce','exclude') and k not in selected for k,a in actions.items())
   if c.get('budget_action')and (fid not in selected or rejected_composition):
-   c['budget_action']=None;c['budget_recommendation']='Потребность в бюджете требует отдельной проверки.'
+   c['budget_action']=None;c['forecast']=None;c['coverage']=None;c['budget_recommendation']='Пересчитать резерв на три дня перед пополнением.'
   c['codex_research_recommendations']=[labels[r['nm_id']]+': проверить '+('повышение'if r['direction']=='raise'else'добавление')+'; '+r['note'] for r in result.get('research',[])if r['campaign_id']==c['id']]
  from china_advertising_directions import attach
  out=attach(out,source)

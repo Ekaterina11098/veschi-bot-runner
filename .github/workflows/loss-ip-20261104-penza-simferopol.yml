@@ -1,0 +1,149 @@
+name: Authorized loss shipment Penza Simferopol
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/loss-ip-20261104-penza-simferopol.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: loss-ip-20261104-penza-simferopol
+  cancel-in-progress: false
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Verify private input then create authorized zero-price shipment
+        shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,collections,datetime,time
+          from decimal import Decimal,ROUND_FLOOR
+          sys.path.insert(0,'scripts')
+          import fbs_document_chain as m
+          ROOT='loss_report:ip:20261104:penza_simferopol:'
+          EXT='loss-ip-20261104-penza-simferopol-demand'
+          class Scoped(m.Transport):
+           def request(self,base,path,method='GET',body=None,params=None):
+            if base==m.MS and method!='GET':
+             ok=(method=='POST' and path=='entity/demand' and (body or {}).get('externalCode')==EXT)
+             ok=ok or (method=='PUT' and path==getattr(self,'demand_path',None) and set(body or {})=={'description'})
+             if not ok:raise m.Stop('Write outside authorized shipment')
+            return super().request(base,path,method,body,params)
+          t=Scoped();db=m.Cache(t);w=m.Worker(t,db,{})
+          inp=db.get(ROOT+'input:v1')
+          assert inp and inp['authorized'] and inp['create_order'] is False
+          assert inp['units']==724==sum(inp['sales'].values()) and len(inp['sales'])==67
+          assert inp['source_sha256']=='3f67e0ce609dce9fca7934a83b29e2e0fc5efa208ee5bc8125caf70bd0c6c75e'
+          assert 'wh-service-podmena' not in inp['sales']
+          assert datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date().isoformat()=='2026-11-04'
+          def norm(x):return m.href(x).split('?')[0]
+          def rows(path,params=None):return w.ms_rows(path,params)
+          def positions(uid,stock=False):
+           out=[];offset=0
+           while True:
+            args={'expand':'assortment','limit':50,'offset':offset}
+            if stock:args['fields']='stock'
+            page=t.request(m.MS,'entity/demand/'+uid+'/positions',params=args)
+            batch=page['rows'];out+=batch;offset+=len(batch)
+            if offset==page['meta']['size']:return out
+            if not batch or offset>page['meta']['size']:raise m.Stop('Incomplete positions')
+          def counts(ps):
+           c=collections.Counter()
+           for p in ps:c[norm(p['assortment'])]+=p['quantity']
+           return dict(c)
+          prep={'at':m.now(),'status':'reading'}
+          for k,kind,uid in [('organization','organization','61c199c8-fd78-11ee-0a80-1479002a9f95'),('agent','counterparty','4cc3ffa2-fd7c-11ee-0a80-0b56002b7934'),('store','store','fcf31c2d-07ac-11ef-0a80-014d00489826'),('currency','currency','3c67e3a6-f25d-11ee-0a80-0c6f000a027f')]:
+           prep[k]=t.request(m.MS,'entity/'+kind+'/'+uid)
+          assert prep['store']['name']=='Склад WB FBO' and prep['currency']['name']=='руб'
+          allp=rows('entity/product',{'filter':'archived=false'})
+          products={};audit=[];exceptions=[]
+          for a,q in inp['sales'].items():
+           rule=inp.get('mapping',{}).get(a,{'article':a})
+           if 'code' in rule:candidates=[p for p in allp if p.get('code','').replace(' ','').casefold()==rule['code'].replace(' ','').casefold()]
+           else:candidates=[p for p in allp if (p.get('article') or '').strip().casefold()==rule['article'].strip().casefold()]
+           if len(candidates)!=1:
+            exceptions.append({'article':inp['display'][a],'needed':q,'matches':len(candidates)});continue
+           p=candidates[0]
+           if p.get('variantsCount',0) or p.get('isSerialTrackable') or p.get('trackingType','NOT_TRACKED')!='NOT_TRACKED':
+            exceptions.append({'article':inp['display'][a],'reason':'tracking or variants require setup'});continue
+           products[a]=p;audit.append({'source_article':inp['display'][a],'target_article':p.get('article'),'code':p.get('code'),'product_id':p['id'],'quantity':q})
+          prep.update(products=products,mapping_audit=audit,matching_exceptions=exceptions)
+          if exceptions:
+           prep.update(status='matching_blocked',completed_at=m.now());db.put(ROOT+'preflight:v1',prep)
+           print('Private matching exceptions saved; no shipment written.');sys.exit(0)
+          wanted=collections.Counter()
+          for a,q in inp['sales'].items():wanted[norm(products[a])]+=q
+          wanted=dict(wanted)
+          assert len(wanted)==67
+          prep['wanted']=wanted
+          existing=rows('entity/demand',{'filter':'externalCode='+EXT})
+          assert len(existing)<=1
+          candidates=rows('entity/demand',{'filter':'organization='+norm(prep['organization'])+';store='+norm(prep['store'])+';moment>=2026-11-03 00:00:00'})
+          duplicate=[]
+          for doc in candidates:
+           if doc.get('externalCode')==EXT:continue
+           if doc.get('positions',{}).get('meta',{}).get('size')==len(wanted) and counts(positions(doc['id']))==wanted:
+            duplicate.append({'id':doc['id'],'name':doc['name'],'applicable':doc.get('applicable')})
+          prep['possible_duplicates']=duplicate
+          if duplicate:
+           prep.update(status='duplicate_requires_reconciliation',completed_at=m.now());db.put(ROOT+'preflight:v1',prep)
+           print('Possible duplicate saved privately; no new shipment written.');sys.exit(0)
+          stock=rows('report/stock/all',{'filter':'store='+norm(prep['store']),'stockMode':'all','quantityMode':'all'})
+          byid={norm(s):s for s in stock};bad=[];prep['stocks']={}
+          for a,q in inp['sales'].items():
+           s=byid.get(norm(products[a]),{});prep['stocks'][a]=s
+           if not existing and (s.get('stock',0)<q or s.get('quantity',0)<q or s.get('price',0)<=0):
+            bad.append({'article':products[a]['article'],'needed':q,'stock':s.get('stock',0),'available':s.get('quantity',0),'cost_kopecks':s.get('price',0)})
+          prep.update(stock_exceptions=bad,status='stock_blocked' if bad else 'read_verified',completed_at=m.now())
+          db.put(ROOT+'preflight:v1',prep)
+          if bad:
+           print('Private stock exceptions saved; no shipment written.');sys.exit(0)
+          state=db.get(ROOT+'documents:v1') or {'status':'preflight','started_at':m.now()}
+          def save():db.put(ROOT+'documents:v1',state)
+          common={k:m.meta(prep[k]) for k in ('organization','agent','store')}
+          common.update(applicable=True,vatEnabled=True,vatIncluded=True,rate={'currency':m.meta(prep['currency'])})
+          ps=[{'quantity':q,'price':0,'discount':0,'vat':0,'assortment':{'meta':{'href':href,'type':'product','mediaType':'application/json'}}} for href,q in wanted.items()]
+          def scope(d):return all(norm(d.get(k,{}))==norm(common[k]) for k in ('organization','agent','store')) and norm(d.get('rate',{}).get('currency',{}))==norm(prep['currency'])
+          existing=rows('entity/demand',{'filter':'externalCode='+EXT});assert len(existing)<=1
+          if existing:demand=existing[0]
+          else:
+           if state.get('pending_write'):raise m.Stop('Uncertain prior write requires reconciliation')
+           state.update(status='creating',pending_write={'externalCode':EXT,'at':m.now()});save()
+           try:demand=t.request(m.MS,'entity/demand','POST',{**common,'externalCode':EXT,'description':inp['initial_comment'],'positions':ps})
+           except Exception:
+            state['status']='write_outcome_requires_reconciliation';save();raise
+           state['pending_write']=None
+          actual=positions(demand['id'])
+          assert scope(demand) and demand['applicable'] is True and demand['sum']==0
+          assert counts(actual)==wanted and len(actual)==67 and all(p['price']==0 for p in actual)
+          state.update(status='shipment_created',demand={'id':demand['id'],'name':demand['name']},quantity=724,positions=67,all_prices_zero=True);save()
+          t.demand_path='entity/demand/'+demand['id']
+          proof=[];bad=[]
+          for attempt in range(3):
+           proof=[];bad=[]
+           for p in positions(demand['id'],True):
+            q=Decimal(str(p['quantity']));cost=Decimal(str(p.get('stock',{}).get('cost') or 0));unit=(cost/q).to_integral_value(rounding=ROUND_FLOOR)
+            if unit<=0:bad.append(p['assortment'].get('article'))
+            proof.append({'article':p['assortment'].get('article'),'quantity':str(q),'actual_cost_kopecks':str(cost),'unit_kopecks':str(unit)})
+           if not bad:break
+           time.sleep(2)
+          state.update(valuation_positions=proof,valuation_exceptions=bad);save()
+          if bad:raise m.Stop('Actual valuation has exceptions; prices remain zero')
+          total=sum(Decimal(p['unit_kopecks'])*Decimal(p['quantity']) for p in proof)/100
+          comment='Опт: '+format(total,',.2f').replace(',',' ').replace('.',',')+' руб.'
+          t.request(m.MS,t.demand_path,'PUT',{'description':comment})
+          final=t.request(m.MS,t.demand_path);actual=positions(demand['id'])
+          assert scope(final) and final['applicable'] is True and final['sum']==0
+          assert final['description']==comment and counts(actual)==wanted and all(p['price']==0 for p in actual)
+          assert len(rows('entity/demand',{'filter':'externalCode='+EXT}))==1
+          state.update(status='complete',completed_at=m.now(),wholesale_rub=str(total),demand_comment=comment,posted=True,source_sha256=inp['source_sha256'])
+          save();print('Authorized shipment created and verified; result remains private.')

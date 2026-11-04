@@ -1,4 +1,5 @@
 name: Publish only confirmed Telegram review answers
+# 2026-11-04: activate verified filtered SQL reads and incremental complete backups.
 on:
   workflow_dispatch:
   push:

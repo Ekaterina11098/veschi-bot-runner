@@ -82,50 +82,57 @@ jobs:
            except Exception as ex:
             op.update(status='uncertain',error=type(ex).__name__);put(ROOT+':execution',e);raise
           
-          auth();validate_identity(c,w)
-          e=c.get(ROOT+':execution');fund=c.get(ROOT+':funding')
-          if fund.get('status')!='verified' or e['operations'].get('fund100',{}).get('status')!='accepted':raise ValueError('Existing funding receipt unavailable')
-          states=w.campaigns(list(GROUPS))
-          proof={}
-          for cid,(z,ids)in GROUPS.items():
-           s=states[str(cid)];proof[str(cid)]=dict(observed_at=stamp(),present=[nm for nm in ids if nm in rows(s)],state=s)
-          put(ROOT+':recovery_readback',proof)
-          # Fresh read proves the rejected search addition did not change membership. Do not replay it.
-          if proof['41298169']['present']:raise ValueError('Search partial membership; needs reconciliation')
-          e['operations']['add:41298169']['status']='http400_rejected_absent_readback'
-          e['operations']['add:41298169']['readback_key']=ROOT+':recovery_readback'
-          put(ROOT+':execution',e)
-          # Only the never-submitted recommendation addition may proceed here.
-          cid=40933588;z,ids=GROUPS[cid];before=states[str(cid)];br=rows(before)
-          if any(nm in br for nm in ids):raise ValueError('Recommendation candidate already present')
+          a=auth();validate_identity(c,w)
+          e=c.get(ROOT+':execution')
+          if e['operations']['add:41298169']['status']!='http400_rejected_absent_readback':raise ValueError('Prior rejected mutation not reconciled')
+          if 'add_search_eligible2'in e['operations']:raise ValueError('Corrected request already submitted; never replay')
+          cid=41298169;z='search';ids=[1473243897,1473243902];before=campaign(cid);br=rows(before)
+          elig=c.get(ROOT+':eligibility')
+          if {x['nm']for x in elig['rows']if x['subjectId']==50}&set(ids)!=set(ids)or any(nm in br for nm in ids):raise ValueError('Eligible subset/readback changed')
+          if not fixed_equal(c.get(ROOT+':recovery_readback')[str(cid)]['state'],before)or rows(c.get(ROOT+':recovery_readback')[str(cid)]['state'])!=br:raise ValueError('Search campaign changed')
+          body=dict(nms=[dict(advert_id=cid,nms=dict(add=ids,delete=[]))])
+          op=dict(status='submitting',body=body,path='/adv/v0/auction/nms',method='PATCH',at=stamp(),prior_rejection_resolved_by=ROOT+':recovery_readback',excluded_wrong_category_nm=1473243898)
+          e['operations']['add_search_eligible2']=op;put(ROOT+':execution',e)
           try:
-           write_once(e,'add:'+str(cid),'/adv/v0/auction/nms','PATCH',dict(nms=[dict(advert_id=cid,nms=dict(add=ids,delete=[]))]))
+           auth();response=req('/adv/v0/auction/nms','PATCH',body)
+           op.update(status='accepted',response=response,accepted_at=stamp());e['wb_writes']+=1;put(ROOT+':execution',e)
            for i in range(18):
             after=campaign(cid);ar=rows(after)
             if set(ar)==set(br)|set(ids):break
             time.sleep(5)
-           else:raise ValueError('Recommendation membership uncertain')
-           if not fixed_equal(before,after)or any(ar[nm]!=r for nm,r in br.items()):raise ValueError('Other campaign settings changed')
-           if any(not 0<ar[nm]['bids_kopecks'].get(z,0)<=30 for nm in ids):
-            write_once(e,'rollback:'+str(cid),'/adv/v0/auction/nms','PATCH',dict(nms=[dict(advert_id=cid,nms=dict(add=[],delete=ids))]))
-            raise ValueError('Default bid outside cap; new products removed')
+           else:raise ValueError('Corrected addition membership uncertain')
+           if not fixed_equal(before,after)or any(ar[nm]!=r for nm,r in br.items()):raise ValueError('Other members/settings changed')
+           if any(ar[nm]['subject']['id']!=50 or not 0<ar[nm]['bids_kopecks'].get(z,0)<=30 or ar[nm]['bids_kopecks'].get('recommendations',0)!=0 for nm in ids):
+            # Remove only new additions if automatic minima violate owner ceiling.
+            rollback=dict(nms=[dict(advert_id=cid,nms=dict(add=[],delete=ids))])
+            e['operations']['rollback_corrected_search']=dict(status='submitting',body=rollback,at=stamp());put(ROOT+':execution',e)
+            req('/adv/v0/auction/nms','PATCH',rollback);e['wb_writes']+=1;put(ROOT+':execution',e)
+            raise ValueError('Default search minimum outside approved cap; removed only new products')
            minima=w.minimums(cid,ids,z)
-           child=dict(status='verified',before=before,after=after,verified_at=stamp(),nm_ids=ids,placement=z,exact_minimums=minima,approval_key=ROOT+':approval')
-           ck=ROOT+':campaign:'+str(cid);put(ck,child)
-           for nm in ids:e['items'].append(dict(kind='ad_add_sku',campaign_id=cid,nm_id=nm,article=next(i['article']for i in auth()['items']if i.get('nm_id')==nm),placement=z,target_minor=ar[nm]['bids_kopecks'][z],status='verified',receipt_key=ck,verified_at=child['verified_at']))
+           ck=ROOT+':campaign:'+str(cid);child=dict(status='verified',before=before,after=after,nm_ids=ids,placement=z,exact_minimums=minima,verified_at=stamp(),approval_key=ROOT+':approval');put(ck,child)
+           for nm in ids:e['items'].append(dict(kind='ad_add_sku',campaign_id=cid,nm_id=nm,article=next(i['article']for i in a['items']if i.get('nm_id')==nm),placement=z,target_minor=ar[nm]['bids_kopecks'][z],status='verified',receipt_key=ck,verified_at=child['verified_at']))
            registry=c.get('china_agent:verified_campaign_state:v1')or{};registry[str(cid)]=ck;put('china_agent:verified_campaign_state:v1',registry)
-           e.update(status='partial_verified',error='Search addition rejected, absent on readback');put(ROOT+':execution',e)
-           print(json.dumps({'status':e['status'],'verified_items':len(e['items'])}))
           except Exception as ex:
-           e.update(status='partial_verified_funding_only'if not e['items']else'partial_verified',error=str(ex),updated_at=stamp());put(ROOT+':execution',e)
-           print(json.dumps({'status':e['status'],'error':e['error']}))
-          # One bounded read to determine whether WB currently exposes these five cards as eligible.
-          r=requests.post('https://advert-api.wildberries.ru/adv/v2/supplier/nms',headers={'Authorization':w.token},json=[50],timeout=50)
-          wanted={nm for z,ns in GROUPS.values()for nm in ns}
-          v=dict(observed_at=stamp(),http_status=r.status_code)
-          if r.ok:v['rows']=[x for x in r.json()if x.get('nm')in wanted]
-          else:v['error']=r.text[:700]
-          put(ROOT+':eligibility',v)
-          print(json.dumps({'eligibility':v}))
+           op.update(status='uncertain'if op['status']=='submitting'else op['status'],error=str(ex));e.update(status='partial_or_uncertain',error=str(ex));put(ROOT+':execution',e);raise
+          #119 is a clutch (subject136), not a handbag (50). No existing search campaign in that category.
+          clutch=campaign(41155909);member=rows(clutch).get(1473243898)
+          if not member or member['subject']['id']!=136:raise ValueError('119 category readback changed')
+          block=dict(status='blocked_requires_new_search_campaign_and_budget',nm_id=1473243898,article='119-NoelBag-darkblack',subject_id=136,current_campaign_id=41155909,current_placement='recommendations',reason='No existing search campaign for clutch category136; existing search41298169 is category50. Additional new campaign funding was not authorized.',observed_at=stamp(),current_campaign=clutch)
+          try:block['search_minimum_quote_in_current_campaign']=w.minimums(41155909,[1473243898],'search')
+          except Exception as ex:block['quote_error']=str(ex)
+          put(ROOT+':blocked119',block)
+          e.update(status='partial_verified',error=None,verified_at=stamp(),blocked_items=[dict(nm_id=1473243898,receipt_key=ROOT+':blocked119',reason=block['reason'])]);put(ROOT+':execution',e)
+          if len(e['items'])!=4 or c.get(ROOT+':funding')['status']!='verified':raise ValueError('Four additions/funding not verified')
+          text='Проверено в WB:\n•047 и531 добавлены в поиск, РК41298169 — по0,28CNY.\n•204 и046 добавлены в рекомендации, РК40933588 — по0,28CNY.\n•РК40933588 пополнена на100CNY.\n119 пока не добавлен: категория «клатчи», подходящей поисковой РК нет; для запуска нужны отдельная РК и дополнительный бюджет.\n143 и590 не меняли. Другие ставки не повышали.'
+          if io.tg('getMe',{})['id']!=8780468043:raise ValueError('Bot identity differs')
+          notice=dict(status='sending',text=text,chat_id=-1004342917488,bot_id=8780468043,execution_key=ROOT+':execution',created_at=stamp())
+          if not c.create(ROOT+':delivery',notice):raise ValueError('Existing notice; no duplicate')
+          try:
+           r=io.tg('sendMessage',dict(chat_id=-1004342917488,text=text))
+           if r.get('chat',{}).get('id')!=-1004342917488 or r.get('from',{}).get('id')!=8780468043 or not r.get('message_id'):raise ValueError('Delivery identity mismatch')
+           notice.update(status='sent',message_id=r['message_id'],receipt=r,sent_at=stamp());put(ROOT+':delivery',notice)
+          except Exception:
+           notice['status']='uncertain';put(ROOT+':delivery',notice);raise
+          print(json.dumps({'status':e['status'],'items':e['items'],'blocked119':block['status'],'search_minimum119':block.get('search_minimum_quote_in_current_campaign'),'message_id':notice['message_id']}))
           
           PY

@@ -71,7 +71,13 @@ class Transport:
                                   "attempt": attempt + 2, "delay_seconds": delay}))
                 time.sleep(delay)
 
-    def _request_once(self, base, path, method="GET", body=None, params=None):
+    def insert_cache_once(self, body):
+        return self._request_once(
+            os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1/",
+            "telegram_api_cache", "POST", body, {"on_conflict": "cache_key"},
+            cache_prefer="resolution=ignore-duplicates,return=representation")
+
+    def _request_once(self, base, path, method="GET", body=None, params=None, cache_prefer=None):
         if base not in (MS, WB, os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1/"):
             raise Stop("Unexpected API destination")
         if base == WB and method != "GET" and not (method == "POST" and path == "api/v3/orders/status"):
@@ -83,7 +89,7 @@ class Transport:
         headers = {"Accept": "application/json;charset=utf-8", "Content-Type": "application/json",
                    "Accept-Encoding": "gzip", "Authorization": ("Bearer " if base != WB else "") + token}
         if base not in (MS, WB):
-            headers.update(apikey=token, Prefer="resolution=merge-duplicates,return=representation")
+            headers.update(apikey=token, Prefer=cache_prefer or "resolution=merge-duplicates,return=representation")
         url = base + path
         if params:
             url += "?" + urllib.parse.urlencode(params)
@@ -131,10 +137,99 @@ class Cache:
             raise Stop("Pending state list incomplete")
         return [x for x in rows if x["payload"].get("status") != "complete"]
 
+    def claim(self, key, payload):
+        # INSERT ... ON CONFLICT DO NOTHING is atomic across overlapping runners.
+        key = self.scope(key) if hasattr(self, "scope") else key
+        receipt = {**payload, "claim_nonce": str(uuid.uuid4())}
+        body = {"cache_key": key, "payload": receipt,
+                "expires_at": "2036-10-20T00:00:00Z", "updated_at": now()}
+        try:
+            inserted = self.t.insert_cache_once(body)
+            return bool(inserted)
+        except Stop:
+            # Reconcile an uncertain insert; never blindly replay the claim.
+            return Cache.get(self, key) == receipt
+
 
 class Worker:
     def __init__(self, transport, cache, config):
         self.t, self.db, self.c = transport, cache, config
+
+    def execution_permission(self, direct=False):
+        policy = self.c.get("execution_policy")
+        if not policy or getattr(self, "_execution_permit", None):
+            return None
+        current = stamp(now())
+        local = current.astimezone(dt.timezone(dt.timedelta(hours=3)))
+        kind = "manual" if direct else os.environ.get("FBS_EXECUTION_KIND", "manual")
+        approval_id = os.environ.get("FBS_OWNER_APPROVAL_ID", "").strip()
+        cabinet = self.c["cabinet"]
+        def wait(status, reason):
+            result = {"status": status, "writes": 0, "at": now(), "reason": reason,
+                      "cabinet": cabinet, "daily_time": "19:00", "timezone": "Europe/Moscow"}
+            self.db.put("fbs_document_chain:china:execution_gate:v1", result)
+            if kind == "manual":
+                self.db.put("fbs_document_chain:china:owner_approval_request:v1", {
+                    **result, "owner_confirmation_required": True,
+                    "message": "Внеплановое списание в МоемСкладе: требуется подтверждение владельца и точный список поставок."})
+            return result
+        if kind == "manual":
+            approval = self.db.get("fbs_document_chain:china:owner_approval:v1:" + approval_id) if approval_id else None
+            try:
+                valid = (approval and approval.get("owner_confirmed") is True
+                         and approval.get("cabinet") == cabinet
+                         and stamp(approval["expires_at"]) > current
+                         and isinstance(approval.get("supply_ids"), list)
+                         and bool(approval["supply_ids"]))
+            except (KeyError, TypeError, ValueError):
+                valid = False
+            if not valid:
+                return wait("owner_approval_required", "Внеплановое списание запрещено без разового подтверждения владельца.")
+            if not self.db.claim("fbs_document_chain:china:owner_approval_used:v1:" + approval_id,
+                                 {"at": now(), "cabinet": cabinet, "approval_id": approval_id}):
+                return wait("owner_approval_already_used", "Разовое подтверждение уже использовано.")
+            self._execution_permit = {"kind": "manual", "supply_ids": set(approval["supply_ids"])}
+            return None
+        if kind not in ("daily", "poll") or local.hour != 19:
+            return wait("waiting_for_daily_time", "Автоматические списания выполняются один раз в день в 19:00 МСК.")
+        day = local.date().isoformat()
+        if not self.db.claim("fbs_document_chain:china:daily_execution:v1:" + day,
+                             {"at": now(), "cabinet": cabinet, "local_date": day,
+                              "github_run_id": os.environ.get("GITHUB_RUN_ID")}):
+            return wait("daily_run_already_claimed", "Ежедневный запуск уже был начат; повтор требует подтверждения владельца.")
+        self._execution_permit = {"kind": "daily", "local_date": day}
+        return None
+
+    def require_execution_permission(self, supply_id):
+        decision = self.execution_permission(direct=True)
+        if decision:
+            raise Stop(decision["reason"])
+        permit = getattr(self, "_execution_permit", {})
+        if permit.get("kind") == "manual" and supply_id not in permit["supply_ids"]:
+            raise Stop("Supply is outside the owner's one-time confirmation")
+
+    def require_available_stock(self, payload, state):
+        if not self.c.get("execution_policy", {}).get("forbid_negative_stock"):
+            return
+        needed = collections.Counter()
+        for p in payload["positions"]:
+            needed[href(p["assortment"]).split("?")[0]] += p["quantity"]
+        stocks = self.ms_rows("report/stock/all", {"filter": "store=" + href(payload["store"]),
+            "stockMode": "all", "quantityMode": "all"})
+        by_id = {href(row).split("?")[0]: row for row in stocks}
+        shortages = []
+        for product, quantity in needed.items():
+            stock = by_id.get(product, {})
+            if stock.get("stock", 0) < quantity or stock.get("quantity", 0) < quantity:
+                shortages.append({"product_href": product, "article": stock.get("article"),
+                    "needed": quantity, "stock": stock.get("stock", 0), "available": stock.get("quantity", 0)})
+        if shortages:
+            state["stock_shortages"] = shortages
+            self.db.put("fbs_document_chain:china:stock_approval_request:v1", {
+                "at": now(), "supply_id": state["supply"]["id"],
+                "shortages": shortages, "owner_confirmation_required": True,
+                "message": "Недостаточно остатков. Отгрузка не проведена; требуется решение владельца."})
+            raise Stop("Insufficient available stock; shipment blocked pending owner decision")
 
     def ms_rows(self, path, params=None):
         rows, offset = [], 0
@@ -280,6 +375,9 @@ class Worker:
         elif state.get("inflight"):
             raise Stop("Uncertain prior document creation; manual reconciliation required")
         else:
+            self.require_execution_permission(state["supply"]["id"])
+            if typ == "demand":
+                self.require_available_stock(payload, state)
             # Check for manually entered supply numbers before creating any document.
             if typ == "customerorder" and self.ms_rows("entity/customerorder", {"filter": "name=" + state["supply"]["id"]}):
                 raise Stop("Existing manual order for this supply; reconcile before continuing")
@@ -343,6 +441,7 @@ class Worker:
 
     def process(self, state):
         supply = state["supply"]
+        self.require_execution_permission(supply["id"])
         key = PREFIX + supply["id"]
         annotation = self.order_annotation(supply)
         if "positions" not in state:
@@ -387,6 +486,11 @@ class Worker:
             raise Stop("Unknown mode")
         if mode == "run" and (not self.c.get("writes_enabled") or self.c.get("status") != "active"):
             return {"status": "configured_waiting_for_verification", "writes": 0}
+        if mode == "run":
+            self._execution_permit = None
+            decision = self.execution_permission()
+            if decision:
+                return decision
         if self.c.get("scope_confirmed") is not True:
             raise Stop("Organization/counterparty scope needs confirmation")
         state = self.db.get(STATE)
@@ -425,6 +529,9 @@ class Worker:
             candidates[supply["id"]] = previous or {"supply": supply, "status": "discovered", "discovered_at": now()}
         errors, completed = [], 0
         for supply_id, item in sorted(candidates.items()):
+            permit = getattr(self, "_execution_permit", {})
+            if permit.get("kind") == "manual" and supply_id not in permit["supply_ids"]:
+                continue
             try:
                 self.process(item)
                 completed += 1
@@ -459,3 +566,4 @@ if __name__ == "__main__":
     except Exception as exc:
         print(json.dumps({"status": "failed", "error": str(exc) if isinstance(exc, Stop) else type(exc).__name__}))
         raise SystemExit(1)
+

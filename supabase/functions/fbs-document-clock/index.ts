@@ -54,7 +54,7 @@ async function handle(req) {
   const inserted=await save(claim,{status:"submitting",at:now.toISOString()},true);
   if(!inserted.length)return finish("already_claimed");
   let status=0;
-  try{status=(await fetch(repo+"/actions/workflows/fbs-document-chain.yml/dispatches",{method:"POST",headers:auth,body:JSON.stringify({ref:"main",inputs:{mode:"run"}}),signal:AbortSignal.timeout(8000)})).status;}catch{}
+  try{status=(await fetch(repo+"/actions/workflows/fbs-document-chain.yml/dispatches",{method:"POST",headers:auth,body:JSON.stringify({ref:"main",inputs:{mode:"run",execution_kind:"poll"}}),signal:AbortSignal.timeout(8000)})).status;}catch{}
   await save(claim,{status:status===204?"dispatched":"uncertain",github_status:status,at:now.toISOString()});
   return finish(status===204?"dispatched":"dispatch_uncertain",{github_status:status,last_checks:checks});
  }catch{
@@ -63,3 +63,4 @@ async function handle(req) {
  }
 }
 Deno.serve(handle);
+

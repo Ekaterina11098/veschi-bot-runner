@@ -42,4 +42,5 @@ r=await scenario({runs:[{id:1,status:'in_progress'}],jobs:[{name:'chain',status:
 r=await scenario({runs:[{id:1,status:'in_progress'}],jobs:[{name:'chain',status:'completed'},{name:'audit_comments',status:'in_progress'}]});assert.equal(r.body.status,'dispatched');assert.equal(r.calls.filter(x=>x.url.endsWith('/dispatches')).length,1);
 r=await scenario({claimed:true});assert.equal(r.body.status,'already_claimed');assert(!r.calls.some(x=>x.url.endsWith('/dispatches')));
 r=await scenario({runs:[{id:1,status:'pending'}],jobs:[{name:'chain',status:'completed'},{name:'audit_comments',status:'pending'}]});assert.equal(r.body.status,'dispatched');
+assert.deepEqual(JSON.parse(r.calls.find(x=>x.url.endsWith('/dispatches')).init.body).inputs,{mode:'run',execution_kind:'poll'});
 console.log('10 clock checks passed: auth, fresh state, pause, queue, worker lock, separate audit, deduplication.');

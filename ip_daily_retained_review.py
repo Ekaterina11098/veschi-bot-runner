@@ -23,6 +23,7 @@ def review(store,view,configs,authorized,protected_additions=None,pending_nms=No
   if daily:break
  if not daily:coverage['limitations'].append('Saved complete analytical review ending '+end+' not found; no finance values invented')
  profit=((daily or {}).get('campaign_review') or {}).get('sku_profit_index') or {}
+ saved_models=store.cache_get('advertising:ip:saved-unit-economics:v1') or {};models=saved_models.get('models') or {};economic_basis={}
  fby={(r['campaign_id'],r['nm_id']):r.get('facts',{}) for r in (daily or {}).get('full_pair_analysis',[])}
  own=decode_rows(store.db('GET','analytics_snapshots',params={'source':'eq.mpstats_lk_wb_products','cabinet':'eq.token_2','period_from':'eq.'+end,'period_to':'eq.'+end,'status':'eq.complete','select':'id,payload','order':'id.desc','limit':1}) or [])
  rows=shop_rows(own[0]['payload']) if own else [];stock={};demand={};labels={}
@@ -62,12 +63,22 @@ def review(store,view,configs,authorized,protected_additions=None,pending_nms=No
    if v['orders']>0 and v['revenue']>0:refs.setdefault(n['subject']['id'],[]).append(v['revenue']/v['orders'])
  def economy(nm,cid):
   p=profit.get(str(nm),{});f=fby.get((cid,nm),{})
-  return (p.get('status')=='preliminary' and p.get('period_to')==end and num(p.get('after_ads')) and p['after_ads']>0) or (f.get('positive_entry_economics') is True and num(f.get('entry_net_profit')) and f['entry_net_profit']>0)
+  if (p.get('status')=='preliminary' and p.get('period_to')==end and num(p.get('after_ads')) and p['after_ads']>0) or (f.get('positive_entry_economics') is True and num(f.get('entry_net_profit')) and f['entry_net_profit']>0):
+   economic_basis[nm]={'kind':'existing_saved_economics','period_to':end};return True
+  # A dated successful-buyout scenario is usable only for a small research proposal,
+  # with an observed unchanged order price. Never silently substitute a buyout rate,
+  # current-period profit, raw MPStats profit, or an unobserved selling price.
+  m=models.get(str(nm),{});own=demand.get(nm,{})
+  if num(m.get('scenario_one_buyout_after_assumed_5pct_ad')) and m['scenario_one_buyout_after_assumed_5pct_ad']>0 and num(m.get('historical_order_price')) and m['historical_order_price']>0 and own.get('orders',0)>0 and abs(own['revenue']/own['orders']-m['historical_order_price'])<=1:
+   economic_basis[nm]=dict(kind='dated_conditional_single_buyout_scenario',model=m,buyout_rate_unknown=True,current_order_price=own['revenue']/own['orders'],not_current_period_profit=True);return True
+  return False
  def has_stock(nm,subject):
   q=stock.get(nm,{})
   return q.get('known') and (q['fbo']>0 if subject in (51,57,255,756) else q['fbo']+q['fbs']>0)
  def base(c,nm,kind):
-  return dict(ready=True,sku=labels[nm],nm=nm,campaign=c['id'],kind=kind,baseline=copy.deepcopy(c),period_to=end,source='Existing retained daily report/product slice and dated verified WB category minimum; no new source requests',criterion='Три полных дня после изменения: охват, общие заказы и ДРР. Не повышать повторно при росте расхода без заказов. Выручка/прибыль не гарантированы.',campaign_name=c['settings'].get('name',''),daily=pairdata.get((c['id'],nm),{}),placement_label='Ставка поиска',placement='search')
+  criterion='Три полных дня после изменения: охват, общие заказы и ДРР. Не повышать повторно при росте расхода без заказов. Выручка/прибыль не гарантированы.'
+  if economic_basis.get(nm,{}).get('kind')=='dated_conditional_single_buyout_scenario':criterion+=' Экономика — датированный сценарий одной выкупленной продажи при той же наблюдаемой цене, а не доказанная прибыль следующего заказа; доля выкупа неизвестна.'
+  return dict(ready=True,sku=labels[nm],nm=nm,campaign=c['id'],kind=kind,baseline=copy.deepcopy(c),period_to=end,source='Existing retained daily report/product slice and dated verified WB category minimum; no new source requests',criterion=criterion,economic_basis=copy.deepcopy(economic_basis.get(nm)),campaign_name=c['settings'].get('name',''),daily=pairdata.get((c['id'],nm),{}),placement_label='Ставка поиска',placement='search')
  for cid,c in configs.items():
   if c.get('status')!=9 or c.get('currency')!='RUB' or c.get('bid_type')!='manual':continue
   for n in c.get('nm_settings',[]):
@@ -93,14 +104,16 @@ def review(store,view,configs,authorized,protected_additions=None,pending_nms=No
    elif pay=='cpc' and ((orders>0 and revenue>0 and cost/revenue<=.05) or (orders==0 and own.get('orders',0)>0 and reference is not None and cost<.05*reference)) and has_stock(nm,subject) and economy(nm,cid):
     a=base(c,nm,'raise_bid');a.update(stored_bid_minor=old,target_bid_minor=math.floor(old*1.05),positive_stock_verified=True,positive_fbo_verified=stock[nm]['fbo']>0,subject=subject,research_test=True);result.append(a);coverage['directions']['raise']['ready']+=1
    elif pay=='cpc' and orders>0 and revenue>0 and cost/revenue<=.05:coverage['directions']['raise']['gaps']+=1
+ planned_additions={}
  for nm in labels:
   coverage['directions']['add']['checked']+=1
   if nm in active or nm in spending_nms or nm in protected_additions or nm in pending_nms or not demand.get(nm,{}).get('orders'):continue
   subject=stock[nm]['subject']
   if not has_stock(nm,subject) or not economy(nm,None):coverage['directions']['add']['gaps']+=1;continue
-  destinations=[c for c in configs.values() if c.get('status')==9 and c.get('currency')=='RUB' and c.get('bid_type')=='manual' and c['settings'].get('payment_type')=='cpc' and c['settings'].get('placements')=={'search':True,'recommendations':False} and c.get('restrictions',{}).get('can_change_nms') and len(c['nm_settings'])<50 and {n['subject']['id'] for n in c['nm_settings']}=={subject}]
+  destinations=[c for c in configs.values() if c.get('status')==9 and c.get('currency')=='RUB' and c.get('bid_type')=='manual' and c['settings'].get('payment_type')=='cpc' and c['settings'].get('placements')=={'search':True,'recommendations':False} and c.get('restrictions',{}).get('can_change_nms') and len(c['nm_settings'])+planned_additions.get(c['id'],0)<50 and {n['subject']['id'] for n in c['nm_settings']}=={subject}]
   floor=minima.get((subject,'cpc','search','RUB','manual'))
   if not destinations or type(floor)is not int:coverage['new_campaign_projects'].append(dict(nm=nm,sku=labels[nm],reason='No evidenced free matching campaign/minimum; no new campaign action created'));continue
   c=min(destinations,key=lambda c:len(c['nm_settings']));a=base(c,nm,'add');a.update(target_bid_minor=floor,minimum_bid_minor=floor,subject=subject,positive_stock_verified=True,positive_fbo_verified=stock[nm]['fbo']>0,research_test=True);result.append(a);coverage['directions']['add']['ready']+=1
- coverage['whole_own_slice_available']=bool(rows);coverage['financial_model_available']=bool(profit);coverage['complete_existing_campaign_review']=bool(configs) and bool(rows)
+  planned_additions[c['id']]=planned_additions.get(c['id'],0)+1
+ coverage['whole_own_slice_available']=bool(rows);coverage['financial_model_available']=bool(profit);coverage['dated_conditional_unit_models']=len(models);coverage['conditional_basis_used']=sum(a.get('economic_basis',{}).get('kind')=='dated_conditional_single_buyout_scenario' for a in result if a.get('economic_basis'));coverage['complete_existing_campaign_review']=bool(configs) and bool(rows)
  return result,coverage

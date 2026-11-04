@@ -1,0 +1,36 @@
+name: Recover only five approved IP actions after400
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-owner-five-recovery-20261104.yml']
+permissions:
+  contents: read
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 788f2a602888387e35a57eadd0ba3d0050b93879
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            ip_owner_five_recovery_20261104.py
+            ip_owner_five_20261104.py
+            ip_daily_png_contract.py
+            ip_apply_nine_20261103.py
+            ip_bags_growth_20261104.py
+            advertising_daily_png.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Fresh preflight, only pending five targets, final exact WB readback
+        run: python ip_owner_five_recovery_20261104.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'

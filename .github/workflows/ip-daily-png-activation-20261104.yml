@@ -2,7 +2,7 @@ name: Verify and deliver approved IP daily PNG format from saved data only
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/ip-daily-png-activation-20261104.yml']
+    paths: ['.github/disabled/ip-daily-png-activation-20261104.never']
 permissions:
   contents: read
 concurrency:

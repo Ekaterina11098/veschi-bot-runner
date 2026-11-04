@@ -29,7 +29,7 @@ jobs:
           ms="https://api.moysklad.ru/api/remap/1.2/"
           sh={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json"}
           mh={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept-Encoding":"gzip","Accept":"application/json;charset=utf-8","Content-Type":"application/json"}
-          token=os.environ.get("WB_FINANCE_TOKEN_3") or os.environ["WB_TOKEN_3"]
+          token=os.environ["WB_TOKEN_3"]
           wh={"Authorization":token,"Content-Type":"application/json"}
           def call(url,h,method="GET",body=None):
            try:

@@ -53,3 +53,14 @@ class ChinaTwoHourTests(unittest.TestCase):
   self.assertNotIn('WB_TOKEN_1:',text);self.assertNotIn('WB_TOKEN_2:',text)
   self.assertIn('REVIEW_SEMANTIC_AUTO_FIVE_STAR:',text)
   self.assertNotIn('review_approved_worker.py',text)
+
+ def test_real_main_uses_china_event_key_instead_of_morning_event(self):
+  import ast,inspect,textwrap
+  from review_morning import main
+  tree=ast.parse(textwrap.dedent(inspect.getsource(main)))
+  assignment=next(n for n in ast.walk(tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='control' for t in n.targets))
+  for china in (True,False):
+   plan=collection_plan('feedbacks',china,datetime(2026,11,4,5,tzinfo=timezone.utc))
+   key=eval(compile(ast.Expression(assignment.value),'<event-key>','eval'),dict(plan=plan,kind='feedbacks',day=plan['day']))
+   self.assertEqual(key,plan['control'])
+  self.assertNotEqual(collection_plan('feedbacks',True,datetime(2026,11,4,5,tzinfo=timezone.utc))['control'],'reviews-morning:2026-11-04')

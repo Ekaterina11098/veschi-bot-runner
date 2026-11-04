@@ -56,7 +56,7 @@ def collection_plan(kind='feedbacks',china_two_hour=False,now=None,manual=False)
     day=target_day(now,manual)
     if not day:return None
     return dict(day=day,cabinets=('token_1','token_2') if kind=='feedbacks' else CABINETS,
-                control=('questions-morning:' if kind=='questions' else 'reviews-morning:')+day,
+                control=plan['control'],
                 china_two_hour=False)
 
 def resume_collection(state,plan,kind='feedbacks'):

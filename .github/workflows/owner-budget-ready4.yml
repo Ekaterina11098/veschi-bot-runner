@@ -1,0 +1,71 @@
+name: Owner fresh budget readiness check 4Nov
+on:
+  push:
+    paths: ['.github/workflows/owner-budget-ready4.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-budget-ready4
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import json,copy,requests
+          from china_price_apply import IO
+          from china_advertising_v2 import http,refresh_budget_context,history,stamp
+          from china_morning_readiness import current_prices,published_stock
+          from china_moysklad_read import read_stock
+          from china_advertising_economic_review import model_rows
+          ROOT='china_agent:owner_budget_ready_check:2026-11-04:v1'
+          io=IO()
+          if io.get(ROOT):raise ValueError('Existing immutable check; do not repeat')
+          original=io.get('china_agent:advertising_source:2026-11-04:v2')
+          s=refresh_budget_context(io,original,'2026-11-04')
+          ids=[40945502,41155909,41270309,41296363]
+          campaigns=http(io,'/api/advert/v2/adverts?ids='+','.join(map(str,ids)))['adverts']
+          nms={n['nm_id']for c in campaigns for n in c['nm_settings']}
+          for b in s['batches'].values():
+           for c in b['stats']:
+            if c['advertId']in ids:
+             for d in c['days']:
+              if d['date'][:10]>='2026-11-01':
+               for app in d.get('apps',[]):
+                for n in app.get('nms',[]):
+                 if n.get('orders',0)>0:nms.add(n['nmId'])
+          prices=current_prices(io,sorted(nms));stock=read_stock(list(dict.fromkeys(p['article']for p in prices['rows'])));pub=published_stock(io,prices,sorted(nms))
+          own=io.get('china_agent:owner_full_growth_review:2026-11-04:v1:collection')['own']
+          fx=next(e['fx_rub_per_cny']for e in original['economics']['rows'].values()if e.get('fx_date')=='2026-11-04')
+          econ=model_rows(dict(products=own,prices=prices,stock=stock,fx=dict(rub_per_cny=fx)),io.get('china_agent:new_ad_economics_policy:v1'),io.get('china_agent:expected_profit_delivery_model:v1'))
+          for nm,e in econ['rows'].items():e.update(published_stock=pub['amounts'].get(nm),published_stock_observed_at=pub['observed_at'],fx_rub_per_cny=fx,fx_date='2026-11-04')
+          budgets=http(io,'/api/advert/v2/budget','POST',dict(advertIds=ids));config=http(io,'/api/advert/v1/config')
+          r=requests.get('https://advert-api.wildberries.ru/adv/v1/balance',headers={'Authorization':io.token},timeout=45);r.raise_for_status();wallet=r.json()
+          minimums={}
+          for c in campaigns:
+           zone='search'if c['settings']['placements'].get('search')else'recommendation'
+           minimums[str(c['id'])]=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=c['id'],nm_ids=[n['nm_id']for n in c['nm_settings']],payment_type='cpc',placement_types=[zone]))
+          value=dict(status='complete',cabinet='token_3',observed_at=stamp(),campaigns=campaigns,stock=stock,prices=prices,published_stock=pub,economics=econ,own=own,source=s,budgets=budgets,config=config,wallet=wallet,minimums=minimums,wb_writes=0,telegram_calls=0,model_calls=0,grants_action_permission=False)
+          value=json.loads(json.dumps(value))
+          if not io.create(ROOT,value)or io.get(ROOT)!=value:raise ValueError('Immutable check readback failed')
+          print('Fresh four-campaign budget check saved privately; zero mutations/model/Telegram')
+          PY

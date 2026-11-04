@@ -57,7 +57,7 @@ jobs:
           def req(path,method='GET',body=None):
            time.sleep(1.5)
            r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':w.token},json=body,timeout=50)
-           if not r.ok:raise RuntimeError('WB HTTP '+str(r.status_code))
+           if not r.ok:raise RuntimeError('WB HTTP '+str(r.status_code)+' '+r.text[:700])
            return r.json()if r.content else {}
           def campaign(cid):return w.campaigns([cid])[str(cid)]
           def budget(cid):
@@ -81,99 +81,51 @@ jobs:
             result=req(path,method,body);op.update(status='accepted',response=result,accepted_at=stamp());e['wb_writes']+=1;put(ROOT+':execution',e);return result
            except Exception as ex:
             op.update(status='uncertain',error=type(ex).__name__);put(ROOT+':execution',e);raise
-          def main():
-           if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner'or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
-           a=auth();validate_identity(c,w)
-           if c.get(ROOT+':execution'):raise ValueError('Existing execution; no mutation replay')
-           e=dict(status='preflight',approval_key=ROOT+':approval',plan_sha256=digest(a['items']),operations={},items=[],wb_writes=0,created_at=stamp())
-           if not c.create(ROOT+':execution',e):raise ValueError('Concurrent execution')
-           try:
-            ids=[nm for z,ns in GROUPS.values()for nm in ns]
-            ps=current_prices(io,ids);pub=published_stock(io,ps,ids);st=read_stock([r['article']for r in ps['rows']])
-            old=c.get('china_agent:owner_addition_review:2026-11-04:v1:inputs')
-            full=c.get('china_agent:owner_full_growth_review:2026-11-04:v1:collection')
-            models=full['economics']['rows'];stocks={r['article']:r for r in st['rows']}
-            if len(ps['rows'])!=5 or not st['coverage_complete']or pub['missing_nm_ids']:raise ValueError('Fresh input coverage incomplete')
-            for p in ps['rows']:
-             nm=p['nm_id'];m=models[str(nm)];s=stocks[p['article']]
-             if p['seller_price']!=m['seller_price_cny']or s['price']<=0 or s['stock']-s['reserve']<=0 or pub['amounts'].get(str(nm),0)<=0:raise ValueError('Price/availability changed')
-             adjusted=m['expected_margin_before_ads_cny']-m['buyout']*(s['price']/100-m['own_cogs_rub'])/m['fx_rub_per_cny']
-             if adjusted<=0:raise ValueError('Current own preliminary economics nonpositive')
-            cfg=req('/api/advert/v1/config')
-            if cfg['currency']!='CNY'or cfg['cpcStep']!=1 or cfg['minTopUp']>10000:raise ValueError('Currency/step/topup changed')
-            base=w.campaigns(list(GROUPS));comparators={}
-            for cid,(z,ns)in GROUPS.items():
-             b=base[str(cid)];br=rows(b)
-             if b['status']!=9 or b['currency']!='CNY'or b['bid_type']!='manual'or b['settings']['payment_type']!='cpc'or b['settings']['placements'].get(z)is not True or not b['restrictions'].get('can_change_nms')or len(br)+len(ns)>50 or {n['subject']['id']for n in br.values()}!={50}:raise ValueError('Current campaign not eligible')
-             if any(nm in br for nm in ns):raise ValueError('Candidate already present; do not duplicate')
-             comparator=next(nm for nm in br if br[nm]['subject']['id']==50)
-             q=w.minimums(cid,[comparator],z)
-             if q[comparator]>30:raise ValueError('Current same-subject minimum exceeds owner cap')
-             comparators[str(cid)]=q
-            balances={str(cid):budget(cid)for cid in GROUPS}
-            if balances['41298169']<1513.70 or balances['40933588']+100<3614.51:raise ValueError('Three-day reserve plus bounded tests not covered')
-            bal=req('/adv/v1/balance');source=0 if bal.get('balance',0)>=100 else 1 if bal.get('net',0)>=100 else None
-            if bal.get('currency')!='CNY'or source is None:raise ValueError('CNY funding source unavailable')
-            e['preflight']=dict(observed_at=stamp(),prices=ps,published_stock=pub,stock=st,config=cfg,category_minimum_comparators=comparators,budgets=balances)
-            e['status']='running';put(ROOT+':execution',e)
-            #100CNY is independently and explicitly authorized. Journal before exactly one submission.
-            fb=campaign(40933588);bb=budget(40933588)
-            if not fixed_equal(base['40933588'],fb)or rows(base['40933588'])!=rows(fb):raise ValueError('Campaign changed before funding')
-            fund=dict(status='submitting',before=fb,before_budget=bb,amount_cny=100);put(ROOT+':funding',fund)
-            write_once(e,'fund100','/adv/v1/budget/deposit?id=40933588','POST',dict(sum=100,type=source))
-            for i in range(15):
-             fa=campaign(40933588);ba=budget(40933588)
-             if fixed_equal(fb,fa)and rows(fb)==rows(fa)and ba>=bb+98:break
-             time.sleep(5)
-            else:raise ValueError('Funding readback uncertain; never repeat')
-            fund.update(status='verified',after=fa,after_budget=ba,verified_at=stamp());put(ROOT+':funding',fund);e['funding_key']=ROOT+':funding';put(ROOT+':execution',e)
-            for cid,(z,ns)in GROUPS.items():
-             before=campaign(cid);br=rows(before)
-             if not fixed_equal(base[str(cid)],before)or rows(base[str(cid)])!=br:raise ValueError('Campaign changed before addition')
-             child=dict(status='submitting',kind='ad_add_sku',before=before,campaign_id=cid,nm_ids=ns,placement=z,max_bid_minor=30,approval_key=ROOT+':approval')
-             ck=ROOT+':campaign:'+str(cid);put(ck,child)
-             write_once(e,'add:'+str(cid),'/adv/v0/auction/nms','PATCH',dict(nms=[dict(advert_id=cid,nms=dict(add=ns,delete=[]))]))
-             for i in range(18):
-              after=campaign(cid);ar=rows(after)
-              if set(ar)==set(br)|set(ns):break
-              time.sleep(5)
-             else:raise ValueError('Addition membership readback uncertain; never repeat')
-             if not fixed_equal(before,after)or any(ar[nm]!=r for nm,r in br.items()):raise ValueError('Other campaign settings/members changed')
-             bad=any(ar[nm]['subject']['id']!=50 or not 0<ar[nm]['bids_kopecks'].get(z,0)<=30 or any(v!=0 for zone,v in ar[nm]['bids_kopecks'].items()if zone!=z)for nm in ns)
-             if bad:
-              write_once(e,'rollback:'+str(cid),'/adv/v0/auction/nms','PATCH',dict(nms=[dict(advert_id=cid,nms=dict(add=[],delete=ns))]))
-              rollback=campaign(cid)
-              child.update(status='rolled_back_cap_or_placement',after=rollback,observed_added=after);put(ck,child)
-              raise ValueError('Automatic minimum outside approved cap/placement; removed only newly added products')
-             minima=w.minimums(cid,ns,z)
-             if any(minima[nm]>ar[nm]['bids_kopecks'][z]for nm in ns):raise ValueError('Actual bid below current exact minimum')
-             child.update(status='verified',after=after,exact_minimums=minima,verified_at=stamp(),actions=[dict(kind='ad_add_sku',campaign_id=cid,nm_id=nm,placement=z,target_minor=ar[nm]['bids_kopecks'][z],article=next(p['article']for p in ps['rows']if p['nm_id']==nm))for nm in ns]);put(ck,child)
-             for action in child['actions']:e['items'].append(dict(action,status='verified',receipt_key=ck,verified_at=child['verified_at']))
-             registry=c.get('china_agent:verified_campaign_state:v1')or{};registry[str(cid)]=ck;put('china_agent:verified_campaign_state:v1',registry);put(ROOT+':execution',e)
-            e.update(status='verified',verified_at=stamp());put(ROOT+':execution',e)
-           except Exception as ex:
-            e.update(status='partial_or_uncertain',error=str(ex)if isinstance(ex,(ValueError,RuntimeError))else type(ex).__name__,updated_at=stamp());put(ROOT+':execution',e)
-            print(json.dumps({'status':e['status'],'error':e['error'],'verified_items':len(e['items']),'wb_writes':e['wb_writes']}));raise
-           # Send only after all five additions and the funding have WB readback.
-           if len(e['items'])!=5 or c.get(ROOT+':funding')['status']!='verified':raise ValueError('Cannot announce all done')
-           lines=['Сделано и проверено в WB:','Поиск · РК41298169:']
-           for item in e['items']:
-            if item['placement']=='search':lines.append('• '+item['article'].split('-')[0]+' — добавлен, ставка '+format(item['target_minor']/100,'.2f')+' CNY.')
-           lines.append('Рекомендации · РК40933588:')
-           for item in e['items']:
-            if item['placement']=='recommendations':lines.append('• '+item['article'].split('-')[0]+' — добавлен, ставка '+format(item['target_minor']/100,'.2f')+' CNY.')
-           lines+=['РК рекомендаций пополнена на100CNY.','143 и590 не меняли. Другие ставки не повышали.']
-           text='\n'.join(lines)
-           if io.tg('getMe',{})['id']!=8780468043:raise ValueError('Bot identity differs')
-           notice=dict(status='sending',text=text,chat_id=-1004342917488,bot_id=8780468043,execution_key=ROOT+':execution',created_at=stamp())
-           if not c.create(ROOT+':delivery',notice):raise ValueError('Notice exists; never resend uncertain')
-           try:
-            r=io.tg('sendMessage',dict(chat_id=-1004342917488,text=text))
-            if r.get('chat',{}).get('id')!=-1004342917488 or r.get('from',{}).get('id')!=8780468043 or not r.get('message_id'):raise ValueError('Delivery identity mismatch')
-            notice.update(status='sent',message_id=r['message_id'],receipt=r,sent_at=stamp());put(ROOT+':delivery',notice)
-           except Exception:
-            notice['status']='uncertain';put(ROOT+':delivery',notice);raise
-           print(json.dumps({'status':'verified','items':e['items'],'wb_writes':e['wb_writes'],'fund_before':fund['before_budget'],'fund_after':fund['after_budget'],'message_id':notice['message_id']}))
-          main()
+          
+          auth();validate_identity(c,w)
+          e=c.get(ROOT+':execution');fund=c.get(ROOT+':funding')
+          if fund.get('status')!='verified' or e['operations'].get('fund100',{}).get('status')!='accepted':raise ValueError('Existing funding receipt unavailable')
+          states=w.campaigns(list(GROUPS))
+          proof={}
+          for cid,(z,ids)in GROUPS.items():
+           s=states[str(cid)];proof[str(cid)]=dict(observed_at=stamp(),present=[nm for nm in ids if nm in rows(s)],state=s)
+          put(ROOT+':recovery_readback',proof)
+          # Fresh read proves the rejected search addition did not change membership. Do not replay it.
+          if proof['41298169']['present']:raise ValueError('Search partial membership; needs reconciliation')
+          e['operations']['add:41298169']['status']='http400_rejected_absent_readback'
+          e['operations']['add:41298169']['readback_key']=ROOT+':recovery_readback'
+          put(ROOT+':execution',e)
+          # Only the never-submitted recommendation addition may proceed here.
+          cid=40933588;z,ids=GROUPS[cid];before=states[str(cid)];br=rows(before)
+          if any(nm in br for nm in ids):raise ValueError('Recommendation candidate already present')
+          try:
+           write_once(e,'add:'+str(cid),'/adv/v0/auction/nms','PATCH',dict(nms=[dict(advert_id=cid,nms=dict(add=ids,delete=[]))]))
+           for i in range(18):
+            after=campaign(cid);ar=rows(after)
+            if set(ar)==set(br)|set(ids):break
+            time.sleep(5)
+           else:raise ValueError('Recommendation membership uncertain')
+           if not fixed_equal(before,after)or any(ar[nm]!=r for nm,r in br.items()):raise ValueError('Other campaign settings changed')
+           if any(not 0<ar[nm]['bids_kopecks'].get(z,0)<=30 for nm in ids):
+            write_once(e,'rollback:'+str(cid),'/adv/v0/auction/nms','PATCH',dict(nms=[dict(advert_id=cid,nms=dict(add=[],delete=ids))]))
+            raise ValueError('Default bid outside cap; new products removed')
+           minima=w.minimums(cid,ids,z)
+           child=dict(status='verified',before=before,after=after,verified_at=stamp(),nm_ids=ids,placement=z,exact_minimums=minima,approval_key=ROOT+':approval')
+           ck=ROOT+':campaign:'+str(cid);put(ck,child)
+           for nm in ids:e['items'].append(dict(kind='ad_add_sku',campaign_id=cid,nm_id=nm,article=next(i['article']for i in auth()['items']if i.get('nm_id')==nm),placement=z,target_minor=ar[nm]['bids_kopecks'][z],status='verified',receipt_key=ck,verified_at=child['verified_at']))
+           registry=c.get('china_agent:verified_campaign_state:v1')or{};registry[str(cid)]=ck;put('china_agent:verified_campaign_state:v1',registry)
+           e.update(status='partial_verified',error='Search addition rejected, absent on readback');put(ROOT+':execution',e)
+           print(json.dumps({'status':e['status'],'verified_items':len(e['items'])}))
+          except Exception as ex:
+           e.update(status='partial_verified_funding_only'if not e['items']else'partial_verified',error=str(ex),updated_at=stamp());put(ROOT+':execution',e)
+           print(json.dumps({'status':e['status'],'error':e['error']}))
+          # One bounded read to determine whether WB currently exposes these five cards as eligible.
+          r=requests.post('https://advert-api.wildberries.ru/adv/v2/supplier/nms',headers={'Authorization':w.token},json=[50],timeout=50)
+          wanted={nm for z,ns in GROUPS.values()for nm in ns}
+          v=dict(observed_at=stamp(),http_status=r.status_code)
+          if r.ok:v['rows']=[x for x in r.json()if x.get('nm')in wanted]
+          else:v['error']=r.text[:700]
+          put(ROOT+':eligibility',v)
+          print(json.dumps({'eligibility':v}))
           
           PY

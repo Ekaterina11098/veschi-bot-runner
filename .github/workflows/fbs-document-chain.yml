@@ -1,4 +1,4 @@
-name: WB and Ozon FBS document chains
+name: WB FBS daily document chains
 on:
   push:
     branches: [main]
@@ -11,16 +11,15 @@ on:
         options: [status, preview, run]
         default: status
       execution_kind:
-        description: Manual runs require a one-time owner confirmation; poll is used by the clock
+        description: Manual runs require a one-time owner confirmation; daily is the scheduled WB batch
         type: choice
-        options: [manual, poll, daily]
+        options: [manual, daily]
         default: manual
       owner_approval_id:
         description: Private one-time confirmation ID for a manually requested WB run
         type: string
         required: false
   schedule:
-    - cron: '2-59/5 * * * *'
     - cron: '0 16 * * *' # 19:00 Europe/Moscow, WB once daily
 permissions:
   contents: read
@@ -56,17 +55,10 @@ jobs:
           WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           MODE: ${{ inputs.mode || (github.event_name == 'schedule' && 'run') || 'status' }}
-          FBS_EXECUTION_KIND: ${{ inputs.execution_kind || (github.event_name == 'schedule' && 'poll') || 'manual' }}
+          FBS_EXECUTION_KIND: ${{ inputs.execution_kind || (github.event_name == 'schedule' && 'daily') || 'manual' }}
           FBS_OWNER_APPROVAL_ID: ${{ inputs.owner_approval_id }}
         run: |
           exec python scripts/fbs_wb_cabinets.py "$MODE"
-      - name: Process new Ozon act delivery transitions independently
-        if: ${{ always() && steps.python.outcome == 'success' && ((github.event_name == 'schedule' && github.event.schedule != '0 16 * * *') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'run')) }}
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-        run: python scripts/fbs_ozon_chain.py run
   audit_comments:
     needs: chain
     if: ${{ always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'run')) }}

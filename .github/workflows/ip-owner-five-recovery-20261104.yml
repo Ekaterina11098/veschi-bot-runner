@@ -2,7 +2,7 @@ name: Recover only five approved IP actions after400
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/ip-owner-five-recovery-20261104.yml']
+    paths: ['.github/disabled/ip-owner-five-recovery-20261104.never']
 permissions:
   contents: read
 concurrency:

@@ -64,3 +64,6 @@ class ChinaTwoHourTests(unittest.TestCase):
    key=eval(compile(ast.Expression(assignment.value),'<event-key>','eval'),dict(plan=plan,kind='feedbacks',day=plan['day']))
    self.assertEqual(key,plan['control'])
   self.assertNotEqual(collection_plan('feedbacks',True,datetime(2026,11,4,5,tzinfo=timezone.utc))['control'],'reviews-morning:2026-11-04')
+
+
+

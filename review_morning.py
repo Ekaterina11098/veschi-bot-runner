@@ -56,7 +56,7 @@ def collection_plan(kind='feedbacks',china_two_hour=False,now=None,manual=False)
     day=target_day(now,manual)
     if not day:return None
     return dict(day=day,cabinets=('token_1','token_2') if kind=='feedbacks' else CABINETS,
-                control=plan['control'],
+                control=('questions-morning:' if kind=='questions' else 'reviews-morning:')+day,
                 china_two_hour=False)
 
 def resume_collection(state,plan,kind='feedbacks'):
@@ -102,7 +102,7 @@ def main(kind='feedbacks',china_two_hour=False):
         app=Approval(repo,base64.b64encode(hmac.new(root,b'veschi:review-approval-ingress:20261015:v1',hashlib.sha256).digest()).decode(),cfg['owner_id'],cfg['chat_id'],cfg['bot_id'],enabled=True)
         app.chat=app.delivery_chat()
         source=SQLSource(conn);bridge=DurableBridge(app,source);store=DurableReviews(_request)
-        control=('questions-morning:' if kind=='questions' else 'reviews-morning:')+day
+        control=plan['control']
         state=repo.get('events',control) or {'status':'collecting','date':day,'scopes':{},'items':{},'created_at':time.time(),'telegram_confirmed':0}
         if not resume_collection(state,plan,kind):return {'status':'already_complete','telegram_confirmed':state['telegram_confirmed']}
         summary_key=control+':summary'+(':'+state['cycle_slot'] if china_two_hour else '')
@@ -233,6 +233,8 @@ if __name__=='__main__':
         from stock_deploy_support import seal,error
         seal('reviews-morning-error',{'error':error(exc),'private_log':private_log.getvalue()})
         print('Morning reviews failed; protected diagnostic saved.');raise SystemExit(1)
+
+
 
 
 

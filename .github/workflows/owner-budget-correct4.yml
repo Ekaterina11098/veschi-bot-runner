@@ -24,6 +24,8 @@ jobs:
       - run: pip install requests==2.32.5 pillow==11.3.0
       - name: Bounded fresh growth economics; no model or Telegram credentials
         env:
+          WB_TOKEN_3: disabled
+          MOYSKLAD_API_TOKEN: disabled
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}

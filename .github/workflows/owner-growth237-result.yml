@@ -1,0 +1,67 @@
+name: Owner eight raises verified result job237
+on:
+  push:
+    paths: ['.github/workflows/owner-growth237-result.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-growth237-result
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: disabled
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import json,time
+          from datetime import datetime,timezone
+          from china_cloud_cost_control import Cache
+          from china_advertising_state import AdvertisingIO
+          ROOT='china_agent:owner_growth_selected:2026-11-04:job237:v1'
+          c=Cache();io=AdvertisingIO()
+          for _ in range(90):
+           e=c.get(ROOT+':attempt2:execution')or{}
+           if e.get('status')=='verified':break
+           if e.get('status')in['blocked','partial_or_uncertain']:raise ValueError('Execution not fully verified; no success send')
+           time.sleep(3)
+          else:raise ValueError('Execution still pending')
+          children=[c.get(k)for k in e['steps'].values()]
+          if len(children)!=3 or any(x.get('status')!='verified'for x in children)or sum(len(x['items'])for x in children)!=8:raise ValueError('Eight exact readbacks absent')
+          text='Выполнены и проверены WB все 8 повышений из обновлённого PNG. Готовых добавлений не было. Снижения, исключения, бюджеты и цены не меняла;143 и590 не трогала,549 повторно не повышала. Первый полный день новых ставок —5 ноября, оценка6 ноября.'
+          key=ROOT+':delivery'
+          if c.get(key):raise ValueError('Result journal exists; no repeat send')
+          if io.tg('getMe',{})['id']!=8780468043:raise ValueError('Bot identity')
+          record=dict(status='sending',chat_id=-1004342917488,reply_to_message_id=673,text=text,execution_key=ROOT+':attempt2:execution',created_at=datetime.now(timezone.utc).isoformat(),wb_writes=0)
+          if not c.create(key,record):raise ValueError('Concurrent result')
+          try:
+           receipt=io.tg('sendMessage',dict(chat_id=-1004342917488,reply_to_message_id=673,text=text))
+           if receipt.get('chat',{}).get('id')!=-1004342917488 or type(receipt.get('message_id'))is not int:raise ValueError('Delivery mismatch')
+           record.update(status='sent',message_id=receipt['message_id'],receipt=receipt);c.put(key,record)
+           resolution=dict(status='answered_by_owner',chat_id=-1004342917488,message_id=receipt['message_id'],receipt_key=key,answer=text,execution_key=ROOT+':attempt2:execution')
+           if not c.create('china_agent:owner_dialog_resolution:v1:job:237',resolution):raise ValueError('Owner resolution already exists; inspect')
+           correction=c.get('china_agent:owner_full_growth_review:2026-11-04:v1:correction')
+           if correction and correction.get('status')=='edited_verified':
+            c.create('china_agent:owner_dialog_resolution:v1:job:236',dict(status='answered_by_owner',chat_id=-1004342917488,message_id=670,receipt_key='china_agent:owner_full_growth_review:2026-11-04:v1:correction',answer='Отчёт с8 повышениями обновлён в исходномPNG670; полный разбор кабинета сохранён.'))
+           c.create(ROOT+':recovery',dict(status='verified',execution_key=ROOT+':attempt2:execution',verified_items=8,delivery_key=key,source_job=237,completed_at=datetime.now(timezone.utc).isoformat()))
+          except Exception as ex:
+           record.update(status='uncertain',reason=str(ex));c.put(key,record);raise
+          print(json.dumps(dict(status='sent',message_id=record['message_id'],verified_items=8,wb_writes=0)))
+          PY

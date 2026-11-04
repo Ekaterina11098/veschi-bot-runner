@@ -2,7 +2,7 @@ name: Apply exact five IP owner changes Nov4
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/ip-owner-five-20261104.yml']
+    paths: ['.github/disabled/ip-owner-five-20261104.never']
 permissions:
   contents: read
 concurrency:

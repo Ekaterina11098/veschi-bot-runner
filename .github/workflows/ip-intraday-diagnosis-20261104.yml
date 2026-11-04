@@ -1,0 +1,38 @@
+name: Owner requested IP intraday diagnosis Nov4
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-intraday-diagnosis-20261104.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ip-intraday-readonly-20261104
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 69dd66bc86f3f8d5d71b1c9d7f964c05fd37f8bd
+          sparse-checkout: ip_intraday_diagnosis_20261104.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 2f798a9509b72030d6fb5ec68fb915c5d216c31b
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Existing IP readers only; today's orders and campaign totals
+        run: python ip_intraday_diagnosis_20261104.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          SUPABASE_EGRESS_OPTIMIZED: 'true'
+          ADVERTISING_EXECUTION_ENABLED: 'false'

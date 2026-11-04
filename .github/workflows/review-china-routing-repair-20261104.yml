@@ -1,0 +1,144 @@
+name: Repair two audited China routing cases without WB writes
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-china-routing-repair-20261104.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-routing-repair-20261104
+  cancel-in-progress: false
+jobs:
+  china-reviews:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*.py
+            /review-approval-preparation/*.py
+            /.github/workflows/reviews-china-two-hour.yml
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 18649db15489c3dc77edc22bec5a4ddc5ed6a410
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*.py
+            /tests/*.py
+            /*.md
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 requests==2.32.5 python-dotenv==1.1.1 openai==1.109.1
+      - name: Validate China isolation, scheduling, duplicate protection and shared rate budget
+        run: |
+          python -m unittest test_review_china_routing_audit.py test_review_china_two_hour.py test_review_morning.py test_review_auto_five_star.py test_review_semantic_positive.py
+          PYTHONPATH=private-source python -m unittest discover -s private-source/tests -p test_review_rate_budget.py
+          PYTHONPATH=private-source python -c "from openai_client import load_system_prompt; assert load_system_prompt().strip()"
+          python -m py_compile review_morning.py review_china_two_hour.py
+      - name: Route only the two exact audited items with durable receipts
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REVIEW_SEMANTIC_AUTO_FIVE_STAR: '1'
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python - <<'PY'
+          import os,json,time,hmac,hashlib,base64,psycopg
+          from review_telegram_approval import Approval,Repository,sha
+          from review_approval_bridge import SQLSource,DurableBridge
+          from review_auto_five_star import CONFIG_KEY,classify,enqueue
+          from review_durable_workflow import DurableReviews,generate_and_persist
+          from review_queue import _request
+          from review_approval_notice import NewNotice,NewNoticeTransport
+          from review_telegram_runtime import TelegramTransport
+          from review_morning import persist_source_snapshot
+          import openai_client as generation
+          from stock_deploy_support import seal
+          root=os.environ['SUPABASE_SECRET_KEY'].encode()
+          pw=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
+          with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=pw,sslmode='require',autocommit=True,connect_timeout=15) as conn:
+              repo=Repository(conn,postgres=True);source=SQLSource(conn);store=DurableReviews(_request)
+              cfg=source.read('reviews:telegram-approval:config:v1')
+              app=Approval(repo,'routing-repair-only',str(cfg['owner_id']),str(cfg['chat_id']),str(cfg['bot_id']),enabled=True)
+              app.chat=app.delivery_chat();bridge=DurableBridge(app,source)
+              key='china-routing-repair:20261104:v1';report=repo.get('events',key) or {}
+              def save():
+                  report.update(checked_at=time.time(),run_id=os.getenv('GITHUB_RUN_ID'))
+                  with repo.transaction():repo.put('events',key,report)
+                  seal('china-routing-repair',report)
+              state=repo.get('events','reviews-china-two-hour:2026-11-04')
+              scope=state['scopes']['token_3']
+              if time.time()-scope['observed_at']>4*3600:raise RuntimeError('Fresh native China observation required')
+              def raw(ident):
+                  return next(x for x in scope['items'] if x['id']==ident)
+              # Revoke only an automatic, never-written intent. Owner-confirmed answers stay untouched.
+              bad_id='ba878799f38eb1b78e058795626f83c8291e7f6083f7709e7b1330b093f9da0f'
+              bad=repo.get('intents',bad_id);item=raw('U6JPqCLjGbn3hd8fOUtn')
+              if classify(item,cabinet='token_3')['eligible']:raise RuntimeError('Uncertainty regression')
+              if not report.get('manual_delivered'):
+                  if bad['status']!='blocked' or bad.get('write_intent_at') or bad['authorization_channel']!='automatic_policy':raise RuntimeError('Unsafe manual handoff')
+                  version='china-manual-repair-20261104-'+sha(item)[:12]
+                  persist_source_snapshot(store,'reviews:source:'+sha(['token_3','feedbacks',item['id'],version]),dict(cabinet='token_3',kind='feedbacks',item_id=item['id'],version=version,item=item,source_sha256=sha(item),observed_at=scope['observed_at']),True)
+                  if not store.read(bridge.draft_key('token_3','feedbacks',item['id'],version)):
+                      generate_and_persist(store,item,'token_3','feedbacks',version,generation.generate_draft)
+                  with repo.transaction():
+                      repo.execute('SELECT pg_advisory_xact_lock(hashtextextended(?,0))',('review-approval:'+bad_id,))
+                      saved=repo.get('intents',bad_id,lock=True)
+                      if saved['status']!='blocked' or saved.get('write_intent_at'):raise RuntimeError('Write status changed')
+                      current=repo.get('items',bad['ref'],lock=True)
+                      if current['token']==bad['card_token']:
+                          old=repo.get('cards',bad['card_token'],lock=True)
+                          repo.put('events',key+':revoked-auto',dict(old_card=old,old_item=current,intent_id=bad_id,reason='Explicit uncertainty; owner review required'))
+                          old['status']='superseded';repo.put('cards',bad['card_token'],old)
+                          current['status']='open';repo.put('items',bad['ref'],current)
+                  notice=NewNotice(app,bridge,NewNoticeTransport(os.environ['TELEGRAM_BOT_TOKEN']),enabled=True,preserve=lambda:seal('china-routing-repair',report))
+                  result=notice.deliver(item,'token_3','feedbacks',version,scope['observed_at'],cfg['cutover'])
+                  if result.get('status')!='confirmed':raise RuntimeError('Manual Telegram delivery unconfirmed')
+                  report.update(manual_delivered=True,manual_delivery=result,blocked_intent=bad_id);save()
+              ident='EC2zW9j5Hpt3ZIC9eTai';item=raw(ident)
+              if not classify(item,cabinet='token_3')['eligible']:raise RuntimeError('Resolved rhetorical question must qualify semantically')
+              if not report.get('positive_intent'):
+                  with repo.transaction():
+                      result=enqueue(app,bridge,store,item,'token_3','china-positive-repair-20261104-'+sha(item)[:12],scope['observed_at'],source.read(CONFIG_KEY),adopt_existing=True)
+                      if result.get('status')!='queued':raise RuntimeError('Exact positive adoption unavailable')
+                      intent=repo.get('intents',result['intent_id'],lock=True)
+                      intent['worker_retry_at']=time.time()+24*3600
+                      intent['wait_for_china_routing_version']='china-routing-v1-20261104'
+                      repo.put('intents',result['intent_id'],intent)
+                  report['positive_intent']=result['intent_id'];save()
+              old=repo.get('cards','c3e771bef020daa0a9b1cd2d9c9e5e88')
+              replacement=repo.get('cards',old.get('superseded_by','')) or {}
+              if old.get('status')!='superseded' or replacement.get('delivery_mode')!='automatic_policy':raise RuntimeError('Automatic replacement missing')
+              receipt_key='telegram-cleanup:'+str(old['chat_id'])+':'+str(old['message_id'])
+              if (repo.get('events',receipt_key) or {}).get('status')!='confirmed':
+                  response=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN']).call('deleteMessage',dict(chat_id=old['chat_id'],message_id=old['message_id']))
+                  if response is not True and not(isinstance(response,dict) and response.get('ok') is True):raise RuntimeError('Positive deletion unconfirmed')
+                  with repo.transaction():repo.put('events',receipt_key,dict(status='confirmed',chat_id=old['chat_id'],message_id=old['message_id'],checked_at=time.time(),authorization_ref=key,run_id=os.getenv('GITHUB_RUN_ID')))
+              report.update(positive_removed=True,status='waiting_for_fixed_worker');save()
+              deadline=time.monotonic()+40*60
+              while time.monotonic()<deadline:
+                  health=repo.get('events','approved-worker:health:v1:token_3') or {}
+                  if health.get('china_routing_code_version')=='china-routing-v1-20261104':break
+                  time.sleep(10)
+              else:raise RuntimeError('Fixed publisher not active; exact positive intent safely deferred')
+              with repo.transaction():
+                  intent=repo.get('intents',report['positive_intent'],lock=True)
+                  if intent['status']!='awaiting_preflight' or intent.get('write_intent_at'):raise RuntimeError('Unexpected deferred intent status')
+                  intent['worker_retry_at']=0;repo.put('intents',intent['id'],intent)
+              report.update(status='complete',publisher_run=health.get('run_id'),wb_writes=0);save()
+              print(json.dumps(dict(status=report['status'],positive_removed=True,manual_delivered=True,wb_writes=0)))
+          
+          PY

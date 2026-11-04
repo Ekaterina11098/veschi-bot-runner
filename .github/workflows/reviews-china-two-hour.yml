@@ -43,7 +43,7 @@ jobs:
       - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 requests==2.32.5 python-dotenv==1.1.1 openai==1.109.1
       - name: Validate China isolation, scheduling, duplicate protection and shared rate budget
         run: |
-          python -m unittest test_review_china_two_hour.py test_review_morning.py test_review_auto_five_star.py test_review_semantic_positive.py
+          python -m unittest test_review_china_routing_audit.py test_review_china_two_hour.py test_review_morning.py test_review_auto_five_star.py test_review_semantic_positive.py
           PYTHONPATH=private-source python -m unittest discover -s private-source/tests -p test_review_rate_budget.py
           PYTHONPATH=private-source python -c "from openai_client import load_system_prompt; assert load_system_prompt().strip()"
           python -m py_compile review_morning.py review_china_two_hour.py

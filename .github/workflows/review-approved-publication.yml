@@ -38,7 +38,7 @@ jobs:
           PYTHONPATH=private-source python -m unittest discover -s private-source/tests -p test_review_rate_budget.py
           python -m unittest test_review_approved_benchmarks.py test_review_approved_worker.py test_review_auto_five_star.py test_review_auto_preflight.py
           python -m unittest discover -s review-approval-preparation -p test_review_telegram.py
-          python -m unittest test_review_semantic_positive.py
+          python -m unittest test_review_china_routing_audit.py test_review_semantic_positive.py
           python -m unittest test_review_autonomy.py test_review_cleanup.py test_review_reliability.py
           node review-approval-preparation/test_review_inbox_route.mjs
           python -m unittest test_review_approved_watchdog.py test_review_cabinet_capacity.py

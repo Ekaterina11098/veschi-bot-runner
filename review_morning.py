@@ -171,7 +171,7 @@ def main(kind='feedbacks',china_two_hour=False):
                                 if kind=='feedbacks':
                                     from review_auto_five_star import CONFIG_KEY,classify,policy_allows,enqueue
                                     policy=source.read(CONFIG_KEY) or {}
-                                    if policy_allows(policy,app,cabinet,scope['observed_at']) and classify(item)['eligible']:
+                                    if policy_allows(policy,app,cabinet,scope['observed_at']) and classify(item,cabinet=cabinet)['eligible']:
                                         result=enqueue(app,bridge,store,item,cabinet,candidate['version'],scope['observed_at'],policy)
                                         candidate.update(status='auto_queued' if result['status']=='queued' else 'skipped',delivery=result)
                                         if result['status']=='queued':state['auto_queued']=state.get('auto_queued',0)+1
@@ -243,6 +243,8 @@ if __name__=='__main__':
         from stock_deploy_support import seal,error
         seal('reviews-morning-error',{'error':error(exc),'private_log':private_log.getvalue()})
         print('Morning reviews failed; protected diagnostic saved.');raise SystemExit(1)
+
+
 
 
 

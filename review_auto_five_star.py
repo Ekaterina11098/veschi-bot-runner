@@ -95,13 +95,14 @@ def semantic_fallback(text,pros,cons):
  from review_semantic_positive import classify_fields
  return classify_fields(text,pros,cons)
 
-def classify(item,kind='feedbacks'):
+def classify(item,kind='feedbacks',cabinet=None):
  if kind!='feedbacks' or item.get('productValuation')!=5:return {'eligible':False,'reason':'not_five_star_review'}
  if item.get('answer') is not None and not isinstance(item['answer'],dict):return {'eligible':False,'reason':'unsupported_answer'}
  if item.get('isAnswered') is True or (item.get('answer') or {}).get('text'):return {'eligible':False,'reason':'already_answered'}
  fields=[field(item,k) for k in ('text','pros','cons')]
  if any(v is None for v in fields):return {'eligible':False,'reason':'unsupported_source'}
  text,pros,cons=fields
+ if cabinet=='token_3' and re.search(r'сомнева(?:юсь|емся|ется|ются)|есть\s+сомнения|не\s+уверен[аы]?', ' '.join(fields).lower()):return {'eligible':False,'reason':'china_explicit_uncertainty'}
  # Buyers sometimes put praise in cons. Qualify its text by the same closed
  # vocabulary; never treat the field name alone as evidence of a complaint.
  cons='' if cons.strip().lower() in NO_CONS else cons
@@ -116,7 +117,9 @@ def classify(item,kind='feedbacks'):
   return re.sub(r'\bмаленькая,?\s+но\s+вместительна(?:я)?\b','маленькая вместительная',value)
  full=' '.join(normalize(v) for v in (text,pros,cons)).strip()
  if not full:return {'eligible':True,'reason':'five_star_without_text'}
- if '?' in full:return {'eligible':False,'reason':'question'}
+ if '?' in full:
+  if cabinet=='token_3' and re.search(r'думал[аи]?.{0,80}подвох[^?]*\?[\s.]*нет[,\s]+вс[её]\s+идеально',full):return semantic_fallback(text,pros,cons)
+  return {'eligible':False,'reason':'question'}
  tokens=re.findall(r'[a-zа-я]+',full)
  if not tokens:return {'eligible':all(c.isspace() or c in EMOJI or c in '.,!—-:;()\uFE0F\u200D' for c in full),'reason':'emoji_only'}
  # Never infer positive intent from stars alone or silently discard unknown words.
@@ -137,7 +140,7 @@ def answer_for(item):
  # Neutral for buyout, refusal, return and unknown purchase status.
  return greeting+' Спасибо за отзыв и высокую оценку! Благодарим за внимание к бренду VESCHI.\nС уважением, команда VESCHI 👜✨'
 def enqueue(app,bridge,store,item,cabinet,version,observed_at,policy,adopt_existing=False):
- if not policy_allows(policy,app,cabinet,observed_at) or not classify(item)['eligible']:raise Rejected('Automatic policy does not authorize this review')
+ if not policy_allows(policy,app,cabinet,observed_at) or not classify(item,cabinet=cabinet)['eligible']:raise Rejected('Automatic policy does not authorize this review')
  item_id=str(item.get('id') or '')
  if not item_id:raise Rejected('Exact review id required')
  ref=identity(cabinet,'feedbacks',item_id)
@@ -175,7 +178,7 @@ def enqueue(app,bridge,store,item,cabinet,version,observed_at,policy,adopt_exist
   app.repo.put('cards',token,card)
   app.repo.put('items',ref,dict(status='approved',token=token,version=version))
   app.repo.put('intents',intent_id,intent)
-  app.repo.put('events','automatic-policy:'+intent_id,dict(intent_id=intent_id,authorization_ref=policy['authorization_ref'],classification=classify(item),source_sha256=sha(item),created_at=app.clock()))
+  app.repo.put('events','automatic-policy:'+intent_id,dict(intent_id=intent_id,authorization_ref=policy['authorization_ref'],classification=classify(item,cabinet=cabinet),source_sha256=sha(item),created_at=app.clock()))
  return {'status':'queued','intent_id':intent_id}
 def authorized_card(app,source,card):
  if card.get('delivery_mode')!='automatic_policy':return True
@@ -184,7 +187,7 @@ def authorized_card(app,source,card):
  raw=source.read((card.get('binding') or {}).get('source_key','')) or {}
  item=raw.get('item')
  return (isinstance(item,dict) and sha(item)==card['binding']['raw_source_sha256'] and
-   str(item.get('id'))==card['item_id'] and classify(item)['eligible'] and
+   str(item.get('id'))==card['item_id'] and classify(item,cabinet=card['cabinet'])['eligible'] and
    card.get('texts')==[answer_for(item)] and card.get('hashes')==[sha(answer_for(item))])
 
 
@@ -206,5 +209,7 @@ def validate_preflight_response(intent,method,url,response):
  if answer is not None and not isinstance(answer,dict):
   raise RuntimeError('Automatic review answer shape incomplete')
  # Preserve existing-answer reconciliation; never overwrite or resend it.
- if not (answer or {}).get('text') and not classify(item)['eligible']:
+ if not (answer or {}).get('text') and not classify(item,cabinet=intent['cabinet'])['eligible']:
   raise AutomaticPolicyChanged()
+
+

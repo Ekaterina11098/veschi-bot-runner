@@ -42,6 +42,31 @@ def merge_completed(bundle,review,source_ref):
 
  out['recommendation_basis']='completed_days_with_fresh_economics_and_current_state'
  return out
+def completed_campaign_stats(io,campaigns,saved_stats,period_from,period_to):
+ """A campaign created after the closed window has verified empty history, not missing API data."""
+ result=copy.deepcopy(saved_stats);missing=[]
+ for c in campaigns:
+  cid=c['id']
+  if cid in result:continue
+  created=c.get('timestamps',{}).get('created')
+  try:
+   at=datetime.fromisoformat(created.replace('Z','+00:00'))
+   if at.tzinfo is None:raise ValueError('Creation timestamp has no timezone')
+   after_window=at.astimezone(MSK).date()>date.fromisoformat(period_to)
+  except (AttributeError,TypeError,ValueError):after_window=False
+  if after_window:
+   result[cid]=dict(advertId=cid,currency='CNY',days=[],sum=0,orders=0,sum_price=0,clicks=0,views=0,atbs=0,
+                    history_status='created_after_completed_window',history_evidence=dict(created_at=created,period_from=period_from,period_to=period_to))
+  else:missing.append(cid)
+ if missing:
+  extra=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,missing))+'&beginDate='+period_from+'&endDate='+period_to)
+  if not isinstance(extra,list):raise ValueError('Completed-day campaign history unavailable: expected list for '+','.join(map(str,missing)))
+  for r in extra:
+   if not isinstance(r,dict)or type(r.get('advertId'))is not int or r['advertId']not in missing or not isinstance(r.get('days'),list):raise ValueError('Completed-day campaign history malformed')
+   result[r['advertId']]=copy.deepcopy(r)
+ if any(c['id']not in result for c in campaigns):raise ValueError('Completed-day campaign history incomplete')
+ return result
+
 def attach(io,bundle,day):
  from china_morning_readiness import enrich_economics
  from china_advertising_cards import enhance
@@ -54,11 +79,8 @@ def attach(io,bundle,day):
  source['ids']=list(current['ids']);source['batches']=copy.deepcopy(current['batches'])
  for batch in source['batches'].values():
   ids=[c['id']for c in batch['campaigns']['adverts'] if not never_started_draft(c)]
-  missing=[cid for cid in ids if cid not in saved_stats]
-  if missing:
-   extra=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,missing))+'&beginDate='+source['period_from']+'&endDate='+end)
-   saved_stats.update({r['advertId']:r for r in extra})
-  if any(cid not in saved_stats for cid in ids):raise ValueError('Completed-day campaign history incomplete')
+  active=[c for c in batch['campaigns']['adverts']if c['id']in ids]
+  saved_stats=completed_campaign_stats(io,active,saved_stats,source['period_from'],end)
   batch['stats']=[copy.deepcopy(saved_stats[cid]) for cid in ids]
  source['observed_at']=datetime.now(timezone.utc).isoformat();source['budget_balance_observed_at_iso']=current.get('completed_at',current['observed_at'])
  rough=build(source);source=enrich_economics(io,source,rough,day)

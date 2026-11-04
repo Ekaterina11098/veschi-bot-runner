@@ -146,7 +146,7 @@ def proposed_actions(s):
    fx=e['fx_rub_per_cny'];delivery=max(e['logistics_cny'],(o.get('average_delivery_cost')or 0)/fx)
    reverse=(o.get('backwardlogisticsum')or 0)/e['sample_size']/fx
    margin=e['expected_margin_before_ads_cny']-(delivery-e['logistics_cny'])-reverse
-   stress=margin-.2*e['buyout']*(e['seller_price_cny']*(1-(e['commission_pct']+5)/100)-e['own_cogs_rub']/fx)
+   stress=margin-.2*e['buyout']*(e['seller_price_cny']*(1-(e['commission_pct']+e.get('tax_pct',5))/100)-e['own_cogs_rub']/fx)
    cpa=m['spend']/m['orders']*target/old;last_cpa=ds[days[-1]]['spend']/ds[days[-1]]['orders']*target/old
    if stress<=max(cpa,last_cpa)*1.25:continue
    ev=dict(e,cabinet='token_3',currency='CNY',article=price[nm]['article'],observed_at=v['observed_at'],prices_observed_at=e['price_observed_at'],buyout_observed_at=v['own']['observed_at'],price_cny=e['seller_price_cny'],minimum_minor=vals[0],expected_margin_before_ads_cny=margin,stress_margin_before_ads_cny=stress,shipping_reserve_cny=delivery,observed_reverse_cost_per_created_order_cny=reverse,period_from=days[0],period_to=days[-1],decision_days=days,metrics=m,modeled_cpa_same_cr=cpa,margin_after_target_same_cr=margin-cpa,small_sample=m['orders']<10 or e['sample_size']<20,preliminary=True,unknown_costs=True,source_key=ROOT+str(today)+':v1:inputs',manual_strategy_proposal=True)

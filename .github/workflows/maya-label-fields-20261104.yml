@@ -1,0 +1,77 @@
+name: MAYA label field preparation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/maya-label-fields-20261104.yml']
+permissions: {}
+concurrency:
+  group: maya-ms-products-20261104
+  cancel-in-progress: false
+jobs:
+  correct:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare label fields and verify preservation
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import os,json,gzip,datetime,urllib.request,urllib.parse,urllib.error
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*a,**k):raise RuntimeError("Redirect blocked")
+          opener=urllib.request.build_opener(NoRedirect)
+          sb=os.environ["SUPABASE_URL"].rstrip("/")
+          base="https://api.moysklad.ru/api/remap/1.2/"
+          sh={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json"}
+          mh={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept-Encoding":"gzip","Accept":"application/json;charset=utf-8","Content-Type":"application/json"}
+          def call(url,headers,method="GET",body=None):
+           try:
+            with opener.open(urllib.request.Request(url,headers=headers,method=method,data=None if body is None else json.dumps(body,ensure_ascii=False).encode()),timeout=60) as r:
+             raw=r.read()
+             if not raw:return None
+             if r.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+             return json.loads(raw)
+           except urllib.error.HTTPError as e:
+            raw=e.read()
+            if "api.moysklad.ru" in url:
+             payload={"http_status":e.code,"body":raw.decode("utf-8","replace")}
+             stamp=datetime.datetime.now(datetime.timezone.utc).isoformat()
+             h=dict(sh);h["Prefer"]="resolution=merge-duplicates,return=minimal"
+             request=urllib.request.Request(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",headers=h,method="POST",data=json.dumps({"cache_key":"maya_cycle:code_error:20261104","payload":payload,"updated_at":stamp,"expires_at":"2026-12-31T23:59:59Z"}).encode())
+             with opener.open(request,timeout=30) as stored:stored.read()
+            raise RuntimeError("Remote HTTP "+str(e.code)) from None
+          ref=call(sb+"/rest/v1/telegram_api_cache?cache_key=eq.maya_cycle:create_result:20261104&select=payload",sh)[0]["payload"]
+          fields=call(base+"entity/product/metadata/attributes",mh)["rows"]
+          color=next(x for x in fields if x["name"]=="Цвет")
+          number=next(x for x in fields if x["name"]=="ВендорКод")
+          assert color["type"]=="string" and number["type"]=="string"
+          result={"status":"in_progress","products":[]}
+          for item in ref["products"]:
+           p=call(base+"entity/product/"+item["id"],mh)
+           assert p["article"]==item["article"]
+           article=p["article"]; n=article.split("-")[0]; c=article.split("-")[-1]
+           if c.startswith("z"):c=c[1:]
+           assert c in ("black","coffee","darkred","grey","burgundy")
+           attrs=p.get("attributes",[])
+           desired={color["id"]:c,number["id"]:n}
+           for f in (color,number):
+            existing=next((a for a in attrs if a["id"]==f["id"]),None)
+            if existing:assert existing.get("value") in ("",desired[f["id"]])
+            attrs=[a for a in attrs if a["id"]!=f["id"]]
+            attrs.append({"meta":f["meta"],"value":desired[f["id"]]})
+           call(base+"entity/product/"+p["id"],mh,"PUT",{"attributes":attrs})
+           v=call(base+"entity/product/"+p["id"],mh)
+           for field in ("code","article","name","barcodes","description"):
+            assert v.get(field)==p.get(field)
+           values={a["id"]:a.get("value") for a in v.get("attributes",[])}
+           assert all(values[k]==val for k,val in desired.items())
+           assert len(v.get("barcodes",[]))==2 and "code128" in v["barcodes"][1]
+           result["products"].append({"article":article,"number":n,"color":c,"verified":True})
+           h=dict(sh);h["Prefer"]="resolution=merge-duplicates,return=minimal"
+           call(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",h,"POST",{"cache_key":"maya_cycle:label_fields_result:20261104","payload":result,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2026-12-31T23:59:59Z"})
+          result["status"]="complete"
+          call(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",h,"POST",{"cache_key":"maya_cycle:label_fields_result:20261104","payload":result,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2026-12-31T23:59:59Z"})
+          print("Label fields verified for 18 products; second barcode is WB Code128.")

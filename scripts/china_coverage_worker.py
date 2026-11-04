@@ -100,7 +100,12 @@ class CoverageWorker(ScheduledWorker):
     def completed_products(self):
         rows,marker=super().completed_products()
         coverage=self.coverage();have={str(r['nm_id']) for r in rows}
-        result=list(rows)
+        self._price_completed_rows=copy.deepcopy(rows)
+        self._price_completed_marker=copy.deepcopy(marker)
+        from china_price_evidence import valid_daily_orders
+        # Replace present-but-unusable totals too; keep finance separately in raw evidence.
+        result=[r for r in rows if valid_daily_orders(r, (self.day-timedelta(days=1)-(self.day-timedelta(days=4))).days+1)]
+        have={str(r['nm_id']) for r in result}
         for nm,item in coverage.get('products',{}).items():
             if nm not in have and item.get('status')=='complete':
                 result.append(dict(nm_id=nm,sa_name=item['article'],orders_count=item['orders'],

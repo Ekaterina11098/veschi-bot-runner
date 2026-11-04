@@ -1,0 +1,98 @@
+name: Owner authorized41296363 two exact bid reductions
+on:
+  push:
+    paths: ['.github/workflows/owner-41296363-cut4.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-41296363-cut4
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import copy,json,os,time,requests
+          from datetime import datetime,timezone
+          os.environ['CHINA_TELEGRAM_BOT_TOKEN']='disabled-no-send'
+          from china_cloud_cost_control import Cache,WB,validate_identity,stamp
+          from china_advertising_state import AdvertisingIO
+          from china_morning_readiness import current_prices,published_stock
+          from china_moysklad_read import read_stock
+          ROOT='china_agent:owner_41296363_cut:2026-11-04:v1';CID=41296363;NMS=[1473242577,1473246055]
+          c=Cache();w=WB();io=AdvertisingIO()
+          def put(k,v):
+           v=json.loads(json.dumps(v))
+           if c.get(k)is None:
+            if not c.create(k,v):raise ValueError('Concurrent receipt creation')
+           else:c.put(k,v)
+          def rows(s):return {r['nm_id']:r for r in s['nm_settings']}
+          def fixed(s):return {k:s.get(k)for k in ['id','status','bid_type','currency','settings','restrictions']}
+          def auth():
+           a=c.get(ROOT+':approval')or{};p=c.get(a.get('proposal_key',''))or{}
+           if a.get('owner_user_id')!=5122667182 or a.get('source_channel')!='codex'or a.get('execution_authorized')is not True or a.get('telegram_notice_authorized')or a.get('budget_writes_authorized'):raise ValueError('Owner exact authority differs')
+           if a.get('plan_sha256')!=p.get('plan_sha256')or a.get('items')!=p.get('items')or p.get('status')!='awaiting_owner_confirmation':raise ValueError('Proposal hash/items/status differ')
+           if {(x['campaign_id'],x['nm_id'],x['old_minor'],x['target_minor'])for x in a['items']}!={(CID,n,31,28)for n in NMS}:raise ValueError('Exact bid scope differs')
+           if datetime.now(timezone.utc)>datetime.fromisoformat(a['expires_at']):raise ValueError('Owner approval expired')
+           return a,p
+          def req(path,method='GET',body=None):
+           if not(method=='GET'and path=='/api/advert/v1/config'or method=='PATCH'and path=='/api/advert/v1/bids'and body==dict(bids=[dict(advert_id=CID,nm_bids=[dict(nm_id=n,placement='recommendations',bid_kopecks=28)for n in NMS])])):raise ValueError('Endpoint outside exact owner scope')
+           if method=='PATCH':auth()
+           r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':w.token},json=body,timeout=50)
+           if not r.ok:raise RuntimeError('WB HTTP '+str(r.status_code))
+           return None if method=='PATCH'else r.json()
+          def budget():
+           rr=w.req('/api/advert/v2/budget','POST',dict(advertIds=[CID]))['adverts']
+           if len(rr)!=1 or rr[0]['advertId']!=CID or rr[0]['currency']!='CNY':raise ValueError('Budget identity')
+           return rr[0]['total']
+          a,p=auth()
+          if c.get(ROOT+':execution'):raise ValueError('Execution receipt exists; reconcile no repeat')
+          e=dict(status='preflight',wb_writes=0,telegram_calls=0,approval_key=ROOT+':approval',plan_sha256=a['plan_sha256'],created_at=stamp(),items=[])
+          if not c.create(ROOT+':execution',e):raise ValueError('Concurrent execution')
+          try:
+           validate_identity(c,w);before=w.campaigns([CID])[str(CID)]
+           if fixed(before)!=fixed(p['expected_state'])or rows(before)!=rows(p['expected_state'])or before['status']!=9:raise ValueError('Current full campaign changed')
+           minimums=w.minimums(CID,NMS,'recommendations');cfg=req('/api/advert/v1/config')
+           if cfg['currency']!='CNY'or cfg['cpcStep']!=1 or any(minimums[n]>28 for n in NMS):raise ValueError('Current minimum/step disallows28')
+           prices=current_prices(io,NMS);stock=read_stock([r['article']for r in prices['rows']]);pub=published_stock(io,prices,NMS)
+           if not stock['coverage_complete']or pub['missing_nm_ids']:raise ValueError('Stock coverage missing')
+           for r in prices['rows']:
+            old=next(x for x in p['inputs']if x['nm']==r['nm_id']);st=next(x for x in stock['rows']if x['article']==r['article'])
+            if r['seller_price']!=old['price']or abs(st['price']/100-old['cogs_rub'])>.01 or st['stock']-st['reserve']<=0 or pub['amounts'][str(r['nm_id'])]<=0:raise ValueError('Fresh price/COGS/availability changed')
+           bb=budget();e.update(before=before,before_budget=bb,preflight=dict(observed_at=stamp(),minimums=minimums,config=cfg,prices=prices,stock=stock,published_stock=pub))
+           latest=w.campaigns([CID])[str(CID)]
+           if fixed(before)!=fixed(latest)or rows(before)!=rows(latest):raise ValueError('Concurrent campaign change')
+           e.update(status='submitting',wb_writes=1,submitted_at=stamp());put(ROOT+':execution',e)
+           req('/api/advert/v1/bids','PATCH',dict(bids=[dict(advert_id=CID,nm_bids=[dict(nm_id=n,placement='recommendations',bid_kopecks=28)for n in NMS])]))
+           expected=copy.deepcopy(rows(before))
+           for n in NMS:expected[n]['bids_kopecks']['recommendations']=28
+           for attempt in range(18):
+            after=w.campaigns([CID])[str(CID)]
+            if fixed(before)==fixed(after)and rows(after)==expected:break
+            time.sleep(5)
+           else:raise ValueError('Exact state readback uncertain; never repeat PATCH')
+           ba=budget();e.update(status='verified',after=after,after_budget=ba,verified_at=stamp(),budget_writes=0,items=[dict(campaign_id=CID,nm_id=n,old_minor=31,target_minor=28,status='verified')for n in NMS]);put(ROOT+':execution',e)
+           reg=c.get('china_agent:verified_campaign_state:v1')or{};reg[str(CID)]=ROOT+':execution';put('china_agent:verified_campaign_state:v1',reg)
+           p.update(status='executed_verified',execution_key=ROOT+':execution',verified_at=e['verified_at']);put(a['proposal_key'],p)
+           print(json.dumps(dict(status='verified',items=e['items'],before_budget=bb,after_budget=ba,wb_writes=1,budget_writes=0,telegram_calls=0)))
+          except Exception as ex:
+           e.update(status='blocked_before_writes'if not e['wb_writes']else'uncertain',error=str(ex)if isinstance(ex,(ValueError,RuntimeError))else type(ex).__name__,updated_at=stamp());put(ROOT+':execution',e);print(json.dumps(dict(status=e['status'],error=e['error'],wb_writes=e['wb_writes'])));raise
+          PY

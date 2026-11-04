@@ -2,7 +2,7 @@ name: Owner requested IP intraday diagnosis Nov4
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/ip-intraday-diagnosis-20261104.yml']
+    paths: ['.github/disabled/ip-intraday-diagnosis-20261104.never']
 permissions:
   contents: read
 concurrency:

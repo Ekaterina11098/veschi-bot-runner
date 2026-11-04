@@ -1,0 +1,67 @@
+name: Owner confirmed funding notice from canonical verified readbacks
+on:
+  push:
+    paths: ['.github/workflows/owner-budget-notice4.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-budget-notice4
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: disabled
+          MOYSKLAD_API_TOKEN: disabled
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import json
+          from datetime import datetime,timezone
+          from china_advertising_state import AdvertisingIO
+          from china_daily_ad_actions import EXEC
+          from china_loss_control import PLAN
+          ROOT='china_agent:owner_budget_fund:2026-11-04:v1';PID='daily-2026-11-04-ready-budgets4-budgets-1'
+          class IO(AdvertisingIO):
+           def put(self,k,v):
+            v=json.loads(json.dumps(v))
+            if self.get(k)is None:
+             if not self.create(k,v):raise ValueError('Concurrent create')
+            else:super().put(k,v)
+          io=IO();e=io.get(EXEC+PID);p=io.get(PLAN+PID)
+          if io.get(ROOT+':delivery'):raise ValueError('Notice exists: never repeat')
+          expected={40945502,41155909,41270309}
+          if len(e['items'])!=3 or e['wb_writes']!=3 or {s['before']['id']for s in e['items']}!=expected:raise ValueError('Wrong scope')
+          for s in e['items']:
+           before=s['before'];after=s['after']
+           if s['status']!='verified'or before['id']!=after['id']or before['status']!=after['status']or after['status']!=9 or before['settings']!=after['settings']or sorted(before['nm_settings'],key=lambda n:n['nm_id'])!=sorted(after['nm_settings'],key=lambda n:n['nm_id'])or s['after_budget']!=s['before_budget']+100 or s['request']['body']['sum']!=100:raise ValueError('Canonical WB proof differs')
+          at=datetime.now(timezone.utc).isoformat();r=io.get(ROOT+':execution');r.update(status='verified',verified_at=at,recovery_reason='WB reorders nm_settings; sorted complete rows identical. All three exact100CNY before/after budgets verified. No repeated WB writes.');io.put(ROOT+':execution',r)
+          text='Бюджеты пополнены на 300 CNY, проверено в WB:\n• Манишка · РК 40945502: +100 CNY.\n• Клатч перевёртыш · РК 41155909: +100 CNY.\n• Китай тест 23.10 заказы сумки · РК 41270309: +100 CNY.'
+          if io.tg('getMe',{})['id']!=8780468043:raise ValueError('Bot identity')
+          notice=dict(status='sending',text=text,chat_id=-1004342917488,bot_id=8780468043,execution_key=ROOT+':execution',created_at=at)
+          if not io.create(ROOT+':delivery',notice):raise ValueError('Concurrent notice')
+          try:
+           result=io.tg('sendMessage',dict(chat_id=-1004342917488,text=text,reply_parameters=dict(message_id=671,allow_sending_without_reply=True)))
+           if result.get('chat',{}).get('id')!=-1004342917488 or result.get('from',{}).get('id')!=8780468043 or not result.get('message_id'):raise ValueError('Delivery identity')
+           notice.update(status='sent',message_id=result['message_id'],receipt=result,sent_at=datetime.now(timezone.utc).isoformat());io.put(ROOT+':delivery',notice)
+          except Exception:
+           notice['status']='uncertain';io.put(ROOT+':delivery',notice);raise
+          p.update(owner_completed_budget_receipts=[ROOT+':execution'],owner_budget_resolution='Все три пополнения по100CNY выполнены и проверены WB. Повторно не пополняю.');io.put(PLAN+PID,p)
+          print(json.dumps(dict(status='verified',total_cny=300,message_id=notice['message_id'],wb_writes_this_run=0)))
+          
+          PY

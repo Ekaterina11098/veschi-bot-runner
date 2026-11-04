@@ -153,7 +153,28 @@ def _render_legacy(bundle):
   for i,f in enumerate(parts,1):f.update(kind=family+':'+str(i).zfill(3),page=i,total=len(parts))
  return files
 
+def validate_mandatory_format(bundle):
+ if not bundle.get('mandatory_campaign_format'):return
+ sections=bundle.get('recommendation_directions')
+ if not isinstance(sections,dict)or set(sections)!={'raise','add','reduce','exclude'}:
+  raise ValueError('Mandatory campaign format requires all four recommendation directions')
+ from datetime import date,timedelta
+ days=bundle.get('days',[])
+ if len(days)!=3 or [date.fromisoformat(d)for d in days]!=[date.fromisoformat(days[-1])-timedelta(days=i)for i in(2,1,0)]:
+  raise ValueError('Mandatory campaign format requires three consecutive completed days')
+ campaigns=bundle.get('campaigns')
+ if not isinstance(campaigns,list)or not campaigns or len({c.get('id')for c in campaigns})!=len(campaigns):
+  raise ValueError('Mandatory campaign format requires unique actual campaign rows')
+ for c in campaigns:
+  if c.get('never_started'):continue
+  if any(k not in c for k in ['period','last','name','status']):
+   raise ValueError('Mandatory campaign row missing historical/current metrics')
+  for metrics in[c['period'],c['last']]:
+   if metrics is not None and any(k not in metrics for k in['spend','amount','orders','clicks']):
+    raise ValueError('Mandatory campaign metrics incomplete')
+
 def render(bundle):
+ validate_mandatory_format(bundle)
  if bundle.get('recommendation_directions'):
   from china_advertising_directions import campaign_table
   files=_render_legacy(campaign_table(bundle))

@@ -1,0 +1,122 @@
+name: Owner approved52 and044 search bids0.30 and result notice
+on:
+  push:
+    paths: ['.github/workflows/owner-search52-0444.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-search52-0444
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import copy,json,os,time
+          from datetime import datetime,timezone
+          from china_cloud_cost_control import Cache,WB,validate_identity,projection,digest,stamp
+          from china_advertising_state import AdvertisingIO
+          from china_advertising_v2 import history
+          from china_morning_readiness import current_prices,published_stock
+          from china_moysklad_read import read_stock
+          ROOT='china_agent:owner_search52_044:2026-11-04:v1';CID=41298169;IDS=[1473243825,1473243894]
+          c=Cache();io=AdvertisingIO()
+          def norm(v):return json.loads(json.dumps(v))
+          def put(k,v):
+           v=norm(v)
+           if c.get(k)is None:
+            if not c.create(k,v):raise ValueError('Concurrent journal')
+           else:c.put(k,v)
+          if c.get(ROOT+':execution'):raise ValueError('Execution exists; never replay uncertain mutation')
+          note=c.get('china_agent:shared_memory:v1:work:note:sales-management-target-ready-tests-20261104');items=note['ready_proposals']
+          if {x['nm_id']for x in items}!=set(IDS)or any(x['campaign_id']!=CID or x['placement']!='search' or x['old_cny']!=.28 or x['target_cny']!=.30 for x in items):raise ValueError('Unexpected proposal scope')
+          a=dict(source_channel='codex',owner_user_id=5122667182,quote='Да, поднимай по 52 и 044 в поиске до 0,30 CNY. После проверки напиши в ТГ, что сделано. 143 и 590 не трогаем, 549 повторно не повышаем.',execution_authorized=True,created_at=stamp(),items=items,plan_sha256=digest(items))
+          if not c.create(ROOT+':approval',a):raise ValueError('Authorization journal exists')
+          def approve():
+           if c.get(ROOT+':approval')!=norm(a)or datetime.now(timezone.utc).timestamp()-datetime.fromisoformat(items[0]['observed_at']).timestamp()>7200:raise ValueError('Approval/evidence changed or expired')
+          class Scoped(WB):
+           def req(self,path,method='GET',body=None,write=False):
+            if write:
+             approve()
+             expected=dict(bids=[dict(advert_id=CID,nm_bids=[dict(nm_id=nm,placement='search',bid_kopecks=30)for nm in IDS])])
+             if path!='/api/advert/v1/bids'or method!='PATCH'or body!=expected:raise ValueError('Write outside two exact search bids')
+            return super().req(path,method,body,write)
+          w=Scoped();validate_identity(c,w)
+          e=dict(status='preflight',items=items,approval_key=ROOT+':approval',wb_writes=0,created_at=stamp())
+          if not c.create(ROOT+':execution',norm(e)):raise ValueError('Concurrent executor')
+          def save():put(ROOT+':execution',e)
+          try:
+           before=w.campaigns([CID])[str(CID)];e['before']=before;save()
+           if before['status']!=9 or before['currency']!='CNY'or before['bid_type']!='manual'or before['settings']['payment_type']!='cpc'or before['settings']['placements']!={'search':True,'recommendations':False}:raise ValueError('Campaign mode changed')
+           selected={n['nm_id']:n for n in before['nm_settings']if n['nm_id']in IDS}
+           if set(selected)!=set(IDS)or any(n['bids_kopecks']['search']!=28 for n in selected.values()):raise ValueError('Current bid changed or already raised: no repeated write')
+           registry=c.get('china_agent:verified_campaign_state:v1')or{}
+           events=history([dict(payload=c.get(k))for k in registry.values()if c.get(k)])
+           today=(datetime.now(timezone.utc).timestamp()+10800)//86400
+           for ev in events:
+            if ev.get('nm')in IDS and ev.get('kind')=='bid'and ev.get('target',0)>ev.get('old',0)and(datetime.fromisoformat(ev['at'].replace(' UTC','+00:00')).timestamp()+10800)//86400==today:raise ValueError('SKU already raised today, even another campaign')
+           prices=current_prices(io,IDS);pub=published_stock(io,prices,IDS);stock=read_stock([r['article']for r in prices['rows']]);mi=w.minimums(CID,IDS,'search')
+           if not stock['coverage_complete']or pub['missing_nm_ids']:raise ValueError('Current stock incomplete')
+           stocks={r['article'].casefold():r for r in stock['rows']}
+           for item in items:
+            pr=next(r for r in prices['rows']if r['nm_id']==item['nm_id']);st=stocks[pr['article'].casefold()]
+            if pr['seller_price']!=item['seller_price']or st['stock']-st['reserve']<=0 or pub['amounts'].get(str(item['nm_id']),0)<=0 or not st.get('price'):raise ValueError('Price or availability changed')
+            delta=item['buyout']*(st['price']/100-item['cogs_rub'])/12.1816
+            if item['modeled_margin_after_ads']-delta<=0 or mi[item['nm_id']]>30:raise ValueError('Economics or minimum changed')
+           b=w.req('/api/advert/v2/budget','POST',dict(advertIds=[CID]))['adverts']
+           need=1453.70+sum(x['three_day_increment']for x in items)
+           if len(b)!=1 or b[0]['currency']!='CNY'or b[0]['total']<need:raise ValueError('Three-day reserve insufficient; no funding authorized')
+           e['preflight']=dict(prices=prices,stock=stock,published_stock=pub,minimums=mi,budget=b,reserve_cny=need);save()
+           fresh=w.campaigns([CID])[str(CID)]
+           if projection(fresh)!=projection(before):raise ValueError('Composition/bids changed during preflight')
+           expected=copy.deepcopy(before)
+           for n in expected['nm_settings']:
+            if n['nm_id']in IDS:n['bids_kopecks']['search']=30
+           body=dict(bids=[dict(advert_id=CID,nm_bids=[dict(nm_id=nm,placement='search',bid_kopecks=30)for nm in IDS])])
+           e.update(status='submitting',request=body,submitted_at=stamp());save()
+           try:
+            e['wb_writes']=1;save();e['response']=w.req('/api/advert/v1/bids','PATCH',body,write=True);e['status']='accepted';save()
+            for attempt in range(6):
+             after=w.campaigns([CID])[str(CID)];e['after']=after
+             if projection(after)==projection(expected):break
+             if attempt<5:time.sleep(3)
+            else:raise ValueError('Readback uncertain: never repeat PATCH')
+            e.update(status='verified',verified_at=stamp());save()
+            registry[str(CID)]=ROOT+':execution';put('china_agent:verified_campaign_state:v1',registry)
+           except Exception as ex:
+            e.update(status='uncertain',reason=str(ex));save();raise
+          except Exception as ex:
+           if e['status']=='preflight':e.update(status='blocked',reason=str(ex));save()
+           raise
+          text='Выполнено и проверено в WB:\n• 52 NoelBag фуксия — поиск 0,28 → 0,30 CNY.\n• 044 NoelBag чёрная — поиск 0,28 → 0,30 CNY.\nРК 41298169.'
+          if io.tg('getMe',{})['id']!=8780468043:raise ValueError('Telegram bot identity')
+          delivery=dict(status='sending',text=text,execution_key=ROOT+':execution',chat_id=-1004342917488,created_at=stamp())
+          if not c.create(ROOT+':delivery',delivery):raise ValueError('Notice exists: never repeat')
+          try:
+           r=io.tg('sendMessage',dict(chat_id=-1004342917488,text=text))
+           if r.get('chat',{}).get('id')!=-1004342917488 or r.get('from',{}).get('id')!=8780468043 or not r.get('message_id'):raise ValueError('Telegram receipt mismatch')
+           delivery.update(status='sent',message_id=r['message_id'],receipt=r,sent_at=stamp());put(ROOT+':delivery',delivery)
+          except Exception:
+           delivery['status']='uncertain';put(ROOT+':delivery',delivery);raise
+          print(json.dumps(dict(status=e['status'],wb_writes=e['wb_writes'],message_id=delivery['message_id'])))
+          
+          PY

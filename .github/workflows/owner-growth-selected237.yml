@@ -38,7 +38,7 @@ jobs:
           from china_advertising_state import AdvertisingIO
           from china_moysklad_read import read_stock
           from china_morning_readiness import current_prices,published_stock
-          ROOT='china_agent:owner_growth_selected:2026-11-04:job237:v1:attempt2'
+          ROOT='china_agent:owner_growth_selected:2026-11-04:job237:v1:attempt3'
           AUTH='china_agent:owner_growth_selected:2026-11-04:job237:v1:approval'
           c=Cache();io=AdvertisingIO()
           def norm(v):return json.loads(json.dumps(v))
@@ -73,7 +73,7 @@ jobs:
             ids=sorted({x['campaign_id']for x in items});cs=w.campaigns(ids)
             prices=current_prices(io,[x['nm_id']for x in items]);pub=published_stock(io,prices,[x['nm_id']for x in items]);stock=read_stock([x['article']for x in items])
             if not stock['coverage_complete']or pub['missing_nm_ids']:raise ValueError('Current stock coverage incomplete')
-            pr={r['nm_id']:r for r in prices['rows']};st={r['article']:r for r in stock['rows']}
+            pr={r['nm_id']:r for r in prices['rows']};st={r['article'].casefold():r for r in stock['rows']}
             cfg=requests.get('https://advert-api.wildberries.ru/api/advert/v1/config',headers={'Authorization':w.token},timeout=45);cfg.raise_for_status();cfg=cfg.json()
             if cfg.get('currency')!='CNY'or not cfg.get('cpcStep'):raise ValueError('CPC config unknown')
             budgets=w.req('/api/advert/v2/budget','POST',dict(advertIds=ids));balances={r['advertId']:r['total']for r in budgets['adverts']if r['currency']=='CNY'}
@@ -95,11 +95,11 @@ jobs:
              if len({x['placement']for x in group})!=1:raise ValueError('Mixed placement')
              minima[cid]=w.minimums(cid,[x['nm_id']for x in group],zone)
             for x in items:
-             cp=cs[str(x['campaign_id'])];ev=x['growth_evidence'];g=pr[x['nm_id']];s=st[x['article']]
+             cp=cs[str(x['campaign_id'])];ev=x['growth_evidence'];g=pr[x['nm_id']];s=st[x['article'].casefold()]
              n=next(n for n in cp['nm_settings']if n['nm_id']==x['nm_id'])
              if cp['status']!=9 or cp['currency']!='CNY'or cp['bid_type']!='manual'or cp['settings']['payment_type']!='cpc'or cp['settings']['placements'].get(x['placement'])is not True:raise ValueError('Campaign mode changed')
              if n['bids_kopecks'][x['placement']]!=x['old_minor']or x['nm_id']in raised:raise ValueError('Bid changed or already raised today; no repeat')
-             if g['article']!=x['article']or g['seller_price']!=ev['price_cny']or s['stock']-s['reserve']<=0 or not s['price']or pub['amounts'].get(str(x['nm_id']),0)<=0:raise ValueError('Current price/stock/COGS unavailable')
+             if g['article'].casefold()!=x['article'].casefold()or g['seller_price']!=ev['price_cny']or s['stock']-s['reserve']<=0 or not s['price']or pub['amounts'].get(str(x['nm_id']),0)<=0:raise ValueError('Current price/stock/COGS unavailable')
              delta=ev['buyout']*(s['price']/100-ev['own_cogs_rub'])/ev['fx_rub_per_cny']
              if ev['stress_margin_before_ads_cny']-delta<=ev['modeled_cpa_same_cr']*1.25:raise ValueError('Fresh COGS no longer supports stress economics')
              if x['target_minor']%cfg['cpcStep']or x['target_minor']>cfg['cpcMaxBid']or minima[x['campaign_id']][x['nm_id']]>x['target_minor']:raise ValueError('Minimum/step changed')

@@ -2,12 +2,12 @@ name: Verify and deliver approved IP daily PNG format from saved data only
 on:
   push:
     branches: [main]
-    paths: ['.github/disabled/ip-daily-png-activation-20261104.never']
+    paths: ['.github/workflows/ip-daily-png-activation-20261104.yml']
 permissions:
   contents: read
 concurrency:
   group: ip-daily-png-delivery-only
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   retained:
     runs-on: ubuntu-latest
@@ -16,6 +16,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: 7bbd202222c567f50f166868d1693df6deb07282
+          sparse-checkout: |
+            advertising_daily_tables_owner.py
+            ip_daily_png_contract.py
+            advertising_daily_png.py
+            advertising_budget_evidence.py
+            stock_deploy_support.py
+          sparse-checkout-cone-mode: false
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI

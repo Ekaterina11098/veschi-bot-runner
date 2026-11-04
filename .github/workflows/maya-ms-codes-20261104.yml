@@ -56,6 +56,29 @@ jobs:
             if not page["rows"] or offset>20000:raise RuntimeError("Incomplete code preflight")
           def normalize_code(value):
            return str(value or "").strip().lower().lstrip("0")
+          approved=call(sb+"/rest/v1/telegram_api_cache?cache_key=eq.maya_cycle:code_result:20261104&select=payload",sh)[0]["payload"]
+          previous=call(sb+"/rest/v1/telegram_api_cache?cache_key=eq.maya_cycle:code_rename_audit:20261104&select=payload",sh)
+          audit=previous[0]["payload"] if previous else {"products":[]}
+          targets={x["id"] for x in ref["products"]}
+          conflicts=approved.get("conflicts",[])
+          for conflict in conflicts:
+           for oldref in conflict["existing"]:
+            assert oldref["id"] not in targets
+            old=call(base+"entity/product/"+oldref["id"],mh)
+            newcode=oldref["code"]+"-old"
+            assert old.get("article")==oldref.get("article") and old["code"] in (oldref["code"],newcode)
+            assert not any(q["id"]!=old["id"] and normalize_code(q.get("code"))==normalize_code(newcode) for q in all_products)
+            if old["code"]!=newcode:call(base+"entity/product/"+old["id"],mh,"PUT",{"code":newcode})
+            checked=call(base+"entity/product/"+old["id"],mh)
+            assert checked["code"]==newcode
+            for field in ("article","name","barcodes","description","archived"):
+             assert checked.get(field)==old.get(field)
+            for q in all_products:
+             if q["id"]==old["id"]:q["code"]=newcode
+            if not any(x["id"]==old["id"] for x in audit["products"]):
+             audit["products"].append({"id":old["id"],"article":old.get("article"),"before":oldref["code"],"code":newcode,"verified":True})
+            h=dict(sh);h["Prefer"]="resolution=merge-duplicates,return=minimal"
+            call(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",h,"POST",{"cache_key":"maya_cycle:code_rename_audit:20261104","payload":audit,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2026-12-31T23:59:59Z"})
           out={"run_id":os.environ["GITHUB_RUN_ID"],"status":"in_progress","products":[],"conflicts":[]}
           def save():
            stamp=datetime.datetime.now(datetime.timezone.utc).isoformat()

@@ -198,7 +198,9 @@ def run():
  from china_advertising_delivery import deliver,telegram_sender
  from china_daily_ad_actions import plan,bind
  io=IO();day=datetime.now(MSK).date().isoformat();key='china_agent:advertising_midday_delivery:'+day+':v1'
- if (io.get(key) or {}).get('status')=='delivered':print('already_delivered');return
+ delivery_status=(io.get(key) or {}).get('status')
+ if delivery_status=='skipped_by_owner':print('skipped_by_owner');return
+ if delivery_status=='delivered':print('already_delivered');return
  art='china_agent:advertising_midday_artifacts:'+day+':v1';saved=io.get(art)
  if not saved:
   from china_midday_completed_review import attach,include_closed

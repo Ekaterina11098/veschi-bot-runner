@@ -8,6 +8,7 @@ import requests
 from advertising_agent import agent_store as store
 from advertising_budget_evidence import load_daily_table_view,deliver_daily_tables
 from advertising_daily_png import render_daily_png
+from ip_budget_table_png import render_budget_png
 from ip_daily_png_contract import build_contract,render_recommendations,freeze_plan,bind_receipt
 from stock_deploy_support import seal,error
 def publication_coverage(view):
@@ -45,10 +46,13 @@ def main():
    try:view['_recent_views'].append(load_daily_table_view(store,datetime.now(timezone.utc)-timedelta(days=offset)))
    except (ValueError,RuntimeError):pass # An independent historical gap must not block today's ready rows.
   contract=build_contract(store,view)
-  # Keep the existing budget renderer and daily delivery claim slots.
-  old_images=render_daily_png(view,outdir,page_size=max(12,len(view['campaigns'])))
-  images=[render_recommendations(view,contract,outdir)]+[i for i in old_images if i['kind']=='budgets']
-  if len(images)!=2:raise RuntimeError('Exactly recommendations then budgets required')
+  for c in view['campaigns']:
+   c['campaign_name']=c.get('campaign_name') or (contract.get('campaign_labels',{}).get(str(c['campaign_id'])) or {}).get('name') or ''
+  # Approved shortage-only budget format; same delivery slots, no payment actions.
+  budget_image,budget_coverage=render_budget_png(view,outdir)
+  report['budget_coverage']=budget_coverage
+  if not budget_image:report['budget_notification_status']='withheld_no_current_budget_evidence'
+  images=[render_recommendations(view,contract,outdir)]+([budget_image] if budget_image else [])
   import hashlib
   messages=[]
   for image in images:
@@ -84,7 +88,7 @@ def main():
   report['reply_plan_key']=plan_key
   report['new_action_count']=len(contract['actions'])
   report['business_status']='complete'
-  report['data_coverage']='complete' if all(x['metrics_complete'] for x in view['campaigns']) else 'partial_explicitly_labelled'
+  report['data_coverage']='complete' if budget_image and all(x['metrics_complete'] for x in view['campaigns']) else 'partial_explicitly_labelled'
  except Exception as exc:report['error']=error(exc)
  finally:
   requests.sessions.Session.request=native

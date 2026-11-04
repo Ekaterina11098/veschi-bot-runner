@@ -1,0 +1,125 @@
+name: Restore authorized order shipment chain
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/loss-ip-20261104-order-chain.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: loss-ip-20261104-penza-simferopol
+  cancel-in-progress: false
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Create posted order then link existing verified shipment
+        shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,collections
+          sys.path.insert(0,'scripts')
+          import fbs_document_chain as m
+          ROOT='loss_report:ip:20261104:penza_simferopol:'
+          ORDER_EXT='loss-ip-20261104-penza-simferopol-order'
+          DEMAND_EXT='loss-ip-20261104-penza-simferopol-demand'
+          class Scoped(m.Transport):
+           def request(self,base,path,method='GET',body=None,params=None):
+            if base==m.MS and method!='GET':
+             ok=(method=='POST' and path=='entity/customerorder' and (body or {}).get('externalCode')==ORDER_EXT)
+             ok=ok or (method=='PUT' and path==getattr(self,'demand_path',None) and set(body or {})=={'customerOrder'})
+             if not ok:raise m.Stop('Write outside authorized order and shipment link')
+            return super().request(base,path,method,body,params)
+          t=Scoped();db=m.Cache(t);w=m.Worker(t,db,{})
+          req=db.get(ROOT+'order_chain_request:v1');inp=db.get(ROOT+'input:v1')
+          prev=db.get(ROOT+'documents:v1');prep=db.get(ROOT+'preflight:v1')
+          assert req and req['authorized'] and req['reuse_existing_demand']
+          assert prev['status']=='complete' and prev['source_sha256']==inp['source_sha256']
+          wanted=prep['wanted'];assert sum(wanted.values())==inp['units']
+          def norm(x):return m.href(x).split('?')[0]
+          def rows(path,params=None):return w.ms_rows(path,params)
+          def ps(kind,uid):
+           out=[];offset=0
+           while True:
+            data=t.request(m.MS,'entity/'+kind+'/'+uid+'/positions',params={'expand':'assortment','limit':50,'offset':offset})
+            batch=data['rows'];out+=batch;offset+=len(batch)
+            if offset==data['meta']['size']:return out
+            if not batch or offset>data['meta']['size']:raise m.Stop('Incomplete positions')
+          def counts(positions):
+           c=collections.Counter()
+           for p in positions:c[norm(p['assortment'])]+=p['quantity']
+           return dict(c)
+          def scope(doc):
+           return all(norm(doc.get(k,{}))==norm(prep[k]) for k in ('organization','agent','store')) and norm(doc.get('rate',{}).get('currency',{}))==norm(prep['currency'])
+          found=rows('entity/demand',{'filter':'externalCode='+DEMAND_EXT})
+          assert len(found)==1 and found[0]['id']==prev['demand']['id']
+          demand=t.request(m.MS,'entity/demand/'+found[0]['id'])
+          original_positions=ps('demand',demand['id'])
+          def verify_zero(doc,positions):
+           assert scope(doc) and doc['applicable'] is True and doc['sum']==0
+           assert counts(positions)==wanted and len(positions)==len(wanted)
+           assert all(p['price']==0 for p in positions)
+          verify_zero(demand,original_positions)
+          assert demand['description']==prev['demand_comment']
+          assert prep['store']['name']=='Склад WB FBO'
+          original_cost_comment=demand['description']
+          state=db.get(ROOT+'order_chain:v1') or {'status':'preflight','started_at':m.now()}
+          def save():db.put(ROOT+'order_chain:v1',state)
+          named=rows('entity/customerorder',{'filter':'name='+req['order_name']})
+          byext=rows('entity/customerorder',{'filter':'externalCode='+ORDER_EXT})
+          assert len(named)<=1 and len(byext)<=1
+          if named and byext:assert named[0]['id']==byext[0]['id']
+          existing=named or byext
+          if demand.get('customerOrder'):
+           linked=t.request(m.MS,'entity/customerorder/'+norm(demand['customerOrder']).rsplit('/',1)[1])
+           assert linked['name']==req['order_name'] and existing and existing[0]['id']==linked['id'],'Shipment already linked to different order'
+          states=t.request(m.MS,'entity/customerorder/metadata').get('states',[])
+          delivered=[s for s in states if s['name']==req['order_state']]
+          assert len(delivered)==1
+          if existing:
+           order=t.request(m.MS,'entity/customerorder/'+existing[0]['id'])
+           verify_zero(order,ps('customerorder',order['id']))
+           assert order['name']==req['order_name'] and order['description']==req['order_comment']
+           assert norm(order['state'])==norm(delivered[0])
+          else:
+           if state.get('pending_order'):raise m.Stop('Uncertain order creation requires reconciliation')
+           common={k:m.meta(prep[k]) for k in ('organization','agent','store')}
+           body={**common,'externalCode':ORDER_EXT,'name':req['order_name'],'description':req['order_comment'],'state':m.meta(delivered[0]),'applicable':True,'vatEnabled':demand.get('vatEnabled',True),'vatIncluded':demand.get('vatIncluded',True),'rate':{'currency':m.meta(prep['currency'])},'positions':[{'quantity':p['quantity'],'price':0,'discount':0,'vat':0,'assortment':m.meta(p['assortment'])} for p in original_positions]}
+           state.update(status='creating_order',pending_order={'externalCode':ORDER_EXT,'at':m.now()});save()
+           try:order=t.request(m.MS,'entity/customerorder','POST',body)
+           except Exception:
+            state['status']='order_write_requires_reconciliation';save();raise
+           state['pending_order']=None
+          verify_zero(order,ps('customerorder',order['id']))
+          assert order['name']==req['order_name'] and order['description']==req['order_comment'] and norm(order['state'])==norm(delivered[0])
+          state.update(status='order_posted',order={'id':order['id'],'name':order['name']},order_posted_verified_at=m.now());save()
+          refs=[norm(d) for d in t.request(m.MS,'entity/customerorder/'+order['id']).get('demands',[])]
+          assert all(ref==norm(demand) for ref in refs),'Order has another shipment'
+          t.demand_path='entity/demand/'+demand['id']
+          if norm(demand.get('customerOrder',{}))!=norm(order):
+           state['status']='linking_existing_shipment';save()
+           t.request(m.MS,t.demand_path,'PUT',{'customerOrder':m.meta(order)})
+          final_order=t.request(m.MS,'entity/customerorder/'+order['id'])
+          final_demand=t.request(m.MS,t.demand_path)
+          verify_zero(final_order,ps('customerorder',order['id']))
+          verify_zero(final_demand,ps('demand',demand['id']))
+          assert norm(final_demand['customerOrder'])==norm(final_order)
+          assert [norm(d) for d in final_order.get('demands',[])]==[norm(final_demand)]
+          assert final_demand['description']==original_cost_comment==prev['demand_comment']
+          assert final_order['description']==req['order_comment'] and final_order['name']==req['order_name']
+          assert norm(final_order['state'])==norm(delivered[0])
+          assert len(rows('entity/customerorder',{'filter':'name='+req['order_name']}))==1
+          assert len(rows('entity/demand',{'filter':'externalCode='+DEMAND_EXT}))==1
+          state.update(status='complete',completed_at=m.now(),demand={'id':final_demand['id'],'name':final_demand['name']},quantity=inp['units'],positions=len(wanted),order_comment=final_order['description'],demand_comment=final_demand['description'],order_posted=True,demand_posted=True,all_prices_zero=True,linked_both_ways=True,no_new_shipment_created=True)
+          save()
+          prev.update(customer_order=state['order'],order_chain_verified_at=state['completed_at'])
+          db.put(ROOT+'documents:v1',prev)
+          print('Authorized posted order linked to existing shipment; private verification saved.')

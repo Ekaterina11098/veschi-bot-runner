@@ -1,0 +1,58 @@
+name: Owner requested active sales management fresh four-product preflight
+on:
+  push:
+    paths: ['.github/workflows/owner-sales-management4.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-sales-management4
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import json,copy
+          from datetime import datetime,timezone
+          from china_cloud_cost_control import Cache,WB,validate_identity
+          from china_advertising_state import AdvertisingIO
+          from china_morning_readiness import current_prices,published_stock
+          from china_moysklad_read import read_stock
+          ROOT='china_agent:owner_sales_management:2026-11-04:13:v1'
+          c=Cache();io=AdvertisingIO();w=WB();validate_identity(c,w)
+          if c.get(ROOT+':inputs'):raise ValueError('Dated inputs already collected')
+          ids=[1473243091,1473243825,1473243239,1473243894];campaigns=w.campaigns([40933588,41055480,41298169])
+          prices=current_prices(io,ids);pub=published_stock(io,prices,ids);stock=read_stock([r['article']for r in prices['rows']])
+          if not stock['coverage_complete']or pub['missing_nm_ids']:raise ValueError('Current availability incomplete')
+          minimums={str(cid):w.minimums(cid,nms,zone)for cid,nms,zone in [(41055480,[1473243091],'recommendations'),(41298169,[1473243825,1473243894],'search')]}
+          import requests
+          r=requests.get('https://advert-api.wildberries.ru/api/advert/v1/config',headers={'Authorization':io.token},timeout=40)
+          if not r.ok:raise ValueError('Current config unavailable')
+          cfg=r.json()
+          if cfg['currency']!='CNY':raise ValueError('Wrong currency')
+          budgets=w.req('/api/advert/v2/budget','POST',dict(advertIds=[40933588,41055480,41298169]))
+          p=dict(status='complete',cabinet='token_3',observed_at=datetime.now(timezone.utc).isoformat(),campaigns=campaigns,prices=prices,published_stock=pub,stock=stock,minimums=minimums,config=cfg,budgets=budgets,wb_writes=0,telegram_calls=0,model_calls=0,grants_action_permission=False)
+          p=json.loads(json.dumps(p))
+          if not c.create(ROOT+':inputs',p)or c.get(ROOT+':inputs')!=p:raise ValueError('Private readback mismatch')
+          print('Targeted four-product fresh preflight saved; zero WB writes/TG/model calls.')
+          
+          PY

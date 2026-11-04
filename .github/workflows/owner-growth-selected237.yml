@@ -38,12 +38,13 @@ jobs:
           from china_advertising_state import AdvertisingIO
           from china_moysklad_read import read_stock
           from china_morning_readiness import current_prices,published_stock
-          ROOT='china_agent:owner_growth_selected:2026-11-04:job237:v1'
+          ROOT='china_agent:owner_growth_selected:2026-11-04:job237:v1:attempt2'
+          AUTH='china_agent:owner_growth_selected:2026-11-04:job237:v1:approval'
           c=Cache();io=AdvertisingIO()
           def norm(v):return json.loads(json.dumps(v))
           def put(k,v):c.put(k,norm(v))
           def approve():
-           a=c.get(ROOT+':approval')or{};p=c.get('china_agent:loss_plan:v1:'+a.get('source_plan_id',''))or{}
+           a=c.get(AUTH)or{};p=c.get('china_agent:loss_plan:v1:'+a.get('source_plan_id',''))or{}
            jobs=io.db('business_agent_jobs?id=eq.237&select=id,sender_id,chat_id,request_text,tool_trace,created_at')
            if len(jobs)!=1:raise ValueError('Owner job absent')
            job=jobs[0];m=next(t for t in job['tool_trace']if t.get('name')=='china_saved_question')
@@ -65,7 +66,7 @@ jobs:
           def main():
            if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner'or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
            if c.get(ROOT+':execution'):print('Existing execution; never replay');return
-           w=Scoped();validate_identity(c,w);e=dict(status='preflight',approval_key=ROOT+':approval',created_at=stamp(),items=items,steps={},wb_writes=0,telegram_calls=0,budget_writes=0,price_writes=0,stock_writes=0)
+           w=Scoped();validate_identity(c,w);e=dict(status='preflight',approval_key=AUTH,created_at=stamp(),items=items,steps={},wb_writes=0,telegram_calls=0,budget_writes=0,price_writes=0,stock_writes=0)
            if not c.create(ROOT+':execution',e):return
            def save():put(ROOT+':execution',e)
            try:
@@ -84,7 +85,7 @@ jobs:
             raised=set()
             for key in(c.get('china_agent:verified_campaign_state:v1')or{}).values():
              r=c.get(key)or{};at=r.get('verified_at')
-             if r.get('status')!='verified'or not at or datetime.fromisoformat(at.replace('Z','+00:00')).astimezone(ZoneInfo('Europe/Moscow')).date().isoformat()!='2026-11-04':continue
+             if r.get('status')!='verified'or not at or datetime.fromisoformat(at.replace('Z','+00:00').replace(' UTC','+00:00')).astimezone(ZoneInfo('Europe/Moscow')).date().isoformat()!='2026-11-04':continue
              before={n['nm_id']:n for n in r.get('before',{}).get('nm_settings',[])}
              for n in r.get('after',{}).get('nm_settings',[]):
               if n['nm_id']in before and any(n['bids_kopecks'].get(z,0)>before[n['nm_id']]['bids_kopecks'].get(z,0)for z in['search','recommendations']):raised.add(n['nm_id'])
@@ -111,7 +112,7 @@ jobs:
              expected=copy.deepcopy(before)
              for x in group:next(n for n in expected['nm_settings']if n['nm_id']==x['nm_id'])['bids_kopecks'][x['placement']]=x['target_minor']
              body=dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=x['nm_id'],placement=x['placement'],bid_kopecks=x['target_minor'])for x in group])])
-             key=ROOT+':'+str(cid)+':execution';step=dict(status='submitting',before=before,expected=expected,items=group,submitted_at=stamp(),parent=ROOT+':execution',approval_key=ROOT+':approval')
+             key=ROOT+':'+str(cid)+':execution';step=dict(status='submitting',before=before,expected=expected,items=group,submitted_at=stamp(),parent=ROOT+':execution',approval_key=AUTH)
              if not c.create(key,norm(step)):raise ValueError('Child exists; never replay')
              e['steps'][str(cid)]=key;save()
              try:

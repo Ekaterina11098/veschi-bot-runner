@@ -99,5 +99,5 @@ jobs:
           print('Cloud report construction, mandatory PNG families, and current verified same-day exclusions passed; zero live model/WB/Telegram calls')
           
           PY
-      - name: Existing advertising regressions and exact mutation simulations
+      - name: Final full-catalogue collection and exact mutation regression checks
         run: PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_advertising_*.py'

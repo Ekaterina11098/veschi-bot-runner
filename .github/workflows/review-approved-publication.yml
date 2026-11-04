@@ -22,7 +22,14 @@ jobs:
     timeout-minutes: 38
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+        with:
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*.py
+            /review-approval-preparation/
+            /.github/workflows/
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI

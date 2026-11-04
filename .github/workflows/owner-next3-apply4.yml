@@ -1,0 +1,177 @@
+name: Owner approved448 panama7 additions681 raise100CNY
+on:
+  push:
+    paths: ['.github/workflows/owner-next3-apply4.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-next3-apply4
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import copy,json,os,time,requests
+          from datetime import datetime,timezone
+          from china_cloud_cost_control import Cache,WB,validate_identity,stamp
+          from china_advertising_state import AdvertisingIO
+          from china_morning_readiness import current_prices,published_stock
+          from china_moysklad_read import read_stock
+          ROOT='china_agent:owner_growth_next3_apply:2026-11-04:v1'
+          c=Cache();w=WB();io=AdvertisingIO()
+          ADDS={41298169:(1473244341,28,50),41325622:(1535337775,11,255)}
+          def put(k,v):
+           v=json.loads(json.dumps(v))
+           if c.get(k)is None:
+            if not c.create(k,v):raise ValueError('Concurrent receipt creation')
+           else:c.put(k,v)
+          def auth():
+           a=c.get(ROOT+':approval')or{};p=c.get(a.get('proposal_key',''))or{}
+           if a.get('source_channel')!='codex'or a.get('owner_user_id')!=5122667182 or a.get('execution_authorized')is not True or a.get('telegram_notice_authorized')is not True or p.get('invalidated_at')or p.get('plan_sha256')!=a.get('plan_sha256')or a.get('items')!=p.get('items'):raise ValueError('Owner bound proposal changed')
+           if datetime.now(timezone.utc)>datetime.fromisoformat(a['expires_at']):raise ValueError('Approval expired')
+           adds={(i['campaign_id'],i['nm_id'],i['target_minor'])for i in a['items']if i['kind']=='ad_add_sku'}
+           bids={(i['campaign_id'],i['nm_id'],i['old_minor'],i['target_minor'])for i in a['items']if i['kind']=='ad_set_bid'}
+           funds={(i['campaign_id'],i['amount_cny'])for i in a['items']if i['kind']=='topup_campaign'}
+           if adds!={(41298169,1473244341,28),(41325622,1535337775,11)}or bids!={(41055480,1473243091,28,30)}or funds!={(41055480,100)}:raise ValueError('Exact three actions differ')
+           return a,p
+          def req(path,method='GET',body=None):
+           time.sleep(1.5);r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':w.token},json=body,timeout=50)
+           if not r.ok:raise RuntimeError('WB HTTP '+str(r.status_code)+' '+r.text[:500])
+           return r.json()if r.content else {}
+          def rows(s):return {r['nm_id']:r for r in s['nm_settings']}
+          def state(cid):return w.campaigns([cid])[str(cid)]
+          def fixed(a,b):return all(a[k]==b[k]for k in ['id','status','currency','settings','bid_type'])
+          def budget(cid):
+           rr=w.req('/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts']
+           if len(rr)!=1 or rr[0]['currency']!='CNY'or rr[0]['advertId']!=cid:raise ValueError('Budget identity/currency')
+           return rr[0]['total']
+          def write(e,key,path,method,body):
+           auth()
+           if key in e['operations']:raise ValueError('Submitted or uncertain operation exists; never repeat')
+           good=key=='fund100'and path=='/adv/v1/budget/deposit?id=41055480'and method=='POST'and body.get('sum')==100 and body.get('type')in[0,1]
+           good=good or(key=='raise681'and path=='/api/advert/v1/bids'and method=='PATCH'and body==dict(bids=[dict(advert_id=41055480,nm_bids=[dict(nm_id=1473243091,placement='recommendations',bid_kopecks=30)])]))
+           for cid,(nm,target,subj)in ADDS.items():
+            good=good or(key=='add:'+str(cid)and path=='/adv/v0/auction/nms'and method=='PATCH'and body==dict(nms=[dict(advert_id=cid,nms=dict(add=[nm],delete=[]))]))
+            good=good or(key=='rollback:'+str(cid)and path=='/adv/v0/auction/nms'and method=='PATCH'and body==dict(nms=[dict(advert_id=cid,nms=dict(add=[],delete=[nm]))]))
+            good=good or(key=='addbid:'+str(cid)and path=='/api/advert/v1/bids'and method=='PATCH'and body==dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=nm,placement='search',bid_kopecks=target)])]))
+           if not good:raise ValueError('Write outside owner exact scope')
+           op=dict(status='submitting',path=path,method=method,body=body,at=stamp());e['operations'][key]=op;put(ROOT+':execution',e)
+           try:
+            r=req(path,method,body);op.update(status='accepted',response=r,accepted_at=stamp());e['wb_writes']+=1;put(ROOT+':execution',e);return r
+           except Exception as ex:
+            op.update(status='uncertain',error=str(ex));put(ROOT+':execution',e);raise
+          def register(cid,k):
+           reg=c.get('china_agent:verified_campaign_state:v1')or{};reg[str(cid)]=k;put('china_agent:verified_campaign_state:v1',reg)
+          def main():
+           if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner'or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
+           a,p=auth();validate_identity(c,w)
+           if c.get(ROOT+':execution'):raise ValueError('Existing execution; never replay')
+           e=dict(status='preflight',approval_key=ROOT+':approval',plan_sha256=a['plan_sha256'],items=[],operations={},wb_writes=0,created_at=stamp())
+           if not c.create(ROOT+':execution',e):raise ValueError('Concurrent executor')
+           try:
+            items=[x for x in a['items']if x['kind']in['ad_add_sku','ad_set_bid']]
+            ids=[x['nm_id']for x in items];prices=current_prices(io,ids);pub=published_stock(io,prices,ids);stock=read_stock([r['article']for r in prices['rows']])
+            if len(prices['rows'])!=3 or not stock['coverage_complete']or pub['missing_nm_ids']:raise ValueError('Fresh inputs incomplete')
+            for it in items:
+             pr=next(r for r in prices['rows']if r['nm_id']==it['nm_id']);st=next(r for r in stock['rows']if r['article']==pr['article'])
+             margin=it['own_margin_before_ads_cny']-it['own_buyout']*(st['price']/100-it['cogs_rub'])/12.1816
+             if pr['article']!=it['article']or pr['seller_price']!=it['current_price_cny']or st['price']<=0 or st['stock']-st['reserve']<=0 or pub['amounts'].get(str(it['nm_id']),0)<=0 or margin<=0:raise ValueError('Current exact price/COGS/stock/economics changed')
+            cs=w.campaigns([41055480,41298169,41325622,41270309,40945478])
+            for cid in [41055480,41298169,41325622]:
+             s=cs[str(cid)]
+             if s['status']!=9 or s['currency']!='CNY'or s['bid_type']!='manual'or s['settings']['payment_type']!='cpc':raise ValueError('Campaign status/currency/payment changed')
+            if rows(cs['41055480'])[1473243091]['bids_kopecks']['recommendations']!=28:raise ValueError('681 old bid changed/already raised; no repeat')
+            minima={'681':w.minimums(41055480,[1473243091],'recommendations'),'448':w.minimums(41270309,[1473244341],'search'),'7':w.minimums(40945478,[1535337775],'search')}
+            if minima['681'][1473243091]>30 or minima['448'][1473244341]>28 or minima['7'][1535337775]>11:raise ValueError('Current exact SKU minimum exceeds approved bid')
+            for cid,(nm,target,subj)in ADDS.items():
+             s=cs[str(cid)];ns=rows(s);src=cs['41270309'if nm==1473244341 else'40945478']
+             if rows(src)[nm]['subject']['id']!=subj or {n['subject']['id']for n in ns.values()}!={subj}or nm in ns or len(ns)>=50 or not s['restrictions'].get('can_change_nms')or s['settings']['placements']!={'search':True,'recommendations':False}:raise ValueError('Addition current category/membership differs')
+            cfg=req('/api/advert/v1/config')
+            if cfg['currency']!='CNY'or cfg['cpcStep']!=1 or cfg['minTopUp']>10000:raise ValueError('Currency/minimum/step changed')
+            balances={str(cid):budget(cid)for cid in [41055480,41298169,41325622]}
+            if balances['41055480']+100<724.67 or balances['41298169']<1519.80 or balances['41325622']<21.04:raise ValueError('Required three-day reserves not covered')
+            bal=req('/adv/v1/balance');source=0 if bal.get('balance',0)>=100 else 1 if bal.get('net',0)>=100 else None
+            if bal.get('currency')!='CNY'or source is None:raise ValueError('100CNY funding source unavailable')
+            e.update(status='running',preflight=dict(observed_at=stamp(),prices=prices,published_stock=pub,stock=stock,campaigns=cs,minimums=minima,budgets=balances,config=cfg));put(ROOT+':execution',e)
+            cid=41055480;before=state(cid)
+            if not fixed(cs[str(cid)],before)or rows(cs[str(cid)])!=rows(before):raise ValueError('681 campaign changed during preflight')
+            bb=budget(cid);fund=dict(status='submitting',before=before,before_budget=bb,amount_cny=100,created_at=stamp());put(ROOT+':funding',fund)
+            write(e,'fund100','/adv/v1/budget/deposit?id=41055480','POST',dict(sum=100,type=source))
+            for i in range(18):
+             fa=state(cid);ba=budget(cid)
+             if fixed(before,fa)and rows(before)==rows(fa)and ba>=bb+98:break
+             time.sleep(5)
+            else:raise ValueError('Funding uncertain; never repeat')
+            fund.update(status='verified',after=fa,after_budget=ba,verified_at=stamp());put(ROOT+':funding',fund)
+            write(e,'raise681','/api/advert/v1/bids','PATCH',dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=1473243091,placement='recommendations',bid_kopecks=30)])]))
+            expected=copy.deepcopy(rows(before));expected[1473243091]['bids_kopecks']['recommendations']=30
+            for i in range(18):
+             after=state(cid)
+             if fixed(before,after)and rows(after)==expected:break
+             time.sleep(5)
+            else:raise ValueError('681 exact bid readback uncertain; never repeat')
+            ck=ROOT+':campaign:'+str(cid);child=dict(status='verified',kind='ad_set_bid',before=before,after=after,verified_at=stamp(),approval_key=ROOT+':approval');put(ck,child);register(cid,ck)
+            e['items'].append(dict(kind='ad_set_bid',nm_id=1473243091,article='681-CalmiraBag-chocolate',campaign_id=cid,placement='recommendations',old_minor=28,target_minor=30,status='verified',receipt_key=ck,verified_at=child['verified_at']));put(ROOT+':execution',e)
+            for cid,(nm,target,subj)in ADDS.items():
+             before=state(cid);br=rows(before)
+             if not fixed(cs[str(cid)],before)or rows(cs[str(cid)])!=br:raise ValueError('Target campaign changed before addition')
+             ck=ROOT+':campaign:'+str(cid);child=dict(status='submitting',kind='ad_add_sku',before=before,nm_id=nm,placement='search',target_minor=target,approval_key=ROOT+':approval');put(ck,child)
+             write(e,'add:'+str(cid),'/adv/v0/auction/nms','PATCH',dict(nms=[dict(advert_id=cid,nms=dict(add=[nm],delete=[]))]))
+             for i in range(18):
+              after=state(cid);ar=rows(after)
+              if set(ar)==set(br)|{nm}:break
+              time.sleep(5)
+             else:raise ValueError('Addition membership uncertain; never repeat')
+             if not fixed(before,after)or any(ar[n]!=r for n,r in br.items()):raise ValueError('Other members/settings changed')
+             if ar[nm]['subject']['id']!=subj or ar[nm]['bids_kopecks'].get('recommendations',0)!=0 or not 0<ar[nm]['bids_kopecks'].get('search',0)<=target:
+              write(e,'rollback:'+str(cid),'/adv/v0/auction/nms','PATCH',dict(nms=[dict(advert_id=cid,nms=dict(add=[],delete=[nm]))]));raise ValueError('New default outside approved exact bid/category; removed only new SKU')
+             q=w.minimums(cid,[nm],'search')
+             if q[nm]>target:raise ValueError('New target minimum exceeds approved ceiling')
+             if ar[nm]['bids_kopecks']['search']!=target:
+              write(e,'addbid:'+str(cid),'/api/advert/v1/bids','PATCH',dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=nm,placement='search',bid_kopecks=target)])]))
+              for i in range(18):
+               after=state(cid);ar=rows(after)
+               if ar[nm]['bids_kopecks']['search']==target:break
+               time.sleep(5)
+              else:raise ValueError('Addition bid uncertain; never repeat')
+             if not fixed(before,after)or set(ar)!=set(br)|{nm}or any(ar[n]!=r for n,r in br.items()):raise ValueError('Final membership/settings differ')
+             child.update(status='verified',after=after,exact_minimum_minor=q[nm],verified_at=stamp());put(ck,child);register(cid,ck)
+             e['items'].append(dict(kind='ad_add_sku',nm_id=nm,article=next(it['article']for it in items if it['nm_id']==nm),campaign_id=cid,placement='search',target_minor=target,status='verified',receipt_key=ck,verified_at=child['verified_at']));put(ROOT+':execution',e)
+            e.update(status='verified',verified_at=stamp(),funding_key=ROOT+':funding');put(ROOT+':execution',e)
+           except Exception as ex:
+            e.update(status='partial_or_uncertain',error=str(ex)if isinstance(ex,(RuntimeError,ValueError))else type(ex).__name__,updated_at=stamp());put(ROOT+':execution',e);print(json.dumps({'status':e['status'],'error':e['error'],'verified_items':len(e['items']),'wb_writes':e['wb_writes']}));raise
+           text='Проверено в WB:\n•448 добавлен в поиск, РК41298169 —0,28CNY.\n•681 в рекомендациях, РК41055480:0,28→0,30CNY; РК пополнена на100CNY.\n•Панама7 добавлена в поиск, РК41325622 —0,11CNY.\n143 и590 не меняли. Ставки пяти ранее запущенных тестов не повышали.'
+           if io.tg('getMe',{})['id']!=8780468043:raise ValueError('Bot identity')
+           notice=dict(status='sending',text=text,chat_id=-1004342917488,bot_id=8780468043,execution_key=ROOT+':execution',created_at=stamp())
+           if not c.create(ROOT+':delivery',notice):raise ValueError('Notice already exists; never resend')
+           try:
+            r=io.tg('sendMessage',dict(chat_id=-1004342917488,text=text))
+            if r.get('chat',{}).get('id')!=-1004342917488 or r.get('from',{}).get('id')!=8780468043 or not r.get('message_id'):raise ValueError('TG identity mismatch')
+            notice.update(status='sent',message_id=r['message_id'],receipt=r,sent_at=stamp());put(ROOT+':delivery',notice)
+           except Exception:
+            notice['status']='uncertain';put(ROOT+':delivery',notice);raise
+           p['resolution_status']='executed_verified';p['execution_key']=ROOT+':execution';p['result_message_id']=notice['message_id'];put(a['proposal_key'],p)
+           print(json.dumps({'status':'verified','items':e['items'],'fund_before':bb,'fund_after':ba,'wb_writes':e['wb_writes'],'message_id':notice['message_id']}))
+          main()
+          
+          PY

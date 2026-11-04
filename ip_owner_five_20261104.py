@@ -5,6 +5,13 @@ from ip_daily_png_contract import PREFIX,CHAT,BOT,digest,action_id,ready
 from ip_bags_growth_20261104 import active_ids
 PLAN='ip_agent:owner_five:2026-11-04:v1'
 FROZEN='5688c35ccf0f2312bcad1fd3a205f35e7c0fdd57d99046b2e122a4192b2e43df'
+
+def recent_parent_readback(t,ids):
+ parent=t.get('ip_agent:bags_growth:2026-11-04:six:v1:execution') or {}
+ if parent.get('status')!='verified' or not parent.get('readback_at'):return None
+ observed=datetime.datetime.fromisoformat(parent['readback_at'].replace('Z','+00:00')).timestamp();age=time.time()-observed;after=parent.get('after') or {}
+ if not 0<=age<=180 or any(str(cid) not in after for cid in ids):return None
+ return {str(cid):copy.deepcopy(after[str(cid)]) for cid in ids},observed,parent['readback_at']
 def validate_owner(p):
  if not p or p.get('status')!='owner_authorized' or p.get('authorized_day_msk')!='2026-11-04' or len(p.get('actions',[]))!=5 or digest(p['actions'])!=FROZEN:raise PermissionError('Exact owner five-item approval missing')
  if datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date().isoformat()!='2026-11-04':raise PermissionError('Dated owner approval only')
@@ -50,7 +57,11 @@ def run_owner():
  try:
   t.identity()
   if any(a['kind']=='add' for a in p['actions']):ids,_=active_ids(t,ids)
-  before=t.configs(ids);expected=expected_state(p,before);state.update(before=before,expected=expected,read_at=stamp());save();stage=copy.deepcopy(before);read_time=time.time()
+  reused=recent_parent_readback(t,ids)
+  if reused:
+   before,read_time,observed_at=reused;state['readback_reused_from']='ip_agent:bags_growth:2026-11-04:six:v1:execution'
+  else:before=t.configs(ids);read_time=time.time();observed_at=stamp()
+  expected=expected_state(p,before);state.update(before=before,expected=expected,read_at=observed_at);save();stage=copy.deepcopy(before)
   for a in p['actions']:
    marker='advertising:ip:action-once:v1:'+action_id(a)
    if not t.create(marker,dict(status='approved',plan_key=plan_key,execution_key=ek,approved_at=stamp())):raise PermissionError('Action already approved; no replay')
@@ -95,4 +106,3 @@ def run_owner():
  finally:state.update(finished_at=stamp());save()
  print(json.dumps({k:state.get(k) for k in ('status','wb_write_attempts','wb_accepted_requests')}))
 if __name__=='__main__':run_owner()
-

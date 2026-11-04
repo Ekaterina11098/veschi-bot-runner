@@ -1,0 +1,94 @@
+name: Owner include cabinet growth in existing morning PNG 4Nov
+on:
+  push:
+    paths: ['.github/workflows/owner-full-growth-freeze4.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-full-growth-freeze4
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import base64,copy,hashlib,json,time
+          from datetime import datetime,timezone
+          from china_advertising_state import AdvertisingIO
+          from china_advertising_v2_png import render
+          from china_advertising_growth import merge
+          from china_advertising_directions import attach
+          from china_daily_ad_actions import plan
+          ROOT='china_agent:owner_full_growth_review:2026-11-04:v1'
+          DAY='2026-11-04'
+          io=AdvertisingIO()
+          for _ in range(120):
+           decision=io.get(ROOT+':decisions')
+           if decision and decision.get('status')=='reviewed':break
+           time.sleep(3)
+          else:raise ValueError('Owner requested review not ready; preserve hold')
+          if io.get(ROOT+':included'):raise ValueError('Already included; no replay')
+          delivery=io.get('china_agent:advertising_delivery:'+DAY+':v1')
+          if delivery and delivery.get('parts'):raise ValueError('Delivery began; do not replace or resend')
+          old=io.get('china_agent:advertising_artifacts:'+DAY+':v2')
+          if not old or old['status']!='frozen':raise ValueError('Original frozen report missing')
+          full=io.get(ROOT+':collection');actions=decision['actions']
+          if any(a['nm_id']in[1473245494,1473245510,1473244000]for a in actions):raise ValueError('Owner exclusions')
+          if any(a['kind']!='ad_set_bid'or not a['old_minor']<a['target_minor']<=a['old_minor']*1.15 for a in actions):raise ValueError('Unexpected growth action')
+          bundle=copy.deepcopy(old['bundle'])
+          # Keep reviewed existing reductions/exclusions, preserve campaign grouping and all historical totals.
+          for cp in bundle['campaigns']:
+           for group in ['focus','attention']:
+            for r in cp.get(group,[]):
+             if r.get('nm')in[1473245494,1473245510,1473244000]:r['action']=None
+          bundle=merge(bundle,actions)
+          bundle=attach(bundle,full['source'])
+          bundle['recommendation_directions']['raise']['note']=decision['coverage']['raise']
+          bundle['recommendation_directions']['add']['note']=decision['coverage']['add']
+          bundle['recommendation_directions']['add']['status']='checked'
+          bundle['owner_full_growth_review']=dict(source_key=ROOT+':collection',decision_key=ROOT+':decisions',scope_count=full['catalogue_count'],new_raise_count=len(actions),new_add_count=0,reviewed_at=decision['reviewed_at'],excluded_nm_ids=[1473245494,1473245510,1473244000],wb_writes=0)
+          bundle['codex_analysis']['owner_full_growth_review']=bundle['owner_full_growth_review']
+          balance={r['advertId']:r['total']for r in full['budgets']['adverts']}
+          for cp in bundle['campaigns']:
+           if cp['id']in balance:cp['balance']=balance[cp['id']]
+          # Owner-approved format: only the two existing families; no new summary/loss image.
+          pages=render(bundle);files=[]
+          for index,f in enumerate(pages):
+           p=plan(io,DAY,f,index,slot='owner-growth4')
+           files.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))
+          new=dict(day=DAY,status='frozen',presentation=bundle.get('presentation'),bundle=bundle,files=files,wb_writes=0)
+          archive=ROOT+':original_artifacts'
+          if not io.create(archive,old)and io.get(archive)!=old:raise ValueError('Archive mismatch')
+          for f in old['files']:
+           from china_loss_control import PLAN
+           p=io.get(PLAN+f['plan_id'])
+           if p:
+            p.update(invalidated_at=datetime.now(timezone.utc).isoformat(),invalidation_reason='Superseded before send by owner requested full cabinet growth review')
+            io.put(PLAN+f['plan_id'],p)
+          io.put('china_agent:advertising_artifacts:'+DAY+':v2',new)
+          if io.get('china_agent:advertising_artifacts:'+DAY+':v2')!=json.loads(json.dumps(new)):raise ValueError('New frozen report readback mismatch')
+          record=dict(status='included',completed_at=datetime.now(timezone.utc).isoformat(),raise_count=len(actions),add_count=0,files=[{k:v for k,v in f.items()if k!='b64'}for f in files],archive_key=archive,telegram_calls=0,wb_writes=0)
+          if not io.create(ROOT+':included',record):raise ValueError('Concurrent inclusion')
+          request=io.get(ROOT);request.update(status='included',included_key=ROOT+':included',hold_delivery_until_reviewed=False)
+          io.put(ROOT,request)
+          print(json.dumps(record))
+          PY

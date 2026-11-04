@@ -32,7 +32,7 @@ class EgressPGTests(unittest.TestCase):
     def setUpClass(cls):
         cls.conn=psycopg.connect(os.environ['EGRESS_TEST_DSN'],autocommit=True)
         db,host=cls.conn.execute('select current_database(),inet_server_addr()::text').fetchone()
-        if db!='review_egress_test' or host not in ('127.0.0.1','::1',None):raise RuntimeError('Isolated test database only')
+        if db!='review_egress_test' or cls.conn.info.host not in ('127.0.0.1','::1'):raise RuntimeError('Isolated test database only')
         cls.conn.execute('CREATE SCHEMA review_approval')
         for name in ('items','cards','events','intents'):
             cls.conn.execute('CREATE TABLE review_approval.'+name+'(id text primary key,payload text not null)')
@@ -117,3 +117,4 @@ class EgressPGTests(unittest.TestCase):
         cleanup_completed(a,actual_tg,intent_id='i');self.assertEqual(actual_tg.call.call_count,len(targets))
 
 if __name__=='__main__':unittest.main()
+

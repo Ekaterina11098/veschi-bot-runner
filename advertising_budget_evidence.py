@@ -189,11 +189,11 @@ def load_daily_table_view(store,now):
     # Bounded normalized catalog reads, never reread the large entire report index.
     catrows=decode_rows(store.db('GET','analytics_snapshots',params={'source':'eq.mpstats_campaign_catalog','cabinet':'eq.token_2','select':'id,payload,collected_at','order':'id.desc','limit':8}) or [])
     catalogs=[p for snap in catrows for p in (snap.get('payload') or []) if isinstance(p,dict)]
-    mapping={};states={};mpbudgets={}
+    mapping={};states={};mpbudgets={};names={}
     for cat in sorted(catalogs,key=lambda x:x.get('observed_at') or ''):
         for row in cat.get('rows') or []:
             if row.get('wb_id') not in active:continue
-            cid=row['wb_id'];mapping[cid]=row['id']
+            cid=row['wb_id'];mapping[cid]=row['id'];names[cid]=row.get('campaign_name')
             if row.get('status_id') is not None:states[cid]=row['status_id']
             if _number(row.get('current_budget')) and row.get('current_budget_updated_at'):
                 mpbudgets[cid]=dict(balance=row['current_budget'],observed_at=row['current_budget_updated_at'],valid=True,source='MPStats')
@@ -255,7 +255,7 @@ def load_daily_table_view(store,now):
             except (TypeError,ValueError):continue
         result.append(dict(campaign_id=cid,metrics_complete=valid,spend=t.get('ac_spending_sum') if valid else None,revenue=t.get('ac_orders_sum') if valid else None,
           direct_orders=(t['ac_orders']-t['ac_orders_associated']) if valid and _number(t.get('ac_orders_associated')) and t['ac_orders']>=t['ac_orders_associated'] else None,
-          above5=sorted(above,key=lambda x:-x['drr']),within5_count=within,**no_orders,sku_order_basis=p.get('sku_order_basis'),status_id=states.get(cid),budget=budget,source_snapshot_id=p.get('snapshot_id'),weekly_spend=weekly.get(cid),sku_rows=(p.get('rows') if p.get('sku_order_basis')=='direct_only' else None)))
+          above5=sorted(above,key=lambda x:-x['drr']),within5_count=within,**no_orders,sku_order_basis=p.get('sku_order_basis'),status_id=states.get(cid),budget=budget,source_snapshot_id=p.get('snapshot_id'),weekly_spend=weekly.get(cid),total_orders=t.get('ac_orders') if valid else None,clicks=t.get('ac_clicks') if valid else None,campaign_name=names.get(cid),sku_rows=(p.get('rows') if p.get('sku_order_basis')=='direct_only' else None)))
     return dict(period=day,observed_day=str(now.date()),campaigns=result,weekly_period_from=week_start,weekly_period_to=week_end)
 
 def deliver_daily_tables(store,messages,chat,day,send):
@@ -286,4 +286,3 @@ def deliver_daily_tables(store,messages,chat,day,send):
         if store.cache_get(key)!=value:raise RuntimeError('Table receipt readback mismatch')
         receipts.append(value)
     return receipts
-

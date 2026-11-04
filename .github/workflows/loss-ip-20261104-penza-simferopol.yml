@@ -1,3 +1,4 @@
+# Resume after owner confirmed warehouse replenishment.
 name: Authorized loss shipment Penza Simferopol
 on:
   push:

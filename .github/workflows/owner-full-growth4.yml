@@ -1,0 +1,123 @@
+name: Owner full cabinet growth review 4Nov
+on:
+  push:
+    paths: ['.github/workflows/owner-full-growth4.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-full-growth4
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+        run: |
+          PYTHONPATH=scripts:source python - <<'PY'
+          import json,copy,os
+          from datetime import datetime,timezone,date,timedelta
+          from china_price_apply import IO
+          from china_advertising_v2 import refresh_budget_context,history,event_time,http,stamp
+          from china_morning_readiness import current_prices,published_stock
+          from china_moysklad_read import read_stock
+          from china_advertising_economic_review import model_rows
+          from china_analytic_dialog import Analyst,reading
+          ROOT='china_agent:owner_full_growth_review:2026-11-04:v1'
+          io=IO()
+          if io.get(ROOT+':collection'):raise ValueError('Collection exists; no repeat')
+          s=refresh_budget_context(io,io.get('china_agent:advertising_source:2026-11-04:v2'),'2026-11-04')
+          class Work:
+           now=datetime.now(timezone.utc)
+           def get(self,k):return io.get(k)
+           def save(self,k,v,**kw):io.put(k,json.loads(json.dumps(v)))
+           def db(self,method,table,params=None):
+            from urllib.parse import urlencode
+            if method!='GET'or table!='analytics_snapshots':raise ValueError('Only own analytics reads')
+            return io.db(table+'?'+urlencode(params or{}))
+           def catalog(self):return [(str(r['nmID']),r['vendorCode'])for r in s['catalogue']['rows']]
+          w=Work();an=Analyst(w,dict(request_text='Полный разбор повышения и добавления рекламы по завершенным дням'),[])
+          with reading():own=an.live('products',[],'2026-10-05','2026-11-03')
+          ids=sorted({int(r['nmID'])for r in s['catalogue']['rows']})
+          # Fetch current catalogue price/stock in bounded batches; excluded products are never read as action candidates.
+          excluded={1473245494,1473245510,1473244000}
+          ids=[nm for nm in ids if nm not in excluded]
+          prices=current_prices(io,ids);pub=published_stock(io,prices,ids)
+          articles=list(dict.fromkeys(r['article']for r in prices['rows']))
+          stock=read_stock(articles)
+          own.update(period_from='2026-10-05',period_to='2026-11-03')
+          fx=next(e['fx_rub_per_cny']for e in s['economics']['rows'].values()if e.get('fx_date')=='2026-11-04')
+          econ=model_rows(dict(products=own,prices=prices,stock=stock,fx=dict(rub_per_cny=fx)),io.get('china_agent:new_ad_economics_policy:v1'),io.get('china_agent:expected_profit_delivery_model:v1'))
+          for nm,e in econ['rows'].items():e.update(published_stock=pub['amounts'].get(nm),published_stock_observed_at=pub['observed_at'],fx_rub_per_cny=fx,fx_date='2026-11-04')
+          # Fresh actual membership/settings and budgets. Completed stats remain the dated source.
+          current=http(io,'/api/advert/v2/adverts?ids='+','.join(map(str,s['ids'])))['adverts']
+          config=http(io,'/api/advert/v1/config')
+          active=[c for c in current if c['status']==9 and c['settings']['payment_type']=='cpc'and c['bid_type']=='manual']
+          budgets=http(io,'/api/advert/v2/budget','POST',dict(advertIds=[c['id']for c in active]))
+          changes=history(s['executions'])
+          ownmap={int(r['nm_id']):r for r in own['rows']}
+          members={n['nm_id']for c in current if c['status']in[9,11]for n in c['nm_settings']}
+          removed={x['nm']for x in changes if x['kind']=='excluded'}
+          rows=[];quoted={};quote_errors={}
+          for cp in active:
+           cid=cp['id'];zone='search'if cp['settings']['placements'].get('search')else'recommendations';typ='search'if zone=='search'else'recommendation'
+           candidates=[n['nm_id']for n in cp['nm_settings']if n['nm_id']not in excluded and econ['rows'].get(str(n['nm_id']),{}).get('expected_margin_before_ads_cny',-1)>0 and econ['rows'].get(str(n['nm_id']),{}).get('published_stock',0)>0]
+           if candidates:
+            try:quoted[str(cid)]=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=candidates,payment_type='cpc',placement_types=[typ]))
+            except Exception as ex:quote_errors[str(cid)]=str(ex)
+          # Broad non-advertised scan; no top12/top8 truncation, no zero/unknown own inputs.
+          new=[]
+          subjects={r['nmID']:r.get('subjectID')for r in s['catalogue']['rows']}
+          for nm in ids:
+           if nm in members or nm in removed:continue
+           e=econ['rows'].get(str(nm),{});o=ownmap.get(nm,{})
+           if e.get('expected_margin_before_ads_cny',-1)<=0 or e.get('published_stock',0)<=0 or e.get('stock_free',0)<=0 or e.get('sample_size',0)<5 or e.get('buyout_fallback'):continue
+           if o.get('is_payed',0)<3 or o.get('finished_orders',0)<5:continue
+           if not o.get('open_card_count')or o.get('funnel_orders_count',0)/o['open_card_count']<.005:continue
+           subject=o.get('subject_id')or subjects.get(nm)
+           targets=[c for c in active if c['settings']['placements'].get('recommendations')and {n['subject']['id']for n in c['nm_settings']}=={subject}and c.get('restrictions',{}).get('can_change_nms')and len(c['nm_settings'])<50]
+           if not targets:continue
+           # Prefer existing broad category campaign with budget and suitable category; deterministic actual campaign.
+           cp=min(targets,key=lambda c:c['id']);cid=cp['id']
+           try:
+            q=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=['recommendation']))
+            new.append(dict(nm_id=nm,campaign_id=cid,quote=q))
+           except Exception as ex:quote_errors['add:'+str(nm)]=str(ex)
+          value=dict(status='complete'if stock['coverage_complete']and not pub['missing_nm_ids']else'partial',cabinet='token_3',observed_at=stamp(),catalogue_count=len(s['catalogue']['rows']),screened_nm_ids=ids,excluded_nm_ids=sorted(excluded),own=own,prices=prices,published_stock=pub,stock=stock,economics=econ,campaigns=current,budgets=budgets,config=config,changes=changes,source=s,minimums=quoted,additions=new,quote_errors=quote_errors,wb_writes=0,telegram_calls=0,model_calls=0,grants_action_permission=False)
+          if not io.create(ROOT+':collection',json.loads(json.dumps(value))):raise ValueError('Concurrent collection')
+          if io.get(ROOT+':collection')!=json.loads(json.dumps(value)):raise ValueError('Normalized collection readback mismatch')
+          print('Full cabinet collected privately; no model/marketplace/Telegram writes')
+          PY

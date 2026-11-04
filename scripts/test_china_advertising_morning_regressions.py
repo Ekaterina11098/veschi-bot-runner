@@ -160,8 +160,8 @@ class BudgetClarityTests(unittest.TestCase):
   self.assertTrue(any('нехватка' in s.lower() for s in calls))
   visible=' '.join(' '.join(calls).split())
   self.assertNotIn('свежая собственная экономика',visible)
-  self.assertIn('после исполнения рекомендаций РК',visible)
-  self.assertIn('Рекомендовано 100 ¥',visible)
+  self.assertIn('Пока не пополнять',visible)
+  self.assertNotIn('после исполнения рекомендаций РК',visible)
   self.assertEqual(files[-1]['actions'],[]) # Owner4Nov: visible recommendations never create amount approvals
  def test_disabled_third_png_returns_before_data_generation(self):
   import china_agent_reports

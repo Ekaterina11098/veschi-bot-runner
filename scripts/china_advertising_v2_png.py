@@ -42,7 +42,8 @@ def budget_column(c):
  if c.get('owner_budget_refused'):return 'Пока не пополнять'
  amount=c.get('budget_reserve_amount')
  if amount is None:return 'Сумма не рассчитана'
- return 'Рекомендовано '+str(int(amount))+' ¥\nпосле исполнения рекомендаций РК'
+ if (c.get('budget_action')or{}).get('kind')=='topup_campaign'or c.get('budget_economics_status')=='positive':return ('Тест: пополнить на 'if (c.get('campaign_budget_economics')or{}).get('stress_after_ads_cny',0)<0 else'Пополнить на ')+str(int(amount))+' CNY.'
+ return 'Пока не пополнять.\nПоложительная экономика РК не подтверждена.'
 def _render_legacy(bundle):
  bundle=dict(bundle,campaigns=sorted([c for c in bundle['campaigns'] if not c.get('never_started')],key=lambda c:not any(r.get('action') for r in c.get('attention',[]))))
  W=2400;H=6500;xs=[44,355,650,870,1090,1700,2356];files=[]
@@ -145,7 +146,7 @@ def _render_legacy(bundle):
   if action:actions.append(action)
  if not selected:
   d.text((44,y),'У действующих РК нет расчётной нехватки по завершённым дням.',font=font(29),fill=INK);y+=55
- footer='Резерв на 3 дня = расход за 3 завершённых дня; нехватка = резерв − остаток. Сумма округлена вверх до 50 ¥, минимум WB '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. Пополнение — после исполнения рекомендаций РК. Подробные решения — в PNG рекомендаций.'
+ footer='Резерв на 3 дня = расход за 3 завершённых дня; нехватка = резерв − остаток. Сумма округлена вверх до 50 ¥, минимум WB '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. Пополнение — только после отдельной команды на готовую рекомендацию. Решения по РК — в рекламном PNG.'
  for line in wrap(d,footer,W-88,24):d.text((44,y+10),line,font=font(24),fill='#536b79');y+=32
  finish(im,y,'budgets',actions)
  for family in ['drr','budgets']:

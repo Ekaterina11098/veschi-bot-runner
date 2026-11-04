@@ -60,10 +60,20 @@ def attach_completed_evidence(bundle,source,changes):
     try:traffic={k:sum(float(number(r.get(f))) for r in member_rows) for k,f in [('spend','sum'),('orders','orders'),('amount','sum_price')]}
     except (ValueError,InvalidOperation,TypeError):traffic=None
    c['budget_members'].append(dict(nm=nm,first_full_day=first_full,economics=evidence,completed_traffic=traffic))
+ if source.get('full_growth_inputs'):
+  from china_budget_ready_model import attach as attach_campaign_model
+  out=attach_campaign_model(out,source,changes)
  return out
 
 def economics_review(c,days,observed):
  """Positive own model may support a small test; DRR alone never denies funding."""
+ campaign_model=c.get('campaign_budget_economics')
+ if campaign_model:
+  try:
+   if not 0<=(observed-instant(campaign_model['observed_at'])).total_seconds()<=24*3600:raise ValueError('Stale campaign model')
+   if campaign_model.get('period_to',days[-1])>days[-1]:raise ValueError('Incomplete campaign model day')
+   return campaign_model['status'],campaign_model['reason']
+  except (KeyError,ValueError,TypeError):return 'unknown','Нет свежей модели результата всей РК.'
  members=c.get('budget_members') or []
  if not members:return 'unknown','Не подтверждены текущий состав и экономика SKU.'
  missing=[];small=[];negative=[];waiting=[]
@@ -117,24 +127,23 @@ def apply(bundle,minimum_cny=100):
   state,reason=economics_review(c,days,observed)
   c['budget_economics_status']=state;c['budget_economics_reason']=reason
   label='ДРР завершённых дней не определена без суммы рекламных заказов. ' if revenue==0 else ''
-  decision='Резерв '+str(int(amount))+' ¥; согласовать продолжение теста.\n'+label+reason
+  decision='Пока не пополнять. '+label+reason
   zero_orders=spend>0 and period.get('orders')==0
   zero_members=[m['nm'] for m in c.get('budget_members',[]) if (m.get('completed_traffic') or {}).get('spend',0)>0 and m['completed_traffic'].get('orders')==0]
   zero_orders=zero_orders or bool(zero_members)
   over5=c['budget_drr'] is not None and c['budget_drr']>5
   approved=c.get('approved_test_risk_remaining_cny')
   bounded=type(approved) in (int,float) and math.isfinite(approved) and approved>0
-  blocked=(zero_orders or over5) and not (bounded and (not over5 or c.get('approved_drr_exception') is True))
+  campaign_positive=(c.get('campaign_budget_economics')or{}).get('status')=='positive'
+  blocked=(zero_orders or over5) and not campaign_positive and not (bounded and (not over5 or c.get('approved_drr_exception') is True))
   if blocked:
-   decision='Рекомендовано '+str(int(amount))+' ¥\nпосле исполнения рекомендаций РК\n'+label+reason
-   decision+=' Целевой потолок ДРР5%. '+('Есть расходы без заказов'+(' по SKU '+','.join(map(str,zero_members)) if zero_members else '')+': ' if zero_orders else 'ДРР завершённых дней выше5%: ')+'проверить экономику и рассмотреть снижение ставки или исключение SKU.'
-   c['budget_followup']=dict(status='conditional_after_campaign_recommendations',recommended_topup_amount_cny=int(amount),can_approve_amount_now=True,final_topup_amount_cny=None,requires_verified_campaign_changes=True,requires_fresh_balance_and_members=True,requires_remaining_sku_economics=True,requires_separate_confirmation=True,execution_authorized=False)
-   decision+=' Сумму можно согласовать сейчас. Пополнение — после WBverified исполнения рекомендаций РК и проверки свежего остатка/состава; если условия изменились, пересчитать сумму. Согласование суммы не подтверждает исполнение рекомендаций.'
+   decision='Пока не пополнять. '+label+reason
+   c['budget_followup']=dict(status='recommendation_only',requires_fresh_review=True,execution_authorized=False)
   if state=='positive' and not blocked:
    decision='Пополнить на '+str(int(amount))+' ¥\nЗапас на 3 дня. '+label+reason
    members=sorted({m['nm'] for m in c['budget_members']})
    if not out.get('view_only'):
-    c['budget_action']=dict(id='topup:'+str(c['id']),kind='topup_campaign',campaign_id=c['id'],amount_cny=int(amount),balance_before=float(balance),target_balance=float(balance+amount),status_before=9,nm_ids=members,basis=POLICY,completed_days=days)
+    c['budget_action']=dict(id='topup:'+str(c['id']),kind='topup_campaign',campaign_id=c['id'],amount_cny=int(amount),balance_before=float(balance),target_balance=float(balance+amount),status_before=9,nm_ids=members,basis=POLICY,completed_days=days,budget_evidence=copy.deepcopy(c.get('campaign_budget_economics')))
   c['budget_short_note']=decision;c['budget_recommendation']=decision
  return out
 

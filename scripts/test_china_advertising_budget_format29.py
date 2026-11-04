@@ -31,7 +31,7 @@ class ReserveTests(unittest.TestCase):
  def test_no_gap_hides_row_even_when_high_drr(self):
   c=apply(bundle(50,100,100))['campaigns'][0];self.assertFalse(c['budget_review_required']);self.assertIsNone(c['budget_action'])
  def test_high_completed_campaign_drr_has_explicit_reason(self):
-  c=apply(bundle(amount=1000))['campaigns'][0];self.assertTrue(c['budget_review_required']);self.assertIsNone(c['budget_action']);self.assertEqual(c['budget_drr'],50);self.assertIn('после исполнения рекомендаций РК',c['budget_short_note'])
+  c=apply(bundle(amount=1000))['campaigns'][0];self.assertTrue(c['budget_review_required']);self.assertIsNone(c['budget_action']);self.assertEqual(c['budget_drr'],50);self.assertIn('Пока не пополнять',c['budget_short_note'])
  def test_zero_orders_are_not_zero_drr(self):
   c=apply(bundle(amount=0))['campaigns'][0];self.assertIn('не определена',c['budget_short_note']);self.assertIsNone(c['budget_action'])
  def test_minimum_and_rounding(self):

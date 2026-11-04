@@ -8,7 +8,8 @@ def plan(io,day,f,index,slot=''):
  pid='daily-'+day+('-'+slot if slot else '')+'-'+f['family']+'-'+str(index);items=copy.deepcopy(f['actions'])
  p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='daily_ad_actions_v2',family=f['family'],created_at=datetime.now(timezone.utc).isoformat(),expires_at=(datetime.now(timezone.utc)+timedelta(hours=20)).isoformat(),items=items,plan_sha256=digest(items),report_message_ids=[],price_changes=False,auto_topup=False,period_to=day)
  raises=[x['growth_evidence']['observed_at'] for x in items if x.get('direction')in('raise','add') and x.get('growth_evidence')]
- if raises:p['expires_at']=min(datetime.fromisoformat(t)+timedelta(hours=2) for t in raises).isoformat()
+ anchors=raises+[x['budget_evidence']['observed_at']for x in items if x.get('budget_evidence')]
+ if anchors:p['expires_at']=min(datetime.fromisoformat(t)+timedelta(hours=2) for t in anchors).isoformat()
  k=PLAN+pid;old=io.get(k)
  if old:
   if old['plan_sha256']!=p['plan_sha256']:raise ValueError('Daily page plan changed')
@@ -149,6 +150,8 @@ def execute(io,a,p):
     path='/adv/v0/auction/nms';body=dict(nms=[dict(advert_id=cid,nms=dict(add=[item['nm_id']],delete=[]))])
    elif kind=='pause_campaign':path='/adv/v0/pause?id='+str(cid);method='GET';body=None
    elif kind=='topup_campaign':
+    from china_budget_ready_model import validate_funding
+    validate_funding(io,item,before)
     if str(cid) in (io.get('china_agent:budget_owner_policy:v1')or{}).get('do_not_fund',{}):raise ValueError('Owner forbids funding this campaign')
     b=budget(cid);state['before_budget']=b;state['after_budget']=b;save()
     if b>=item['target_balance']:state.update(status='verified',already_done=True,after=before);save();continue

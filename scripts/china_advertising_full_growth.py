@@ -66,7 +66,7 @@ def collect(io,s,day):
    v['campaigns']=http(io,'/api/advert/v2/adverts?ids='+','.join(map(str,s['ids'])))['adverts'];save()
   if 'budgets'not in v:
    active=[c['id']for c in v['campaigns']if c['status']==9]
-   v['budgets']=http(io,'/api/advert/v2/budget','POST',dict(advertIds=active));save()
+   v['budgets']=http(io,'/api/advert/v2/budget','POST',dict(advertIds=active));v['budgets_observed_at']=stamp();save()
   if 'config'not in v:v['config']=http(io,'/api/advert/v1/config');save()
   v.setdefault('minimums',{});v.setdefault('addition_quotes',{});v['quote_errors']={}
   for cp in v['campaigns']:
@@ -100,7 +100,12 @@ def collect(io,s,day):
  except Exception as ex:
   v.update(status='collecting',last_error=type(ex).__name__+': '+str(ex),last_attempt_at=stamp());save()
   raise PendingAdvertisingDay('Full cabinet growth inputs incomplete; staged read-only collection will resume')from ex
- out=copy.deepcopy(s);out['catalogue']=v.get('catalogue',s['catalogue']);out['economics']=v['economics']
+ out=copy.deepcopy(s);out['catalogue']=v.get('catalogue',s['catalogue']);out['economics']=v['economics'];out['observed_at']=v['observed_at']
+ current={c['id']:c for c in v['campaigns']};cash={r['advertId']:r for r in v['budgets']['adverts']}
+ for batch in out['batches'].values():
+  batch['campaigns']['adverts']=[current.get(cp['id'],cp)for cp in batch['campaigns']['adverts']]
+  batch['budgets']['adverts']=[cash.get(row['advertId'],row)for row in batch['budgets'].get('adverts',[])if row is not None]
+ out['budget_balance_observed_at_iso']=v.get('budgets_observed_at',v['observed_at'])
  out['morning_fresh_inputs']=dict(errors={},selected_nm_ids=ids,own_period=[str(first),str(end)],source_times={k:v[k]['observed_at']for k in['own','prices','stock']},wb_writes=0)
  out['full_growth_inputs']=v
  out['full_growth_review']=dict(status='complete',input_key=key,catalogue_count=v['catalogue_count'],current_price_count=len(v['prices']['rows']),missing_prices=v['prices']['missing'],missing_economics=v['economics']['missing'],missing_published_stock=v['published_stock']['missing_nm_ids'],observed_at=v['observed_at'])

@@ -134,9 +134,14 @@ def review_price(worker,draft,trace,force=False,core=None):
  core=core or Core()
  if not force and not active(core.db):return draft,trace
  rows,tables,plain=price_parts(draft)
- data=dict(report_day=str(worker.day),mode=getattr(worker,'mode',worker.audit.get('mode')),draft_evidence=draft,rows=rows,audit={k:worker.audit[k] for k in ['mode','source_blocker','errors','source_snapshot_id','source_collected_at','calculated_at'] if k in worker.audit},
-  evidence_scope='Exact prevalidated draft rows; large raw acquisition/context omitted to reduce API cost',
-  instruction='Сформулируй собственный краткий вывод; выбери исходные строки с достаточными основаниями. Не меняй их числа/товары/цены. Если продажа держится — цену сохранить. Нет закрытой экономики — не выдавай готовое изменение. Не дополняй сегодня сравнением полного вчера. Summary без чисел/новых цен, конкретные проверенные данные только в выбранных исходных строках.')
+ from china_price_evidence import price_evidence
+ source=price_evidence(worker)
+ source_key='china_agent:price_evidence:v1:'+str(worker.day)+':'+str(getattr(worker,'mode',worker.audit.get('mode')))+':'+digest(source)
+ worker.save(source_key,source)
+ worker.audit['price_evidence']=dict(source_key=source_key,status=source['status'],financial_rows=len(source['financial_rows']),settled_cohort_profit_status=source['settled_cohort_profit_status'])
+ data=dict(completed_source=source,report_day=str(worker.day),mode=getattr(worker,'mode',worker.audit.get('mode')),draft_evidence=draft,rows=rows,audit={k:worker.audit[k] for k in ['mode','source_blocker','errors','source_snapshot_id','source_collected_at','calculated_at'] if k in worker.audit},
+  evidence_scope='Exact prevalidated actionable draft rows plus structured completed-period financial evidence. No draft candidates does not mean no source data. Reported MPStats profit is not settled cohort profit.',
+  instruction='Сформулируй собственный краткий вывод; выбери исходные строки с достаточными основаниями. Не меняй их числа/товары/цены. Если продажа держится — цену сохранить. Отдельно оцени наличие дневных заказов, отчётной экономики завершённого периода и окончательно закрытой прибыли когорты. Не называй отсутствующими переданные financial_rows. Нет закрытой экономики — не выдавай готовое изменение. Не дополняй сегодня сравнением полного вчера. Summary без чисел/новых цен, конкретные проверенные данные только в выбранных исходных строках.')
  def validate(v):
   if v.get('kind')!='price_review' or not isinstance(v.get('keep_rows'),list)or len(set(v['keep_rows']))!=len(v['keep_rows'])or any(x not in rows for x in v['keep_rows']):raise ValueError('Price rows changed/outside evidence')
   if not isinstance(v.get('summary'),str)or not 0<len(v['summary'])<=650 or re.search(r'\d|[¥₽→]',v['summary']):raise ValueError('Price summary must not invent actionable numbers')

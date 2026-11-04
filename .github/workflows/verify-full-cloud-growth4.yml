@@ -1,0 +1,75 @@
+name: Verify permanent full cloud morning growth pipeline
+on:
+  push:
+    paths: ['.github/workflows/verify-full-cloud-growth4.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-verify-full-cloud-growth4
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0 python-dotenv simplejson==4.2.0 openai==3.42.1
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: disabled
+          MOYSKLAD_API_TOKEN: disabled
+          MPSTATS_API_TOKEN: disabled
+          CHINA_TELEGRAM_BOT_TOKEN: disabled
+        run: |
+          PYTHONPATH=scripts:source python - <<'PY'
+          import json,copy,pathlib
+          from china_cloud_cost_control import Cache
+          from china_advertising_full_growth import collect
+          from unittest.mock import patch
+          c=Cache();p=c.get('china_agent:owner_full_growth_review:2026-11-04:v1:collection')
+          if not p or p['catalogue_count']!=315:raise ValueError('Private recorded proof absent')
+          v={k:copy.deepcopy(x)for k,x in p.items()if k not in['source','changes']}
+          v['fx']=dict(rub_per_cny=12.1816);v['addition_candidates']=[]
+          fixture=dict(v=v,changes=p['changes'],period_to='2026-11-03',batches=p['source']['batches'])
+          pathlib.Path('scripts/full-growth-fixture.json').write_text(json.dumps(fixture),encoding='utf-8')
+          class Fake:
+           def __init__(self):self.d={'china_agent:advertising_full_growth:2026-11-04:v1:inputs':copy.deepcopy(v)}
+           def get(self,k):return copy.deepcopy(self.d.get(k))
+           def put(self,k,x):self.d[k]=copy.deepcopy(x)
+           def create(self,k,x):
+            if k in self.d:return False
+            self.put(k,x);return True
+          with patch('requests.request',side_effect=AssertionError('No live API in verifier')),patch('requests.get',side_effect=AssertionError('No live API in verifier')),patch('requests.post',side_effect=AssertionError('No live API in verifier')):
+           result=collect(Fake(),copy.deepcopy(p['source']),'2026-11-04')
+          if result['full_growth_review']['catalogue_count']!=315:raise ValueError('Whole catalogue scope lost')
+          if result['full_growth_review']['current_price_count']!=310:raise ValueError('Unavailable prices not preserved')
+          print('Recorded full-cabinet stage resume verified; zero WB/Telegram/model calls')
+          PY
+      - name: Existing advertising regressions and exact mutation simulations
+        run: PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_advertising_*.py'

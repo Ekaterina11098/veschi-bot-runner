@@ -30,7 +30,7 @@ def model_rows(inputs,policy,delivery):
    out[str(nm)]=dict(observed_at=inputs['products']['observed_at'],own_cogs_rub=cost,seller_revenue_rub=price*fx,seller_price_cny=price,
     stock_free=free,stock_observed_at=inputs['stock']['observed_at'],price_observed_at=inputs['prices']['observed_at'],
     expected_margin_before_ads_cny=before,owner_strategy_review=True,buyout=q,sample_size=b['sample_size'],sample_reliable=b['sample_size']>=20,
-    commission_pct=fee,commission_policy_fallback=fee_fallback,buyout_fallback=b['source']=='fallback',logistics_cny=log['delivery_cny'],logistics_historical=True,
+    commission_pct=fee,tax_pct=policy['tax_pct'],handling_rub=policy['handling_rub'],commission_policy_fallback=fee_fallback,buyout_fallback=b['source']=='fallback',logistics_cny=log['delivery_cny'],logistics_historical=True,
     period_from=inputs['products']['period_from'],period_to=inputs['products']['period_to'],source_ids=['own_buyout','seller_price_CNY','MSK_stock_reserve_COGS','CBR','historical_logistics'],
     unknown_reverse_and_shared_costs=True,preliminary=True)
   except (KeyError,ValueError,TypeError,ZeroDivisionError) as ex:missing[str(nm)]=str(ex)

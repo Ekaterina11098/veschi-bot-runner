@@ -55,6 +55,11 @@ def main():
    caption=('ИП · рекомендации за '+view['period']+'. Ответьте «Сделай всё» на этот PNG, чтобы применить только новые перечисленные действия. Ранее согласованные изменения не повторяются.' if contract['actions'] else 'ИП · отчёт за '+view['period']+'. Новых готовых команд нет.') if image['kind']=='drr' else ('Бюджеты · отчёт '+view['observed_day']+' · время МСК. Срок условный, по расходу '+view['period']+'.')
    messages.append(dict(kind=image['kind'],text=json.dumps(dict(path=image['path'],caption=caption,sha256=hashlib.sha256(Path(image['path']).read_bytes()).hexdigest()),ensure_ascii=False)))
   report['messages']=messages
+  report['new_action_count']=len(contract['actions'])
+  report['review_coverage']=contract.get('review_coverage')
+  if os.environ.get('IP_DAILY_FORMAT_PREVIEW_ONLY')=='true':
+   report.update(business_status='complete',notification_status='saved_preview_only_no_claims_no_telegram')
+   return report
   plan_key,plan=freeze_plan(store,contract,json.loads(messages[0]['text'])['sha256'])
   last=[None]
   def send(chat,text):
@@ -88,4 +93,3 @@ def main():
  return report
 if __name__=='__main__':
  if main()['business_status']!='complete':raise SystemExit(1)
-

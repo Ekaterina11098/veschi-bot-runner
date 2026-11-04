@@ -64,7 +64,7 @@ def run_owner():
     step=dict(status='submitting',path=path,body=body,submitted_at=stamp());state['steps'][name+str(attempt)]=step;state['wb_write_attempts']+=1;save()
     try:
      response=t.raw(HOST+path,{'Authorization':t.token,'Content-Type':'application/json','User-Agent':'python-requests/2.32.5'},'PATCH',body)
-     step.update(status='accepted',response=response,accepted_at=stamp());state['wb_accepted_requests']+=1;save();return
+     step.update(status='accepted',response=response,accepted_at=stamp());state['wb_accepted_requests']+=1;save();return response
     except urllib.error.HTTPError as e:
      step.update(status='rejected',http_status=e.code);save();retry=e.headers.get('Retry-After') or e.headers.get('X-Ratelimit-Retry') or e.headers.get('X-Ratelimit-Reset')
      if e.code==429 and retry and attempt<3:
@@ -80,15 +80,13 @@ def run_owner():
     adds.setdefault(a['campaign'],[]).append(a['nm']);bids.setdefault(a['campaign'],[]).append(dict(nm_id=a['nm'],placement=a['placement'],bid_kopecks=a['target_bid_minor']))
    else:bids.setdefault(a['campaign'],[]).append(dict(nm_id=a['nm'],placement=a['placement'],bid_kopecks=a['target_bid_minor']))
   if removals or adds:
-   write('membership','/adv/v0/auction/nms',{'nms':[dict(advert_id=cid,nms=dict(add=sorted(adds.get(cid,[])),delete=sorted(removals.get(cid,[])))) for cid in sorted(set(removals)|set(adds))]})
-   stage=t.configs(ids);read_time=time.time();intermediate=copy.deepcopy(before)
-   for cid,nms in removals.items():intermediate[str(cid)]['nm_settings']=[n for n in intermediate[str(cid)]['nm_settings'] if n['nm_id'] not in nms]
-   for cid,nms in adds.items():
-    for nm in nms:
-     matches=[n for n in stage[str(cid)]['nm_settings'] if n['nm_id']==nm];target=next(n for n in expected[str(cid)]['nm_settings'] if n['nm_id']==nm)
-     if len(matches)!=1 or matches[0]['subject']!=target['subject']:raise ValueError('Addition/category not verified')
-     intermediate[str(cid)]['nm_settings'].append(copy.deepcopy(matches[0]))
-   if any(projection(stage[k])!=projection(intermediate[k]) for k in stage):raise ValueError('Removal readback differs; no bid changes')
+   if adds:raise PermissionError('Owner scope contains no additions')
+   response=write('membership','/adv/v0/auction/nms',{'nms':[dict(advert_id=cid,nms=dict(add=[],delete=sorted(removals[cid]))) for cid in sorted(removals)]})
+   acknowledged={int(c['advert_id']):set(c['nms']['deleted']) for c in response.get('nms',[]) if not c['nms'].get('added')}
+   if acknowledged!={cid:set(nms) for cid,nms in removals.items()}:raise ValueError('Exact removal acknowledgment incomplete; do not send bids')
+   stage=copy.deepcopy(before)
+   for cid,nms in removals.items():stage[str(cid)]['nm_settings']=[n for n in stage[str(cid)]['nm_settings'] if n['nm_id'] not in nms]
+   state['exact_removal_acknowledged']=True;save()
   if bids:write('bids','/api/advert/v1/bids',{'bids':[dict(advert_id=cid,nm_bids=nms) for cid,nms in sorted(bids.items())]})
   after=t.configs(ids);verified=all(projection(after[k])==projection(expected[k]) for k in expected)
   state.update(after=after,readback_at=stamp(),status='verified' if verified else 'attention_readback');save()

@@ -95,7 +95,7 @@ jobs:
           articles=list(dict.fromkeys(r['article']for r in prices['rows']))
           stock=read_stock(articles)
           own.update(period_from='2026-10-05',period_to='2026-11-03')
-          fx=next(e['fx_rub_per_cny']for e in s['economics']['rows'].values()if e.get('fx_date')=='2026-11-04')
+          fx=next(e['fx_rub_per_cny']for e in io.get('china_agent:advertising_source:2026-11-04:v2')['economics']['rows'].values()if e.get('fx_date')=='2026-11-04')
           econ=model_rows(dict(products=own,prices=prices,stock=stock,fx=dict(rub_per_cny=fx)),io.get('china_agent:new_ad_economics_policy:v1'),io.get('china_agent:expected_profit_delivery_model:v1'))
           for nm,e in econ['rows'].items():e.update(published_stock=pub['amounts'].get(nm),published_stock_observed_at=pub['observed_at'],fx_rub_per_cny=fx,fx_date='2026-11-04')
           # Fresh actual membership/settings and budgets. Completed stats remain the dated source.

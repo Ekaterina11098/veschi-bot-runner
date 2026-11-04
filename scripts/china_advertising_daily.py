@@ -7,6 +7,9 @@ from china_advertising_delivery import deliver,telegram_sender
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
  local=datetime.now(ZoneInfo('Europe/Moscow'));day=local.date().isoformat();io=IO()
+ review=io.get('china_agent:owner_full_growth_review:'+day+':v1') or {}
+ if review.get('hold_delivery_until_reviewed') is True and review.get('status') not in ['reviewed','included']:
+  print(json.dumps(dict(status='waiting_owner_requested_full_growth_review',day=day,telegram_calls=0,wb_writes=0)));return
  prepare_only=local.hour*60+local.minute<450 or os.environ.get('CHINA_AD_PREPARE_ONLY')=='true'
  manual=io.get('china_agent:advertising_manual_delivery:'+day+':v1') or {}
  manual_ok=manual.get('owner_user_id')==5122667182 and manual.get('source_channel')=='codex' and manual.get('report_day')==day and manual.get('authorized') is True and datetime.now().timestamp()<datetime.fromisoformat(manual.get('expires_at','1970-01-01T00:00:00+00:00')).timestamp()

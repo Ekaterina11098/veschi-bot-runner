@@ -117,7 +117,7 @@ def _render_weekly_drr(bundle,outdir):
  for line in wrap(foot,font(28),W-PAD*2):d.text((PAD,y),line,font=font(28),fill=MUTED);y+=38
  im.crop((0,0,W,y+36)).save(Path(outdir)/'drr.png','PNG',optimize=True)
 
-def render_daily_png(view,outdir):
+def render_daily_png(view,outdir,page_size=12):
  """Same approved design, dynamic dates, up to 12 campaigns per image."""
  import copy,math
  from datetime import datetime
@@ -132,14 +132,11 @@ def render_daily_png(view,outdir):
   rows.append(c)
  if not rows:raise ValueError('No approved campaign scope')
  root=Path(outdir);artifacts={'drr':[],'budgets':[]}
- for i in range(0,len(rows),12):
+ for i in range(0,len(rows),page_size):
   known=[c['spend'] for c in rows if c.get('metrics_complete') and isinstance(c.get('spend'),(int,float))]
   label='Расход всех РК' if len(known)==len(rows) else 'Известный расход (данные неполные)'
-  paths=_render_page(dict(period=view['period'],observed_day=view['observed_day'],campaigns=rows[i:i+12],total_spend=sum(known) if known else None,total_spend_label=label,weekly_period_from=view.get('weekly_period_from'),weekly_period_to=view.get('weekly_period_to'),weekly_total_spend=sum(c['weekly_spend'] for c in rows if c.get('weekly_spend') is not None) if any(c.get('weekly_spend') is not None for c in rows) else None,weekly_total_complete=all(c.get('weekly_spend') is not None for c in rows)),root/str(i//12+1))
+  paths=_render_page(dict(period=view['period'],observed_day=view['observed_day'],campaigns=rows[i:i+page_size],total_spend=sum(known) if known else None,total_spend_label=label,weekly_period_from=view.get('weekly_period_from'),weekly_period_to=view.get('weekly_period_to'),weekly_total_spend=sum(c['weekly_spend'] for c in rows if c.get('weekly_spend') is not None) if any(c.get('weekly_spend') is not None for c in rows) else None,weekly_total_complete=all(c.get('weekly_spend') is not None for c in rows)),root/str(i//page_size+1))
   for kind,path in zip(('drr','budgets'),paths):artifacts[kind].append(dict(kind=kind,path=path))
  return artifacts['drr']+artifacts['budgets']
 if __name__=='__main__':print(json.dumps(render_daily_png(json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')),sys.argv[2])))
-
-
-
 

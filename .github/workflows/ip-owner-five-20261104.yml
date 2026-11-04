@@ -1,0 +1,37 @@
+name: Apply exact five IP owner changes Nov4
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ip-owner-five-20261104.yml']
+permissions:
+  contents: read
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 16afa2fe27eab706fb61ffe11845c89556a7961f
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            ip_owner_five_20261104.py
+            ip_daily_png_apply.py
+            ip_daily_png_contract.py
+            ip_apply_nine_20261103.py
+            ip_bags_growth_20261104.py
+            advertising_daily_png.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Dated owner five only, batch writes and verify all results
+        run: python ip_owner_five_20261104.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'

@@ -46,7 +46,17 @@ jobs:
           import re
           ref=call(sb+"/rest/v1/telegram_api_cache?cache_key=eq.maya_cycle:create_result:20261104&select=payload",sh)[0]["payload"]
           assert ref["status"]=="complete" and len(ref["products"])==18
-          out={"run_id":os.environ["GITHUB_RUN_ID"],"status":"in_progress","products":[]}
+          all_products=[]
+          for archived in ("false","true"):
+           offset=0
+           while True:
+            page=call(base+"entity/product?"+urllib.parse.urlencode({"filter":"archived="+archived,"limit":1000,"offset":offset}),mh)
+            all_products.extend(page["rows"]);offset+=len(page["rows"])
+            if offset>=page["meta"]["size"]:break
+            if not page["rows"] or offset>20000:raise RuntimeError("Incomplete code preflight")
+          def normalize_code(value):
+           return str(value or "").strip().lower().lstrip("0")
+          out={"run_id":os.environ["GITHUB_RUN_ID"],"status":"in_progress","products":[],"conflicts":[]}
           def save():
            stamp=datetime.datetime.now(datetime.timezone.utc).isoformat()
            h=dict(sh);h["Prefer"]="resolution=merge-duplicates,return=minimal"
@@ -58,11 +68,14 @@ jobs:
            numbers=re.findall(r"[0-9]+",p["name"])
            assert len(numbers)==1 and p["name"].lower().startswith("сумка")
            code=numbers[0]+"с"
+           collisions=[q for q in all_products if q["id"]!=p["id"] and normalize_code(q.get("code"))==normalize_code(code)]
+           if collisions:
+            out["conflicts"].append({"article":p["article"],"requested_code":code,"existing":[{"id":q["id"],"article":q.get("article"),"name":q["name"],"code":q.get("code"),"archived":q.get("archived")} for q in collisions]});save();continue
            old=p.get("code")
            call(base+"entity/product/"+p["id"],mh,"PUT",{"code":code})
            v=call(base+"entity/product/"+p["id"],mh)
            assert v["code"]==code and v["article"]==p["article"] and v["name"]==p["name"]
            assert v.get("barcodes",[])==p.get("barcodes",[]) and v.get("description")==p.get("description")
            out["products"].append({"article":p["article"],"id":p["id"],"before":old,"code":code,"verified":True});save()
-          out["status"]="complete";save()
+          out["status"]="complete" if not out["conflicts"] else "partial_conflicts";save()
           print("Product code correction verified. Other product fields preserved.")

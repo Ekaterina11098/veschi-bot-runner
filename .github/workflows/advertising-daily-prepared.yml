@@ -41,7 +41,7 @@ jobs:
           ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
           IP_FINANCIAL_RISK_NOTIFICATIONS: 'false'
           IP_LIMITED_ANALYSIS_PUBLISH: 'true'
-          IP_LIMITED_TELEGRAM_DELIVERY: 'true'
+          IP_LIMITED_TELEGRAM_DELIVERY: 'false'
           ADVERTISING_EXECUTION_ENABLED: 'false'
           SUPABASE_EGRESS_OPTIMIZED: 'true'
       - uses: actions/upload-artifact@v4

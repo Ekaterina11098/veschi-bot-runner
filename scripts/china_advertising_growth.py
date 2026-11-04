@@ -176,5 +176,13 @@ def validate_raise(io,item,before):
  if g['vendorCode']!=item['article']or g['currencyIsoCode4217']!='CNY' or {z['discountedPrice']for z in g['sizes']}!={e['price_cny']}:raise ValueError('Raise price changed')
  sizes=[z['sizeID']for z in g['sizes']];rr=requests.post('https://marketplace-api.wildberries.ru/api/v3/stocks/2126188',headers={'Authorization':io.token},json={'chrtIds':sizes},timeout=40);rr.raise_for_status();stock=rr.json()['stocks']
  if {z['chrtId']for z in stock}!=set(sizes)or sum(z['amount']for z in stock)<=0:raise ValueError('Raise stock unavailable')
+ if e.get('manual_strategy_proposal'):
+  from china_moysklad_read import read_stock
+  current=read_stock([item['article']])
+  if not current['coverage_complete']:raise ValueError('Raise MSK stock/COGS unavailable')
+  st=current['rows'][0]
+  if st['stock']-st['reserve']<=0 or not st.get('price')or st['price']<=0:raise ValueError('Raise MSK stock or COGS unknown')
+  delta=e['buyout']*(st['price']/100-e['own_cogs_rub'])/e['fx_rub_per_cny']
+  if e['stress_margin_before_ads_cny']-delta<=e['modeled_cpa_same_cr']*1.25:raise ValueError('Raise current COGS no longer supports reviewed stress economics')
 
 

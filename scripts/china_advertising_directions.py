@@ -23,11 +23,11 @@ def attach(bundle,source):
  for c in out['campaigns']:
   if c['status']!=9:continue
   for r in c.get('focus',[]):
-   a=r.get('action')or{};kind=a.get('kind');key='exclude'if kind=='ad_exclude_sku'else'raise'if kind=='ad_set_bid'and a.get('target_minor',0)>a.get('old_minor',0)else'reduce'if kind=='ad_set_bid'else None
+   a=r.get('action')or{};kind=a.get('kind');key='add'if kind=='ad_add_sku'else'exclude'if kind=='ad_exclude_sku'else'raise'if kind=='ad_set_bid'and a.get('target_minor',0)>a.get('old_minor',0)else'reduce'if kind=='ad_set_bid'else None
    if not key:continue
    signature=(key,c['id'],r['nm'])
    if signature in seen:continue
-   seen.add(signature);sections[key]['rows'].append(dict(article=r['article'],campaign_id=c['id'],decision=r['decision'],action=a,period=r.get('period'),economics=r.get('economics')or{},ready=True))
+   seen.add(signature);sections[key]['rows'].append(dict(article=r['article'],campaign_id=c['id'],decision=r['decision'],action=a,period=r.get('period'),economics=r.get('economics')or{},ready=True,nm_id=a.get('nm_id'),target_minor=a.get('target_minor'),bid_verified=a.get('exact_addition_quote')is True))
  scan=source.get('addition_scan')or{};labels={r['nmID']:r['vendorCode']for r in source['catalogue']['rows']}
  growth=out.get('growth_review')or{}
  if growth.get('status')=='blocked':sections['raise'].update(status='unavailable',note='Подбор повышений не завершён: '+str(growth.get('reason','неполные данные'))+'. Это не отсутствие кандидатов.')
@@ -35,6 +35,7 @@ def attach(bundle,source):
  else:
   sections['add']['period']=[scan['period_from'],scan['period_to']]
   for nm in scan.get('candidate_ids',[]):
+   if any(r.get('nm_id')==nm and r.get('ready') for r in sections['add']['rows']):continue
    e=(source.get('economics',{}).get('rows')or{}).get(str(nm))or{}
    if e and isinstance(e.get('stock_free'),(int,float)) and e['stock_free']<=0:continue
    if not e or e.get('expected_margin_before_ads_cny')is None:
@@ -68,8 +69,8 @@ def campaign_table(bundle):
    if not c or c['status']!=9:continue
    a=r.get('action')or{}
    if key=='add':
-    if r.get('bid_verified')is not True or type(r.get('target_minor'))is not int:continue
-    text='Добавить · ставка '+str(r['target_minor']/100)+' CNY.'
+    if r.get('ready')is not True or r.get('bid_verified')is not True or type(r.get('target_minor'))is not int:continue
+    text=('Тест: добавить'if a.get('manual_experiment')else'Добавить')+' · ставка '+str(r['target_minor']/100)+' CNY.'
    elif key=='exclude':text='Исключить из РК.'
    else:text=(('Тест: повысить'if a.get('manual_experiment')else'Повысить')if key=='raise'else'Снизить')+' '+str(a['old_minor']/100)+' → '+str(a['target_minor']/100)+' CNY.'
    c['direction_recommendations'].append(r['article']+': '+text)

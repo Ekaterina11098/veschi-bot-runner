@@ -513,7 +513,8 @@ def prepare(io,day):
  # Query minima only for existing products with a meaningful signal, on their actual campaign/placement.
  rough=build(s)
  from china_morning_readiness import enrich_economics
- s=enrich_economics(io,s,rough,day)
+ from china_advertising_full_growth import enabled as full_growth_enabled,collect as collect_full_growth
+ s=collect_full_growth(io,s,day) if full_growth_enabled(io) else enrich_economics(io,s,rough,day)
  save(io,'china_agent:advertising_source:'+day+':v2',s)
  for c in rough['campaigns']:
   ids=[r['nm'] for r in c['focus'] if not r.get('pending_first_day') and 'Выполнено.' not in r['decision']]
@@ -529,21 +530,25 @@ def prepare(io,day):
   if returned!=set(ids):raise ValueError('Incomplete campaign minima')
  from china_advertising_cards import enhance
  # Exact non-member quotes are required before an addition appears in the PNG.
- s['addition_bid_quotes']={};s['addition_quote_errors']={}
- for nm in s.get('addition_candidate_ids',[]):
-  cid=(s.get('addition_targets')or{}).get(str(nm))
-  if not cid:continue
-  try:
-   response=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=['recommendation']))
-   quotes=[bid['value'] for row in response.get('bids',[])if row.get('nm_id')==nm for bid in row.get('bids',[])if bid.get('type')=='recommendation'and bid.get('currency')=='CNY']
-   if len(quotes)!=1 or type(quotes[0])is not int or quotes[0]<=0 or quotes[0]%s['config']['cpcStep']:raise ValueError('Exact addition bid unconfirmed')
-   s['addition_bid_quotes'][str(nm)]=dict(campaign_id=cid,target_minor=quotes[0],bid_verified=True,observed_at=stamp())
-  except Exception as ex:s['addition_quote_errors'][str(nm)]=type(ex).__name__
+ if not s.get('full_growth_inputs'):
+  s['addition_bid_quotes']={};s['addition_quote_errors']={}
+  for nm in s.get('addition_candidate_ids',[]):
+   cid=(s.get('addition_targets')or{}).get(str(nm))
+   if not cid:continue
+   try:
+    response=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=['recommendation']))
+    quotes=[bid['value'] for row in response.get('bids',[])if row.get('nm_id')==nm for bid in row.get('bids',[])if bid.get('type')=='recommendation'and bid.get('currency')=='CNY']
+    if len(quotes)!=1 or type(quotes[0])is not int or quotes[0]<=0 or quotes[0]%s['config']['cpcStep']:raise ValueError('Exact addition bid unconfirmed')
+    s['addition_bid_quotes'][str(nm)]=dict(campaign_id=cid,target_minor=quotes[0],bid_verified=True,observed_at=stamp())
+   except Exception as ex:s['addition_quote_errors'][str(nm)]=type(ex).__name__
  save(io,'china_agent:advertising_source:'+day+':v2',s)
  from china_advertising_growth import enrich
  from china_advertising_economic_review import apply as economic_review
- result=economic_review(enrich(io,s,enhance(build(s,minimums),s)),s,minimums)
- if s.get('morning_fresh_inputs',{}).get('errors') or result.get('economic_review_blockers'):
+ result=economic_review(enhance(build(s,minimums),s),s,minimums) if s.get('full_growth_inputs') else economic_review(enrich(io,s,enhance(build(s,minimums),s)),s,minimums)
+ if s.get('full_growth_inputs'):
+  from china_advertising_full_growth import enrich as full_growth_review
+  result=full_growth_review(io,s,result)
+ if s.get('morning_fresh_inputs',{}).get('errors') or result.get('economic_review_blockers') and not s.get('full_growth_inputs'):
   from china_morning_readiness import PendingAdvertisingDay
   raise PendingAdvertisingDay('Recommendation inputs incomplete; preserve source and retry instead of freezing an unfinished report')
  from china_advertising_directions import attach

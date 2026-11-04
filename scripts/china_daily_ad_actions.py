@@ -7,7 +7,7 @@ EXEC='china_agent:daily_ad_execution:v2:'
 def plan(io,day,f,index,slot=''):
  pid='daily-'+day+('-'+slot if slot else '')+'-'+f['family']+'-'+str(index);items=copy.deepcopy(f['actions'])
  p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='daily_ad_actions_v2',family=f['family'],created_at=datetime.now(timezone.utc).isoformat(),expires_at=(datetime.now(timezone.utc)+timedelta(hours=20)).isoformat(),items=items,plan_sha256=digest(items),report_message_ids=[],price_changes=False,auto_topup=False,period_to=day)
- raises=[x['growth_evidence']['observed_at'] for x in items if x.get('direction')=='raise' and x.get('growth_evidence')]
+ raises=[x['growth_evidence']['observed_at'] for x in items if x.get('direction')in('raise','add') and x.get('growth_evidence')]
  if raises:p['expires_at']=min(datetime.fromisoformat(t)+timedelta(hours=2) for t in raises).isoformat()
  k=PLAN+pid;old=io.get(k)
  if old:
@@ -44,6 +44,7 @@ def handle(w,job):
  if p.get('invalidated_at'):return ('План этого PNG отозван после проверки: '+p.get('invalidation_reason','нужен свежий план')+'. Изменения не выполняю.',[])
  if p.get('visible_from') and datetime.fromisoformat(job['created_at'])<datetime.fromisoformat(p['visible_from']):return ('PNG обновлён после этого подтверждения. Ответьте на обновлённый отчёт ещё раз.',[])
  if not p['items']:return ('В этом PNG нет новых действий. Уже выполненное и наблюдение повторно не запускаю.',[])
+ if any(x.get('kind')=='approve_budget_reserve'for x in p['items']):return ('В этом PNG только рекомендации по резерву. Условное согласование сумм отменено; для пополнения нужен готовый расчёт и отдельная команда.',[])
  a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)
  w.save(APPROVAL+str(job['id']),a,insert=True)
  conditional=sum(x.get('kind')=='approve_budget_reserve' for x in p['items'])
@@ -78,6 +79,23 @@ def execute(io,a,p):
    b=budget(cid);state['after_budget']=b
    return after['settings']==before['settings'] and after['status']==9 and b>=state['before_budget']+item['amount_cny']-2
   if kind=='pause_campaign':return after['status']==11 and after['settings']==before['settings'] and after['nm_settings']==before['nm_settings']
+  if kind=='ad_add_sku':
+   old={n['nm_id']:n for n in before['nm_settings']};actual={n['nm_id']:n for n in after['nm_settings']};nm=item['nm_id']
+   if set(actual)!=set(old)|{nm}or any(actual[k]!=v for k,v in old.items())or after['status']!=before['status']or after['settings']!=before['settings']:return False
+   added=actual[nm]
+   if added['subject']['id']!=item['subject_id']or any(v!=0 for z,v in added['bids_kopecks'].items()if z!=item['placement']):return False
+   if added['bids_kopecks'].get(item['placement'])!=item['target_minor']:
+    # Journal the approved second mutation before submitting; never replay an uncertain bid.
+    if state.get('bid_phase'):return False
+    if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']):return False
+    state['bid_phase']='submitting';save()
+    try:
+     request=dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=nm,placement=item['placement'],bid_kopecks=item['target_minor'])])])
+     state['bid_response']=req('/api/advert/v1/bids','PATCH',request);e['wb_writes']+=1;state['bid_phase']='accepted';save()
+    except Exception:
+     state['bid_phase']='uncertain';save();raise
+    return False
+   return True
   expected=copy.deepcopy(before['nm_settings'])
   if kind=='ad_exclude_sku':expected=[n for n in expected if n['nm_id']!=item['nm_id']]
   else:
@@ -98,15 +116,7 @@ def execute(io,a,p):
   try:
    if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']):raise ValueError('Plan expired')
    cid=item['campaign_id']
-   if item['kind']=='approve_budget_reserve':
-    policy=io.get('china_agent:budget_owner_policy:v1')or{}
-    if str(cid) in policy.get('do_not_fund',{}):raise ValueError('Owner forbids funding this campaign')
-    pending_key='china_agent:budget_amount_approval:v1:'+p['plan_id']+':'+str(cid)
-    record=dict(status='approved_pending_conditions',campaign_id=cid,amount_cny=item['amount_cny'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],approval=a,conditions=item,created_at=datetime.now(timezone.utc).isoformat(),wb_writes=0)
-    prior=io.get(pending_key)
-    if not prior and not io.create(pending_key,record):raise ValueError('Concurrent reserve approval')
-    if prior and (prior.get('amount_cny')!=item['amount_cny'] or prior.get('plan_sha256')!=p['plan_sha256']):raise ValueError('Reserve approval scope changed')
-    state.update(status='approved_pending_conditions',approval_key=pending_key,reason=item.get('conditions_reason','Нужна проверка условий'));save();continue
+   if item['kind']=='approve_budget_reserve':raise ValueError('Условное согласование суммы резерва отменено владельцем; нужен готовый расчёт пополнения и новая команда')
    before=campaign(cid);state['before']=before;save()
    if before['status']!=9:raise ValueError('Campaign no longer active')
    kind=item['kind'];method='PATCH'
@@ -129,6 +139,14 @@ def execute(io,a,p):
     else:
      if len(before['nm_settings'])<=1 or not before.get('restrictions',{}).get('can_change_nms'):raise ValueError('Exclusion would empty campaign or is not permitted')
      path='/adv/v0/auction/nms';body=dict(nms=[dict(advert_id=cid,nms=dict(add=[],delete=[item['nm_id']]))])
+   elif kind=='ad_add_sku':
+    from china_advertising_full_growth import validate_addition
+    present=next((n for n in before['nm_settings']if n['nm_id']==item['nm_id']),None)
+    if present:
+     if present['bids_kopecks'].get(item['placement'])!=item['target_minor']:raise ValueError('Addition already present at a different bid')
+     state.update(status='verified',already_done=True,after=before);save();continue
+    validate_addition(io,item,before)
+    path='/adv/v0/auction/nms';body=dict(nms=[dict(advert_id=cid,nms=dict(add=[item['nm_id']],delete=[]))])
    elif kind=='pause_campaign':path='/adv/v0/pause?id='+str(cid);method='GET';body=None
    elif kind=='topup_campaign':
     if str(cid) in (io.get('china_agent:budget_owner_policy:v1')or{}).get('do_not_fund',{}):raise ValueError('Owner forbids funding this campaign')

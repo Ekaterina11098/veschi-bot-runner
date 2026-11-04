@@ -74,6 +74,16 @@ def resume_collection(state,plan,kind='feedbacks'):
         state.setdefault('scopes',{})['token_3']=dict(status='complete',items=[],collection_owner='reviews-china-two-hour',delegated=True)
     return True
 
+def persist_source_snapshot(store,key,payload,reuse_identical=False):
+    if reuse_identical:
+        saved=store.read(key)
+        if saved is not None:
+            stable=lambda p:{k:v for k,v in p.items() if k!='observed_at'}
+            if stable(saved)!=stable(payload):raise RuntimeError('Observed review differs from immutable source snapshot')
+            return saved
+    store.insert(key,payload)
+    return payload
+
 def main(kind='feedbacks',china_two_hour=False):
     if kind not in ('feedbacks','questions'):raise ValueError('Unsupported morning scope')
     import psycopg,requests
@@ -174,7 +184,7 @@ def main(kind='feedbacks',china_two_hour=False):
                                 if candidate['status']=='generate':
                                     # Canonical source and variants are durable before Telegram.
                                     version=candidate['version']
-                                    store.insert('reviews:source:'+sha([cabinet,kind,item_id,version]),dict(cabinet=cabinet,kind=kind,item_id=item_id,version=version,item=item,source_sha256=sha(item),observed_at=scope['observed_at']))
+                                    persist_source_snapshot(store,'reviews:source:'+sha([cabinet,kind,item_id,version]),dict(cabinet=cabinet,kind=kind,item_id=item_id,version=version,item=item,source_sha256=sha(item),observed_at=scope['observed_at']),reuse_identical=china_two_hour)
                                     if not store.read(bridge.draft_key(cabinet,kind,item_id,version)):
                                         generate_and_persist(store,item,cabinet,kind,version,generation.generate_question_drafts if kind=='questions' else generation.generate_draft)
                                     candidate['status']='notify';save()

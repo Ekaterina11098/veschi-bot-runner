@@ -4,7 +4,7 @@ on:
   push:
     paths: ['.github/workflows/reviews-china-two-hour.yml']
   schedule:
-    # UTC odd hours correspond to even Moscow hours, at :17; separate tested China checkpoint.
+    # UTC odd hours correspond to even Moscow hours, at :17; separate tested China checkpoint with immutable source reuse.
     - cron: '17 1-23/2 * * *'
 permissions:
   contents: read

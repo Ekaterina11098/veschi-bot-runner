@@ -64,6 +64,16 @@ class ChinaTwoHourTests(unittest.TestCase):
    key=eval(compile(ast.Expression(assignment.value),'<event-key>','eval'),dict(plan=plan,kind='feedbacks',day=plan['day']))
    self.assertEqual(key,plan['control'])
   self.assertNotEqual(collection_plan('feedbacks',True,datetime(2026,11,4,5,tzinfo=timezone.utc))['control'],'reviews-morning:2026-11-04')
+ def test_identical_china_snapshot_is_reused_without_rewriting_observation(self):
+  from review_morning import persist_source_snapshot
+  saved=dict(cabinet='token_3',kind='feedbacks',item_id='x',version='v',item={'text':'source'},source_sha256='hash',observed_at=100)
+  store=Mock();store.read.return_value=saved
+  result=persist_source_snapshot(store,'key',dict(saved,observed_at=200),True)
+  self.assertEqual(result,saved);store.insert.assert_not_called()
+  with self.assertRaises(RuntimeError):persist_source_snapshot(store,'key',dict(saved,item={'text':'changed'}),True)
+  store.insert.assert_not_called()
+  persist_source_snapshot(store,'key',dict(saved,observed_at=200),False)
+  store.insert.assert_called_once_with('key',dict(saved,observed_at=200))
 
 
 

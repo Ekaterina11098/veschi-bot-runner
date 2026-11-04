@@ -1,0 +1,33 @@
+name: Apply only exact human-approved IP daily PNG
+on:
+  workflow_dispatch:
+    inputs:
+      approval_key:
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 72df1f26bee04a795bdf4f4dc38a64c3275ec05c
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Validate exact photo approval, preflight, write once, verify WB
+        run: python ip_daily_png_apply.py --approval-key "$IP_APPROVAL_KEY"
+        env:
+          IP_APPROVAL_KEY: ${{ inputs.approval_key }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'

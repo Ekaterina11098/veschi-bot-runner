@@ -45,7 +45,36 @@ def refresh_completed(state,now=time.time):
     state['scopes']={}
     return True
 
-def main(kind='feedbacks'):
+
+def collection_plan(kind='feedbacks',china_two_hour=False,now=None,manual=False):
+    local=(now or datetime.now(timezone.utc)).astimezone(ZoneInfo('Europe/Moscow'))
+    if china_two_hour:
+        if kind!='feedbacks':raise ValueError('China periodic collection supports reviews only')
+        day=local.date().isoformat()
+        return dict(day=day,cabinets=('token_3',),control='reviews-china-two-hour:'+day,
+                    cycle_slot=day+':'+str(local.hour//2*2).zfill(2),china_two_hour=True)
+    day=target_day(now,manual)
+    if not day:return None
+    return dict(day=day,cabinets=('token_1','token_2') if kind=='feedbacks' else CABINETS,
+                control=('questions-morning:' if kind=='questions' else 'reviews-morning:')+day,
+                china_two_hour=False)
+
+def resume_collection(state,plan,kind='feedbacks'):
+    if plan['china_two_hour']:
+        if state.get('status')=='complete':
+            if state.get('cycle_slot')==plan['cycle_slot']:return False
+            state.update(status='collecting',scopes={})
+        if state.get('status')!='complete' and not state.get('cycle_slot'):
+            state['cycle_slot']=plan['cycle_slot']
+        elif state.get('status')=='collecting' and not state.get('scopes'):
+            state['cycle_slot']=plan['cycle_slot']
+        return True
+    if state.get('status')=='complete' and (kind!='feedbacks' or not refresh_completed(state)):return False
+    if kind=='feedbacks':
+        state.setdefault('scopes',{})['token_3']=dict(status='complete',items=[],collection_owner='reviews-china-two-hour',delegated=True)
+    return True
+
+def main(kind='feedbacks',china_two_hour=False):
     if kind not in ('feedbacks','questions'):raise ValueError('Unsupported morning scope')
     import psycopg,requests
     from stock_deploy_support import seal,OWNER_PUBLIC,error
@@ -58,8 +87,9 @@ def main(kind='feedbacks'):
     from review_queue import _request
     from review_inbox_cache import save_inbox
     import wildberries as wb
-    day=target_day(manual=os.getenv('GITHUB_EVENT_NAME') in ('push','workflow_dispatch'))
-    if not day:return {'status':'outside_morning_window'}
+    plan=collection_plan(kind,china_two_hour,manual=os.getenv('GITHUB_EVENT_NAME') in ('push','workflow_dispatch'))
+    if not plan:return {'status':'outside_morning_window'}
+    day=plan['day'];cabinets=plan['cabinets']
     root=os.environ['SUPABASE_SECRET_KEY'].encode()
     pw=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
     with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=pw,sslmode='require',autocommit=True,connect_timeout=15) as conn:
@@ -74,7 +104,8 @@ def main(kind='feedbacks'):
         source=SQLSource(conn);bridge=DurableBridge(app,source);store=DurableReviews(_request)
         control=('questions-morning:' if kind=='questions' else 'reviews-morning:')+day
         state=repo.get('events',control) or {'status':'collecting','date':day,'scopes':{},'items':{},'created_at':time.time(),'telegram_confirmed':0}
-        if state.get('status')=='complete' and (kind!='feedbacks' or not refresh_completed(state)):return {'status':'already_complete','telegram_confirmed':state['telegram_confirmed']}
+        if not resume_collection(state,plan,kind):return {'status':'already_complete','telegram_confirmed':state['telegram_confirmed']}
+        summary_key=control+':summary'+(':'+state['cycle_slot'] if china_two_hour else '')
         def preserve():
             out=Path(os.environ['RUNNER_TEMP'])/'stock-deploy-proof';out.mkdir(exist_ok=True)
             (out/'morning-live-supplement.aes.json').write_text(json.dumps(encrypt(snapshot(repo),OWNER_PUBLIC.encode())))
@@ -98,7 +129,7 @@ def main(kind='feedbacks'):
         deadline=time.monotonic()+12*60
         try:
             while time.monotonic()<deadline:
-                for cabinet in CABINETS:
+                for cabinet in cabinets:
                     scope=state['scopes'].setdefault(cabinet,{'status':'collecting','items':[],'skip':0})
                     if scope.get('status')=='complete':continue
                     if scope.get('retry_at',0)>time.time() and scope['status']=='collecting':continue
@@ -122,7 +153,7 @@ def main(kind='feedbacks'):
                             prior=state['items'].get(key,{})
                             if prior.get('status') in ('confirmed','skipped','manual_present','uncertain','error','auto_queued'):continue
                             remaining=True
-                            candidate=prior or {'version':'morning-'+day+'-'+sha([cabinet,item_id])[:12],'status':'preflight'}
+                            candidate=prior or {'version':('china-two-hour-' if china_two_hour else 'morning-')+day+'-'+sha([cabinet,item_id])[:12],'status':'preflight'}
                             state['items'][key]=candidate
                             def prepare_one():
                                 if not eligible(item,cabinet,source,repo,store.read,kind):
@@ -160,15 +191,23 @@ def main(kind='feedbacks'):
                         # Persist redacted diagnostics, keep unrelated cabinets moving.
                         from stock_deploy_support import error
                         scope['last_error']=error(exc);scope['retry_at']=time.time()+300;save()
-                if all(state['scopes'].get(c,{}).get('status')=='complete' for c in CABINETS):
-                    summary=repo.get('events',control+':summary')
+                if all(state['scopes'].get(c,{}).get('status')=='complete' for c in cabinets):
+                    summary=repo.get('events',summary_key)
+                    if summary is None and china_two_hour:
+                        # Only review cards needing a human go to Telegram. Positive
+                        # auto replies and empty polls do not create summary messages.
+                        summary=dict(status='confirmed',receipt_type='durable_collection',
+                                     cycle_slot=state['cycle_slot'],created_at=time.time(),
+                                     telegram_confirmed=state['telegram_confirmed'],auto_queued=state.get('auto_queued',0))
+                        with repo.transaction():repo.put('events',summary_key,summary)
                     if summary is None:
                         names={'token_1':'ООО','token_2':'ИП','token_3':'Китай'}
                         text=('❓ Утренние вопросы · ' if kind=='questions' else '📩 Утренние отзывы · ')+day+'\n'
-                        text+='\n'.join(names[c]+': без ответа в WB — '+str(len(state['scopes'][c]['items'])) for c in CABINETS)
+                        text+='\n'.join(names[c]+': без ответа в WB — '+str(len(state['scopes'][c]['items'])) for c in cabinets)
+                        if kind=='feedbacks':text+='\nКитай: отдельная проверка отзывов каждые 2 часа.'
                         text+='\nАвтоматически поставлено в отправку: '+str(state.get('auto_queued',0))+'\nНовых карточек отправлено: '+str(state['telegram_confirmed'])+'. Уже присланные и отложенные повторно не отправлялись.\nhttps://veschi-ai.streamlit.app/review_manager'
                         summary={'status':'sending','created_at':time.time()}
-                        with repo.transaction():repo.put('events',control+':summary',summary)
+                        with repo.transaction():repo.put('events',summary_key,summary)
                         preserve()
                         try:
                             response=transport.call('sendMessage',{'chat_id':app.chat,'text':text})

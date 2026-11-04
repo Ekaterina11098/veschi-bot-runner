@@ -1,0 +1,50 @@
+name: Verify daily WB document policy without inventory writes
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/verify-wb-ms-daily-policy.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Test boundaries and private atomic claims
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,os,datetime,unittest
+          sys.path.insert(0,'scripts')
+          import fbs_document_chain as m
+          from fbs_wb_cabinets import ScopedCache
+          class PrivateOnly(m.Transport):
+           def request(self,base,path,method='GET',body=None,params=None):
+            if base in (m.MS,m.WB):raise m.Stop('Verification prohibits marketplace and inventory API access')
+            return super().request(base,path,method,body,params)
+          t=PrivateOnly();db=m.Cache(t)
+          probe='fbs_document_schedule:claim_probe:v1:'+os.environ['GITHUB_RUN_ID']
+          assert db.claim(probe,{'probe':True}) is True
+          assert db.claim(probe,{'probe':True}) is False
+          local=m.stamp(m.now()).astimezone(datetime.timezone(datetime.timedelta(hours=3)))
+          assert local.hour!=19,'Run read-only gate verification outside the execution hour'
+          os.environ['FBS_EXECUTION_KIND']='poll';os.environ['FBS_OWNER_APPROVAL_ID']=''
+          checks={}
+          for cabinet in ('ip','ooo','china'):
+           scoped=ScopedCache(t,cabinet)
+           config=scoped.get('fbs_document_chain:'+cabinet+':config:v1')
+           assert config['writes_enabled'] is True and config['execution_policy']['daily_time']=='19:00'
+           assert config['execution_policy']['forbid_negative_stock'] is True
+           result=m.Worker(t,scoped,config).run('run')
+           assert result['status']=='waiting_for_daily_time' and result['writes']==0
+           checks[cabinet]=result
+          result={'status':'verified','at':m.now(),'atomic_claim':True,'cabinet_checks':checks,'inventory_api_calls':0}
+          db.put('fbs_document_schedule:verification:20261104:v1',result)
+          print('Daily policy verified on three active cabinets; inventory API access prohibited.')

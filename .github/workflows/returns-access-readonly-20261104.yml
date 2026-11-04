@@ -1,0 +1,79 @@
+name: Returns warehouse access read-only 20261104
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/returns-access-readonly-20261104.yml']
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: returns-access-readonly
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify warehouse access with GET only
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        shell: python
+        run: |
+          import os, json, gzip, urllib.request, urllib.error, sys
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  raise RuntimeError("redirect_blocked")
+          opener = urllib.request.build_opener(NoRedirect)
+          def get(url, token):
+              req = urllib.request.Request(url, method="GET", headers={
+                  "Authorization": "Bearer " + token,
+                  "Accept": "application/json",
+                  "Accept-Encoding": "gzip"})
+              with opener.open(req, timeout=30) as response:
+                  raw = response.read()
+                  if response.headers.get("Content-Encoding") == "gzip":
+                      raw = gzip.decompress(raw)
+                  return json.loads(raw)
+          ok = True
+          try:
+              token = os.environ.get("MOYSKLAD_API_TOKEN", "")
+              if not token:
+                  raise RuntimeError("missing_secret")
+              rows = []
+              offset = 0
+              while True:
+                  data = get("https://api.moysklad.ru/api/remap/1.2/entity/store?limit=100&offset=" + str(offset), token)
+                  page = data["rows"]
+                  rows.extend(page)
+                  offset += len(page)
+                  if offset >= data["meta"]["size"]:
+                      break
+                  if not page or offset > 10000:
+                      raise RuntimeError("pagination_failed")
+              matches = any(r.get("id") == "3c67619d-f25d-11ee-0a80-0c6f000a027a" and r.get("name") == "МСК" for r in rows)
+              print("MOYSKLAD: GET warehouses SUCCESS; MSK id/name " + ("MATCH" if matches else "MISMATCH"))
+              ok = ok and matches
+          except urllib.error.HTTPError as e:
+              print("MOYSKLAD: FAIL HTTP " + str(e.code))
+              ok = False
+          except Exception:
+              print("MOYSKLAD: FAIL (configuration, transport or response)")
+              ok = False
+          try:
+              token = os.environ.get("WB_TOKEN_3", "")
+              if not token:
+                  raise RuntimeError("missing_secret")
+              rows = get("https://marketplace-api.wildberries.ru/api/v3/warehouses", token)
+              if not isinstance(rows, list):
+                  raise RuntimeError("invalid_response")
+              matches = any(r.get("id") == 2126188 and r.get("name") == "МСК-КИТАЙ" for r in rows)
+              print("WB_CHINA: GET warehouses SUCCESS; MSK-CHINA 2126188 id/name " + ("MATCH" if matches else "MISMATCH"))
+              ok = ok and matches
+          except urllib.error.HTTPError as e:
+              print("WB_CHINA: FAIL HTTP " + str(e.code))
+              ok = False
+          except Exception:
+              print("WB_CHINA: FAIL (configuration, transport or response)")
+              ok = False
+          print("READ_ONLY_CHECK: " + ("SUCCESS" if ok else "FAILED"))
+          sys.exit(0 if ok else 1)

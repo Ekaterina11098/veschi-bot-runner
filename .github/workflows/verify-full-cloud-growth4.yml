@@ -84,7 +84,7 @@ jobs:
            def ask(self,identity,kind,data,contract,validate,force):
             size=len(json.dumps(data,ensure_ascii=False))
             print('Compact advertising evidence bytes:',size)
-              if size>1200000:raise ValueError('Cloud analysis evidence too large: '+str(size))
+            if size>1200000:raise ValueError('Cloud analysis evidence too large: '+str(size))
             value=dict(kind='advertising_review',decisions=[dict(id=k,note='Проверенное предложение',reason='Fixture only')for k in data['allowed_actions']],directions={d:dict(status='checked',note='Fixture coverage')for d in ['raise','add','reduce','exclude']},research=[],summary='Read-only verifier')
             return validate(value),dict(key='verification-only',source_sha256='fixture',model='no_model_call',session_id='fixture',source_channel='verification')
           reviewed=review_advertising(Fake(),base,result,'verification-only',core=Core())

@@ -2,7 +2,7 @@ name: Apply exact five IP owner changes Nov4
 on:
   push:
     branches: [main]
-    paths: ['.github/disabled/ip-owner-five-20261104.never']
+    paths: ['.github/workflows/ip-owner-five-20261104.yml']
 permissions:
   contents: read
 concurrency:
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 16afa2fe27eab706fb61ffe11845c89556a7961f
+          ref: e765067293e9fa435b61e0f492d1a18128e03a27
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             ip_owner_five_20261104.py

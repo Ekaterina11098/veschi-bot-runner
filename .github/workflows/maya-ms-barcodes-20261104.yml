@@ -1,0 +1,102 @@
+name: MAYA authorized China barcode linking
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/maya-ms-barcodes-20261104.yml']
+permissions: {}
+concurrency:
+  group: maya-ms-products-20261104
+  cancel-in-progress: false
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Verify China cards and preserve internal MS barcodes
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+        shell: python
+        run: |
+          import os,json,gzip,datetime,urllib.request,urllib.parse,urllib.error,time,base64
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*a,**k):raise RuntimeError("Redirect blocked")
+          opener=urllib.request.build_opener(NoRedirect)
+          sb=os.environ["SUPABASE_URL"].rstrip("/")
+          ms="https://api.moysklad.ru/api/remap/1.2/"
+          sh={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json"}
+          mh={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept-Encoding":"gzip","Accept":"application/json;charset=utf-8","Content-Type":"application/json"}
+          token=os.environ.get("WB_FINANCE_TOKEN_3") or os.environ["WB_TOKEN_3"]
+          wh={"Authorization":token,"Content-Type":"application/json"}
+          def call(url,h,method="GET",body=None):
+           try:
+            with opener.open(urllib.request.Request(url,headers=h,method=method,data=None if body is None else json.dumps(body,ensure_ascii=False).encode()),timeout=60) as r:
+             raw=r.read()
+             if not raw:return None
+             if r.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+             return json.loads(raw)
+           except urllib.error.HTTPError as e:raise RuntimeError("Remote HTTP "+str(e.code)) from None
+          def cache(key):return call(sb+"/rest/v1/telegram_api_cache?"+urllib.parse.urlencode({"cache_key":"eq."+key,"select":"payload"}),sh)[0]["payload"]
+          created=cache("maya_cycle:create_result:20261104")
+          assert created["status"]=="complete" and len(created["products"])==18
+          wanted={p["article"]:p for p in created["products"]}
+          cards={};cursor={"limit":100};seen=set()
+          while True:
+           data=call("https://content-api.wildberries.cn/content/v2/get/cards/list",wh,"POST",{"settings":{"cursor":cursor,"filter":{"withPhoto":-1}}})
+           if data.get("error"):raise RuntimeError("WB response error")
+           for c in data.get("cards",[]):
+            if c.get("vendorCode") in wanted:
+             if c["vendorCode"] in cards:raise RuntimeError("Duplicate WB article")
+             cards[c["vendorCode"]]=c
+           cur=data.get("cursor",{})
+           if cur.get("total",0)<100:break
+           nxt=(cur.get("updatedAt"),cur.get("nmID"))
+           if nxt in seen or len(seen)>100:raise RuntimeError("WB pagination incomplete")
+           seen.add(nxt);cursor={"limit":100,"updatedAt":nxt[0],"nmID":nxt[1]}
+           time.sleep(0.7)
+          assert set(cards)==set(wanted),"Incomplete WB matches"
+          all_ms=[];offset=0
+          while True:
+           data=call(ms+"entity/assortment?"+urllib.parse.urlencode({"limit":1000,"offset":offset,"filter":"archived=false"}),mh)
+           all_ms.extend(data["rows"]);offset+=len(data["rows"])
+           if offset>=data["meta"]["size"]:break
+           if not data["rows"] or offset>20000:raise RuntimeError("MS pagination incomplete")
+          plan=[]
+          for article,ref in wanted.items():
+           c=cards[article];skus=[s for size in c.get("sizes",[]) for s in size.get("skus",[])]
+           assert len(skus)==1 and isinstance(skus[0],str) and skus[0].isdigit()
+           barcode=skus[0]
+           for p in all_ms:
+            if p["id"]!=ref["id"] and any(barcode in b.values() for b in p.get("barcodes",[])):raise RuntimeError("Barcode belongs to another MS item")
+           p=call(ms+"entity/product/"+ref["id"],mh)
+           assert p["article"]==article and p.get("externalCode")=="veschi-maya-20261104-"+article
+           before=p.get("barcodes",[])
+           after=list(before)
+           if not any(barcode in b.values() for b in before):after.append({"code128":barcode})
+           marker="WB Китай: nmID="+str(c["nmID"])+"; баркод="+barcode
+           desc=p.get("description") or ""
+           if marker not in desc:desc=desc.rstrip()+"\n"+marker
+           plan.append({"article":article,"id":p["id"],"nmID":c["nmID"],"barcode":barcode,"before":before,"after":after,"description":desc})
+          assert len({p["barcode"] for p in plan})==18
+          out={"status":"in_progress","run_id":os.environ["GITHUB_RUN_ID"],"products":[]}
+          def save():
+           stamp=datetime.datetime.now(datetime.timezone.utc).isoformat()
+           out["updated_at"]=stamp
+           h=dict(sh);h["Prefer"]="resolution=merge-duplicates,return=minimal"
+           call(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",h,"POST",{"cache_key":"maya_cycle:barcode_result:20261104","payload":out,"updated_at":stamp,"expires_at":"2026-12-31T23:59:59Z"})
+          save()
+          for item in plan:
+           current=call(ms+"entity/product/"+item["id"],mh)
+           assert current.get("barcodes",[])==item["before"],"Concurrent barcode change"
+           call(ms+"entity/product/"+item["id"],mh,"PUT",{"barcodes":item["after"],"description":item["description"]})
+           v=call(ms+"entity/product/"+item["id"],mh)
+           assert v["article"]==item["article"] and v.get("description")==item["description"]
+           assert all(b in v.get("barcodes",[]) for b in item["before"])
+           assert any(item["barcode"] in b.values() for b in v.get("barcodes",[]))
+           out["products"].append({k:item[k] for k in ("article","id","nmID","barcode","before","after")})
+           save()
+          out["status"]="complete";save()
+          print("China card links and additional barcodes verified. Private result saved.")

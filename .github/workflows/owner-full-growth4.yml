@@ -75,7 +75,23 @@ jobs:
           # Fetch current catalogue price/stock in bounded batches; excluded products are never read as action candidates.
           excluded={1473245494,1473245510,1473244000}
           ids=[nm for nm in ids if nm not in excluded]
-          prices=current_prices(io,ids);pub=published_stock(io,prices,ids)
+          goods=[];price_missing={}
+          for offset in range(0,20000,1000):
+           part=io.wb('/api/v2/list/goods/filter?limit=1000&offset='+str(offset)).get('listGoods')
+           if not isinstance(part,list):raise ValueError('Price pagination unknown')
+           goods+=part
+           if len(part)<1000:break
+          else:raise ValueError('Price pagination bound')
+          prows=[]
+          for nm in ids:
+           matches=[g for g in goods if g['nmID']==nm]
+           if len(matches)!=1:price_missing[str(nm)]='missing_or_ambiguous';continue
+           g=matches[0];vals={z.get('discountedPrice')for z in g.get('sizes',[])}
+           if g.get('currencyIsoCode4217')!='CNY'or len(vals)!=1 or type(next(iter(vals),None))not in(int,float)or next(iter(vals))<=0:
+            price_missing[str(nm)]='exact_positive_CNY_price_unavailable';continue
+           prows.append(dict(nm_id=nm,article=g['vendorCode'],currency='CNY',seller_price=next(iter(vals)),size_ids=[z['sizeID']for z in g['sizes']]))
+          prices=dict(rows=prows,observed_at=stamp(),missing=price_missing)
+          pub=published_stock(io,prices,[r['nm_id']for r in prows])
           articles=list(dict.fromkeys(r['article']for r in prices['rows']))
           stock=read_stock(articles)
           own.update(period_from='2026-10-05',period_to='2026-11-03')

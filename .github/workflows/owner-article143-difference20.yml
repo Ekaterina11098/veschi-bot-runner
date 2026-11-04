@@ -1,8 +1,6 @@
 name: Read-only article143 difference20 investigation
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-article143-difference20.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

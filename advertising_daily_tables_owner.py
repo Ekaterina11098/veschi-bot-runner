@@ -8,6 +8,7 @@ import requests
 from advertising_agent import agent_store as store
 from advertising_budget_evidence import load_daily_table_view,deliver_daily_tables
 from advertising_daily_png import render_daily_png
+from ip_daily_png_contract import build_contract,render_recommendations,freeze_plan,bind_receipt
 from stock_deploy_support import seal,error
 def publication_coverage(view):
  rows=view.get('campaigns') or []
@@ -37,13 +38,24 @@ def main():
   if not coverage['ready']:
    report.update(business_status='incomplete',notification_status='not_sent',data_coverage='missing_daily_campaign_metrics',reason='No campaign/day metrics; both PNGs withheld before rendering or delivery claims')
    return report
-  images=render_daily_png(view,Path(os.environ['RUNNER_TEMP'])/'daily-advertising-png')
+  outdir=Path(os.environ['RUNNER_TEMP'])/'daily-advertising-png'
+  from datetime import timedelta
+  view['_recent_views']=[]
+  for offset in (2,1):
+   try:view['_recent_views'].append(load_daily_table_view(store,datetime.now(timezone.utc)-timedelta(days=offset)))
+   except (ValueError,RuntimeError):pass # An independent historical gap must not block today's ready rows.
+  contract=build_contract(store,view)
+  # Keep the existing budget renderer and daily delivery claim slots.
+  old_images=render_daily_png(view,outdir,page_size=max(12,len(view['campaigns'])))
+  images=[render_recommendations(view,contract,outdir)]+[i for i in old_images if i['kind']=='budgets']
+  if len(images)!=2:raise RuntimeError('Exactly recommendations then budgets required')
   import hashlib
   messages=[]
   for image in images:
-   caption=('ДРР за '+view['period']+' · расход за день и 7 полных дней. РК с подтверждённым посткликом, по товарам — прямой ДРР.') if image['kind']=='drr' else ('Бюджеты · отчёт '+view['observed_day']+' · время МСК. Срок условный, по расходу '+view['period']+'.')
+   caption=('ИП · рекомендации за '+view['period']+'. Ответьте «Сделай всё» на этот PNG, чтобы применить только новые перечисленные действия. Ранее согласованные изменения не повторяются.' if contract['actions'] else 'ИП · отчёт за '+view['period']+'. Новых готовых команд нет.') if image['kind']=='drr' else ('Бюджеты · отчёт '+view['observed_day']+' · время МСК. Срок условный, по расходу '+view['period']+'.')
    messages.append(dict(kind=image['kind'],text=json.dumps(dict(path=image['path'],caption=caption,sha256=hashlib.sha256(Path(image['path']).read_bytes()).hexdigest()),ensure_ascii=False)))
   report['messages']=messages
+  plan_key,plan=freeze_plan(store,contract,json.loads(messages[0]['text'])['sha256'])
   last=[None]
   def send(chat,text):
    if last[0] is not None:
@@ -55,10 +67,17 @@ def main():
    with path.open('rb') as photo:
     response=requests.post('https://api.telegram.org/bot'+os.environ['ADVERTISING_TELEGRAM_BOT_TOKEN'].strip()+'/sendPhoto',data={'chat_id':chat,'caption':item['caption']},files={'photo':(path.name,photo,'image/png')},timeout=(10,60))
    body=response.json();msg=body.get('result') or {};photos=msg.get('photo') or []
-   return dict(ok=response.status_code==200 and body.get('ok') is True and bool(photos),message_id=msg.get('message_id'),chat_id=(msg.get('chat') or {}).get('id'),media_sha256=item['sha256'],photo_file_unique_id=photos[-1].get('file_unique_id') if photos else None)
+   receipt=dict(ok=response.status_code==200 and body.get('ok') is True and bool(photos),message_id=msg.get('message_id'),chat_id=(msg.get('chat') or {}).get('id'),media_sha256=item['sha256'],photo_file_unique_id=photos[-1].get('file_unique_id') if photos else None)
+   if receipt['ok'] and receipt['chat_id']==reg['chat_id'] and item['path']==images[0]['path']:
+    # Bind the confirmed first photo even if independent budget delivery later fails.
+    bind_receipt(store,plan_key,plan,dict(receipt,status='confirmed'))
+   return receipt
   from zoneinfo import ZoneInfo
   day=str(datetime.now(timezone.utc).astimezone(ZoneInfo('Europe/Moscow')).date())
   report['receipts']=deliver_daily_tables(store,messages,reg['chat_id'],day,send)
+  bind_receipt(store,plan_key,plan,report['receipts'][0])
+  report['reply_plan_key']=plan_key
+  report['new_action_count']=len(contract['actions'])
   report['business_status']='complete'
   report['data_coverage']='complete' if all(x['metrics_complete'] for x in view['campaigns']) else 'partial_explicitly_labelled'
  except Exception as exc:report['error']=error(exc)
@@ -69,3 +88,4 @@ def main():
  return report
 if __name__=='__main__':
  if main()['business_status']!='complete':raise SystemExit(1)
+

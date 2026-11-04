@@ -46,6 +46,13 @@ jobs:
            rows=data.get("rows",[])
            assert data["meta"]["size"]<=100
            out["products"].append({"requested_article":article,"matches":[{k:p.get(k) for k in ("id","name","article","code","archived","barcodes","description","attributes","weight","volume","buyPrice")} for p in rows if p.get("article")==article]})
+          out["model_search"]=[]
+          families=sorted(set(a.split("-")[1] for a in articles))
+          for family in families:
+           for archived in ("false","true"):
+            query=urllib.parse.urlencode({"search":family,"filter":"archived="+archived,"limit":100})
+            data=request("https://api.moysklad.ru/api/remap/1.2/entity/assortment?"+query,mh)
+            out["model_search"].append({"family":family,"archived":archived,"total":data["meta"]["size"],"rows":[{k:p.get(k) for k in ("id","name","article","code","archived","barcodes","description","attributes","weight","volume","buyPrice")} for p in data.get("rows",[])]})
           record={"cache_key":"maya_cycle:ms_result:20261104","payload":out,"updated_at":out["read_at"],"expires_at":"2026-11-11T23:59:59Z"}
           sh["Prefer"]="resolution=merge-duplicates,return=minimal"
           request(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",sh,"POST",record)

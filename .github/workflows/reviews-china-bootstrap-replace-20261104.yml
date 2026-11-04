@@ -1,0 +1,30 @@
+name: Replace only incomplete initial China collection bundle
+on:
+  push:
+    paths: ['.github/workflows/reviews-china-bootstrap-replace-20261104.yml']
+permissions:
+  contents: read
+  actions: write
+jobs:
+  stop-initial-collector-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Stop only the read-only-WB initial collector; leave publisher and every other workflow untouched
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import os,json,urllib.request
+          base='https://api.github.com/repos/'+os.environ['REPOSITORY']+'/actions/runs/41822074413'
+          headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'}
+          with urllib.request.urlopen(urllib.request.Request(base,headers=headers),timeout=30) as r:run=json.load(r)
+          if run['head_sha']!='b6a05069d09ba6b9f4784b95cc523fb879122412' or run['path']!='.github/workflows/reviews-china-two-hour.yml':
+              raise RuntimeError('Unexpected run identity; no cancellation')
+          if run['status'] in ('in_progress','queued','pending','waiting','requested'):
+              with urllib.request.urlopen(urllib.request.Request(base+'/cancel',headers=headers,method='POST'),timeout=30) as r:
+                  if r.status!=202:raise RuntimeError('Cancellation not accepted')
+              print('Requested cancellation of only initial China collector 41822074413')
+          else:print('Initial collector already stopped; no action')
+          PY

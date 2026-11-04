@@ -30,8 +30,8 @@ def assess(serialized):
    and type(result['confidence']) in (int,float) and 0<=result['confidence']<=1)
   positive=valid and result['label']=='POSITIVE' and all(result[k] is False for k in flags) and result['confidence']>=0.98
   return {'eligible':bool(positive),'reason':VERSION+':'+(result['label'] if valid else 'invalid')}
- except Exception:
-  return {'eligible':False,'reason':'semantic_unavailable'}
+ except Exception as exc:
+  return {'eligible':False,'reason':'semantic_unavailable','error_type':type(exc).__name__,'http_status':getattr(exc,'code',None)}
 
 def classify_fields(text,pros,cons):
  return dict(assess(json.dumps({'text':text,'pros':pros,'cons':cons},ensure_ascii=False,sort_keys=True)))

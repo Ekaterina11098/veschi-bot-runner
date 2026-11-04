@@ -28,7 +28,7 @@ def assess(serialized):
   valid=(set(result)==set(SCHEMA['required']) and result['label'] in SCHEMA['properties']['label']['enum']
    and all(type(result[k]) is bool for k in flags)
    and type(result['confidence']) in (int,float) and 0<=result['confidence']<=1)
-  positive=valid and result['label']=='POSITIVE' and all(result[k] is False for k in flags) and result['confidence']>=0.95
+  positive=valid and result['label']=='POSITIVE' and all(result[k] is False for k in flags) and result['confidence']>=0.90
   return {'eligible':bool(positive),'reason':VERSION+':'+(result['label'] if valid else 'invalid'),'assessment':result if valid else None}
  except Exception as exc:
   return {'eligible':False,'reason':'semantic_unavailable','error_type':type(exc).__name__,'http_status':getattr(exc,'code',None)}

@@ -41,6 +41,7 @@ jobs:
             return super().request(base,path,method,body,params)
           t=Scoped();db=m.Cache(t);w=m.Worker(t,db,{})
           inp=db.get(ROOT+'input:v1')
+          if db.get(ROOT+'order_chain_request:v1'):raise m.Stop('Superseded: shipment must be created from the authorized customer order')
           assert inp and inp['authorized'] and inp['create_order'] is False
           assert inp['units']==724==sum(inp['sales'].values()) and len(inp['sales'])==67
           assert inp['source_sha256']=='3f67e0ce609dce9fca7934a83b29e2e0fc5efa208ee5bc8125caf70bd0c6c75e'

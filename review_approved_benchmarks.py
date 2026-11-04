@@ -32,8 +32,16 @@ def candidates(cards,events,intents,owner):
         result[key]=dict(intent_id=intent_id,revision_event_id=event_id,cabinet=i['cabinet'],kind=i['kind'],answer_sha256=i['answer_sha256'],row=row)
     return list(result.values())
 def sync(repo,owner,write,read,clock=time.time):
-    def table(name):return {k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}'+name).fetchall()}
-    cards,events,intents=table('cards'),table('events'),table('intents')
+    if repo.pg:
+        # Only revision lineage can produce a benchmark. Worker health, webhook
+        # history and ordinary automatic approvals never need to cross the wire.
+        intents={k:json.loads(v) for k,v in repo.execute("SELECT id,payload FROM {p}intents WHERE payload::jsonb->>'owner_id'=? AND payload::jsonb->>'status'=ANY(?) AND coalesce(payload::jsonb->>'authorization_channel','')<>'automatic_policy' AND position('-edit-' in payload::jsonb->>'version')>0",(str(owner),list(STATES))).fetchall()}
+        refs=list({v['ref'] for v in intents.values()})
+        cards={k:json.loads(v) for k,v in repo.execute("SELECT id,payload FROM {p}cards WHERE payload::jsonb->>'ref'=ANY(?)",(refs,)).fetchall()} if refs else {}
+        events={k:json.loads(v) for k,v in repo.execute("SELECT id,payload FROM {p}events WHERE (starts_with(id,'edit:') AND payload::jsonb->>'token'=ANY(?)) OR id=ANY(?)",(list(cards),[PREFIX+k for k in intents])).fetchall()} if intents else {}
+    else:
+        def table(name):return {k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}'+name).fetchall()}
+        cards,events,intents=table('cards'),table('events'),table('intents')
     report=dict(saved=0,existing=0,errors=0,cabinets={})
     for entry in candidates(cards,events,intents,owner):
         key=PREFIX+entry['intent_id'];old=events.get(key) or {}
@@ -68,7 +76,18 @@ def sync_live(repo,owner):
     # One saver at a time prevents an older approved version overwriting a newer one.
     locked=repo.execute("SELECT pg_try_advisory_lock(hashtextextended(?,0))",('review-benchmark-sync-v1',)).fetchone()[0]
     if not locked:return dict(busy=True)
-    try:return sync(repo,owner,write,read)
+    try:
+        # A durable, shared input fingerprint avoids repeating the same scan in
+        # every cabinet worker. No watermark can skip an older pending revision.
+        fingerprint=repo.execute("SELECT md5(coalesce(string_agg(kind||id||digest,',' ORDER BY kind,id),'')) FROM (SELECT 'c' kind,id,md5(payload) digest FROM {p}cards WHERE position('-edit-' in payload::jsonb->>'version')>0 UNION ALL SELECT 'i',id,md5(payload) FROM {p}intents WHERE position('-edit-' in payload::jsonb->>'version')>0 UNION ALL SELECT 'e',id,md5(payload) FROM {p}events WHERE starts_with(id,'edit:')) inputs").fetchone()[0]
+        state_key=PREFIX+'input-state:'+sha(str(owner))[:16]
+        old=repo.get('events',state_key) or {}
+        now=time.time()
+        if old.get('fingerprint')==fingerprint and (not old.get('errors') or now<old.get('retry_at',0)):
+            return dict(unchanged=True,saved=0,errors=old.get('errors',0))
+        result=sync(repo,owner,write,read)
+        with repo.transaction():repo.put('events',state_key,dict(fingerprint=fingerprint,errors=result['errors'],checked_at=now,retry_at=now+60))
+        return result
     finally:repo.execute("SELECT pg_advisory_unlock(hashtextextended(?,0))",('review-benchmark-sync-v1',))
 def main():
     import psycopg

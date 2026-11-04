@@ -1,0 +1,70 @@
+name: Owner requested41296363 bounded fresh read-only recheck
+on:
+  push:
+    paths: ['.github/workflows/owner-41296363-recheck4.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-41296363-recheck4
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import copy,json,os,requests
+          from datetime import datetime,timezone
+          os.environ['CHINA_TELEGRAM_BOT_TOKEN']='disabled-no-send'
+          from china_cloud_cost_control import Cache,WB,validate_identity,stamp
+          from china_advertising_state import AdvertisingIO
+          from china_morning_readiness import current_prices,published_stock
+          from china_moysklad_read import read_stock
+          from china_advertising_v2 import refresh_budget_context,history
+          KEY='china_agent:owner_41296363_recheck:2026-11-04:2118:v1'
+          c=Cache();w=WB();io=AdvertisingIO();ids=[1473242577,1473246055];cid=41296363
+          if c.get(KEY):raise ValueError('Immutable read exists')
+          validate_identity(c,w)
+          state=w.campaigns([cid])[str(cid)]
+          prices=current_prices(io,ids);stock=read_stock([r['article']for r in prices['rows']]);pub=published_stock(io,prices,ids)
+          minimums=w.minimums(cid,ids,'recommendations')
+          budgets=w.req('/api/advert/v2/budget','POST',dict(advertIds=[cid]))
+          r=requests.get('https://advert-api.wildberries.ru/api/advert/v1/config',headers={'Authorization':w.token},timeout=50)
+          if not r.ok:raise RuntimeError('Configuration read HTTP '+str(r.status_code))
+          config=r.json()
+          base=c.get('china_agent:owner_budget_ready_check:2026-11-04:v1')
+          src=refresh_budget_context(io,base['source'],'2026-11-04')
+          changes=[x for x in history(src['executions'])if x.get('cid')==cid or x.get('nm')in ids]
+          raw=next(s for b in base['source']['batches'].values()for s in b['stats']if s['advertId']==cid)
+          closed=[]
+          for day in raw['days']:
+           if day['date'][:10]not in ['2026-11-02','2026-11-03']:continue
+           rows={nm:dict(nm_id=nm,clicks=0,spend=0,orders=0,amount=0)for nm in ids}
+           for app in day.get('apps',[]):
+            for n in app.get('nms',[]):
+             if n['nmId']not in rows:continue
+             v=rows[n['nmId']]
+             for k,f in [('clicks','clicks'),('spend','sum'),('orders','orders'),('amount','sum_price')]:v[k]+=n.get(f,0)
+           closed.append(dict(day=day['date'][:10],campaign_spend=day['sum'],campaign_orders=day['orders'],campaign_amount=day['sum_price'],rows=list(rows.values())))
+          out=dict(status='complete',cabinet='token_3',observed_at=stamp(),campaign=state,prices=prices,stock=stock,published_stock=pub,minimums=minimums,budgets=budgets,config=config,changes=changes,closed_days=closed,own=dict(observed_at=base['own']['observed_at'],period_from=base['own']['period_from'],period_to=base['own']['period_to'],rows=[x for x in base['own']['rows']if x['nm_id']in ids]),economics={str(n):base['economics']['rows'][str(n)]for n in ids},wb_writes=0,telegram_calls=0,grants_action_permission=False)
+          if not c.create(KEY,out):raise ValueError('Read creation failed')
+          if c.get(KEY)!=json.loads(json.dumps(out)):raise ValueError('Readback mismatch')
+          print(json.dumps(dict(status='complete',source_key=KEY,observed_at=out['observed_at'],wb_writes=0,telegram_calls=0)))
+          PY

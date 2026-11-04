@@ -33,7 +33,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 requests==2.32.5 python-dotenv==1.1.1
-      - name: Validate exact approvals, all cabinets and no duplicate POST
+      - name: Validate exact approvals, cabinet-bound preflight and no duplicate POST
         run: |
           PYTHONPATH=private-source python -m unittest discover -s private-source/tests -p test_review_rate_budget.py
           python -m unittest test_review_approved_benchmarks.py test_review_approved_worker.py test_review_auto_five_star.py test_review_auto_preflight.py

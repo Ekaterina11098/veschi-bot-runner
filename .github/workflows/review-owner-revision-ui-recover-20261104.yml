@@ -1,0 +1,125 @@
+name: Recover exact owner revisions and confirmation buttons without WB calls
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-owner-revision-ui-recover-20261104.yml']
+permissions:
+  contents: read
+concurrency:
+  group: owner-revision-ui-recover-20261104
+  cancel-in-progress: false
+jobs:
+  china-reviews:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*.py
+            /review-approval-preparation/*.py
+            /.github/workflows/reviews-china-two-hour.yml
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 18649db15489c3dc77edc22bec5a4ddc5ed6a410
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*.py
+            /tests/*.py
+            /*.md
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 requests==2.32.5 python-dotenv==1.1.1 openai==1.109.1
+      - name: Validate China isolation, scheduling, duplicate protection and shared rate budget
+        run: |
+          python -m unittest test_review_auto_preflight.py test_review_china_routing_audit.py test_review_china_two_hour.py test_review_morning.py test_review_auto_five_star.py test_review_semantic_positive.py
+          PYTHONPATH=private-source python -m unittest discover -s private-source/tests -p test_review_rate_budget.py
+          PYTHONPATH=private-source python -c "from openai_client import load_system_prompt; assert load_system_prompt().strip()"
+          python -m py_compile review_morning.py review_china_two_hour.py
+      - name: Replay only authenticated owner UI updates; never call WB
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}/review-approval-preparation
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,json,time,hmac,hashlib,base64,psycopg,requests
+          from urllib.parse import urlsplit
+          from pathlib import Path
+          from review_telegram_approval import Approval,Repository,sha
+          from review_approval_bridge import SQLSource,DurableBridge
+          from review_telegram_runtime import TelegramTransport
+          from review_approval_process import acquire_ui_lock,decrypt_update
+          from review_approval_backup import snapshot,encrypt
+          from stock_deploy_support import seal,OWNER_PUBLIC
+          import review_approval_inbox as inbox
+          root=os.environ['SUPABASE_SECRET_KEY'].encode()
+          pw=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
+          secret=base64.b64encode(hmac.new(root,b'veschi:review-approval-ingress:20261015:v1',hashlib.sha256).digest()).decode()
+          with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=pw,sslmode='require',autocommit=True,connect_timeout=15,options='-c statement_timeout=30000') as conn:
+              repo=Repository(conn,postgres=True);source=SQLSource(conn)
+              cfg=source.read('reviews:telegram-approval:config:v1')
+              group=source.read('reviews:content-group:v1') or {}
+              if not all(cfg.get(k) for k in ('enabled','new_notices_enabled','destination_verified')):raise RuntimeError('UI disabled')
+              app=Approval(repo,secret,cfg['owner_id'],cfg['chat_id'],cfg['bot_id'],enabled=True)
+              app.group=group
+              bridge=DurableBridge(app,source);telegram=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN'])
+              os.environ['REVIEW_PUBLICATION_ENABLED']='1'
+              def preserve():
+                  out=Path(os.environ['RUNNER_TEMP'])/'stock-deploy-proof';out.mkdir(exist_ok=True)
+                  (out/'owner-revision-ui-backup.aes.json').write_text(json.dumps(encrypt(snapshot(repo),OWNER_PUBLIC.encode())))
+              native=requests.sessions.Session.request
+              def ui_only(session,method,url,*args,**kwargs):
+                  if 'wildberries.' in (urlsplit(str(url)).hostname or ''):raise RuntimeError('UI recovery forbids all WB calls')
+                  return native(session,method,url,*args,**kwargs)
+              requests.sessions.Session.request=ui_only
+              def scoped_pending(repo,now,limit=50):
+                  return repo.conn.execute("""SELECT c.cache_key,c.payload FROM review_approval.source_cache c
+                    LEFT JOIN review_approval.events e ON e.id='telegram-inbox:'||c.cache_key
+                    WHERE starts_with(c.cache_key,'reviews:telegram-group-ingress:v1:')
+                    AND (c.payload->>'update_id')::bigint>=831229527
+                    AND coalesce(e.payload::jsonb->>'status','') NOT IN ('processed','rejected')
+                    ORDER BY (c.payload->>'update_id')::bigint,c.cache_key LIMIT %s""",(limit,)).fetchall()
+              inbox.pending=scoped_pending
+              if not acquire_ui_lock(conn,wait_seconds=120):raise RuntimeError('UI busy; ciphertext retained')
+              try:
+                  selected=scoped_pending(repo,time.time(),50)
+                  outcome=inbox.drain(app,bridge,telegram,secret,preserve=preserve,limit=50,new_notices_enabled=True,cutover=cfg['cutover'])
+                  details=[]
+                  for cache_key,payload in selected:
+                      receipt=repo.get('events','telegram-inbox:'+cache_key) or {}
+                      update=decrypt_update(payload['sealed_update'],secret)
+                      event=repo.get('events','telegram-ingress:'+sha(update)) or {}
+                      result=event.get('result') or {};revision=result.get('revision_delivery') or {}
+                      entry=dict(update_id=payload['update_id'],receipt=receipt,result_status=result.get('status'),revision=revision)
+                      token=revision.get('card_token')
+                      if token:
+                          card=repo.get('cards',token)
+                          entry.update(exact_owner_text=card.get('texts')==[(update.get('message') or {}).get('text','').strip()],buttons=app.keyboard(token,card),article=card['source']['article'],cabinet=card['cabinet'],message_id=card['message_id'])
+                      details.append(entry)
+                  remaining=scoped_pending(repo,time.time(),50)
+                  report=dict(status='complete' if not remaining and outcome['retry']==0 else 'needs_inspection',outcome=outcome,details=details,remaining=len(remaining),wb_calls=0,run_id=os.getenv('GITHUB_RUN_ID'),checked_at=time.time())
+                  with repo.transaction():repo.put('events','owner-revision-ui-recovery:20261104:v1',report)
+                  preserve();seal('owner-revision-ui-recovery',report)
+                  print(json.dumps(dict(status=report['status'],outcome=outcome,remaining=len(remaining),wb_calls=0)))
+                  if report['status']!='complete':raise RuntimeError('Some owner updates need inspection; ciphertext and texts retained')
+              finally:
+                  conn.execute("SELECT pg_advisory_unlock(hashtextextended('review-approval-process-ui-v1',0))")
+                  requests.sessions.Session.request=native
+          
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-revision-ui-recovery
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90

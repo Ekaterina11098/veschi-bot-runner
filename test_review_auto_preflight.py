@@ -7,7 +7,7 @@ from review_approval_executor import AutomaticPolicyChanged
 
 class PreflightScopeTests(unittest.TestCase):
  def setUp(self):
-  self.intent=dict(authorization_channel='automatic_policy',kind='feedbacks',status='awaiting_preflight',item_id='review-a')
+  self.intent=dict(cabinet='token_3',authorization_channel='automatic_policy',kind='feedbacks',status='awaiting_preflight',item_id='review-a')
   self.url='https://feedbacks-api.wildberries.ru/api/v1/feedback'
  def response(self,body,status=200):
   r=Mock(status_code=status);r.json.return_value=body;return r

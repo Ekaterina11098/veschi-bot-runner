@@ -69,7 +69,9 @@ def recover(db, get, save, start, end, prices, now=None):
     rows, marker = products(read, 'token_3', str(start), str(end), now)
     if not marker:
         raise RuntimeError('Primary exact-period product receipt unavailable')
-    have = {str(r['nm_id']) for r in rows}
+    # A product total does not establish daily history (MPStats may omit sparklines).
+    from china_price_evidence import valid_daily_orders
+    have = {str(r['nm_id']) for r in rows if valid_daily_orders(r, (end-start).days+1)}
     wanted = {str(r['nmID']): r['vendorCode'] for r in prices if str(r['nmID']) not in have}
     key = KEY+str(start)+':'+str(end)
     previous = get(key) or {}
@@ -89,6 +91,16 @@ def recover(db, get, save, start, end, prices, now=None):
     pending = set(wanted)-set(result['products'])
     if not pending:
         result['status'] = 'complete'
+        save(key, result)
+        return result
+    # Reuse the already stored, identity-verified daily WB receipts before MPStats calls.
+    from china_price_evidence import cached_order_products
+    cached = cached_order_products(get, start, end, wanted)
+    for nm, item in cached.items():
+        if nm in pending: result['products'][nm] = item
+    pending = set(wanted)-set(result['products'])
+    if not pending:
+        result.update(status='complete', remaining={})
         save(key, result)
         return result
     pause = read('telegram_api_cache', dict(cache_key='eq.mpstats:cooldown', expires_at='gt.'+datetime.now(timezone.utc).isoformat(), select='cache_key', limit=1))

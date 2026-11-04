@@ -550,7 +550,9 @@ def prepare(io,day):
  from china_budget_page_actions import owner_policy
  result=owner_policy(io,attach(result,s))
  from china_codex_reports import review_advertising
- return review_advertising(io,result,s,'advertising:'+day+':morning')
+ result=review_advertising(io,result,s,'advertising:'+day+':morning')
+ result['mandatory_campaign_format']=(io.get(FORMAT)or{}).get('mandatory') is True
+ return result
 
 
 

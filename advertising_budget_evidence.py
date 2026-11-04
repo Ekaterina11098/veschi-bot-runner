@@ -255,7 +255,7 @@ def load_daily_table_view(store,now):
             except (TypeError,ValueError):continue
         result.append(dict(campaign_id=cid,metrics_complete=valid,spend=t.get('ac_spending_sum') if valid else None,revenue=t.get('ac_orders_sum') if valid else None,
           direct_orders=(t['ac_orders']-t['ac_orders_associated']) if valid and _number(t.get('ac_orders_associated')) and t['ac_orders']>=t['ac_orders_associated'] else None,
-          above5=sorted(above,key=lambda x:-x['drr']),within5_count=within,**no_orders,sku_order_basis=p.get('sku_order_basis'),status_id=states.get(cid),budget=budget,source_snapshot_id=p.get('snapshot_id'),weekly_spend=weekly.get(cid)))
+          above5=sorted(above,key=lambda x:-x['drr']),within5_count=within,**no_orders,sku_order_basis=p.get('sku_order_basis'),status_id=states.get(cid),budget=budget,source_snapshot_id=p.get('snapshot_id'),weekly_spend=weekly.get(cid),sku_rows=(p.get('rows') if p.get('sku_order_basis')=='direct_only' else None)))
     return dict(period=day,observed_day=str(now.date()),campaigns=result,weekly_period_from=week_start,weekly_period_to=week_end)
 
 def deliver_daily_tables(store,messages,chat,day,send):
@@ -286,5 +286,4 @@ def deliver_daily_tables(store,messages,chat,day,send):
         if store.cache_get(key)!=value:raise RuntimeError('Table receipt readback mismatch')
         receipts.append(value)
     return receipts
-
 

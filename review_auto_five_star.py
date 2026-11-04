@@ -91,6 +91,10 @@ def field(item,key):
  return '' if value is None else value if isinstance(value,str) else None
 VERIFIED_POSITIVE_FIELDS |= frozenset(normalized_verified_field(v) for v in ["Отличная , но выбрала бордо без замши. Спасибо. Всем рекомендую 👍","Девочки прекрасная сумка 👜 рекомендую 👌","Прекрасно упаковано в два мешка и пыльник,внутри вложение с тремя карманами на молнии. Качество отличное, размер и цвет тоже","Классная,модная сумочка,все норма,упаковка идеальная👌продавец молодец🙏🏻","Такая прелесть. Подойдет модницам на все сезоны года. То что нет ничего лишнего, малышка подойдет под многие образы и любой возраст. Цвет не кричащий, цепочка добавила дорогой вид.","выглядит дорого","Маленькая прелесть. \nСтильная, ничего лишнего. Мне очень нравиться сумочка. \nДоставка, упаковка на +.","Сумка отличная, цвет очень яркий насыщенный, качество супер!"])
 
+def semantic_fallback(text,pros,cons):
+ from review_semantic_positive import classify_fields
+ return classify_fields(text,pros,cons)
+
 def classify(item,kind='feedbacks'):
  if kind!='feedbacks' or item.get('productValuation')!=5:return {'eligible':False,'reason':'not_five_star_review'}
  if item.get('answer') is not None and not isinstance(item['answer'],dict):return {'eligible':False,'reason':'unsupported_answer'}
@@ -116,9 +120,9 @@ def classify(item,kind='feedbacks'):
  tokens=re.findall(r'[a-zа-я]+',full)
  if not tokens:return {'eligible':all(c.isspace() or c in EMOJI or c in '.,!—-:;()\uFE0F\u200D' for c in full),'reason':'emoji_only'}
  # Never infer positive intent from stars alone or silently discard unknown words.
- if any(t not in WORDS and not any(t.startswith(s) for s in STEMS) for t in tokens):return {'eligible':False,'reason':'ambiguous_or_complaint'}
+ if any(t not in WORDS and not any(t.startswith(s) for s in STEMS) for t in tokens):return semantic_fallback(text,pros,cons)
  remainder=re.sub(r'[a-zа-я\s.,!—\-:;()]','',full)
- if any(c not in EMOJI and c not in '\uFE0F\u200D' for c in remainder):return {'eligible':False,'reason':'ambiguous_symbols'}
+ if any(c not in EMOJI and c not in '\uFE0F\u200D' for c in remainder):return semantic_fallback(text,pros,cons)
  return {'eligible':True,'reason':'unambiguously_positive'}
 def policy_allows(policy,app,cabinet,observed_at):
  return (policy.get('enabled') is True and policy.get('version')==POLICY_VERSION and

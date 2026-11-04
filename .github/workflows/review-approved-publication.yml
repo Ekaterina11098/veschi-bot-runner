@@ -38,6 +38,7 @@ jobs:
           PYTHONPATH=private-source python -m unittest discover -s private-source/tests -p test_review_rate_budget.py
           python -m unittest test_review_approved_benchmarks.py test_review_approved_worker.py test_review_auto_five_star.py test_review_auto_preflight.py
           python -m unittest discover -s review-approval-preparation -p test_review_telegram.py
+          python -m unittest test_review_semantic_positive.py
           python -m unittest test_review_autonomy.py test_review_cleanup.py test_review_reliability.py
           node review-approval-preparation/test_review_inbox_route.mjs
           python -m unittest test_review_approved_watchdog.py test_review_cabinet_capacity.py
@@ -50,6 +51,8 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALLOWED_CHAT_ID: ${{ secrets.TELEGRAM_ALLOWED_CHAT_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REVIEW_SEMANTIC_AUTO_FIVE_STAR: '1'
           WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
           WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}

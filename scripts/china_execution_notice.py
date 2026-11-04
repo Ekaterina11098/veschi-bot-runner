@@ -12,7 +12,7 @@ def proven(item,state):
  if kind=='pause_campaign':return after.get('status')==11 and before.get('nm_settings')==after.get('nm_settings')
  if before.get('status')!=after.get('status'):return False
  if kind=='topup_campaign':
-  if before.get('nm_settings')!=after.get('nm_settings') or not isinstance(state.get('after_budget'),(int,float)):return False
+  if sorted(before.get('nm_settings',[]),key=lambda n:n['nm_id'])!=sorted(after.get('nm_settings',[]),key=lambda n:n['nm_id']) or not isinstance(state.get('after_budget'),(int,float)):return False
   if state.get('already_done'):return state['after_budget']>=item['target_balance']
   return isinstance(state.get('before_budget'),(int,float)) and state['after_budget']>=state['before_budget']+item['amount_cny']-2
  expected=copy.deepcopy(before.get('nm_settings',[]))

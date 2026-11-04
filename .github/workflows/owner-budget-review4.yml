@@ -30,7 +30,8 @@ jobs:
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
         run: |
           PYTHONPATH=scripts python - <<'PY'
-          import copy,json
+          import copy,json,os
+          os.environ['CHINA_TELEGRAM_BOT_TOKEN']='disabled-read-only-no-token'
           from china_cloud_cost_control import Cache,WB,validate_identity,stamp
           from china_advertising_state import AdvertisingIO
           from china_morning_readiness import current_prices,published_stock

@@ -2,7 +2,7 @@ name: Verify approved IP campaign layout from retained data only
 on:
   push:
     branches: [main]
-    paths: ['.github/disabled/ip-campaign-format-preview-20261104.never']
+    paths: ['.github/workflows/ip-campaign-format-preview-20261104.yml']
 permissions:
   contents: read
 concurrency:
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: bdb9b501860544fa09423b895ff8f6b1bddbf49b
+          ref: e765067293e9fa435b61e0f492d1a18128e03a27
           sparse-checkout: |
             advertising_daily_tables_owner.py
             ip_daily_png_contract.py

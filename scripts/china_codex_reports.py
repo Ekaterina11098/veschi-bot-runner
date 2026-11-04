@@ -20,10 +20,28 @@ def compact_source(s):
       key=str(cid)+':'+str(n['nmId']);p=products.setdefault(key,dict(campaign_id=cid,nm_id=n['nmId'],daily={}))
       m=p['daily'].setdefault(day['date'][:10],dict(spend=0,amount=0,clicks=0,views=0,orders=0,baskets=0))
       for a,b in [('spend','sum'),('amount','sum_price'),('clicks','clicks'),('views','views'),('orders','orders'),('baskets','atbs')]:m[a]+=n.get(b,0)
- return dict(period_from=s.get('period_from'),period_to=s.get('period_to'),observed_at=s.get('observed_at'),day_quality=s.get('day_quality'),products=products,
-  current_campaigns=[c for b in s.get('batches',{}).values()for c in b.get('campaigns',{}).get('adverts',[])],
-  catalogue=s.get('catalogue',{}),economics=s.get('economics',{}),addition_scan=s.get('addition_scan'),growth_inputs_scope=s.get('growth_scope'),
-  changes=[dict(nm=x.get('nm'),campaign_id=x.get('campaign_id'),kind=x.get('kind'),at=x.get('at'))for x in history(s.get('executions',[]))],wb_action_permission=False)
+ columns=['spend','amount','orders','clicks','views','baskets']
+ compact_products={key:dict(campaign_id=p['campaign_id'],nm_id=p['nm_id'],daily={day:[row[k]for k in columns]for day,row in p['daily'].items()})for key,p in products.items()}
+ fields=['observed_at','period_from','period_to','own_cogs_rub','seller_price_cny','stock_free','published_stock','buyout','sample_size','buyout_fallback','commission_policy_fallback','commission_pct','tax_pct','handling_rub','logistics_cny','expected_margin_before_ads_cny','price_observed_at','stock_observed_at','published_stock_observed_at','fx_rub_per_cny','fx_date','preliminary','unknown_reverse_and_shared_costs']
+ economics=s.get('economics',{})
+ current=(s.get('full_growth_inputs')or{}).get('campaigns')or[c for b in s.get('batches',{}).values()for c in b.get('campaigns',{}).get('adverts',[])]
+ return dict(period_from=s.get('period_from'),period_to=s.get('period_to'),observed_at=s.get('observed_at'),day_quality=s.get('day_quality'),products=compact_products,product_daily_columns=columns,
+  current_campaigns=[dict(id=c['id'],status=c['status'],currency=c['currency'],bid_type=c['bid_type'],settings=c['settings'],nm_settings=[dict(nm_id=n['nm_id'],subject_id=n['subject']['id'],bids_kopecks=n['bids_kopecks'])for n in c['nm_settings']])for c in current],
+  catalogue=dict(rows=[dict(nmID=r['nmID'],vendorCode=r['vendorCode'])for r in s.get('catalogue',{}).get('rows',[])]),
+  economics=dict(status=economics.get('status'),rows={nm:{k:e[k]for k in fields if k in e}for nm,e in economics.get('rows',{}).items()},missing=economics.get('missing',{})),
+  addition_scan=s.get('addition_scan'),growth_inputs_scope=s.get('full_growth_review')or s.get('growth_scope'),
+  changes=[dict(nm=x.get('nm'),campaign_id=x.get('cid'),kind=x.get('kind'),at=x.get('at'))for x in history(s.get('executions',[]))],wb_action_permission=False)
+def compact_report(bundle):
+ """All arithmetic stays in the renderer source; avoid charging twice for repeated raw evidence."""
+ keys=['id','name','status','payment','zone','balance','period','last','budget_period','budget_days','budget_reference_need','budget_cash_gap','budget_reserve_amount','budget_economics_status','budget_economics_reason','budget_recommendation']
+ out={k:bundle[k]for k in ['days','budget_days','source_observed_at','budget_observed_at','total_yesterday_spend','full_cabinet_growth_review']if k in bundle}
+ out['campaigns']=[]
+ for c in bundle['campaigns']:
+  row={k:c[k]for k in keys if k in c}
+  row['focus']=[dict(nm=r['nm'],article=r['article'],decision=r.get('decision'),period=r.get('period'),comparison=r.get('comparison'),action_id=(r.get('action')or{}).get('id'),pending_first_day=r.get('pending_first_day'))for r in c.get('focus',[])]
+  row['budget_member_count']=len(c.get('budget_members',[]))
+  out['campaigns'].append(row)
+ return out
 def ad_validate(value,actions,campaigns,labels):
  if value.get('kind')!='advertising_review':raise ValueError('Advertising review kind required')
  rows=value.get('decisions')
@@ -65,7 +83,7 @@ def review_advertising(io,bundle,source,identity,observational=None,force=False,
    key=a.get('id')or str(c['id'])+':'+str(a.get('nm_id'))
    if direction(a) is None:continue
    if key in actions and actions[key]!=a:raise ValueError('Conflicting exact candidate')
-   actions[key]=copy.deepcopy(a);subjects[key]=dict(article=r['article'],campaign_id=c['id'],decision=r.get('decision'),economics=r.get('economics'),metrics=(r.get('comparison')or{}).get('after')or r.get('period'),basis_days=(r.get('comparison')or{}).get('to_days')or bundle.get('days'),evidence=r.get('closed_day_evidence')or a.get('growth_evidence'))
+   actions[key]=copy.deepcopy(a);subjects[key]=dict(article=r['article'],campaign_id=c['id'],decision=r.get('decision'),economics_ref=str((a or{}).get('nm_id')),metrics=(r.get('comparison')or{}).get('after')or r.get('period'),basis_days=(r.get('comparison')or{}).get('to_days')or bundle.get('days'),evidence_ref='allowed_actions.'+key+'.growth_evidence' if a.get('growth_evidence') else r.get('closed_day_evidence'))
   a=c.get('budget_action')
   if a:
    key='funding:'+str(c['id']);actions[key]=copy.deepcopy(a);funding[key]=c['id']
@@ -73,7 +91,7 @@ def review_advertising(io,bundle,source,identity,observational=None,force=False,
  labels={int(x['nmID']):x['vendorCode']for x in source.get('catalogue',{}).get('rows',[])}
  campaigns={c['id']for c in bundle['campaigns']}
  contract=dict(kind='advertising_review',decisions=[dict(id='exact allowed_actions key',note='Короткое действие без чисел/ставок: параметры возьмутся из immutable action',reason='Private reasoning')],directions={d:dict(status='checked|unavailable',note='Private coverage conclusion')for d in DIRECTIONS},research=[dict(nm_id='known nm',campaign_id='known campaign',direction='raise|add',note='Краткая непроверенная идея без конкретной непроверенной ставки')],summary='Private concise analysis')
- data=dict(report=bundle,completed_source=compact_source(source),intraday_observation=observational,allowed_actions=actions,candidate_evidence=subjects,readiness_blocks=readiness_blocks,
+ data=dict(report=compact_report(bundle),completed_source=compact_source(source),intraday_observation=observational,allowed_actions=actions,candidate_evidence=subjects,readiness_blocks=readiness_blocks,
   instruction='Самостоятельно проверь все направления и экономику. Черновые кандидаты не рекомендация. Отбери только обоснованные; маленькую собственную выборку/разовый ноль не объявляй доказательством. Предложи исследовать рост по другим товарам, если есть конкретные данные. Готовые действия — только exact allowed_actions. Сегодняшний день не основание снижения/исключения. Funding допускает только3-дневный расчёт.')
  result,receipt=core.ask(identity,'advertising',data,contract,lambda v:ad_validate(v,actions,campaigns,labels),force)
  selected={r['id']:r for r in result['decisions']};out=copy.deepcopy(bundle)

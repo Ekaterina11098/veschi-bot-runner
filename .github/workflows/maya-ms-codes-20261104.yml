@@ -1,0 +1,60 @@
+name: MAYA owner code correction
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/maya-ms-codes-20261104.yml']
+permissions: {}
+concurrency:
+  group: maya-ms-products-20261104
+  cancel-in-progress: false
+jobs:
+  correct:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Correct code only and verify preservation
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import os,json,gzip,datetime,urllib.request,urllib.parse,urllib.error
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*a,**k):raise RuntimeError("Redirect blocked")
+          opener=urllib.request.build_opener(NoRedirect)
+          sb=os.environ["SUPABASE_URL"].rstrip("/")
+          base="https://api.moysklad.ru/api/remap/1.2/"
+          sh={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json"}
+          mh={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept-Encoding":"gzip","Accept":"application/json;charset=utf-8","Content-Type":"application/json"}
+          def call(url,headers,method="GET",body=None):
+           try:
+            with opener.open(urllib.request.Request(url,headers=headers,method=method,data=None if body is None else json.dumps(body,ensure_ascii=False).encode()),timeout=60) as r:
+             raw=r.read()
+             if not raw:return None
+             if r.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+             return json.loads(raw)
+           except urllib.error.HTTPError as e:raise RuntimeError("Remote HTTP "+str(e.code)) from None
+          import re
+          ref=call(sb+"/rest/v1/telegram_api_cache?cache_key=eq.maya_cycle:create_result:20261104&select=payload",sh)[0]["payload"]
+          assert ref["status"]=="complete" and len(ref["products"])==18
+          out={"run_id":os.environ["GITHUB_RUN_ID"],"status":"in_progress","products":[]}
+          def save():
+           stamp=datetime.datetime.now(datetime.timezone.utc).isoformat()
+           h=dict(sh);h["Prefer"]="resolution=merge-duplicates,return=minimal"
+           call(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",h,"POST",{"cache_key":"maya_cycle:code_result:20261104","payload":out,"updated_at":stamp,"expires_at":"2026-12-31T23:59:59Z"})
+          save()
+          for item in ref["products"]:
+           p=call(base+"entity/product/"+item["id"],mh)
+           assert p["article"]==item["article"] and p.get("externalCode")=="veschi-maya-20261104-"+p["article"]
+           numbers=re.findall(r"[0-9]+",p["name"])
+           assert len(numbers)==1 and p["name"].lower().startswith("сумка")
+           code=numbers[0]+"с"
+           old=p.get("code")
+           call(base+"entity/product/"+p["id"],mh,"PUT",{"code":code})
+           v=call(base+"entity/product/"+p["id"],mh)
+           assert v["code"]==code and v["article"]==p["article"] and v["name"]==p["name"]
+           assert v.get("barcodes",[])==p.get("barcodes",[]) and v.get("description")==p.get("description")
+           out["products"].append({"article":p["article"],"id":p["id"],"before":old,"code":code,"verified":True});save()
+          out["status"]="complete";save()
+          print("Product code correction verified. Other product fields preserved.")

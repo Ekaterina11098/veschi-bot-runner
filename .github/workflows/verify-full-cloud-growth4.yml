@@ -70,6 +70,33 @@ jobs:
           if result['full_growth_review']['catalogue_count']!=315:raise ValueError('Whole catalogue scope lost')
           if result['full_growth_review']['current_price_count']!=310:raise ValueError('Unavailable prices not preserved')
           print('Recorded full-cabinet stage resume verified; zero WB/Telegram/model calls')
+          from china_advertising_v2 import build,history
+          from china_advertising_cards import enhance
+          from china_advertising_full_growth import enrich,proposed_actions
+          from china_advertising_directions import attach
+          from china_codex_reports import review_advertising
+          from china_advertising_v2_png import render
+          base=enrich(Fake(),result,enhance(build(result),result));base=attach(base,result);base['mandatory_campaign_format']=True
+          class DB:
+           def get(self,k):return dict(enabled=True,status='active',cabinet='token_3',chat_id=-1004342917488,wb_action_permission=False)
+          class Core:
+           db=DB()
+           def ask(self,identity,kind,data,contract,validate,force):
+            size=len(json.dumps(data,ensure_ascii=False))
+            if size>1200000:raise ValueError('Cloud analysis evidence too large: '+str(size))
+            value=dict(kind='advertising_review',decisions=[dict(id=k,note='Проверенное предложение',reason='Fixture only')for k in data['allowed_actions']],directions={d:dict(status='checked',note='Fixture coverage')for d in ['raise','add','reduce','exclude']},research=[],summary='Read-only verifier')
+            return validate(value),dict(key='verification-only',source_sha256='fixture',model='no_model_call',session_id='fixture',source_channel='verification')
+          reviewed=review_advertising(Fake(),base,result,'verification-only',core=Core())
+          pages=render(reviewed)
+          if {x['family']for x in pages}!={'drr','budgets'}:raise ValueError('Approved families changed')
+          for key in(c.get('china_agent:verified_campaign_state:v1')or{}).values():
+           receipt=c.get(key)
+           if receipt:result['executions'].append(dict(payload=receipt))
+          after,_=proposed_actions(result)
+          done={1473243910,1473244354,1473243904,1473245505,1473243890,1473244337,1473244340,1473243900}
+          if {a['nm_id']for a in after}&done:raise ValueError('Same-day verified raise repeated')
+          print('Cloud report construction, mandatory PNG families, and current verified same-day exclusions passed; zero live model/WB/Telegram calls')
+          
           PY
       - name: Existing advertising regressions and exact mutation simulations
         run: PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_advertising_*.py'

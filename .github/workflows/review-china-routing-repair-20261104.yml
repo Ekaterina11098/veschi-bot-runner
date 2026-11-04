@@ -46,7 +46,7 @@ jobs:
           python -m py_compile review_morning.py review_china_two_hour.py
       - name: Route only the two exact audited items with durable receipts
         env:
-          PYTHONPATH: ${{ github.workspace }}/private-source
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}/review-approval-preparation
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

@@ -13,7 +13,7 @@ on:
     - cron: '10,20,30,40,50 17 * * *'
     - cron: '10,20,30,40,50 2 * * *'
     - cron: '*/10 3-8 * * *'
-    - cron: '*/10 18-21 * * *'
+    - cron: '*/10 18-20 * * *'
 # Daily05:00/20:00MSK; legacy0700 journal identity retained; bounded10-minute checks resume unfinished slots only.
 # Completed slots and unexpired Retry-After are skipped without business API calls.
 # Owner approved daily stock execution and new stock notifications, 2026-10-15.

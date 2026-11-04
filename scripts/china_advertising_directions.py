@@ -71,7 +71,7 @@ def campaign_table(bundle):
     if r.get('bid_verified')is not True or type(r.get('target_minor'))is not int:continue
     text='Добавить · ставка '+str(r['target_minor']/100)+' CNY.'
    elif key=='exclude':text='Исключить из РК.'
-   else:text=('Повысить'if key=='raise'else'Снизить')+' '+str(a['old_minor']/100)+' → '+str(a['target_minor']/100)+' CNY.'
+   else:text=(('Тест: повысить'if a.get('manual_experiment')else'Повысить')if key=='raise'else'Снизить')+' '+str(a['old_minor']/100)+' → '+str(a['target_minor']/100)+' CNY.'
    c['direction_recommendations'].append(r['article']+': '+text)
  # Unready research stays in the private Codex analysis journal.
  return out

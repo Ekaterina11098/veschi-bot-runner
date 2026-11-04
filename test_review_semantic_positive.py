@@ -20,7 +20,7 @@ class SemanticPositiveTests(unittest.TestCase):
    self.assertIn('untrusted',sent['messages'][0]['content'])
    self.assertEqual(sent['response_format']['type'],'json_schema')
  def test_concern_question_uncertainty_or_lower_confidence_remain_manual(self):
-  for change in [dict(label='COMPLAINT'),dict(has_complaint=True),dict(has_question=True),dict(has_uncertainty=True),dict(confidence=0.97),dict(label='UNCERTAIN')]:
+  for change in [dict(label='COMPLAINT'),dict(has_complaint=True),dict(has_question=True),dict(has_uncertainty=True),dict(confidence=0.94),dict(label='UNCERTAIN')]:
    semantic.assess.cache_clear()
    with patch('review_semantic_positive.request_assessment',return_value=self.response(dict(self.result,**change))):
     self.assertFalse(semantic.classify_fields('Незнакомая фраза','','')['eligible'])
@@ -45,3 +45,14 @@ class SemanticPositiveTests(unittest.TestCase):
    self.assertFalse(classify(dict(productValuation=4,text='Новая похвала'))['eligible'])
    self.assertFalse(classify(dict(productValuation=5,text='Новая похвала',answer={'text':'Ответ'}))['eligible'])
    post.assert_not_called()
+
+
+
+ def test_positive_at_95_percent_is_eligible(self):
+  with patch('review_semantic_positive.request_assessment',return_value=self.response(dict(self.result,confidence=0.95))):
+   self.assertTrue(semantic.classify_fields('Моя любимая сумочка','','')['eligible'])
+ def test_explicit_concerns_cannot_be_overridden_by_positive_model(self):
+  for text in ['Шикарная сумка, немного напрягает 4 ручки, советую', 'Мне маловата', 'Супер, но думала будет чуть побольше', 'Посмотрим как покажет себя при дожде']:
+   with patch('review_semantic_positive.request_assessment',return_value=self.response()) as post:
+    self.assertFalse(semantic.classify_fields(text,'','')['eligible'])
+    post.assert_not_called()

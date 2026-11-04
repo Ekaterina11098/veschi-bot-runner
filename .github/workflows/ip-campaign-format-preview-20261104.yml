@@ -2,7 +2,7 @@ name: Verify approved IP campaign layout from retained data only
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/ip-campaign-format-preview-20261104.yml']
+    paths: ['.github/disabled/ip-campaign-format-preview-20261104.never']
 permissions:
   contents: read
 concurrency:

@@ -1,0 +1,53 @@
+name: MAYA isolated MS product read 20261104
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/maya-ms-read-20261104.yml']
+permissions: {}
+concurrency:
+  group: maya-ms-read-20261104
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Read requested products without changing MoySklad
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import os,json,gzip,datetime,urllib.request,urllib.parse,urllib.error
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*args,**kwargs): raise RuntimeError("Redirect blocked")
+          opener=urllib.request.build_opener(NoRedirect)
+          sb=os.environ["SUPABASE_URL"].rstrip("/")
+          sh={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json"}
+          mh={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept-Encoding":"gzip","Accept":"application/json;charset=utf-8"}
+          def request(url,headers,method="GET",data=None):
+           try:
+            req=urllib.request.Request(url,headers=headers,method=method,data=None if data is None else json.dumps(data).encode())
+            with opener.open(req,timeout=45) as response:
+             raw=response.read()
+             if not raw:return None
+             if response.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+             return json.loads(raw)
+           except urllib.error.HTTPError as exc:raise RuntimeError("HTTP "+str(exc.code)) from None
+          refs=request(sb+"/rest/v1/telegram_api_cache?cache_key=eq.maya_cycle:request:20261104&select=payload",sh)
+          articles=refs[0]["payload"]["articles"]
+          assert 1<=len(articles)<=18 and len(set(articles))==len(articles)
+          out={"run_id":os.environ["GITHUB_RUN_ID"],"read_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"products":[],"mode":"MS_GET_ONLY"}
+          for article in articles:
+           assert isinstance(article,str) and len(article)<100
+           query=urllib.parse.urlencode({"filter":"article="+article,"limit":100})
+           data=request("https://api.moysklad.ru/api/remap/1.2/entity/product?"+query,mh)
+           rows=data.get("rows",[])
+           assert data["meta"]["size"]<=100
+           out["products"].append({"requested_article":article,"matches":[{k:p.get(k) for k in ("id","name","article","code","archived","barcodes","description","attributes","weight","volume","buyPrice")} for p in rows if p.get("article")==article]})
+          record={"cache_key":"maya_cycle:ms_result:20261104","payload":out,"updated_at":out["read_at"],"expires_at":"2026-11-11T23:59:59Z"}
+          sh["Prefer"]="resolution=merge-duplicates,return=minimal"
+          request(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",sh,"POST",record)
+          print("Read-only check completed. Result stored privately.")
+          

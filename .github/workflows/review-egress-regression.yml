@@ -1,0 +1,43 @@
+name: Review egress regression
+on:
+  push:
+    paths:
+      - '.github/workflows/review-egress-regression.yml'
+      - 'test_review_egress_pg.py'
+      - 'review_approved_worker.py'
+      - 'review_approved_benchmarks.py'
+      - 'review-approval-preparation/review_approval_backup.py'
+      - 'review-approval-preparation/review_approval_cleanup.py'
+permissions: {contents: read}
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: isolated-test-only
+          POSTGRES_DB: review_egress_test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*.py
+            /review-approval-preparation/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 requests==2.32.5 python-dotenv==1.1.1
+      - name: Exact approvals, retries, cleanup and benchmark contracts
+        run: |
+          python -m unittest test_review_approved_benchmarks test_review_approved_worker test_review_cabinet_capacity test_review_cleanup test_review_reliability test_review_process_resilience test_review_approved_watchdog
+          python -m unittest discover -s review-approval-preparation -p test_review_telegram.py
+      - name: Real isolated PostgreSQL selectors, consistent backup and egress
+        env:
+          EGRESS_TEST_DSN: postgresql://postgres:isolated-test-only@127.0.0.1:5432/review_egress_test
+        run: python -m unittest -v test_review_egress_pg

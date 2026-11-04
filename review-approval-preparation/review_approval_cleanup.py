@@ -15,9 +15,17 @@ def cleanup_completed(a,tg,preserve=None,intent_id=None,cabinet=None):
 
 def _cleanup_chat(a,tg,preserve=None,intent_id=None,cabinet=None):
     repo=a.repo
-    intents={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}intents').fetchall()}
-    cards={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}cards').fetchall()}
-    events={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}events').fetchall()}
+    if repo.pg:
+        intents={k:json.loads(v) for k,v in repo.execute("SELECT id,payload FROM {p}intents WHERE payload::jsonb->>'owner_id'=? AND payload::jsonb->>'chat_id'=? AND (?::text IS NULL OR id=?) AND (?::text IS NULL OR payload::jsonb->>'cabinet'=?)",(a.owner,a.chat,intent_id,intent_id,cabinet,cabinet)).fetchall()}
+        refs=list({i['ref'] for i in intents.values()})
+        cards={k:json.loads(v) for k,v in repo.execute("SELECT id,payload FROM {p}cards WHERE payload::jsonb->>'ref'=ANY(?)",(refs,)).fetchall()} if refs else {}
+        # Keep old card versions and exact revision/reply lineage, not unrelated
+        # events from every review. Terminal deletion receipts remain point reads.
+        events={k:json.loads(v) for k,v in repo.execute("SELECT id,payload FROM {p}events WHERE payload::jsonb->>'intent_id'=ANY(?) OR payload::jsonb->>'card_token'=ANY(?) OR payload::jsonb->>'ref'=ANY(?) OR (starts_with(id,'telegram-ingress:') AND payload::jsonb->'update'->'message'->'reply_to_message'->>'message_id'=ANY(?)) OR (starts_with(id,'revision-delivery:') AND payload::jsonb->>'revision_event_id' IN (SELECT id FROM {p}events WHERE starts_with(id,'edit:') AND payload::jsonb->>'token'=ANY(?))) OR (starts_with(id,'edit:') AND payload::jsonb->>'token'=ANY(?))",(list(intents),list(cards),refs,[str(c['message_id']) for c in cards.values() if c.get('message_id')],list(cards),list(cards))).fetchall()} if intents else {}
+    else:
+        intents={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}intents').fetchall()}
+        cards={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}cards').fetchall()}
+        events={k:json.loads(v) for k,v in repo.execute('SELECT id,payload FROM {p}events').fetchall()}
     owned={}
     completed={}
     processed={}

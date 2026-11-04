@@ -3,6 +3,53 @@ import base64,json,hashlib,secrets,os
 from review_telegram_approval import sha
 
 TABLES=('items','cards','events','intents')
+class IncrementalSnapshot:
+    """Keep the full encrypted artifact, transfer only changed rows from Postgres.
+
+    Each capture is still a single repeatable-read snapshot. Table fingerprints
+    and row xmin versions are computed by Postgres; deletions are reconciled.
+    Publish the local cache only after all reads complete, so failures are retryable.
+    """
+    def __init__(self,repo):
+        self.repo=repo;self.cache={};self.signatures={}
+
+    def capture(self):
+        repo=self.repo
+        if not repo.pg:return snapshot(repo)
+        tables={};next_cache={};signatures={}
+        with repo.conn.transaction():
+            repo.conn.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            for table in TABLES+('source_cache','source_journal'):
+                key='cache_key' if table=='source_cache' else 'feedback_id' if table=='source_journal' else 'id'
+                where=" WHERE starts_with(cache_key,'reviews:')" if table=='source_cache' else ''
+                base='review_approval.'+table
+                # Views do not expose xmin. Hash only their declared columns on
+                # the server; this also detects deletes and same-timestamp edits.
+                version="md5(payload::text||coalesce(updated_at::text,''))" if table=='source_cache' else "md5(jsonb_build_array(state,error)::text)" if table=='source_journal' else 'xmin::text'
+                signature=repo.conn.execute("SELECT md5(coalesce(string_agg("+key+"::text||':'||"+version+",',' ORDER BY "+key+"),'')) FROM "+base+where).fetchone()[0]
+                signatures[table]=signature
+                old=self.cache.get(table,{})
+                if self.signatures.get(table)==signature:
+                    rows=old
+                else:
+                    versions=dict(repo.conn.execute('SELECT '+key+','+version+' FROM '+base+where).fetchall())
+                    changed=[k for k,v in versions.items() if k not in old or old[k][0]!=v]
+                    rows={k:old[k] for k in versions if k not in changed}
+                    fields='cache_key,payload,updated_at' if table=='source_cache' else 'feedback_id,state,error' if table=='source_journal' else 'id,payload'
+                    for offset in range(0,len(changed),250):
+                        for raw in repo.conn.execute('SELECT '+fields+' FROM '+base+' WHERE '+key+'=ANY(%s) ORDER BY '+key,(changed[offset:offset+250],)).fetchall():
+                            k=raw[0]
+                            value=({'cache_key':k,'payload':raw[1],'updated_at':str(raw[2])} if table=='source_cache' else {'feedback_id':k,'state':raw[1],'error':raw[2]} if table=='source_journal' else {'id':k,'payload':json.loads(raw[1])})
+                            rows[k]=(versions[k],value)
+                    if set(rows)!=set(versions):raise ValueError('Incomplete incremental backup read')
+                next_cache[table]=rows
+                tables[table]=[rows[k][1] for k in sorted(rows)]
+            point=repo.conn.execute('SELECT pg_current_snapshot()::text,transaction_timestamp()::text').fetchone()
+        result=dict(format='review-approval-supplement-v1',point=list(point),tables=tables,code_commit=os.getenv('GITHUB_SHA','isolated-test'),private_wb_commit='1b4201067880e379d8dacbe5f6ca3f9848d6ffb0',manifest={k:{'count':len(v),'sha256':sha(v)} for k,v in tables.items()})
+        validate(result)
+        self.cache=next_cache;self.signatures=signatures
+        return result
+
 def snapshot(repo):
     # Separate connection, idle before invocation. Repeatable-read binds every table.
     with repo.conn.transaction():

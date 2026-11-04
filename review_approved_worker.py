@@ -6,7 +6,11 @@ sys.path.insert(0,str(Path(__file__).parent/'review-approval-preparation'))
 def due_intents(repo,cfg,cabinet=None,now=None):
     if cabinet not in (None,'token_1','token_2','token_3'):raise ValueError('Unknown worker cabinet')
     now=time.time() if now is None else now
-    rows=repo.execute('SELECT id,payload FROM {p}intents').fetchall()
+    if repo.pg:
+        # Filter on the server: completed history is never part of the work queue.
+        rows=repo.execute("SELECT id,payload FROM {p}intents WHERE payload::jsonb->>'status' IN ('awaiting_preflight','verify') AND payload::jsonb->>'owner_id'=? AND payload::jsonb->>'chat_id'=ANY(?) AND (payload::jsonb->>'created_at')::double precision>=? AND (?::text IS NULL OR payload::jsonb->>'cabinet'=?) AND greatest(coalesce((payload::jsonb->>'retry_at')::double precision,0),coalesce((payload::jsonb->>'worker_retry_at')::double precision,0))<=?",(str(cfg['owner_id']),[str(cfg['chat_id']),str(cfg.get('content_group_chat_id',''))],cfg['cutover'],cabinet,cabinet,now)).fetchall()
+    else:
+        rows=repo.execute('SELECT id,payload FROM {p}intents').fetchall()
     groups={c:[] for c in ('token_1','token_2','token_3')}
     for intent_id,raw in rows:
         i=json.loads(raw)
@@ -23,7 +27,7 @@ def main():
     from review_approval_bridge import SQLSource,DurableBridge
     from review_telegram_runtime import CanonicalGuard,TelegramTransport
     from review_approval_executor import Executor,WBAdapter
-    from review_approval_backup import snapshot,encrypt
+    from review_approval_backup import IncrementalSnapshot,encrypt
     from stock_deploy_support import OWNER_PUBLIC,seal,error
     worker_cabinet=os.environ.get('REVIEW_WORKER_CABINET') or None
     if worker_cabinet not in (None,'token_1','token_2','token_3'):raise ValueError('Unknown worker cabinet')
@@ -45,8 +49,9 @@ def main():
         os.environ['REVIEW_PUBLICATION_ENABLED']='1'
         report={'wb_writes':0,'checked':{},'errors':{},'legacy_queue_calls':0}
         out=Path(os.environ['RUNNER_TEMP'])/'stock-deploy-proof';out.mkdir(exist_ok=True)
+        backup=IncrementalSnapshot(repo)
         def preserve():
-            (out/'approved-publication-backup.aes.json').write_text(json.dumps(encrypt(snapshot(repo),OWNER_PUBLIC.encode())))
+            (out/'approved-publication-backup.aes.json').write_text(json.dumps(encrypt(backup.capture(),OWNER_PUBLIC.encode())))
             seal('approved-publication-receipts',report)
         canonical_guard=CanonicalGuard(app,bridge.project)
         def publication_guard(card):

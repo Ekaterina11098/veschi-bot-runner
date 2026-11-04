@@ -60,7 +60,12 @@ jobs:
           def scope(doc):
            return all(norm(doc.get(k,{}))==norm(prep[k]) for k in ('organization','agent','store')) and norm(doc.get('rate',{}).get('currency',{}))==norm(prep['currency'])
           found=rows('entity/demand',{'filter':'externalCode='+DEMAND_EXT})
-          assert len(found)==1 and found[0]['id']==prev['demand']['id']
+          if not (len(found)==1 and found[0]['id']==prev['demand']['id']):
+           diagnostic={'at':m.now(),'external_matches':found,'by_number':rows('entity/demand',{'filter':'name='+prev['demand']['name']}),'orders_by_name':rows('entity/customerorder',{'filter':'name='+req['order_name']})}
+           try:diagnostic['by_id']=t.request(m.MS,'entity/demand/'+prev['demand']['id'])
+           except m.Stop as error:diagnostic['by_id_error']=str(error)
+           db.put(ROOT+'order_chain_diagnostic:v1',diagnostic)
+           raise m.Stop('Shipment identity changed; no writes performed')
           demand=t.request(m.MS,'entity/demand/'+found[0]['id'])
           original_positions=ps('demand',demand['id'])
           def verify_zero(doc,positions):

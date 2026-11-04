@@ -27,7 +27,7 @@ jobs:
           def get(url, token):
               req = urllib.request.Request(url, method="GET", headers={
                   "Authorization": "Bearer " + token,
-                  "Accept": "application/json",
+                  "Accept": "application/json;charset=utf-8",
                   "Accept-Encoding": "gzip"})
               with opener.open(req, timeout=30) as response:
                   raw = response.read()

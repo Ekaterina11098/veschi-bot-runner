@@ -30,23 +30,23 @@ class CompletedBudgetTests(unittest.TestCase):
   for k in ['budget_reference_need','budget_cash_gap','budget_reserve_amount','budget_short_note','budget_action']:self.assertEqual(a[k],b[k])
  def test_positive_small_model_does_not_override_owner_five_target(self):
   c=result()['campaigns'][0];self.assertGreater(c['budget_drr'],5)
-  self.assertIsNone(c['budget_action']);self.assertIn('малая выборка',c['budget_short_note']);self.assertIn('потолок ДРР5%',c['budget_short_note']);self.assertIn('снижение ставки',c['budget_short_note'])
+  self.assertIsNone(c['budget_action']);self.assertIn('малая выборка',c['budget_short_note']);self.assertIn('Пока не пополнять',c['budget_short_note'])
  def test_positive_small_model_below5_can_propose_reserve(self):
   s=source()
   for d in s['batches']['0']['stats'][0]['days']:d['sum_price']=10000
   c=result(s)['campaigns'][0];self.assertLess(c['budget_drr'],5);self.assertIsNotNone(c['budget_action'])
- def test_conditional_funding_after_verified_campaign_recommendations(self):
+ def test_unready_amount_is_recommendation_only_not_agreement(self):
   c=result()['campaigns'][0];f=c['budget_followup']
-  self.assertEqual(f['status'],'conditional_after_campaign_recommendations');self.assertTrue(f['requires_verified_campaign_changes']);self.assertTrue(f['requires_fresh_balance_and_members'])
-  self.assertIsNone(f['final_topup_amount_cny']);self.assertFalse(f['execution_authorized']);self.assertIsNone(c['budget_action']);self.assertIn('WBverified',c['budget_short_note'])
-  self.assertEqual(f['recommended_topup_amount_cny'],400);self.assertTrue(f['can_approve_amount_now']);self.assertTrue(c['budget_short_note'].startswith('Рекомендовано 400 ¥\nпосле исполнения рекомендаций РК'))
+  self.assertEqual(f['status'],'recommendation_only');self.assertTrue(f['requires_fresh_review'])
+  self.assertFalse(f['execution_authorized']);self.assertIsNone(c['budget_action'])
+  self.assertNotIn('can_approve_amount_now',f);self.assertIn('Пока не пополнять',c['budget_short_note'])
  def test_profitable_campaign_cannot_hide_zero_order_member_spend(self):
   s=source();raw=s['batches']['0'];raw['campaigns']['adverts'][0]['nm_settings'].append(dict(nm_id=2,bids_kopecks=dict(search=28)))
   s['economics']['rows']['2']=copy.deepcopy(s['economics']['rows']['1'])
   s['catalogue']['rows'].append(dict(nmID=2,vendorCode='test2',price=126))
   for d in raw['stats'][0]['days']:
    d['sum_price']=100000;d['apps'][0]['nms'].append(dict(nmId=2,sum=10,sum_price=0,orders=0,views=20,clicks=2))
-  c=result(s)['campaigns'][0];self.assertLess(c['budget_drr'],5);self.assertIsNone(c['budget_action']);self.assertIn('SKU 2',c['budget_short_note'])
+  c=result(s)['campaigns'][0];self.assertLess(c['budget_drr'],5);self.assertIsNone(c['budget_action']);self.assertIn('Пока не пополнять',c['budget_short_note'])
  def test_low_drr_not_profit_proof(self):
   s=source();s['economics']={}
   for d in s['batches']['0']['stats'][0]['days']:d['sum_price']=100000
@@ -65,7 +65,7 @@ class CompletedBudgetTests(unittest.TestCase):
   s=source()
   for d in s['batches']['0']['stats'][0]['days']:d['sum_price']=0;d['orders']=0
   c=result(s)['campaigns'][0];self.assertIsNone(c['budget_drr']);self.assertIn('не определена',c['budget_short_note'])
-  self.assertIsNone(c['budget_action']);self.assertIn('исключение',c['budget_short_note'])
+  self.assertIsNone(c['budget_action']);self.assertIn('Пока не пополнять',c['budget_short_note'])
  def test_same_day_verified_change_waits(self):
   s=source();s['batches']['0']['campaigns']['adverts'][0]['timestamps']['started']='2026-10-31T10:00:00+03:00'
   c=result(s)['campaigns'][0];self.assertEqual(c['budget_economics_status'],'waiting');self.assertIsNone(c['budget_action'])

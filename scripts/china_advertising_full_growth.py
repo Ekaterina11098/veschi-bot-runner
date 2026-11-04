@@ -102,7 +102,7 @@ def collect(io,s,day):
   raise PendingAdvertisingDay('Full cabinet growth inputs incomplete; staged read-only collection will resume')from ex
  out=copy.deepcopy(s);out['catalogue']=v.get('catalogue',s['catalogue']);out['economics']=v['economics'];out['observed_at']=v['observed_at']
  current={c['id']:c for c in v['campaigns']};cash={r['advertId']:r for r in v['budgets']['adverts']}
- for batch in out['batches'].values():
+ for batch in out.get('batches',{}).values():
   batch['campaigns']['adverts']=[current.get(cp['id'],cp)for cp in batch['campaigns']['adverts']]
   batch['budgets']['adverts']=[cash.get(row['advertId'],row)for row in batch['budgets'].get('adverts',[])if row is not None]
  out['budget_balance_observed_at_iso']=v.get('budgets_observed_at',v['observed_at'])

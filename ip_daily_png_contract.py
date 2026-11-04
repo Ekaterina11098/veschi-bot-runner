@@ -63,7 +63,48 @@ def build_contract(store,view):
  rows=store.db('GET','analytics_snapshots',params={'source':'eq.advertising_active_configuration','cabinet':'eq.token_2','select':'payload,collected_at','order':'id.desc','limit':1}) or []
  cfg=rows[0]['payload'] if rows else {};cfg=cfg[0] if isinstance(cfg,list) and cfg else cfg
  configs={c['id']:c for c in cfg.get('adverts',[])} if isinstance(cfg,dict) else {}
+ display=[];authorized=set();protected_additions=set();pending_nms=set();donors=[];pair_changes={};sku_changes={}
+ registry=store.cache_get('advertising:ip:execution-registry:v1') or {}
+ protected_additions.update(registry.get('protected_addition_nms') or [])
+ for record in registry.get('records',[]):
+  p=store.cache_get(record['approval_key']) or {};e=store.cache_get(record['execution_key']) or {}
+  for name,at in [('before','configuration_observed_at'),('membership_readback','membership_readback_at'),('after','readback_at')]:
+   if isinstance(e.get(name),dict) and e.get(at):donors.append((e[at],e[name]))
+  scope=p.get('actions') or p.get('scope') or p.get('entries') or []
+  verified=str(e.get('status','')).startswith('verified')
+  completed=e.get('readback_at') or e.get('finished_at')
+  completed_day=None
+  if completed:
+   from zoneinfo import ZoneInfo
+   completed_day=datetime.fromisoformat(completed.replace('Z','+00:00')).astimezone(ZoneInfo('Europe/Moscow')).date().isoformat()
+  for a in scope:
+   cid=a.get('campaign');nm=a.get('nm')
+   if a.get('kind')=='remove':protected_additions.add(nm)
+   if verified and completed_day and cid and nm:
+    if a.get('kind') in ('raise_bid','lower_bid'):sku_changes[nm]=max(sku_changes.get(nm,''),completed_day)
+    elif a.get('kind') in ('remove','add','add_to_existing'):pair_changes[(cid,nm)]=max(pair_changes.get((cid,nm),''),completed_day)
+   if not record.get('show_recent'):continue
+   relevant=not verified or not completed_day or view['period']<=completed_day
+   if not relevant:continue
+   if not cid or not nm or a.get('kind') not in ('remove','add','raise_bid','lower_bid'):continue
+   authorized.add((cid,nm));pending_nms.add(nm)
+   d=copy.deepcopy(a)
+   d['display_status']='Выполнено '+str(completed_day)+'. Повторно не применять.' if verified else 'Результат не подтверждён; повтор не выполнять.' if e.get('status')=='attention' else 'Согласовано; в исполнении.' if e else 'Согласовано; ожидает исполнителя.'
+   display.append(d)
+ config_at=rows[0].get('collected_at','') if rows else ''
+ observed_by_cid={cid:config_at for cid in configs}
+ for at,adverts in sorted(donors,key=lambda x:x[0]):
+  for cid,c in adverts.items():
+   if isinstance(c,dict) and c.get('id') and 'nm_settings' in c:
+    old_at=observed_by_cid.get(int(cid))
+    if not old_at or datetime.fromisoformat(at.replace('Z','+00:00'))>=datetime.fromisoformat(old_at.replace('Z','+00:00')):
+     configs[int(cid)]=copy.deepcopy(c);observed_by_cid[int(cid)]=at
  raw=list(cached.get('actions') or [])+adapt_decisions(store.cache_get('advertising:ip_pair_decisions:token_2:v1') or {},period,configs)
+ from ip_daily_retained_review import review
+ constraints=store.cache_get('advertising:ip:owner_constraints:v1') or {}
+ preserve=set(constraints.get('preserve_skus') or [])
+ reviewed,review_coverage=review(store,view,configs,authorized,protected_additions,pending_nms|preserve,pair_changes,sku_changes)
+ raw+=reviewed
  actions=[];seen=set()
  for a in raw:
   a=copy.deepcopy(a)
@@ -74,18 +115,25 @@ def build_contract(store,view):
     row=next((r for r in (c or {}).get('sku_rows') or [] if r.get('nm_id')==a.get('nm')),None)
     if row and all(type(row.get(k)) in (int,float) and row[k]>=0 for k in ('ac_spending_sum','ac_orders','ac_orders_sum')):a['daily'][v['period']]=dict(spend=row['ac_spending_sum'],orders=row['ac_orders'],revenue=row['ac_orders_sum'])
   if a.get('kind')!='add' and period not in (a.get('daily') or {}):continue
-  if not ready(a,period) or completed_or_claimed(store,a):continue
-  if (a['campaign'],a['nm']) in seen:raise ValueError('Conflicting recommendations for one campaign SKU')
+  if not ready(a,period) or completed_or_claimed(store,a) or (a['campaign'],a['nm']) in authorized or a['nm'] in preserve:continue
+  if (a['campaign'],a['nm']) in seen:continue # A previously frozen ready source has priority over a fresh adapter proposal.
   seen.add((a['campaign'],a['nm']));actions.append(copy.deepcopy(a))
  # The renderer and executor receive precisely the same frozen rows.
  details=copy.deepcopy(cached.get('details') or {})
  if not details.get('days'):
   compatible=sorted(set.intersection(*(set(a['daily']) for a in actions if a['kind']!='add'))) if any(a['kind']!='add' for a in actions) else [period]
   details['days']=compatible[-3:] or [period];details['period_label']='–'.join((details['days'][0],details['days'][-1])) if len(details['days'])>1 else period
- return dict(version='ip-daily-png-v1',chat_id=CHAT,bot_id=BOT,period=period,actions=actions,plan_sha256=digest(actions),
-  details=details,excluded_incomplete=cached.get('excluded_incomplete') or [],
+ result=dict(version='ip-daily-png-v1',chat_id=CHAT,bot_id=BOT,period=period,actions=actions,plan_sha256=digest(actions),
+  details=details,excluded_incomplete=cached.get('excluded_incomplete') or [],display_only=display,
+  campaign_labels={str(cid):dict(name=c['settings'].get('name'),payment=c['settings'].get('payment_type')) for cid,c in configs.items()},review_coverage=review_coverage,
   historical_profit_only=True,automatic_execution=False)
+ store.cache_set('advertising:ip:daily-review-audit:v1:'+period,dict(period_to=period,coverage=review_coverage,new_actions=[{k:a.get(k) for k in ('sku','nm','campaign','kind','stored_bid_minor','target_bid_minor','source','criterion')} for a in actions],display_only_count=len(display),source_calls=0,wb_writes=0),ttl_days=365)
+ return result
 def render_recommendations(view,contract,outdir):
+ from ip_campaign_table_png import render_ip
+ return render_ip(view,contract,outdir)
+
+def _render_superseded_sku_layout(view,contract,outdir):
  W=1300;P=26;BG='#edf4f7';INK='#203e50';MUTED='#71828c';RED='#bc354c'
  actions=contract['actions'];groups={}
  for a in actions:groups.setdefault(a['campaign'],[]).append(a)
@@ -155,4 +203,3 @@ def bind_receipt(store,key,p,receipt):
  store.cache_set(binding,dict(plan_key=key,plan_sha256=p['plan_sha256'],file_unique_id=value['file_unique_id']),ttl_days=365)
  if store.cache_get(binding).get('plan_key')!=key:raise RuntimeError('Message binding not saved')
  return value
-

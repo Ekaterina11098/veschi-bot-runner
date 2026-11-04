@@ -31,29 +31,20 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: disabled
         run: |
           PYTHONPATH=scripts python - <<'PY'
-          import json
+          import json,requests
           from china_cloud_cost_control import Cache,WB,validate_identity,stamp
-          from china_advertising_state import AdvertisingIO
-          from china_morning_readiness import current_prices,published_stock
-          from china_moysklad_read import read_stock
-          c=Cache();w=WB();io=AdvertisingIO();validate_identity(c,w)
-          ids=[1473243896,1473243442,1473243897,1473243898,1473243902]
-          p=current_prices(io,ids);ps=published_stock(io,p,ids);st=read_stock([r['article']for r in p['rows']])
-          states=w.campaigns([40933588,41298169,41332083])
-          quotes={};errors={}
-          for cid,nms,z in [(40933588,[1473243896,1473243442],'recommendations'),(41298169,[1473243897,1473243898,1473243902],'search')]:
-           try:quotes[str(cid)]=w.minimums(cid,nms,z)
-           except Exception as e:errors[str(cid)]=str(e)[:400]
-          budgets={}
-          for cid in states:
-           try:budgets[str(cid)]=w.req('/api/advert/v2/budget','POST',{'advertId':int(cid)})
-           except Exception as e:budgets[str(cid)]={'error':str(e)[:150]}
-          v={'observed_at':stamp(),'cabinet':'VESCHI LIMITED/token_3','prices':p,'published_stock':ps,'stock':st,'campaigns':states,'minimums':quotes,'quote_errors':errors,'budgets':budgets,'wb_writes':0,'telegram_calls':0,'grants_action_permission':False}
+          c=Cache();w=WB();validate_identity(c,w)
           k='china_agent:owner_addition_review:2026-11-04:v1:inputs'
-          v=json.loads(json.dumps(v))
-          if c.get(k)is None:c.create(k,v)
-          else:c.put(k,v)
+          v=c.get(k)
+          v['budgets']=w.req('/api/advert/v2/budget','POST',dict(advertIds=[40933588,41298169,41332083]))
+          v['budget_observed_at']=stamp()
+          v['minimum_diagnostics']={}
+          for cid,ids,z in [(40933588,[1473243896,1473243442],'recommendation'),(41298169,[1473243897,1473243898,1473243902],'search')]:
+           r=requests.post('https://advert-api.wildberries.ru/api/advert/v1/bids/min',headers={'Authorization':w.token},json=dict(advert_id=cid,nm_ids=ids,payment_type='cpc',placement_types=[z]),timeout=55)
+           v['minimum_diagnostics'][str(cid)]={'http_status':r.status_code,'body':r.text[:800]}
+          v['diagnostics_observed_at']=stamp()
+          c.put(k,v)
           assert c.get(k)==v
-          print(json.dumps({'status':'readback_ok','observed_at':v['observed_at'],'quote_errors':errors,'wb_writes':0}))
+          print(json.dumps({'status':'readback_ok','budgets':v['budgets'],'diagnostics':v['minimum_diagnostics']}))
           
           PY

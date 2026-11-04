@@ -26,7 +26,7 @@ def collect(io,s,day):
   def catalog(self):return [(str(r['nmID']),r['vendorCode'])for r in s['catalogue']['rows']]
  policy=io.get('china_agent:advertising_format:v2')or{}
  excluded=set(policy.get('growth_excluded_nm_ids',[1473245494,1473245510,1473244000]))
- ids=sorted({int(r['nmID'])for r in s['catalogue']['rows']}-excluded)
+ ids=v.get('screened_nm_ids')or sorted({int(r['nmID'])for r in s['catalogue']['rows']}-excluded)
  end=date.fromisoformat(day)-timedelta(days=1);first=end-timedelta(days=29)
  try:
   if 'own'not in v:
@@ -40,6 +40,9 @@ def collect(io,s,day):
     goods+=part
     if len(part)<1000:break
    else:raise ValueError('Price pagination bound')
+   catalogue={int(r['nmID']):r for r in s['catalogue']['rows']}
+   catalogue.update({int(g['nmID']):g for g in goods})
+   ids=sorted(set(catalogue)-excluded);v['catalogue']=dict(s['catalogue'],rows=list(catalogue.values()));v['screened_nm_ids']=ids
    rows=[];missing={}
    for nm in ids:
     matches=[g for g in goods if g['nmID']==nm]
@@ -93,11 +96,11 @@ def collect(io,s,day):
      else:v['quote_errors']['add:'+str(nm)]=str(ex);save()
   # A transient quote failure is retried by the existing next preparation, never relabelled no candidates.
   if v['quote_errors']:raise ValueError('Exact growth quotes unavailable')
-  v.update(status='complete',observed_at=stamp(),catalogue_count=len(s['catalogue']['rows']),screened_nm_ids=ids,excluded_nm_ids=sorted(excluded),wb_writes=0,telegram_calls=0,model_calls=0,grants_action_permission=False);save()
+  v.update(status='complete',observed_at=stamp(),catalogue_count=len(v.get('catalogue',s['catalogue'])['rows']),screened_nm_ids=ids,excluded_nm_ids=sorted(excluded),wb_writes=0,telegram_calls=0,model_calls=0,grants_action_permission=False);save()
  except Exception as ex:
   v.update(status='collecting',last_error=type(ex).__name__+': '+str(ex),last_attempt_at=stamp());save()
   raise PendingAdvertisingDay('Full cabinet growth inputs incomplete; staged read-only collection will resume')from ex
- out=copy.deepcopy(s);out['economics']=v['economics']
+ out=copy.deepcopy(s);out['catalogue']=v.get('catalogue',s['catalogue']);out['economics']=v['economics']
  out['morning_fresh_inputs']=dict(errors={},selected_nm_ids=ids,own_period=[str(first),str(end)],source_times={k:v[k]['observed_at']for k in['own','prices','stock']},wb_writes=0)
  out['full_growth_inputs']=v
  out['full_growth_review']=dict(status='complete',input_key=key,catalogue_count=v['catalogue_count'],current_price_count=len(v['prices']['rows']),missing_prices=v['prices']['missing'],missing_economics=v['economics']['missing'],missing_published_stock=v['published_stock']['missing_nm_ids'],observed_at=v['observed_at'])

@@ -38,7 +38,7 @@ jobs:
           ROOT='china_agent:owner_growth_selected:2026-11-04:job237:v1'
           c=Cache();io=AdvertisingIO()
           for _ in range(90):
-           e=c.get(ROOT+':attempt2:execution')or{}
+           e=c.get(ROOT+':attempt3:execution')or{}
            if e.get('status')=='verified':break
            if e.get('status')in['blocked','partial_or_uncertain']:raise ValueError('Execution not fully verified; no success send')
            time.sleep(3)
@@ -49,18 +49,18 @@ jobs:
           key=ROOT+':delivery'
           if c.get(key):raise ValueError('Result journal exists; no repeat send')
           if io.tg('getMe',{})['id']!=8780468043:raise ValueError('Bot identity')
-          record=dict(status='sending',chat_id=-1004342917488,reply_to_message_id=673,text=text,execution_key=ROOT+':attempt2:execution',created_at=datetime.now(timezone.utc).isoformat(),wb_writes=0)
+          record=dict(status='sending',chat_id=-1004342917488,reply_to_message_id=673,text=text,execution_key=ROOT+':attempt3:execution',created_at=datetime.now(timezone.utc).isoformat(),wb_writes=0)
           if not c.create(key,record):raise ValueError('Concurrent result')
           try:
            receipt=io.tg('sendMessage',dict(chat_id=-1004342917488,reply_to_message_id=673,text=text))
            if receipt.get('chat',{}).get('id')!=-1004342917488 or type(receipt.get('message_id'))is not int:raise ValueError('Delivery mismatch')
            record.update(status='sent',message_id=receipt['message_id'],receipt=receipt);c.put(key,record)
-           resolution=dict(status='answered_by_owner',chat_id=-1004342917488,message_id=receipt['message_id'],receipt_key=key,answer=text,execution_key=ROOT+':attempt2:execution')
+           resolution=dict(status='answered_by_owner',chat_id=-1004342917488,message_id=receipt['message_id'],receipt_key=key,answer=text,execution_key=ROOT+':attempt3:execution')
            if not c.create('china_agent:owner_dialog_resolution:v1:job:237',resolution):raise ValueError('Owner resolution already exists; inspect')
            correction=c.get('china_agent:owner_full_growth_review:2026-11-04:v1:correction')
            if correction and correction.get('status')=='edited_verified':
             c.create('china_agent:owner_dialog_resolution:v1:job:236',dict(status='answered_by_owner',chat_id=-1004342917488,message_id=670,receipt_key='china_agent:owner_full_growth_review:2026-11-04:v1:correction',answer='Отчёт с8 повышениями обновлён в исходномPNG670; полный разбор кабинета сохранён.'))
-           c.create(ROOT+':recovery',dict(status='verified',execution_key=ROOT+':attempt2:execution',verified_items=8,delivery_key=key,source_job=237,completed_at=datetime.now(timezone.utc).isoformat()))
+           c.create(ROOT+':recovery',dict(status='verified',execution_key=ROOT+':attempt3:execution',verified_items=8,delivery_key=key,source_job=237,completed_at=datetime.now(timezone.utc).isoformat()))
           except Exception as ex:
            record.update(status='uncertain',reason=str(ex));c.put(key,record);raise
           print(json.dumps(dict(status='sent',message_id=record['message_id'],verified_items=8,wb_writes=0)))

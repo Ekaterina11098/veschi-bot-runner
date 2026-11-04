@@ -1,0 +1,46 @@
+name: Owner41296363 closed statistics read-only refresh
+on:
+  push:
+    paths: ['.github/workflows/owner-41296363-closed4.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-41296363-closed4
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import json,requests
+          from china_cloud_cost_control import Cache,WB,validate_identity,stamp
+          c=Cache();w=WB();KEY='china_agent:owner_41296363_recheck:2026-11-04:2118:v1:closed_refresh'
+          if c.get(KEY):raise ValueError('Immutable closed refresh exists')
+          validate_identity(c,w)
+          r=requests.get('https://advert-api.wildberries.ru/adv/v3/fullstats',headers={'Authorization':w.token},params=dict(ids='41296363',beginDate='2026-11-02',endDate='2026-11-03'),timeout=60)
+          if not r.ok:raise RuntimeError('Closed stats HTTP '+str(r.status_code))
+          raw=r.json()
+          if not isinstance(raw,list)or len(raw)!=1 or raw[0].get('advertId')!=41296363:raise ValueError('Closed stats identity/coverage incomplete')
+          v=dict(status='complete',cabinet='token_3',observed_at=stamp(),period_from='2026-11-02',period_to='2026-11-03',raw=raw[0],wb_writes=0,telegram_calls=0,grants_action_permission=False)
+          if not c.create(KEY,v):raise ValueError('Read creation failed')
+          if c.get(KEY)!=json.loads(json.dumps(v)):raise ValueError('Readback mismatch')
+          print(json.dumps(dict(status='complete',source_key=KEY,observed_at=v['observed_at'],wb_writes=0)))
+          PY

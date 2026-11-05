@@ -1,0 +1,112 @@
+name: Deliver owner price recommendations and correct midday summary
+on:
+  push:
+    paths: ['.github/workflows/owner-price-full5-deliver.yml']
+permissions:
+  contents: read
+concurrency:
+  group: owner-price-full5-deliver
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /*.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0
+      - name: Owner authorized evidence only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: disabled-no-WB-writes
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+        run: |
+          PYTHONPATH=scripts:source python - <<'PY'
+          import os,json,base64,hashlib,requests
+          from datetime import datetime,timedelta,timezone
+          from urllib.parse import urlparse,urlencode
+          from china_cloud_cost_control import Cache,stamp
+          ROOT='china_agent:owner_price_full5:2026-11-05:v1'
+          CHAT=-1004342917488;BOT=8780468043
+          c=Cache();p=c.get(ROOT+':prepared');cor=c.get(ROOT+':midday_correction')
+          if p['status']!='prepared' or p['execution_authorized'] is not False or len(p['selections'])!=18 or len(p['files'])!=1:raise ValueError('Frozen report scope')
+          if hashlib.sha256(p['answer'].encode()).hexdigest()!=p['answer_sha256']:raise ValueError('Frozen hash changed')
+          if datetime.now(timezone.utc)>=datetime.fromisoformat(p['expires_at']):raise ValueError('Report expired')
+          base=os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/'
+          def db(path,method='GET',body=None):
+           r=requests.request(method,base+path,headers=c.h|({'Prefer':'return=representation'} if method!='GET' else {}),json=body,timeout=40)
+           if not r.ok:raise ValueError('Database HTTP '+str(r.status_code))
+           return r.json() if r.content else []
+          def tg(method,data=None,files=None):
+           try:r=requests.post('https://api.telegram.org/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN']+'/'+method,data=data,files=files,timeout=60);result=r.json()
+           except Exception:raise ValueError('Telegram outcome uncertain') from None
+           if not r.ok or result.get('ok') is not True:raise ValueError('Telegram HTTP '+str(r.status_code))
+           return result['result']
+          me=tg('getMe')
+          if me.get('id')!=BOT:raise ValueError('Wrong bot')
+          chat=tg('getChat',dict(chat_id=CHAT))
+          if chat.get('id')!=CHAT:raise ValueError('Wrong chat')
+          def once(key,method,data,files):
+           old=c.get(key)
+           if old:
+            if old.get('status') in ('sent','edited_verified'):return old['receipt']
+            raise ValueError('Existing delivery outcome needs review: '+old.get('status','unknown'))
+           if not c.create(key,dict(status='sending',method=method,started_at=stamp(),wb_writes=0)):raise ValueError('Delivery claimed')
+           try:receipt=tg(method,data,files)
+           except Exception as e:
+            c.put(key,dict(status='uncertain' if 'uncertain'in str(e) else 'failed',error=str(e),observed_at=stamp(),wb_writes=0));raise
+           if receipt.get('chat',{}).get('id')!=CHAT or not isinstance(receipt.get('message_id'),int):raise ValueError('Receipt identity mismatch')
+           c.put(key,dict(status='edited_verified' if method=='editMessageMedia' else 'sent',receipt=receipt,message_id=receipt['message_id'],sent_at=stamp(),wb_writes=0))
+           return receipt
+          identity=-98520261105
+          jobs=db('business_agent_jobs?agent_id=eq.china&update_id=eq.'+str(identity)+'&select=id,status,answer,tool_trace')
+          if jobs:
+           if len(jobs)!=1 or jobs[0]['answer']!=p['answer']:raise ValueError('Report identity mismatch')
+           job=jobs[0]
+          else:
+           job=db('business_agent_jobs','POST',dict(agent_id='china',update_id=identity,chat_id=CHAT,sender_id=5122667182,request_text='/china_morning_pair_candidates',status='running',answer=p['answer'],attempts=1,lease_until=(datetime.now(timezone.utc)+timedelta(minutes=15)).isoformat(),tool_trace=[dict(name='china_price_daily_report',report_date=p['report_date'],source_key=ROOT,owner_manual_full_catalogue=True,execution_authorized=False)]))[0]
+          pic=p['files'][0];data=base64.b64decode(pic['b64'],validate=True)
+          if hashlib.sha256(data).hexdigest()!=pic['sha256']:raise ValueError('PNG hash')
+          caption='Китай · цены +5% · 05.11.2026 · 18 товаров. Ответьте «Сделай всё» на этот PNG, чтобы подтвердить весь список. Цена покупателя — прогноз.'
+          receipt=once(ROOT+':delivery:part:0','sendPhoto',dict(chat_id=CHAT,caption=caption),{'photo':('price-recommendations-2026-11-05.png',data,'image/png')})
+          mid=receipt['message_id']
+          trace=[dict(name='china_price_daily_report',report_date=p['report_date'],source_key=ROOT,owner_manual_full_catalogue=True,execution_authorized=False),
+           dict(name='china_report_delivery',sent_parts=1,message_ids=[mid],report_sha256=p['answer_sha256'],receipt_key=ROOT+':delivery:part:0')]
+          updated=db('business_agent_jobs?id=eq.'+str(job['id']),'PATCH',dict(status='done',answer=p['answer'],tool_trace=trace,completed_at=stamp(),lease_until=None,error=None))
+          if len(updated)!=1 or updated[0]['status']!='done':raise ValueError('Report job readback')
+          binding=dict(status='sent',chat_id=CHAT,bot_id=BOT,message_id=mid,report_job_id=job['id'],report_date=p['report_date'],report_sha256=p['answer_sha256'],expires_at=p['expires_at'],receipt_key=ROOT+':delivery:part:0',selection_count=len(p['selections']),execution_authorized=False)
+          c.put('china_agent:price_report_message:v1:'+str(mid),binding)
+          c.put(ROOT+':delivery',dict(status='sent',report_job_id=job['id'],message_ids=[mid],parts=[dict(status='sent',message_id=mid,receipt_key=ROOT+':delivery:part:0')],report_sha256=p['answer_sha256'],expires_at=p['expires_at'],completed_at=stamp(),wb_writes=0,execution_authorized=False))
+          # Replace only the previously delivered non-actionable PNG; original source and receipts remain immutable.
+          if cor.get('message_id')!=701 or len(cor['files'])!=1 or cor['coverage']['missing']!=[41270474]:raise ValueError('Correction scope')
+          f=cor['files'][0];data=base64.b64decode(f['b64'],validate=True)
+          if hashlib.sha256(data).hexdigest()!=f['sha256']:raise ValueError('Correction PNG hash')
+          media=dict(type='photo',media='attach://photo',caption='Китай · промежуточный отчёт · 05.11.2026 · 15:00. Сводная строка исправлена: показана известная часть 20 из 21 РК. Новых действий для исполнения нет.')
+          fixed=once(ROOT+':midday_correction:delivery','editMessageMedia',dict(chat_id=CHAT,message_id=701,media=json.dumps(media,ensure_ascii=False)),{'photo':('midday-summary-corrected.png',data,'image/png')})
+          if fixed['message_id']!=701:raise ValueError('Wrong corrected message')
+          print(json.dumps(dict(status='sent',price_message_ids=[mid],report_job_id=job['id'],count=18,midday_message_id=701,midday_status='edited_verified',wb_writes=0)))
+          
+          PY

@@ -1,0 +1,122 @@
+name: Execute one owner-approved Ozon recovery
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/execute-approved-ozon-20261104.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fbs-document-chain-production
+  cancel-in-progress: false
+jobs:
+  approved-act:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Execute exact private single-use approval and verify all documents
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          import collections, copy, datetime as dt, os, sys
+          sys.path.insert(0, "scripts")
+          import fbs_document_chain as m
+          from fbs_wb_cabinets import ScopedCache
+          import fbs_ozon_chain as oz
+          m.CONFIG, m.STATE, m.PREFIX = oz.CONFIG, oz.STATE, oz.PREFIX
+          ROOT = "ozon_document_recovery:20261104:"
+          APPROVAL = "20261105-act125429278"
+          KEY = oz.PREFIX + "OZON-ACT-125429278"
+          class NarrowTransport(m.Transport):
+           def request(self, base, path, method="GET", body=None, params=None):
+            if base == m.MS and method != "GET":
+             allowed = method == "POST" and path in ["entity/"+k for k in m.TYPES] and (body or {}).get("externalCode", "").startswith("fbs-ozon:OZON-ACT-125429278:")
+             allowed = allowed or (method == "PUT" and path == getattr(self, "order_path", None) and set(body or {}) <= {"state", "description"})
+             if not allowed: raise m.Stop("Write outside approved act blocked")
+            return super().request(base, path, method, body, params)
+          class CurrentActWorker(oz.OzonWorker):
+           def positions(self, supply):
+            if supply["id"] != "OZON-ACT-125429278": raise m.Stop("Wrong act")
+            counts = {r["source_article"]:r["quantity"] for r in approval["mappings"]}
+            if counts != self.scope["counts"] or len(counts) != 4 or sum(counts.values()) != 4: raise m.Stop("Approved composition changed")
+            result = []
+            for row in approval["mappings"]:
+             p = self.t.request(m.MS, "entity/product/"+row["product_id"])
+             if p.get("id") != row["product_id"] or p.get("article") != row["target_article"] or p.get("code") != row["target_code"] or p.get("archived") or p.get("variantsCount",0) or p.get("isSerialTrackable") or p.get("trackingType","NOT_TRACKED") != "NOT_TRACKED": raise m.Stop("Approved product identity changed")
+             if not row["exception"] and p["article"].strip().casefold() != row["source_article"]: raise m.Stop("Unexpected alias")
+             result.append({"assortment":m.meta(p),"quantity":row["quantity"],"price":0,"discount":0,"vat":0,"vatEnabled":False})
+            return result, self.scope["all_numbers"]
+           def ensure(self, typ, payload, state, key):
+            result = super().ensure(typ, payload, state, key)
+            if typ == "customerorder": self.t.order_path = "entity/customerorder/"+state["documents"][typ]["id"]
+            return result
+          def verify_complete(worker, state):
+           links = {}; result = {}
+           annotation = worker.order_annotation(state["supply"])
+           for typ in m.TYPES:
+            ext = worker.c["document_prefix"]+":"+state["supply"]["id"]+":"+typ
+            found = worker.ms_rows("entity/"+typ, {"filter":"externalCode="+ext})
+            if len(found) != 1: raise m.Stop("Final document identity ambiguous")
+            doc = worker.t.request(m.MS, "entity/"+typ+"/"+found[0]["id"])
+            payload = copy.deepcopy(worker.c["templates"][typ])
+            payload.update(positions=state["positions"], description=annotation["description"])
+            if typ == "demand": payload["customerOrder"] = links["customerorder"]
+            if typ == "salesreturn": payload["demand"] = links["demand"]
+            worker.verify(typ, doc, payload)
+            expected_moment=m.stamp(state["supply"]["closedAt"]).astimezone(dt.timezone(dt.timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S")
+            if doc.get("moment","")[:19] != expected_moment: raise m.Stop("Document source date/time mismatch")
+            if typ == "customerorder" and m.href(doc.get("state",{})) != m.href(annotation["state"]): raise m.Stop("Order state mismatch")
+            links[typ] = m.meta(doc)
+            result[typ] = {"id":doc["id"],"name":doc["name"],"posted":doc["applicable"],"sum":doc["sum"],"moment":doc["moment"],"positions":4,"quantity":4,"comment_verified":True,"links_verified":True}
+           return result
+          t=NarrowTransport(); db=ScopedCache(t,"ozon"); state=db.get(KEY)
+          try:
+           approval = db.get("fbs_document_chain:ozon:owner_approval:v1:"+APPROVAL)
+           if not approval or not all(approval.get(k) is True for k in ("owner_confirmed","single_use","current_act_only","ask_again_next_time")) or approval["act_id"] != 125429278: raise m.Stop("Single-act confirmation missing")
+           c=copy.deepcopy(db.get(oz.CONFIG))
+           if not c or c.get("cabinet")!="ozon" or not c.get("writes_enabled") or c.get("status")!="active" or c.get("scope_confirmed") is not True: raise m.Stop("Ozon scope is not active and confirmed")
+           c["execution_policy"]={"forbid_negative_stock":True}
+           acts=[a for a in oz.acts() if a["id"]==approval["act_id"]]
+           if len(acts)!=1 or acts[0].get("departure_date")!="2026-11-04": raise m.Stop("Current act not uniquely found")
+           act=acts[0]; scope=oz.snapshot(act)
+           if not scope["ready"]: raise m.Stop("Act not ready")
+           w=CurrentActWorker(t,db,c,act,scope)
+           positions, ids=w.positions(oz.virtual_supply(act,scope))
+           if state and state.get("status")=="complete":
+            if state["positions"]!=positions or state["order_ids"]!=ids: raise m.Stop("Completed act differs from approved scope")
+            w.validate_source(state)
+            documents=verify_complete(w,state)
+            db.put(ROOT+"execution:v1",{"status":"complete","at":m.now(),"documents":documents,"quantity":4,"positions":4,"live_readback":True,"single_use_mapping":True,"ask_again_next_time":True})
+            print("Approved act already complete; live verification succeeded; no writes.")
+            sys.exit(0)
+           if state and (state.get("documents") or state.get("inflight") or "positions" in state): raise m.Stop("Existing partial execution requires reconciliation")
+           for kind in m.TYPES:
+            if w.ms_rows("entity/"+kind,{"filter":"externalCode="+c["document_prefix"]+":OZON-ACT-125429278:"+kind}): raise m.Stop("Existing document requires reconciliation")
+           state={"act":act,"supply":oz.virtual_supply(act,scope),"picking_scope":scope,"positions":positions,"order_ids":ids,"status":"prepared","one_time_mapping_approval_id":APPROVAL,"ask_again_next_time":True}
+           w.validate_source(state)
+           stock_payload=copy.deepcopy(c["templates"]["demand"]); stock_payload["positions"]=positions
+           w.require_available_stock(stock_payload,state)
+           os.environ["FBS_OWNER_APPROVAL_ID"]=APPROVAL
+           decision=w.execution_permission(direct=True)
+           if decision: raise m.Stop(decision["reason"])
+           db.put(ROOT+"execution:v1",{"status":"executing","at":m.now(),"approval_id":APPROVAL,"quantity":4,"positions":4,"single_use_mapping":True,"ask_again_next_time":True})
+           db.put(KEY,state)
+           w.process(state)
+           documents=verify_complete(w,state)
+           w.require_available_stock(stock_payload,state)
+           db.put(ROOT+"execution:v1",{"status":"complete","at":m.now(),"approval_id":APPROVAL,"documents":documents,"quantity":4,"positions":4,"live_readback":True,"remaining_stock_verified_nonnegative":True,"single_use_mapping":True,"ask_again_next_time":True})
+           print("One approved Ozon act completed and independently read back. Private receipt saved.")
+          except Exception as exc:
+           error=str(exc) if isinstance(exc,m.Stop) else type(exc).__name__
+           if state:
+            state["error"]=error;state["last_error_at"]=m.now();db.put(KEY,state)
+           db.put(ROOT+"execution:v1",{"status":"blocked","at":m.now(),"error":error,"documents":(state or {}).get("documents",{}),"stock_shortages":(state or {}).get("stock_shortages",[])})
+           print("Execution stopped; details and any document identities saved privately. No blind retries.")
+           sys.exit(1)

@@ -1,0 +1,63 @@
+name: Owner549 bounded read only diagnosis
+on:
+  push:
+    paths: ['.github/workflows/owner-549-diagnose5.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-549-diagnose5
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled-no-send
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import json,time,requests
+          from china_cloud_cost_control import Cache,WB,validate_identity,stamp
+          from china_advertising_state import AdvertisingIO
+          from china_morning_readiness import current_prices,published_stock
+          from china_moysklad_read import read_stock
+          ROOT='china_agent:owner_549_diagnosis:2026-11-05:v1'
+          c=Cache();w=WB();io=AdvertisingIO();validate_identity(c,w)
+          if not c.create(ROOT+':claim',dict(at=stamp(),wb_writes=0)):raise ValueError('Already claimed')
+          v=dict(status='collecting',cabinet='token_3',observed_at=stamp(),wb_writes=0,telegram_calls=0,grants_action_permission=False,errors={})
+          def read(k,f):
+           try:v[k]=f()
+           except Exception as e:v['errors'][k]=str(e)[:220]
+           c.put(ROOT,json.loads(json.dumps(v)))
+          def extra(path,body):
+           if path not in ['/adv/v1/normquery/stats','/adv/v0/normquery/get-minus']:raise ValueError('Read scope')
+           time.sleep(2);r=requests.post('https://advert-api.wildberries.ru'+path,headers={'Authorization':w.token},json=body,timeout=45)
+           if not r.ok:raise ValueError('HTTP '+str(r.status_code))
+           return r.json()
+          read('campaign',lambda:w.campaigns([41332083]))
+          read('budget',lambda:w.req('/api/advert/v2/budget','POST',dict(advertIds=[41332083])))
+          read('minimum',lambda:w.minimums(41332083,[1473244000],'search'))
+          read('prices',lambda:current_prices(io,[1473244000]))
+          if 'prices'in v:read('published_stock',lambda:published_stock(io,v['prices'],[1473244000]))
+          read('stock',lambda:read_stock(['549-GloriaBag-darkbrown']))
+          read('query_stats',lambda:extra('/adv/v1/normquery/stats',dict(**{'from':'2026-10-31','to':'2026-11-04'},items=[dict(advertId=41332083,nmId=1473244000)])))
+          read('minus',lambda:extra('/adv/v0/normquery/get-minus',dict(items=[dict(advert_id=41332083,nm_id=1473244000)])))
+          v.update(status='complete'if not v['errors']else'partial',completed_at=stamp());c.put(ROOT,json.loads(json.dumps(v)))
+          print(json.dumps(dict(status=v['status'],errors=list(v['errors']),wb_writes=0,telegram_calls=0)))
+          
+          PY

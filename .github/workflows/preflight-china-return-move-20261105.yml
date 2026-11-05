@@ -33,7 +33,7 @@ jobs:
            def request(self,base,path,method="GET",body=None,params=None):
             if base==m.MS and method!="GET":raise m.Stop("Read-only preflight")
             return super().request(base,path,method,body,params)
-          def norm(x):return re.sub(r"\\s+","",x or "").casefold().replace("c","с")
+          def norm(x):return re.sub(r"\s+","",x or "").casefold().replace("c","с")
           def family(p,kind):
            s=((p.get("name") or "")+" "+(p.get("article") or "")).casefold()
            return any(x in s for x in {"сумка":["сумк","bag"],"зонт":["зонт","zont","umbrella"],"панама":["панам","panama"],"манишка":["маниш","manish","dickey","dickie"],"шарф":["шарф","scarf"],"ремень":["ремень","ремен","belt"]}[kind])
@@ -59,7 +59,7 @@ jobs:
             key=norm(row["requested_code"]);found=index[key]
             reason="exact_code"
             if not found and key.endswith("с"):
-             number=int(key[:-1]);found=[p for p in products if not p.get("archived") and re.fullmatch(r"\\d+с",norm(p.get("code",""))) and int(norm(p["code"])[:-1])==number];reason="unique_numeric_code"
+             number=int(key[:-1]);found=[p for p in products if not p.get("archived") and re.fullmatch(r"\d+с",norm(p.get("code",""))) and int(norm(p["code"])[:-1])==number];reason="unique_numeric_code"
             if len(found)!=1:
              issues.append({**row,"issue":"product_mapping","candidates":[{"id":p["id"],"code":p.get("code"),"article":p.get("article"),"name":p.get("name")} for p in found]});continue
             p=found[0]

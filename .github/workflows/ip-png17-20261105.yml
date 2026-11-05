@@ -1,8 +1,6 @@
 name: Apply owner approved IP PNG17 Nov5
 on:
-  push:
-    branches: [main]
-    paths: ['.github/disabled/ip-png17-20261105.never']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -15,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: b2a72d98f14cdf46f899b544fc61eab9fa71b148
+          ref: 55652b26c817a91ebc715ece42433d4e786df34a
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             ip_apply17_20261105.py

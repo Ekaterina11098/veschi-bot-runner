@@ -1,6 +1,8 @@
 name: Owner requested IP intraday diagnosis Nov5
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/disabled/ip-intraday-diagnosis-20261105.never']
 permissions:
   contents: read
 concurrency:

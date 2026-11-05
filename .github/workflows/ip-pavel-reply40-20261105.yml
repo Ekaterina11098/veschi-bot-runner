@@ -1,6 +1,8 @@
 name: Owner authorized exact reply to Pavel40
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/disabled/ip-pavel-reply40.never']
 permissions:
   contents: read
 jobs:

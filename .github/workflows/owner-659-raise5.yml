@@ -38,7 +38,7 @@ jobs:
           from china_advertising_state import AdvertisingIO
           from china_morning_readiness import current_prices,published_stock
           from china_moysklad_read import read_stock
-          ROOT='china_agent:owner_659_raise:2026-11-05:v1'
+          ROOT='china_agent:owner_659_raise:2026-11-05:v1:attempt2'
           CID=41055480;NM=1473246056;ARTICLE='659-FioreBag-green'
           c=Cache();w=WB();io=AdvertisingIO()
           def put(k,v):
@@ -54,7 +54,10 @@ jobs:
            return a
           def read():return w.campaigns([CID])[str(CID)]
           def ns(s):return {n['nm_id']:n for n in s['nm_settings']}
-          def project(s):return {k:s[k]for k in ['id','status','bid_type','currency','settings','nm_settings']}
+          def project(s):
+           v={k:s[k]for k in ['id','status','bid_type','currency','settings']}
+           v['nm_settings']=ns(s)
+           return v
           auth();validate_identity(c,w)
           if c.get(ROOT+':execution'):raise ValueError('Existing journal; no replay')
           e=dict(status='preflight',created_at=stamp(),approval_key=ROOT+':approval',wb_writes=0,budget_writes=0,price_writes=0,telegram_calls=0)
@@ -88,7 +91,8 @@ jobs:
            if margin<=0 or econ['sample_size']!=4 or econ['buyout']!=0.5:raise ValueError('Approved preliminary economics changed')
            e['preflight']=dict(prices=p,stock=st,published_stock=pub,minimum=minimum,config=cfg,budget=budget,economics=econ,target_cpa_same_cr=38.91/5*30/28,margin_after_target=margin,observed_at=stamp());put(ROOT+':execution',e)
            auth()
-           if project(read())!=project(before):raise ValueError('Campaign changed during preflight')
+           check=read();e['pre_submit_readback']=check;put(ROOT+':execution',e)
+           if project(check)!=project(before):raise ValueError('Campaign changed during preflight')
            expected=copy.deepcopy(before);ns(expected)[NM]['bids_kopecks']['recommendations']=30
            body=dict(bids=[dict(advert_id=CID,nm_bids=[dict(nm_id=NM,placement='recommendations',bid_kopecks=30)])])
            e.update(status='submitting',submitted_at=stamp(),request=body);put(ROOT+':execution',e)

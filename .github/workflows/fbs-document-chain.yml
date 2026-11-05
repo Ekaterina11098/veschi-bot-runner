@@ -19,8 +19,6 @@ on:
         description: Private one-time confirmation ID for a manually requested WB run
         type: string
         required: false
-  schedule:
-    - cron: '0 16 * * *' # 19:00 Europe/Moscow, WB once daily
 permissions:
   contents: read
 jobs:
@@ -45,6 +43,8 @@ jobs:
           python -m unittest discover -s scripts -p test_fbs_read_retries.py -v
           python -m unittest discover -s scripts -p test_fbs_picking_scope.py -v
           python -m unittest discover -s scripts -p test_fbs_daily_schedule.py -v
+          python -m unittest discover -s scripts -p test_fbs_daily_late_start.py -v
+          node scripts/test_wb_ms_daily_clock.mjs
           python -m unittest discover -s scripts -p 'test_fbs_ozon*.py' -v
       - name: Execute selected mode with backend-only secrets
         env:

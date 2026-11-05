@@ -40,6 +40,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled-no-send
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
         run: |
           PYTHONPATH=scripts:source python - <<'PY'

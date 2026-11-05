@@ -1,0 +1,98 @@
+name: Owner confirmed margin tier price execution 5Nov
+on:
+  push:
+    paths: ['.github/workflows/owner-tier-prices5-apply.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-confirmed-wb-price-writes
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /*.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0
+      - name: Apply exact owner frozen price cohort
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled-no-send
+        run: |
+          PYTHONPATH=scripts:source python - <<'PY'
+          import json,copy
+          from datetime import datetime,timezone
+          from decimal import Decimal
+          from china_catalog_price_execute import CatalogIO,run_one
+          from china_catalog_price_command import digest,signature,selection
+          from china_price_apply import PREFIX,POLICY,CHAT,BOT,sha,plan,day
+          from china_cloud_cost_control import Cache,WB,validate_identity,stamp
+          ROOT='china_agent:owner_margin_tier_prices:2026-11-05:v1'
+          io=CatalogIO();p=io.get(ROOT)
+          if not p or p.get('status')!='authorized' or p.get('day')!=day() or p.get('actor_user_id')!=5122667182 or p.get('execution_authorized') is not True:raise ValueError('No unconsumed exact owner command')
+          if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']):raise ValueError('Command expired')
+          if len(p['cohort'])!=140 or len({r['nm'] for r in p['cohort']})!=140:raise ValueError('Frozen cohort mismatch')
+          if any(r['nm'] in (1473245494,1473245510) or r['margin']>.1 or r['sales'] is None or r['percent']!=(25 if r['sales']<10 else 5) for r in p['cohort']):raise ValueError('Frozen cohort rules mismatch')
+          validate_identity(Cache(),WB());io.capability()
+          goods=io.catalog();ss=[];rows=[];sources={}
+          for row in p['cohort']:
+           nm=str(row['nm']);g=goods.get(nm);f=row['source_goods']
+           try:
+            if not g or g['vendorCode']!=row['article'] or f['nmID']!=row['nm']:raise ValueError('Exact product mismatch')
+            origin=selection(f,str(row['percent']))
+            prior=row.get('verified_intervening')
+            if prior:
+             if prior['status']!='applied' or prior['readback']['vendorCode']!=row['article'] or prior['readback']['currencyIsoCode4217']!='CNY':raise ValueError('Intervening price not verified')
+             expected=prior['readback']
+            else:expected=f
+            def fingerprint(z):return dict(nmID=z['nmID'],vendorCode=z['vendorCode'],currency=z['currencyIsoCode4217'],discount=z['discount'],club=z.get('clubDiscount'),editable=z.get('editableSizePrice'),sizes=[(str(x['price']),str(x['discountedPrice'])) for x in z['sizes']])
+            def equivalent(a,b):
+             aa=fingerprint(a);bb=fingerprint(b)
+             aa['sizes']=[tuple(Decimal(v) for v in t)for t in aa['sizes']];bb['sizes']=[tuple(Decimal(v) for v in t)for t in bb['sizes']]
+             return aa==bb
+            if not equivalent(g,expected):raise ValueError('Fresh price differs from frozen or verified intervening state')
+            current=Decimal(str(g['sizes'][0]['discountedPrice']));target=Decimal(origin['target_cny'])
+            if target<current:raise ValueError('Would lower price; forbidden')
+            s=dict(origin,current_cny=str(current),base_cny=str(g['sizes'][0]['price']),seller_discount=g['discount'],club_discount=g.get('clubDiscount'),origin_price_cny=origin['current_cny'],source_percent=row['percent'],sales14=row['sales'])
+            plan(s,g)
+            ss.append(s);sources[nm]=g;rows.append(dict(selection=s,status='ready'))
+           except ValueError as ex:rows.append(dict(nm_id=nm,article=row['article'],status='blocked',reason=str(ex)))
+          p.update(status='prepared',prepared_at=stamp(),catalog_count=len(goods),scope='explicit_frozen_owner_cohort',rules=dict(default_percent='5',cohort_sha256=digest(p['cohort']),source_percent_policy='lt10sales25_ge10sales5',frozen_workbook_origin=True),last_human_job_id=245,job_id=0,selections=ss,rows=rows,source_goods=sources,excluded_prior={},batch_approvals=[])
+          p['signature']=signature(p)
+          for start in range(0,len(ss),100):
+           group=ss[start:start+100];hh=digest(dict(command=p['signature'],selections=group));ak=PREFIX+str(CHAT)+':0:5122667182:'+hh
+           a=dict(schema_version=2,execution_authorized=True,execution_policy=POLICY,approval_policy='all_current_human_group_members',decision='approved_recommendation',chat_id=CHAT,bot_id=BOT,report_job_id=0,report_date=p['day'],report_sha256=sha(p['request_text']),actor_user_id=p['actor_user_id'],created_at=stamp(),selections=group,basis='explicit_catalog_percent',command_key=ROOT,command_signature=p['signature'],selections_sha256=digest(group))
+           p['batch_approvals'].append(dict(key=ak,approval=a))
+          io.put(ROOT,p)
+          try:
+           result=run_one(io,ROOT)
+          except Exception:
+           p=io.get(ROOT);states=[io.get('china_agent:price_execution:v1:'+b['key'][len(PREFIX):])or{}for b in p.get('batch_approvals',[])]
+           has_write=any(e.get('upload_id')or e.get('status')in('submitting','submitted','uncertain')for e in states)
+           p.update(status='uncertain' if has_write else 'blocked',reason='Execution failed; inspect canonical child journals; no blind retry',checked_at=stamp());io.put(ROOT,p)
+           raise
+          print(json.dumps({k:result.get(k)for k in('status','verified_count','total_count','reason')}))
+          PY

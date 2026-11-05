@@ -1,0 +1,95 @@
+name: Owner full price report preparation 5Nov
+on:
+  push:
+    paths: ['.github/workflows/owner-price-full5-prepare.yml']
+permissions:
+  contents: read
+concurrency:
+  group: owner-price-full5-prepare
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /*.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0
+      - name: Owner authorized evidence only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled-no-send
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+        run: |
+          PYTHONPATH=scripts:source python - <<'PY'
+          import json,base64,hashlib
+          from decimal import Decimal
+          from china_cloud_cost_control import Cache,stamp
+          from china_advertising_state import AdvertisingIO
+          from china_morning_readiness import current_prices,published_stock
+          from china_moysklad_read import read_stock
+          from china_table_png import render
+          ROOT='china_agent:owner_price_full5:2026-11-05:v1'
+          c=Cache();io=AdvertisingIO();p=c.get(ROOT+':proposal')
+          if c.get(ROOT+':prepared'):raise ValueError('Already prepared')
+          ids=[int(s['nm_id']) for s in p['selections']]
+          prices=current_prices(io,ids);stock=read_stock([s['article'] for s in p['selections']]);wb=published_stock(io,prices,ids)
+          rows=[];blocked=[]
+          for s in p['selections']:
+           matches=[x for x in prices['rows'] if str(x['nm_id'])==s['nm_id']]
+           st=[x for x in stock['rows'] if x['article'].casefold()==s['article'].casefold()]
+           if len(matches)!=1 or Decimal(str(matches[0]['seller_price']))!=Decimal(s['current_cny']):blocked.append(dict(article=s['article'],reason='price_changed'));continue
+           if len(st)!=1 or not all(type(st[0].get(k)) in (int,float) for k in ('stock','reserve')) or st[0]['stock']-st[0]['reserve']<=0:blocked.append(dict(article=s['article'],reason='available_stock_unknown_or_zero'));continue
+           if not isinstance(wb['amounts'].get(s['nm_id']),int) or wb['amounts'][s['nm_id']]<=0:blocked.append(dict(article=s['article'],reason='published_WB_stock_unknown_or_zero'));continue
+           s['availability']=dict(stock=st[0]['stock'],reserve=st[0]['reserve'],wb=wb['amounts'][s['nm_id']],observed_at=stock['observed_at'])
+           rows.append(s)
+          if not rows:raise ValueError('No available ready proposals')
+          rows.sort(key=lambda s:s['article'])
+          fmt=lambda s:format(Decimal(str(s)).normalize(),'f').replace('.',',')
+          answer='Рекомендации по ценам · 05.11.2026 · +5%\n\n'
+          table=[]
+          for s in rows:
+           before=fmt(s['current_cny']);after=fmt(s['target_cny']);f=s.get('buyer_forecast');buyer=(str(f['before'])+' → '+str(f['after'])+' ₽')if f else'нет данных'
+           answer+='Повышение · '+s['article']+' Продавец: '+before+' → '+after+' ¥\nПокупатель: '+buyer+'\n\n'
+           table.append(['Повышение',s['article'],before+' → '+after+' ¥',buyer])
+          answer+='Ответьте на это сообщение «Сделай всё», чтобы подтвердить весь список.\nНовая цена покупателя — прогноз при неизменных скидках WB.'
+          if len(answer.encode('utf-16-le'))//2>4096:raise ValueError('Full approval anchor exceeds Telegram size')
+          images=render(['Действие','Арт','Цена продавца','Цена покупателя (новая — прогноз)'],table,title='Китай · повышение цен +5% · 05.11.2026')
+          if isinstance(images,bytes):images=[images]
+          encoded=[]
+          for image in images:
+           data=image['bytes'] if isinstance(image,dict) else image
+           encoded.append(dict(b64=base64.b64encode(data).decode(),sha256=hashlib.sha256(data).hexdigest()))
+          v=dict(status='prepared',report_date='2026-11-05',cabinet='token_3',prepared_at=stamp(),expires_at=p['expires_at'],answer=answer,answer_sha256=hashlib.sha256(answer.encode()).hexdigest(),selections=rows,blocked=blocked,prices=prices,stock=stock,published_stock=wb,files=encoded,execution_authorized=False,grants_action_permission=False,wb_writes=0)
+          c.put(ROOT+':prepared',json.loads(json.dumps(v)))
+          from china_advertising_midday import render_midday,covered_totals
+          bundle=c.get('china_agent:advertising_midday_artifacts:2026-11-05:v1')['bundle']
+          files=render_midday(bundle);coverage=covered_totals(bundle['campaigns'])
+          if coverage['total']['spend']<=0 or coverage['total']['orders']<=0:raise ValueError('Unexpected empty totals')
+          c.put(ROOT+':midday_correction',dict(status='prepared',message_id=701,coverage=coverage,source_key='china_agent:advertising_midday_artifacts:2026-11-05:v1',files=[dict(b64=base64.b64encode(f['bytes']).decode(),sha256=hashlib.sha256(f['bytes']).hexdigest()) for f in files],wb_writes=0))
+          print(json.dumps(dict(status='prepared',selections=len(rows),blocked=blocked,pages=len(encoded),answer_length=len(answer),coverage=coverage)))
+          
+          PY

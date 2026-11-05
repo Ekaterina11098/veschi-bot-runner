@@ -1,0 +1,103 @@
+name: Read exact China return move preflight
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/preflight-china-return-move-20261105.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fbs-document-chain-production
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Match exact requested products and available warehouse stock
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          import collections,datetime as dt,json,math,re,sys
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          ROOT="returns_transfer:china:20261105:"
+          class Read(m.Transport):
+           def request(self,base,path,method="GET",body=None,params=None):
+            if base==m.MS and method!="GET":raise m.Stop("Read-only preflight")
+            return super().request(base,path,method,body,params)
+          def norm(x):return re.sub(r"\\s+","",x or "").casefold().replace("c","с")
+          def family(p,kind):
+           s=((p.get("name") or "")+" "+(p.get("article") or "")).casefold()
+           return any(x in s for x in {"сумка":["сумк","bag"],"зонт":["зонт","zont","umbrella"],"панама":["панам","panama"],"манишка":["маниш","manish","dickey","dickie"],"шарф":["шарф","scarf"],"ремень":["ремень","ремен","belt"]}[kind])
+          t=Read();db=m.Cache(t);w=m.Worker(t,db,{})
+          result={"at":m.now(),"writes":0,"status":"preflight"}
+          try:
+           req=db.get(ROOT+"request:v1")
+           if not req or req.get("owner_confirmed") is not True or req["quantity"]!=442 or req["positions"]!=141:raise m.Stop("Exact source request missing")
+           stores=w.ms_rows("entity/store");orgs=w.ms_rows("entity/organization")
+           result["scope_candidates"]={"stores":[{"id":s["id"],"name":s["name"],"archived":s.get("archived"),"meta":s["meta"]} for s in stores],"organizations":[{"id":s["id"],"name":s["name"],"legalTitle":s.get("legalTitle"),"archived":s.get("archived"),"meta":s["meta"]} for s in orgs]}
+           source=[s for s in stores if s["name"]==req["requested_source_store_name"] and not s.get("archived")]
+           target=[s for s in stores if s["name"]==req["requested_target_store_name"] and not s.get("archived")]
+           organization=[s for s in orgs if "лазарев" in (s.get("name","")+" "+s.get("legalTitle","")).casefold() and not s.get("archived")]
+           if len(source)!=1 or len(target)!=1 or len(organization)!=1:raise m.Stop("Requested warehouse or organization ambiguous")
+           source,target,organization=source[0],target[0],organization[0]
+           result.update(source=source,target=target,organization=organization)
+           products=w.ms_rows("entity/product")
+           index=collections.defaultdict(list)
+           for p in products:
+            if not p.get("archived"):index[norm(p.get("code",""))].append(p)
+           mapping=[];issues=[]
+           for row in req["rows"]:
+            key=norm(row["requested_code"]);found=index[key]
+            reason="exact_code"
+            if not found and key.endswith("с"):
+             number=int(key[:-1]);found=[p for p in products if not p.get("archived") and re.fullmatch(r"\\d+с",norm(p.get("code",""))) and int(norm(p["code"])[:-1])==number];reason="unique_numeric_code"
+            if len(found)!=1:
+             issues.append({**row,"issue":"product_mapping","candidates":[{"id":p["id"],"code":p.get("code"),"article":p.get("article"),"name":p.get("name")} for p in found]});continue
+            p=found[0]
+            if not family(p,row["kind"]) or p.get("variantsCount",0) or p.get("isSerialTrackable") or p.get("trackingType","NOT_TRACKED")!="NOT_TRACKED":
+             issues.append({**row,"issue":"product_family_or_tracking","product":{"id":p["id"],"name":p.get("name"),"code":p.get("code"),"article":p.get("article"),"variantsCount":p.get("variantsCount"),"trackingType":p.get("trackingType")}});continue
+            mapping.append({**row,"id":p["id"],"code":p.get("code"),"article":p.get("article"),"name":p["name"],"assortment":m.meta(p),"mapping_reason":reason})
+           result.update(mapping=mapping,mapping_issues=issues)
+           current=t.request(m.MS,"report/stock/bystore/current",params={"stockType":"freeStock","include":"zeroLines"})
+           if not isinstance(current,list):raise m.Stop("Current available stock report incomplete")
+           by={}
+           for r in current:
+            pair=(r["storeId"],r["assortmentId"])
+            if pair in by:raise m.Stop("Duplicate current stock identity")
+            by[pair]=r["freeStock"]
+           stocks=w.ms_rows("report/stock/all",{"filter":"store="+m.href(source),"stockMode":"all","quantityMode":"all"})
+           byhref={m.href(s).split("?")[0]:s for s in stocks}
+           shortages=[]
+           for p in mapping:
+            free=by.get((source["id"],p["id"]));stock=byhref.get(m.href(p["assortment"]).split("?")[0],{})
+            p.update(available_before=free,stock_before=stock.get("stock"),quantity_before=stock.get("quantity"))
+            values=[free,stock.get("stock"),stock.get("quantity")]
+            if not all(type(v) in (int,float) and math.isfinite(v) for v in values):
+             shortages.append({**{k:p.get(k) for k in ("source_label","code","article","name","quantity","available_before","stock_before","quantity_before")},"issue":"stock_unknown"})
+            elif min(values)<p["quantity"]:
+             shortages.append({**{k:p.get(k) for k in ("source_label","code","article","name","quantity","available_before","stock_before","quantity_before")},"issue":"insufficient_stock","missing":p["quantity"]-min(values)})
+           result["stock_issues"]=shortages
+           moves=w.ms_rows("entity/move")
+           same_day=[d for d in moves if not d.get("deleted") and d.get("moment","").startswith("2026-11-05") and m.href(d.get("sourceStore",{}))==m.href(source) and m.href(d.get("targetStore",{}))==m.href(target) and m.href(d.get("organization",{}))==m.href(organization)]
+           result["same_day_moves"]=[]
+           for d in same_day:
+            positions=w.ms_rows("entity/move/"+d["id"]+"/positions")
+            result["same_day_moves"].append({"id":d["id"],"name":d["name"],"externalCode":d.get("externalCode"),"description":d.get("description"),"applicable":d.get("applicable"),"positions":len(positions),"quantity":sum(p["quantity"] for p in positions),"composition":[{"href":m.href(p["assortment"]),"quantity":p["quantity"]} for p in positions]})
+           result["external_matches"]=[{"id":d["id"],"name":d["name"],"applicable":d.get("applicable")} for d in moves if d.get("externalCode")==req["externalCode"]]
+           result.update(status="blocked" if issues or shortages else "ready",mapped_positions=len(mapping),mapped_quantity=sum(p["quantity"] for p in mapping),excluded=req["excluded"],stock_checked_at=m.now())
+           db.put(ROOT+"preflight:v1",result)
+           print("Read-only transfer preflight saved privately.")
+          except Exception as exc:
+           result.update(status="error",error=str(exc) if isinstance(exc,m.Stop) else type(exc).__name__)
+           db.put(ROOT+"preflight:v1",result)
+           print("Read-only preflight stopped; private diagnostic saved.")
+           sys.exit(1)

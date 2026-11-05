@@ -1,0 +1,90 @@
+name: Set owner-provided TN VED on three Madison cards
+on:
+  push:
+    branches: [madison-fill-20261105]
+    paths: ['.github/workflows/madison-tnved-20261105.yml']
+permissions:
+  contents: read
+concurrency:
+  group: madison-fill-20261105
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Validate code and update exact three China cards
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          ARTICLES=['025-MadisonBag-zblack','026-MadisonBag-zcoffee','027-MadisonBag-zdarkred']
+          def request(url,body=None,method=None,headers=None):
+              h=headers if headers is not None else {'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'}
+              req=urllib.request.Request(url,headers=h,data=None if body is None else json.dumps(body).encode(),method=method or ('POST' if body is not None else 'GET'))
+              with urllib.request.urlopen(req,timeout=45) as f:
+                  raw=f.read()
+                  return json.loads(raw) if raw else None
+          def save(key,payload):
+              now=datetime.datetime.now(datetime.timezone.utc);k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              return request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',{'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()},headers=h)
+          
+          KEY='madison_fill:china:20261105:tnved:v1'
+          def cache(key):
+              k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              d=request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?cache_key=eq.'+key+'&select=payload',headers=h)
+              return d[0]['payload'] if d else None
+          if cache(KEY):print('Already journaled; no repeat.');raise SystemExit(0)
+          IDS={'025-MadisonBag-zblack':2128711871,'026-MadisonBag-zcoffee':2128836687,'027-MadisonBag-zdarkred':2128836688}
+          def card(article):
+              d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':str(IDS[article])}}})
+              cs=[c for c in d.get('cards',[]) if c.get('vendorCode')==article and c.get('nmID')==IDS[article]]
+              if len(cs)!=1:raise RuntimeError('Exact identity not found: '+article)
+              return cs[0]
+          out={'status':'preflight','code':'4202210000','wb_write_requests':0,'before':[],'after':[],'telegram_sends':0}
+          try:
+              codes=request('https://content-api.wildberries.ru/content/v2/directory/tnved?subjectID=50&search=4202210000&locale=ru')
+              out['directory']=codes
+              matches=[c for c in codes.get('data',[]) if str(c.get('tnved'))=='4202210000']
+              if not matches:raise RuntimeError('Owner code absent from bag directory')
+              payload=[]
+              for article,nm in IDS.items():
+                  c=card(article);out['before'].append(c)
+                  attrs={x['id']:{'id':x['id'],'value':x['value']} for x in c.get('characteristics',[])}
+                  attrs[15000001]={'id':15000001,'value':['4202210000']}
+                  attrs[15004139]={'id':15004139,'value':['4202210000']}
+                  d=request('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter?limit=10&filterNmID='+str(nm))
+                  ps=[x for x in d.get('data',{}).get('listGoods',[]) if x.get('nmID')==nm and x.get('currencyIsoCode4217')=='CNY']
+                  if len(ps)!=1:raise RuntimeError('China price identity missing')
+                  sizeprices={x['sizeID']:x['price'] for x in ps[0]['sizes']}
+                  sizes=[{**{k:v for k,v in s.items() if k in ['chrtID','techSize','wbSize','skus']},'price':sizeprices[s['chrtID']]} for s in c['sizes']]
+                  p={k:c[k] for k in ['nmID','vendorCode','brand','title','description','kizMarked'] if k in c}
+                  p.update(dimensions={k:v for k,v in c['dimensions'].items() if k in ['length','width','height','weightBrutto']},characteristics=list(attrs.values()),sizes=sizes,documents={'excludeDocuments':c.get('documents',{}).get('excludeDocuments',False)})
+                  payload.append(p);time.sleep(1)
+              out['requests']=payload;out['status']='submitting';save(KEY,out)
+              result=request('https://content-api.wildberries.ru/content/v2/cards/update',payload)
+              out.update(response=result,wb_write_requests=1,status='rejected' if result and result.get('error') else 'accepted_pending_verification');save(KEY,out)
+              if out['status']=='rejected':raise SystemExit(0)
+              for attempt in range(12):
+                  time.sleep(8)
+                  after=[card(x) for x in IDS];checks={}
+                  for before,c in zip(out['before'],after):
+                      chars={a['id']:a['value'] for a in c.get('characteristics',[])}
+                      oldchars={a['id']:a['value'] for a in before.get('characteristics',[]) if a['id'] not in [15000001,15004139]}
+                      checks[c['vendorCode']]={'tnved':chars.get(15000001)==['4202210000'],'legacy_code':chars.get(15004139)==['4202210000'],'other_fields':all(c.get(k)==before.get(k) for k in ['title','description','brand','sizes','dimensions']),'other_characteristics':all(chars.get(k)==v for k,v in oldchars.items())}
+                  out.update(after=after,checks=checks)
+                  if all(all(v.values()) for v in checks.values()):out['status']='verified';save(KEY,out);break
+                  save(KEY,out)
+              else:out['status']='verification_pending';save(KEY,out)
+          except urllib.error.HTTPError as e:
+              out.update(status='uncertain' if out['status']=='submitting' else 'error',http_status=e.code);save(KEY,out)
+          except Exception as e:
+              out.update(status='uncertain' if out['status']=='submitting' else 'error',error=str(e));save(KEY,out)
+          print('TN VED update journaled privately; check receipt.')
+          
+          PY

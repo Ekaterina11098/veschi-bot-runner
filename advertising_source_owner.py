@@ -122,6 +122,9 @@ def save_snapshot(source,value,a,b,status='complete'):
  got=database('GET','analytics_snapshots',params={'source':'eq.'+source,'cabinet':'eq.token_2','run_id':'eq.'+RUN_ID,'order':'id.desc','select':'id,payload','limit':1}) or []
  if not got or digest(got[0]['payload'])!=digest([value]):gate.fail();raise RuntimeError('Snapshot full payload readback mismatch')
  return got[0]['id']
+def prioritize_reads(requests):
+ # Existing daily priorities must govern the bounded pass, not insertion order.
+ return sorted(requests,key=lambda r:-r.get('priority',0))
 def wanted(tool,args,purpose=None):
  key='token_2:'+tool+':'+json.dumps(args,sort_keys=True)+((':'+purpose) if purpose else '')
  # Received, explicit rejected parameter errors and retries are all preserved.
@@ -364,7 +367,7 @@ try:
      except (ValueError,KeyError,TypeError) as exc:report['normalization_errors'].append(dict(id=ident,error=str(exc)))
     seal('advertising-source',report)
    def reader(call,checks,known):
-    results=execute_reads(call,checks,known,requests_plan,bidder,saved,max_requests=20 if focused else 12)
+    results=execute_reads(call,checks,known,prioritize_reads(requests_plan),bidder,saved,max_requests=20 if focused else 12)
     report['read_results']=list(results)
     if focused:return results
     # No product statistics until the complete cabinet-wide catalog is evidenced.
@@ -443,7 +446,7 @@ try:
        req=wanted('wbbidder_campaign_stats',dict(campaign_id=cid,nm_id=nm,report='days',d1=first,d2=last))
        if req:more.append(req)
      report['pending_experiment_scopes']=[r for r in more if r['arguments'].get('report')=='days']
-     more=list({r['key']:r for r in more}.values())
+     more=prioritize_reads(list({r['key']:r for r in more}.values()))
      report['planned']=list({r['key']:r for r in report['planned']+more}.values())
      results+=execute_reads(call,checks,known,more,bidder,saved,max_requests=max(0,20-len(results)))
      report['read_results']=list(results)

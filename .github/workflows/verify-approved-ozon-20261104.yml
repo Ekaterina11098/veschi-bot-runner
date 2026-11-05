@@ -1,0 +1,54 @@
+name: Independently verify approved Ozon recovery
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/verify-approved-ozon-20261104.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fbs-document-chain-production
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Read every existing document and compare source scope
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          import copy,datetime as dt,sys
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          import fbs_ozon_chain as oz
+          from fbs_wb_cabinets import ScopedCache
+          class ReadOnly(m.Transport):
+           def request(self,base,path,method="GET",body=None,params=None):
+            if base==m.MS and method!="GET":raise m.Stop("Read-only verification")
+            return super().request(base,path,method,body,params)
+          t=ReadOnly();db=ScopedCache(t,"ozon");state=db.get(oz.PREFIX+"OZON-ACT-125429278");c=db.get(oz.CONFIG)
+          act=state["act"];scope=oz.snapshot(act);w=oz.OzonWorker(t,db,c,act,scope)
+          w.validate_source(state)
+          annotation=w.order_annotation(state["supply"]);links={};docs={}
+          for kind in m.TYPES:
+           found=w.ms_rows("entity/"+kind,{"filter":"externalCode="+c["document_prefix"]+":"+state["supply"]["id"]+":"+kind})
+           if len(found)!=1:raise m.Stop("Unique document missing")
+           doc=t.request(m.MS,"entity/"+kind+"/"+found[0]["id"])
+           payload=copy.deepcopy(c["templates"][kind]);payload.update(positions=state["positions"],description=annotation["description"])
+           if kind=="demand":payload["customerOrder"]=links["customerorder"]
+           if kind=="salesreturn":payload["demand"]=links["demand"]
+           w.verify(kind,doc,payload)
+           if kind=="customerorder" and m.href(doc.get("state",{}))!=m.href(annotation["state"]):raise m.Stop("Order state mismatch")
+           docs[kind]={"id":doc["id"],"name":doc["name"],"moment":doc.get("moment"),"posted":doc["applicable"],"sum":doc["sum"],"scope_verified":True,"comment_verified":True,"links_verified":True}
+           links[kind]=m.meta(doc)
+          stock_payload=copy.deepcopy(c["templates"]["demand"]);stock_payload["positions"]=state["positions"];w.c=copy.deepcopy(c);w.c["execution_policy"]={"forbid_negative_stock":True};w.require_available_stock(stock_payload,state)
+          db.put("ozon_document_recovery:20261104:readback:v1",{"at":m.now(),"status":"documents_verified","source_movement_at":state["supply"]["closedAt"],"expected_moment":m.stamp(state["supply"]["closedAt"]).astimezone(dt.timezone(dt.timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S"),"documents":docs,"quantity":sum(p["quantity"] for p in state["positions"]),"remaining_stock_verified_nonnegative":True})
+          print("Read-only verification receipt saved privately.")

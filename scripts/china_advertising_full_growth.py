@@ -4,6 +4,17 @@ from datetime import date,datetime,timedelta,timezone
 from zoneinfo import ZoneInfo
 ROOT='china_agent:advertising_full_growth:'
 def normalized(v):return json.loads(json.dumps(v))
+def save_analytic_cache(io,key,value):
+ """Analyst cache entries are new per period; PATCH cannot create a missing row."""
+ if not key.startswith('china_agent:analytic_read:v1:'):
+  raise ValueError('Unexpected analytical cache key')
+ value=normalized(value)
+ if io.get(key) is None:
+  io.create(key,value)
+ else:
+  io.put(key,value)
+ if io.get(key)!=value:
+  raise RuntimeError('Analytical cache readback mismatch')
 def stamp():return datetime.now(timezone.utc).isoformat()
 def enabled(io):return (io.get('china_agent:advertising_format:v2')or{}).get('full_cabinet_growth_review_required')is True
 def collect(io,s,day):
@@ -19,7 +30,7 @@ def collect(io,s,day):
  class Work:
   now=datetime.now(timezone.utc)
   def get(self,k):return io.get(k)
-  def save(self,k,value,**kw):io.put(k,normalized(value))
+  def save(self,k,value,**kw):save_analytic_cache(io,k,value)
   def db(self,method,table,params=None):
    if method!='GET'or table!='analytics_snapshots':raise ValueError('Only own analytics reads')
    return io.db(table+'?'+urlencode(params or{}))

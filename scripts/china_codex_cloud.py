@@ -235,9 +235,11 @@ class Worker:
             return 'existing_outbox'
         resolution=self.db.get('china_agent:owner_dialog_resolution:v1:job:'+str(jid))
         if resolution:
+            receipt=self.db.get(resolution.get('receipt_key','')) or {}
             if (resolution.get('status')!='answered_by_owner' or resolution.get('chat_id')!=CHAT
                     or type(resolution.get('message_id')) is not int or not resolution.get('receipt_key')
-                    or not self.db.get(resolution['receipt_key'])):
+                    or receipt.get('status') not in ('sent','delivered','edited_verified')
+                    or receipt.get('message_id')!=resolution['message_id'] or receipt.get('chat_id')!=CHAT):
                 raise RuntimeError('Owner resolution lacks scoped delivery receipt')
             if not self.db.update(key,inbox|{'status':'owner_resolved','resolved_at':stamp(),
                     'resolution_key':'china_agent:owner_dialog_resolution:v1:job:'+str(jid)},inbox['status']):return 'claim_lost'

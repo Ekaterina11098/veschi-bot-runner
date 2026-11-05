@@ -34,7 +34,9 @@ jobs:
            allowed=set()
            def request(self,base,path,method="GET",body=None,params=None):
             if base==m.MS and method!="GET":
-             if method!="PUT" or path not in self.allowed or set(body or {})!={"state"}:raise m.Stop("Only the approved existing document status may change")
+             allowed_update=method=="PUT" and path in self.allowed and set(body or {})=={"state"}
+             allowed_create=method=="POST" and path=="entity/demand/metadata/states" and (body or {}).get("name")=="Возврат на ФБО" and set(body or {})<={"name","color","stateType"}
+             if not (allowed_update or allowed_create):raise m.Stop("Only the requested status configuration or exact document status may change")
             return super().request(base,path,method,body,params)
           t=StatusOnly();db=m.Cache(t);ledger=db.get(oz.PREFIX+"OZON-ACT-125429278");c=db.get(oz.CONFIG);w=m.Worker(t,db,c)
           try:
@@ -53,6 +55,15 @@ jobs:
            for kind in ("customerorder","demand"):
             metadata=t.request(m.MS,"entity/"+kind+"/metadata")
             matches=[s for s in metadata.get("states",[]) if s.get("name")=="Возврат на ФБО"]
+            if not matches and kind=="demand":
+             order_state=t.request(m.MS,"entity/customerorder/metadata")
+             order_states=[s for s in order_state.get("states",[]) if s.get("name")=="Возврат на ФБО"]
+             if len(order_states)!=1:raise m.Stop("Reference order state is ambiguous")
+             claim=ROOT+"status_creation_claim:v1"
+             if not db.claim(claim,{"at":m.now(),"requested_name":"Возврат на ФБО","entity_type":"demand"}):raise m.Stop("Prior status creation requires reconciliation")
+             t.request(m.MS,"entity/demand/metadata/states","POST",{"name":"Возврат на ФБО","color":order_states[0].get("color",10066329),"stateType":"Regular"})
+             refreshed=t.request(m.MS,"entity/demand/metadata")
+             matches=[s for s in refreshed.get("states",[]) if s.get("name")=="Возврат на ФБО"]
             if len(matches)!=1:
              db.put(ROOT+"status_update:v1",{"status":"blocked","at":m.now(),"document_type":kind,"available_states":[s.get("name") for s in metadata.get("states",[])]})
              raise m.Stop("Required state missing or ambiguous for "+kind)

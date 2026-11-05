@@ -1,0 +1,47 @@
+name: Read OOO document metadata for requested weekly report
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/read-ooo-weekly-documents-20261026-31.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: One document metadata request through permitted API
+        shell: python
+        env:
+          WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import os,json,gzip,urllib.request,urllib.error,urllib.parse,sys
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          ROOT="weekly_report_review:ooo:20261026_20261031:"
+          db=m.Cache(m.Transport())
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*args,**kwargs):raise RuntimeError("Redirect blocked")
+          op=urllib.request.build_opener(NoRedirect)
+          params={"locale":"ru","beginTime":"2026-11-01","endTime":"2026-11-05","sort":"date","order":"desc","limit":50,"offset":0}
+          url="https://documents-api.wildberries.ru/api/v1/documents/list?"+urllib.parse.urlencode(params)
+          token=os.environ["WB_FINANCE_TOKEN_1"]
+          result={"at":m.now(),"status":"reading","parameters":params}
+          try:
+           req=urllib.request.Request(url,headers={"Authorization":token,"Accept-Encoding":"gzip"})
+           with op.open(req,timeout=90) as response:
+            raw=response.read()
+            if response.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+            result.update(http=response.status,status="read",response=json.loads(raw) if raw else None)
+          except urllib.error.HTTPError as exc:
+           result.update(http=exc.code,status="unavailable",retry_after=exc.headers.get("X-RateLimit-Retry") or exc.headers.get("Retry-After"))
+          except Exception as exc:result.update(status="error",error_type=type(exc).__name__)
+          db.put(ROOT+"documents_source_probe:v1",result)
+          print("Single authorized document-list check saved privately; no accounting mutations.")

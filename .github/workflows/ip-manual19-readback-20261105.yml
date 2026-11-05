@@ -1,6 +1,8 @@
 name: Verify only manual IP19 removal
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/disabled/ip-manual19-readback.never']
 permissions:
   contents: read
 concurrency:

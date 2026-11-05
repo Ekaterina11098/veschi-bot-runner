@@ -44,9 +44,10 @@ jobs:
            if not req or req.get("owner_confirmed") is not True or req["quantity"]!=442 or req["positions"]!=141:raise m.Stop("Exact source request missing")
            stores=w.ms_rows("entity/store");orgs=w.ms_rows("entity/organization")
            result["scope_candidates"]={"stores":[{"id":s["id"],"name":s["name"],"archived":s.get("archived"),"meta":s["meta"]} for s in stores],"organizations":[{"id":s["id"],"name":s["name"],"legalTitle":s.get("legalTitle"),"archived":s.get("archived"),"meta":s["meta"]} for s in orgs]}
-           source=[s for s in stores if s["name"]==req["requested_source_store_name"] and not s.get("archived")]
-           target=[s for s in stores if s["name"]==req["requested_target_store_name"] and not s.get("archived")]
-           organization=[s for s in orgs if "лазарев" in (s.get("name","")+" "+s.get("legalTitle","")).casefold() and not s.get("archived")]
+           scope=req["resolved_scope"]
+           source=[s for s in stores if s["id"]==scope["source_store_id"] and s["name"]==scope["source_store_name"] and not s.get("archived")]
+           target=[s for s in stores if s["id"]==scope["target_store_id"] and s["name"]==scope["target_store_name"] and not s.get("archived")]
+           organization=[s for s in orgs if s["id"]==scope["organization_id"] and s["name"]==scope["organization_name"] and not s.get("archived")]
            if len(source)!=1 or len(target)!=1 or len(organization)!=1:raise m.Stop("Requested warehouse or organization ambiguous")
            source,target,organization=source[0],target[0],organization[0]
            result.update(source=source,target=target,organization=organization)

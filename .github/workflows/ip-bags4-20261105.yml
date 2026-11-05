@@ -1,0 +1,28 @@
+name: Apply exact four IP bags Nov5
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 9c565c3e5d5acda0831becc7d2ef53c26b080919
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            ip_bags4_20261105.py
+            ip_apply_nine_20261103.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python ip_bags4_20261105.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'

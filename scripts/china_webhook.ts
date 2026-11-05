@@ -1,3 +1,4 @@
+import {acceptCodex} from './codex-inbox.mjs';
 // Separate bots and queues; shared knowledge does not grant shared permissions.
 const AGENT = "china"; // Deployment substitutes "china" for its separate function.
 const PROJECT = Deno.env.get("SUPABASE_URL") ?? "";
@@ -129,9 +130,31 @@ function reportProposals(answer:string) {
  return rows;
 }
 
+async function resolveBoundPriceReply(config:any,message:any,deps:any):Promise<any>{
+ const quoted=message?.reply_to_message;
+ if(quoted?.from?.id!==config.bot_id||!Number.isSafeInteger(quoted.message_id))return message;
+ const key='china_agent:price_report_message:v1:'+quoted.message_id;
+ const records=await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(key)+'&select=payload&limit=1');
+ if(!records?.length)return message;
+ const binding=records[0].payload;
+ const now=deps.now?deps.now():new Date();
+ const today=new Date(now.getTime()+3*3600000).toISOString().slice(0,10);
+ if(binding?.status!=='sent'||binding.chat_id!==config.chat_id||binding.bot_id!==config.bot_id||
+    binding.message_id!==quoted.message_id||binding.report_date!==today||
+    !Number.isFinite(Date.parse(binding.expires_at))||Date.parse(binding.expires_at)<=now.getTime())
+  throw Error('Ценовой отчёт устарел или не подтверждена его доставка. Нужен новый список.');
+ const jobs=await deps.database('business_agent_jobs?id=eq.'+binding.report_job_id+'&agent_id=eq.china&chat_id=eq.'+config.chat_id+'&status=eq.done&select=id,answer,tool_trace&limit=1');
+ if(jobs?.length!==1||typeof jobs[0].answer!=='string'||await deps.digest(jobs[0].answer)!==binding.report_sha256||
+    !jobs[0].tool_trace?.some((t:any)=>t.name==='china_report_delivery'&&t.message_ids?.includes(quoted.message_id)))
+  throw Error('Не удалось проверить состав этого ценового отчёта. Подтверждение не принято.');
+ return {...message,reply_to_message:{...quoted,text:jobs[0].answer}};
+}
+
 async function handlePriceApproval(config:any,message:any,text:string,updateId:number,deps:any):Promise<Response|null>{
  const intent=priceApprovalIntent(text);
  if(!intent)return null;
+ try{message=await resolveBoundPriceReply(config,message,deps);}
+ catch(error){return Response.json({method:'sendMessage',chat_id:config.chat_id,text:error instanceof Error?error.message:'Не удалось проверить ценовой отчёт.'});}
  const generic=/^(?:(?:да|хорошо|ок)[, ]+)?(?:делай|сделай(?:\s+вс[её])?|выполни(?:\s+вс[её])?|примени(?:\s+вс[её])?|меняй(?:\s+цены)?)[.!]?$/iu.test(text.trim());
  if(generic){
   const quoted=message.reply_to_message;
@@ -237,6 +260,9 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     if(!text)return new Response('OK');
     const first=text.split(/\s+/,1)[0];const parsed=/^\/(\S+?)(?:@([a-z0-9_]+))?$/i.exec(first);const cmd=parsed?.[1].toLowerCase();
     if(parsed?.[2]&&parsed[2].toLowerCase()!==config.bot_username?.toLowerCase())return new Response('OK');
+    const bridgeInput=await acceptCodex(config,message,text,update.update_id,database);
+    if(bridgeInput.response)return bridgeInput.response;
+    if(bridgeInput.legacy_text!==undefined)text=bridgeInput.legacy_text;
     // A generic confirmation belongs to the actual bound advertising message, not the price route.
     let advertisingApproval=false;
     if(priceApprovalIntent(text)&&message.reply_to_message?.from?.id===config.bot_id&&Number.isSafeInteger(message.reply_to_message.message_id)){
@@ -249,7 +275,7 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     if(priceApproval)return priceApproval;
     if(cmd==='confirm')return reply(config.chat_id,'Изменения WB здесь не выполняются.');
     if(['help','start','ask'].includes(cmd??'')||(cmd==='agent'&&text===first))return reply(config.chat_id,'Задавайте вопрос обычным сообщением. Вопросы и подтверждения ценовых рекомендаций доступны всем участникам, управление заданиями — владельцу. Для подтверждения ответьте на отчёт: «Подтверждаю все изменения».');
-    if(cmd==='agent')text=text.slice(first.length).trim();
+    if(cmd==='agent'&&bridgeInput.legacy_text===undefined)text=text.slice(first.length).trim();
     if(text.length>4000)return reply(config.chat_id,'Разделите вопрос на сообщения до 4000 символов.');
     if(!Number.isSafeInteger(update.update_id)||update.update_id<0||!Number.isSafeInteger(message.message_id))return new Response('Invalid update',{status:400});
     const quoted=message.reply_to_message;

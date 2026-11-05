@@ -14,7 +14,7 @@ class Tests(unittest.TestCase):
   key=c.ROOT+'inbox:236';w=c.Worker.__new__(c.Worker);w.db=DB({key:inbox,**extra})
   w.generate=lambda *a:self.fail('Must not call model');return w,key,inbox
  def test_owner_resolved_retires_head_without_resubmission(self):
-  w,k,i=self.worker({'china_agent:owner_dialog_resolution:v1:job:236':dict(status='answered_by_owner',chat_id=c.CHAT,message_id=670,receipt_key='receipt'),'receipt':{'status':'verified'}})
+  w,k,i=self.worker({'china_agent:owner_dialog_resolution:v1:job:236':dict(status='answered_by_owner',chat_id=c.CHAT,message_id=670,receipt_key='receipt'),'receipt':{'status':'edited_verified','message_id':670,'chat_id':c.CHAT}})
   with patch.object(c,'validate',return_value=True):self.assertEqual(w.process(k,i),'owner_resolved')
   self.assertEqual(w.db.get(k)['status'],'owner_resolved')
  def test_missing_receipt_keeps_head_for_review(self):

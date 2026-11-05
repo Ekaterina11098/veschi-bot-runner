@@ -1,8 +1,6 @@
 name: Apply owner approved IP PNG17 Nov5
 on:
-  push:
-    branches: [main]
-    paths: ['.github/disabled/ip-png17-20261105.never']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

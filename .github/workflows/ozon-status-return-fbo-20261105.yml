@@ -1,0 +1,80 @@
+name: Apply requested Ozon return-to-FBO status
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ozon-status-return-fbo-20261105.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fbs-document-chain-production
+  cancel-in-progress: false
+jobs:
+  status-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Verify existing act and update only its status
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          import copy,json,sys
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          import fbs_ozon_chain as oz
+          ROOT="ozon_document_recovery:20261104:"
+          class StatusOnly(m.Transport):
+           allowed=set()
+           def request(self,base,path,method="GET",body=None,params=None):
+            if base==m.MS and method!="GET":
+             if method!="PUT" or path not in self.allowed or set(body or {})!={"state"}:raise m.Stop("Only the approved existing document status may change")
+            return super().request(base,path,method,body,params)
+          t=StatusOnly();db=m.Cache(t);ledger=db.get(oz.PREFIX+"OZON-ACT-125429278");c=db.get(oz.CONFIG);w=m.Worker(t,db,c)
+          try:
+           if not ledger or ledger.get("status")!="complete":raise m.Stop("Completed exact act ledger missing")
+           targets={};docs={};links={};before={}
+           for kind in m.TYPES:
+            ext=c["document_prefix"]+":OZON-ACT-125429278:"+kind
+            found=w.ms_rows("entity/"+kind,{"filter":"externalCode="+ext})
+            if len(found)!=1 or found[0]["id"]!=ledger["documents"][kind]["id"]:raise m.Stop("Existing act document identity mismatch")
+            doc=t.request(m.MS,"entity/"+kind+"/"+found[0]["id"])
+            payload=copy.deepcopy(c["templates"][kind]);payload.update(positions=ledger["positions"],description=ledger["order_annotation"]["description"])
+            if kind=="demand":payload["customerOrder"]=links["customerorder"]
+            if kind=="salesreturn":payload["demand"]=links["demand"]
+            w.verify(kind,doc,payload)
+            links[kind]=m.meta(doc);docs[kind]=(doc,payload)
+           for kind in ("customerorder","demand"):
+            metadata=t.request(m.MS,"entity/"+kind+"/metadata")
+            matches=[s for s in metadata.get("states",[]) if s.get("name")=="Возврат на ФБО"]
+            if len(matches)!=1:
+             db.put(ROOT+"status_update:v1",{"status":"blocked","at":m.now(),"document_type":kind,"available_states":[s.get("name") for s in metadata.get("states",[])]})
+             raise m.Stop("Required state missing or ambiguous for "+kind)
+            targets[kind]=m.meta(matches[0])
+            doc=docs[kind][0];before[kind]={"name":doc["name"],"state":doc.get("state"),"moment":doc.get("moment")}
+            t.allowed.add("entity/"+kind+"/"+doc["id"])
+           result={}
+           for kind in ("customerorder","demand"):
+            doc,payload=docs[kind];path="entity/"+kind+"/"+doc["id"]
+            changed=m.href(doc.get("state",{}))!=m.href(targets[kind])
+            if changed:t.request(m.MS,path,"PUT",{"state":targets[kind]})
+            live=t.request(m.MS,path)
+            if m.href(live.get("state",{}))!=m.href(targets[kind]):raise m.Stop("State readback mismatch")
+            w.verify(kind,live,payload)
+            for field in ("id","name","externalCode","moment","applicable","sum"):
+             if live.get(field)!=doc.get(field):raise m.Stop("Unexpected document field changed")
+            result[kind]={"id":live["id"],"name":live["name"],"state_name":"Возврат на ФБО","state_meta":targets[kind],"changed":changed,"posted":live["applicable"],"positions_verified":True}
+           db.put(ROOT+"status_update:v1",{"status":"complete","at":m.now(),"documents":result,"before":before,"only_state_updated":True,"no_new_documents":True,"demand_state_for_template":targets["demand"]})
+           print("Existing Ozon order and shipment statuses verified; private receipt saved.")
+          except Exception as exc:
+           current=db.get(ROOT+"status_update:v1") or {}
+           current.update(status="blocked",at=m.now(),error=str(exc) if isinstance(exc,m.Stop) else type(exc).__name__)
+           db.put(ROOT+"status_update:v1",current)
+           print("Status update stopped; see private receipt.")
+           sys.exit(1)

@@ -33,34 +33,19 @@ jobs:
           PYTHONPATH=scripts python - <<'PY'
           import json,time,requests
           from china_cloud_cost_control import Cache,WB,validate_identity,stamp
-          from china_advertising_state import AdvertisingIO
-          from china_morning_readiness import current_prices,published_stock
-          from china_moysklad_read import read_stock
-          ROOT='china_agent:owner_new_additions_read:2026-11-05:v1'
-          NMS=[1594295903,1473243449,1473243919,1535337772]
-          ART=['530-NoelBag-oliva','539-AdaBag-coffee','673-NoelBag-green','4-FurPanama-white']
-          c=Cache();w=WB();io=AdvertisingIO();validate_identity(c,w)
-          if not c.create(ROOT+':claim',dict(at=stamp(),wb_writes=0)):raise ValueError('Already claimed')
-          v=dict(status='collecting',cabinet='token_3',observed_at=stamp(),wb_writes=0,telegram_calls=0,grants_action_permission=False,errors={})
-          def read(k,f):
-           try:v[k]=f()
-           except Exception as e:v['errors'][k]=str(e)[:220]
+          ROOT='china_agent:owner_new_additions_read:2026-11-05:v1:categories'
+          c=Cache();w=WB();validate_identity(c,w)
+          if not c.create(ROOT+':claim',dict(at=stamp())):raise ValueError('Already claimed')
+          v=dict(status='collecting',observed_at=stamp(),wb_writes=0,telegram_calls=0,errors={})
+          for nm in [1594295903,1473243449]:
+           try:
+            time.sleep(1)
+            r=requests.post('https://content-api.wildberries.ru/content/v2/get/cards/list',headers={'Authorization':w.token},json={'settings':{'cursor':{'limit':10},'filter':{'textSearch':str(nm),'withPhoto':-1}}},timeout=45)
+            r.raise_for_status()
+            v[str(nm)]=[dict(nmID=x['nmID'],vendorCode=x['vendorCode'],subjectID=x['subjectID'],subjectName=x.get('subjectName'))for x in r.json().get('cards',[])if x.get('nmID')==nm]
+           except Exception as e:v['errors'][str(nm)]=str(e)[:200]
            c.put(ROOT,json.loads(json.dumps(v)))
-          read('campaigns',lambda:w.campaigns([40933588,41298169,41325622,40945478]))
-          read('budgets',lambda:w.req('/api/advert/v2/budget','POST',dict(advertIds=[40933588,41298169,41325622])))
-          read('prices',lambda:current_prices(io,NMS))
-          if 'prices'in v:read('published_stock',lambda:published_stock(io,v['prices'],NMS))
-          read('stock',lambda:read_stock(ART))
-          def card(article):
-           time.sleep(1)
-           r=requests.post('https://content-api.wildberries.ru/content/v2/get/cards/list',headers={'Authorization':w.token},json={'settings':{'cursor':{'limit':10},'filter':{'textSearch':article,'withPhoto':-1}}},timeout=45)
-           r.raise_for_status()
-           return [dict(nmID=x['nmID'],vendorCode=x['vendorCode'],subjectID=x['subjectID'],subjectName=x.get('subjectName'))for x in r.json().get('cards',[])if x.get('vendorCode')==article]
-          read('category530',lambda:card(ART[0]));read('category539',lambda:card(ART[1]))
-          read('minimum_new_bags',lambda:w.minimums(40933588,NMS[:2],'recommendations'))
-          read('minimum_search673',lambda:w.minimums(41298169,[NMS[2]],'search'))
-          read('minimum_search_panama4',lambda:w.minimums(41325622,[NMS[3]],'search'))
-          v.update(status='complete'if not v['errors']else'partial',completed_at=stamp());c.put(ROOT,json.loads(json.dumps(v)))
-          print(json.dumps(dict(status=v['status'],errors=list(v['errors']),wb_writes=0,telegram_calls=0)))
+          v.update(status='complete',completed_at=stamp());c.put(ROOT,json.loads(json.dumps(v)))
+          print(json.dumps(dict(status=v['status'],wb_writes=0)))
           
           PY

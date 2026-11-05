@@ -74,10 +74,8 @@ def render_ip(view,contract,outdir):
   if any(v is not None and (v['orders'] is None or v['clicks'] is None) for v in seq):seq=[None if v and (v['orders'] is None or v['clicks'] is None) else v for v in seq]
   period={k:sum(v[k] for v in seq) for k in ('spend','amount','orders','clicks')} if all(v is not None for v in seq) else None
   current=[a for a in contract['actions'] if a['campaign']==cid]
-  display=[a for a in contract.get('display_only',[]) if a['campaign']==cid]
   rec=[decision(a)+' Новое предложение.' for a in current]
-  rec.extend((a['sku']+': '+a['display_status']) if a['display_status'].startswith('Выполнено') else decision(a)+' '+a['display_status'] for a in display)
-  rec.extend((contract.get('campaign_notes') or {}).get(str(cid),[]))
+  # Execution receipts and analytical notes stay internal, never recommendations.
   if not rec:rec=['РК приостановлена; запуск не предлагается.'] if raw.get('status_id')==11 else ['Архив; не запускать.'] if raw.get('status_id')==7 else ['Новых готовых действий нет.']
   label=contract.get('campaign_labels',{}).get(str(cid),{})
   name=raw.get('campaign_name') or label.get('name') or 'Название не сохранено'
@@ -152,8 +150,9 @@ def render_campaign_table(bundle):
  for x,label,value in [(44,'Общая ДРР '+period_label+': ',p),(1050,'Общая ДРР день: ',day)]:
   d.text((x,y+132),label,font=font(29,True),fill=INK)
   d.text((x+d.textlength(label,font=font(29,True)),y+132),pct(value),font=font(29,True),fill=color(value))
- footer='ДРР = сумма расходов / сумма рекламных заказов по сохранённому источнику. Дни без заказов входят в расходы. Нет заказов — сумма заказов 0, ДРР не вычисляется. Исторические расходы исключённых товаров и архивных РК включены в итог. Атрибуция не равна выкупам и прибыли. Новые тесты отмечены; период может включать прежний состав. Итог относится только к кабинету ИП. Архивные РК учтены в итоге, без рекомендаций запуска. «В исполнении» не входит повторно в «Сделай всё». Суммы SKU могут отличаться от РК из-за округления.'
+ footer='ДРР = сумма расходов / сумма рекламных заказов по сохранённому источнику. Дни без заказов входят в расходы. Нет заказов — сумма заказов 0, ДРР не вычисляется. Исторические расходы исключённых товаров и архивных РК включены в итог. Атрибуция не равна выкупам и прибыли. Новые тесты отмечены; период может включать прежний состав. Итог относится только к кабинету ИП. Архивные РК учтены в итоге, без рекомендаций запуска. Предложения не выполнены и требуют согласования. Суммы SKU могут отличаться от РК из-за округления.'
  if (bundle.get('review_coverage') or {}).get('conditional_basis_used'):footer+=' Часть усилений — исследовательские предложения по сохранённому сценарию выкупа при той же цене. Это не подтверждённая прибыль текущего периода или следующих заказов.'
  for j,line in enumerate(wrap(d,footer,W-88,24)):d.text((44,y+218+j*31),line,font=font(24),fill='#536b79')
  finish(im,y+240+len(wrap(d,footer,W-88,24))*31,'drr',actions)
  return files
+

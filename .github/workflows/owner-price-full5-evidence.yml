@@ -1,0 +1,98 @@
+name: Owner full price proposal evidence 5Nov
+on:
+  push:
+    paths: ['.github/workflows/owner-price-full5-evidence.yml']
+permissions:
+  contents: read
+concurrency:
+  group: owner-price-full5-evidence
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /*.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0
+      - name: Owner authorized evidence only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+        run: |
+          PYTHONPATH=scripts:source python - <<'PY'
+          import json,os,requests
+          from datetime import datetime,date,timezone
+          from urllib.parse import urlencode
+          from china_cloud_cost_control import Cache,WB,validate_identity,stamp
+          from china_advertising_state import AdvertisingIO
+          from china_analytic_dialog import Analyst,reading
+          from china_price_evidence import cached_order_products
+          ROOT='china_agent:owner_price_full5:2026-11-05:v1'
+          c=Cache();io=AdvertisingIO();w=WB();validate_identity(c,w)
+          if not c.create(ROOT+':claim',dict(at=stamp(),wb_writes=0)):raise ValueError('Already collected')
+          v=dict(status='collecting',cabinet='token_3',observed_at=stamp(),errors={},wb_writes=0,telegram_calls=0,grants_action_permission=False)
+          def save():c.put(ROOT,json.loads(json.dumps(v)))
+          def read(k,f):
+           try:v[k]=f()
+           except Exception as e:v['errors'][k]=str(e)[:300]
+           save()
+          catalogue=io.get('china_agent:prices:v1')
+          class Work:
+           now=datetime.now(timezone.utc)
+           def get(self,k):return io.get(k)
+           def save(self,k,value,**kw):
+            c.put(k,json.loads(json.dumps(value)))
+           def db(self,method,table,params=None):
+            if method!='GET' or table!='analytics_snapshots':raise ValueError('Scope')
+            return io.db(table+'?'+urlencode(params or {}))
+           def catalog(self):return [(str(r['nmID']),r['vendorCode']) for r in catalogue['rows']]
+          a=Analyst(Work(),dict(request_text='Полный каталог рекомендации повышения цены на5% по завершенным дням'),[])
+          def product_period(s,e):
+           with reading():return a.live('products',[],s,e)
+          read('products',lambda:product_period('2026-11-01','2026-11-04'))
+          def prices():
+           goods=[]
+           for off in range(0,20000,1000):
+            r=requests.get('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter',headers={'Authorization':os.environ['WB_TOKEN_3']},params=dict(limit=1000,offset=off),timeout=60)
+            r.raise_for_status();part=r.json()['data']['listGoods'];goods+=part
+            if len(part)<1000:break
+           else:raise ValueError('Pagination')
+           return dict(cabinet='token_3',observed_at=stamp(),rows=goods)
+          read('prices',prices)
+          def daily():
+           key='china_agent:wb_order_gaps:day:2026-11-04'
+           if not c.get(key):
+            r=requests.get('https://statistics-api.wildberries.ru/api/v1/supplier/orders',headers={'Authorization':os.environ['WB_TOKEN_3']},params=dict(dateFrom='2026-11-04',flag=1),timeout=90)
+            r.raise_for_status();rows=r.json()
+            if not isinstance(rows,list) or len(rows)>=80000:raise ValueError('Incomplete orders')
+            c.put(key,dict(cabinet='token_3',status='complete',seller_identity_verified=True,date='2026-11-04',scope='flag=1 exact Moscow day',observed_at=stamp(),rows=rows))
+           wanted={str(r['nmID']):r['vendorCode'] for r in v.get('prices',catalogue)['rows']}
+           return cached_order_products(c.get,date(2026,11,1),date(2026,11,4),wanted)
+          read('daily',daily)
+          v.update(status='complete' if not v['errors'] else 'partial',completed_at=stamp());save()
+          print(json.dumps(dict(status=v['status'],errors=v['errors'],products=len(v.get('products',{}).get('rows',[])),daily=len(v.get('daily',{})),prices=len(v.get('prices',{}).get('rows',[])))))
+          
+          PY

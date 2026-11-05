@@ -138,6 +138,11 @@ def recommendations(c):
  rows+=c.get('addition_review_notes',[])
  # Unready research stays in the private analysis journal.
  return rows or ['Нет новых действий.']
+def covered_totals(campaigns):
+ known=[c['today'] for c in campaigns if c.get('today') is not None]
+ missing=[c['id'] for c in campaigns if c.get('today') is None and not c.get('draft')]
+ return dict(total=sums(known) if known else None,missing=missing,covered=len(known),campaigns=len(campaigns))
+
 def render_midday(b):
  b=dict(b,campaigns=[c for c in b['campaigns'] if not c.get('draft')])
  W=2400;H=6500;xs=[44,480,780,1050,1650,2356];files=[];green='#196b44'
@@ -182,14 +187,15 @@ def render_midday(b):
   for i,lines in enumerate(ls):
    for j,line in enumerate(lines):d.text((xs[i],y+18+j*35),line,font=font(27),fill=color(p) if i==2 else '#111111')
   acts.extend(r['action'] for r in c['attention']);y+=h+12
- known=[c['today'] for c in b['campaigns'] if c['today'] is not None]
- total=None if any(c['today'] is None and not c['draft'] for c in b['campaigns']) else sums(known)
- d.rounded_rectangle((24,y+10,W-24,y+160),18,fill=green)
- d.text((44,y+30),'ИТОГО · Китай · только текущий день',font=font(29,True),fill='white')
+ coverage=covered_totals(b['campaigns']);total=coverage['total']
+ d.rounded_rectangle((24,y+10,W-24,y+215),18,fill=green)
+ d.text((44,y+30),('ИТОГО · известная часть · текущий день' if coverage['missing'] else 'ИТОГО · Китай · только текущий день'),font=font(29,True),fill='white')
  d.text((44,y+85),'Расход: '+money(total['spend'] if total else None)+' ¥   |   ДРР: '+pct(total)+'   |   Рекламных заказов: '+str(int(total['orders']) if total else 'нет данных'),font=font(29,True),fill='white')
+ if coverage['missing']:
+  d.text((44,y+145),'Покрытие: '+str(coverage['covered'])+' из '+str(coverage['campaigns'])+' РК. Нет данных: '+', '.join(map(str,coverage['missing']))+'.',font=font(25),fill='white')
  foot='День не завершён; возможна поздняя атрибуция. ДРР = сумма расходов / сумму рекламных заказов до скидок WB. Нет заказов — ДРР не вычисляется. Атрибуция не равна выкупам и прибыли. Только новые действия этого PNG исполняются после отдельного ответа «Сделай всё»; автоматических изменений нет.'
- for j,line in enumerate(wrap(d,foot,W-88,24)):d.text((44,y+188+j*31),line,font=font(24),fill='#536b79')
- finish(im,y+220+len(wrap(d,foot,W-88,24))*31,acts)
+ for j,line in enumerate(wrap(d,foot,W-88,24)):d.text((44,y+240+j*31),line,font=font(24),fill='#536b79')
+ finish(im,y+272+len(wrap(d,foot,W-88,24))*31,acts)
  for i,f in enumerate(files,1):f.update(kind='drr:'+str(i).zfill(3),page=i,total=len(files))
  return files
 def run():

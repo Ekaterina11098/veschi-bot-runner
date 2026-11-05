@@ -6,7 +6,9 @@ MSK=ZoneInfo('Europe/Moscow')
 ROOT='china_agent:daily_growth:'
 def stamp():return datetime.now(timezone.utc).isoformat()
 def fresh(at,now,hours=24):
- try:return 0<=(now-datetime.fromisoformat(at.replace('Z','+00:00'))).total_seconds()<=hours*3600
+ try:
+  from china_advertising_v2 import event_time
+  return 0<=(now-event_time(at)).total_seconds()<=hours*3600
  except (TypeError,ValueError,AttributeError):return False
 def shortlist(s):
  from china_advertising_v2 import history,event_time
@@ -156,6 +158,7 @@ def merge(bundle,actions):
  return bundle
 def validate_raise(io,item,before):
  import requests
+ from china_advertising_v2 import event_time
  e=item.get('growth_evidence')or{};now=datetime.now(timezone.utc)
  if item.get('direction')!='raise' or not fresh(e.get('observed_at'),now,2) or e.get('period_to','9999')>=str(now.astimezone(MSK).date()):raise ValueError('Raise evidence stale or incomplete-day')
  old=item['old_minor'];target=item['target_minor']
@@ -166,7 +169,7 @@ def validate_raise(io,item,before):
  for cid,key in (io.get('china_agent:verified_campaign_state:v1')or{}).items():
   receipt=io.get(key)or{};at=receipt.get('submitted_at')or receipt.get('verified_at')
   if receipt.get('status')!='verified'or not at:continue
-  if datetime.fromisoformat(at.replace('Z','+00:00')).astimezone(MSK).date()!=now.astimezone(MSK).date():continue
+  if event_time(at).astimezone(MSK).date()!=now.astimezone(MSK).date():continue
   b=next((n for n in receipt.get('before',{}).get('nm_settings',[])if n['nm_id']==item['nm_id']),None);a=next((n for n in receipt.get('after',{}).get('nm_settings',[])if n['nm_id']==item['nm_id']),None)
   if b and a and any(a['bids_kopecks'].get(z,0)>b['bids_kopecks'].get(z,0)for z in ['search','recommendations']):raise ValueError('Product already raised today; no second raise')
  # A fresh marketplace price and published-stock preflight prevents execution from a stale PNG.

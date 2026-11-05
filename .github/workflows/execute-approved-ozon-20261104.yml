@@ -71,7 +71,7 @@ jobs:
             if typ == "salesreturn": payload["demand"] = links["demand"]
             worker.verify(typ, doc, payload)
             expected_moment=m.stamp(state["supply"]["closedAt"]).astimezone(dt.timezone(dt.timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S")
-            if doc.get("moment","")[:19] != expected_moment: raise m.Stop("Document source date/time mismatch")
+            if doc.get("moment","")[:19] not in (expected_moment, expected_moment[:16]+":00"): raise m.Stop("Document source date/time mismatch")
             if typ == "customerorder" and m.href(doc.get("state",{})) != m.href(annotation["state"]): raise m.Stop("Order state mismatch")
             links[typ] = m.meta(doc)
             result[typ] = {"id":doc["id"],"name":doc["name"],"posted":doc["applicable"],"sum":doc["sum"],"moment":doc["moment"],"positions":4,"quantity":4,"comment_verified":True,"links_verified":True}

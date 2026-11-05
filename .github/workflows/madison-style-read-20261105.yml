@@ -1,0 +1,51 @@
+name: Read China product card style for Madison
+on:
+  push:
+    branches: [madison-style-read-20261105]
+    paths: ['.github/workflows/madison-style-read-20261105.yml']
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read existing card text and save private sample
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          def req(url,headers,body):
+              r=urllib.request.Request(url,headers=headers,data=json.dumps(body).encode(),method='POST')
+              with urllib.request.urlopen(r,timeout=45) as f:return json.load(f)
+          now=datetime.datetime.now(datetime.timezone.utc)
+          out={'observed_at':now.isoformat(),'cabinet':'token_3','wb_writes':0,'telegram_sends':0,'cards':[],'pages':0}
+          seen=set();cursor={'limit':100}
+          try:
+              for page in range(3):
+                  data=req('https://content-api.wildberries.ru/content/v2/get/cards/list',{'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'},{'settings':{'sort':{'ascending':False},'cursor':cursor,'filter':{'withPhoto':-1}}})
+                  out['pages']+=1
+                  for c in data.get('cards',[]):
+                      article=c.get('vendorCode','')
+                      model=article.split('-')[1].lower() if '-' in article else article.lower()
+                      if 'bag' not in model or model in seen or len(c.get('description',''))<250:continue
+                      seen.add(model)
+                      out['cards'].append({k:c.get(k) for k in ['nmID','vendorCode','title','description','characteristics','dimensions','subjectName']})
+                      if len(out['cards'])>=5:break
+                  if len(out['cards'])>=5:break
+                  cur=data.get('cursor',{})
+                  if cur.get('total',0)<100:break
+                  cursor={k:cur[k] for k in ['updatedAt','nmID']};cursor['limit']=100
+                  time.sleep(1)
+              out['status']='received' if out['cards'] else 'no_filled_bag_cards'
+          except urllib.error.HTTPError as e:out.update(status='error',http_status=e.code)
+          key=os.environ['SUPABASE_SECRET_KEY'];headers={'apikey':key,'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates'}
+          if not key.startswith('sb_secret_'):headers['Authorization']='Bearer '+key
+          payload={'cache_key':'cards_style:china:madison:20261105:v1','payload':out,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()}
+          req(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',headers,payload)
+          print('Read-only card sample completed; business content saved privately.')
+          
+          PY

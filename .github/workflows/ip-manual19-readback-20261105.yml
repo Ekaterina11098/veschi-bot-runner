@@ -1,0 +1,28 @@
+name: Verify only manual IP19 removal
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wb-ip-advertising-agent
+  cancel-in-progress: false
+jobs:
+  readback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 260
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 5660e98420a8f749db2613c7615985040c59754d
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            ip_manual19_readback_20261105.py
+            ip_apply_nine_20261103.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python ip_manual19_readback_20261105.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          ADVERTISING_EXECUTION_ENABLED: 'false'

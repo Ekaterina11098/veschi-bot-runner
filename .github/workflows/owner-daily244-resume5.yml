@@ -1,0 +1,131 @@
+name: Owner approved resume five blocked bids job244
+on:
+  push:
+    paths: ['.github/workflows/owner-daily244-resume5.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-daily244-resume5
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded fresh growth economics; no model or Telegram credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import copy,json,time,requests
+          from datetime import datetime,timezone
+          from china_cloud_cost_control import Cache,WB,validate_identity,stamp
+          from china_advertising_state import AdvertisingIO
+          from china_advertising_growth import validate_raise
+          ROOT='china_agent:owner_daily244_resume5:2026-11-05:v1'
+          c=Cache();w=WB();io=AdvertisingIO()
+          EXACT={(40933588,1473243917,28,30),(40933588,1473243816,28,30),(40945478,1535337769,12,13),(40945478,1535337770,11,12),(41298169,1473243918,28,30)}
+          def put(k,v):
+           v=json.loads(json.dumps(v))
+           if c.get(k) is None:
+            if not c.create(k,v):raise RuntimeError('Concurrent receipt creation')
+           else:c.put(k,v)
+          def auth():
+           a=c.get(ROOT+':approval') or {};p=c.get(a.get('original_plan_key','')) or {}
+           if a.get('owner_user_id')!=5122667182 or a.get('source_channel')!='codex' or a.get('execution_authorized') is not True or a.get('telegram_notice_authorized') is not True:raise ValueError('Exact owner authorization required')
+           if p.get('invalidated_at') or p.get('plan_sha256')!=a.get('plan_sha256') or datetime.now(timezone.utc)>datetime.fromisoformat(a['expires_at']):raise ValueError('Original plan changed or expired')
+           if {(i['campaign_id'],i['nm_id'],i['old_minor'],i['target_minor'])for i in a['items']}!=EXACT or any(i.get('kind')!='ad_set_bid' for i in a['items']):raise ValueError('Exact five scope changed')
+           if any(i not in p['items'] for i in a['items']):raise ValueError('Action differs from approved PNG')
+           return a,p
+          def read(cid):return w.campaigns([cid])[str(cid)]
+          def nmrows(s):return {n['nm_id']:n for n in s['nm_settings']}
+          def same_settings(a,b):return all(a.get(k)==b.get(k) for k in ['id','status','settings','bid_type','currency'])
+          def cash(cid):
+           rows=w.req('/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts']
+           if len(rows)!=1 or rows[0]['currency']!='CNY':raise ValueError('Budget identity missing')
+           return rows[0]['total']
+          def main():
+           a,p=auth();validate_identity(c,w)
+           if c.get(ROOT+':execution'):raise ValueError('Existing execution; no replay permitted')
+           old=c.get(a['original_execution_key']) or {};states={s['id']:s for s in old.get('items',[])}
+           if len(states)!=12 or sum(s['status']=='verified' for s in states.values())!=7:raise ValueError('Original partial journal changed')
+           for i in a['items']:
+            s=states[i['id']]
+            if s['status']!='blocked' or s.get('submitted_at') or 'Invalid isoformat' not in s.get('reason',''):raise ValueError('Remaining action was submitted or differs')
+           e=dict(status='preflight',created_at=stamp(),approval_key=ROOT+':approval',operations={},campaigns={},items=[],wb_writes=0)
+           if not c.create(ROOT+':execution',e):raise RuntimeError('Concurrent executor')
+           try:
+            # Complete all safety/economics checks before the first mutation.
+            for i in a['items']:
+             cid=i['campaign_id'];s=read(cid);n=nmrows(s).get(i['nm_id'])
+             if s['status']!=9 or s['currency']!='CNY' or s['bid_type']!='manual' or s['settings']['payment_type']!='cpc' or not n or n['bids_kopecks'].get(i['placement'])!=i['old_minor']:raise ValueError('Current campaign/member/bid changed: '+i['article'])
+             validate_raise(io,i,s)
+             q=w.minimums(cid,[i['nm_id']],i['placement']);vals=[b['value']for r in q.get('bids',[])if r['nm_id']==i['nm_id']for b in r['bids']if b['currency']=='CNY'and b['type']==('search'if i['placement']=='search'else'recommendation')]
+             if len(vals)!=1 or vals[0]>i['target_minor']:raise ValueError('Exact WB minimum changed')
+             e['items'].append(dict(id=i['id'],article=i['article'],status='preflight_verified',old_minor=i['old_minor'],target_minor=i['target_minor'],minimum_minor=vals[0]));put(ROOT+':execution',e)
+            for cid in sorted({i['campaign_id'] for i in a['items']}):
+             auth();selected=[i for i in a['items'] if i['campaign_id']==cid];before=read(cid)
+             if any(nmrows(before)[i['nm_id']]['bids_kopecks'][i['placement']]!=i['old_minor']for i in selected):raise ValueError('Bid changed after preflight')
+             expected=copy.deepcopy(before)
+             for i in selected:nmrows(expected)[i['nm_id']]['bids_kopecks'][i['placement']]=i['target_minor']
+             e['campaigns'][str(cid)]=dict(before=before,before_budget=cash(cid))
+             body=dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=i['nm_id'],placement=i['placement'],bid_kopecks=i['target_minor'])for i in selected])])
+             e['operations'][str(cid)]=dict(status='submitting',request=body,at=stamp());put(ROOT+':execution',e)
+             try:
+              response=requests.patch('https://advert-api.wildberries.ru/api/advert/v1/bids',headers={'Authorization':w.token},json=body,timeout=50)
+              if not response.ok:raise RuntimeError('WB bid HTTP '+str(response.status_code))
+              e['wb_writes']+=1;e['operations'][str(cid)].update(status='accepted',submitted_at=stamp());put(ROOT+':execution',e)
+             except Exception:
+              e['operations'][str(cid)]['status']='uncertain';put(ROOT+':execution',e);raise
+             for _ in range(12):
+              after=read(cid)
+              if same_settings(before,after) and nmrows(after)==nmrows(expected):break
+              time.sleep(4)
+             else:raise RuntimeError('WB readback differs; no repeat')
+             child=dict(status='verified',kind='ad_set_bid',before=before,after=after,submitted_at=e['operations'][str(cid)]['submitted_at'],verified_at=stamp(),items=selected,before_budget=e['campaigns'][str(cid)]['before_budget'],after_budget=cash(cid),budget_writes=0)
+             childkey=ROOT+':campaign:'+str(cid);put(childkey,child)
+             registry=c.get('china_agent:verified_campaign_state:v1')or{};registry[str(cid)]=childkey;put('china_agent:verified_campaign_state:v1',registry)
+             e['campaigns'][str(cid)]=child;e['operations'][str(cid)]['status']='verified'
+             for i in selected:
+              next(x for x in e['items']if x['id']==i['id']).update(status='verified',receipt_key=childkey)
+             put(ROOT+':execution',e)
+            e.update(status='verified',completed_at=stamp());put(ROOT+':execution',e)
+            # Preserve the seven original receipts; append recovery evidence only for the five.
+            original=c.get(a['original_execution_key'])
+            for i in a['items']:
+             st=next(x for x in original['items']if x['id']==i['id']);child=e['campaigns'][str(i['campaign_id'])]
+             st.update(status='verified',before=child['before'],after=child['after'],submitted_at=child['submitted_at'],verified_at=child['verified_at'],recovery_key=ROOT+':execution',prior_reason=st.pop('reason',None))
+            original.update(recovery_key=ROOT+':execution',recovery_completed_at=stamp());put(a['original_execution_key'],original)
+           except Exception as ex:
+            e.update(status='attention_required',error_type=type(ex).__name__,error=str(ex),failed_at=stamp());put(ROOT+':execution',e);raise
+           # Exactly one durable notice after verified completion; never repeat sending/uncertain.
+           key=ROOT+':delivery'
+           if c.get(key):raise RuntimeError('Existing delivery; do not resend')
+           text='Завершены оставшиеся 5 действий команды 244, результат проверен в WB:\n65-NoelBag-zhaki и 454-NoelBag-cream · РК 40933588 · рекомендации: 0,28 → 0,30 CNY.\nПанама 1 · РК 40945478 · рекомендации: 0,12 → 0,13 CNY.\nПанама 2 · РК 40945478 · рекомендации: 0,11 → 0,12 CNY.\n67-NoelBag-zginger · РК 41298169 · поиск: 0,28 → 0,30 CNY.\nИтого все 12 действий команды подтверждены WB. Предыдущие 7 не повторялись. Цены, бюджеты и остальной состав не менялись. Первый полный день новых ставок — 6 ноября, оценка — 7 ноября.'
+           if io.tg('getMe',{}).get('id')!=8780468043:raise RuntimeError('Wrong Telegram bot')
+           if not c.create(key,dict(status='sending',text=text,chat_id=-1004342917488,created_at=stamp())):raise RuntimeError('Concurrent delivery')
+           try:
+            r=io.tg('sendMessage',dict(chat_id=-1004342917488,text=text,reply_parameters={'message_id':699}))
+            if r.get('chat',{}).get('id')!=-1004342917488 or type(r.get('message_id'))is not int:raise RuntimeError('Telegram receipt mismatch')
+            put(key,dict(status='sent',text=text,chat_id=-1004342917488,message_id=r['message_id'],receipt=r,sent_at=stamp()))
+           except Exception:
+            prior=c.get(key);prior['status']='uncertain';put(key,prior);raise
+           print(json.dumps(dict(status=e['status'],verified_items=len(e['items']),wb_writes=e['wb_writes'],message_id=r['message_id'])))
+          main()
+          
+          
+          PY

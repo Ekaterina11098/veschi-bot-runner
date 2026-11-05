@@ -76,7 +76,8 @@ def render_ip(view,contract,outdir):
   current=[a for a in contract['actions'] if a['campaign']==cid]
   display=[a for a in contract.get('display_only',[]) if a['campaign']==cid]
   rec=[decision(a)+' Новое предложение.' for a in current]
-  rec.extend(decision(a)+' '+a['display_status'] for a in display)
+  rec.extend((a['sku']+': '+a['display_status']) if a['display_status'].startswith('Выполнено') else decision(a)+' '+a['display_status'] for a in display)
+  rec.extend((contract.get('campaign_notes') or {}).get(str(cid),[]))
   if not rec:rec=['РК приостановлена; запуск не предлагается.'] if raw.get('status_id')==11 else ['Архив; не запускать.'] if raw.get('status_id')==7 else ['Новых готовых действий нет.']
   label=contract.get('campaign_labels',{}).get(str(cid),{})
   name=raw.get('campaign_name') or label.get('name') or 'Название не сохранено'

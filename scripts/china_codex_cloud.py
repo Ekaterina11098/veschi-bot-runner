@@ -224,8 +224,24 @@ class Worker:
         jid=inbox['job_id']
         jobs=self.db.api('GET','business_agent_jobs',{'id':'eq.'+str(jid),'chat_id':'eq.'+str(CHAT),'select':'id,chat_id,sender_id,request_text,tool_trace'})
         if len(jobs)!=1 or not validate(inbox,jobs[0]):raise RuntimeError('Original question scope mismatch')
-        if self.db.get(ROOT+'outbox:'+str(jid)):return 'existing_outbox'
-        if self.db.get('china_agent:owner_dialog_resolution:v1:job:'+str(jid)):return 'owner_resolved'
+        out=self.db.get(ROOT+'outbox:'+str(jid))
+        if out:
+            if (out.get('status') not in ('ready','delivered') or out.get('job_id')!=jid
+                    or out.get('chat_id')!=CHAT or out.get('thread_id')!=THREAD
+                    or out.get('input_message_id')!=inbox.get('input_message_id')):
+                raise RuntimeError('Existing outbox scope/status requires review')
+            target='delivered' if out['status']=='delivered' else 'answered'
+            if not self.db.update(key,inbox|{'status':target,'reconciled_at':stamp()},inbox['status']):return 'claim_lost'
+            return 'existing_outbox'
+        resolution=self.db.get('china_agent:owner_dialog_resolution:v1:job:'+str(jid))
+        if resolution:
+            if (resolution.get('status')!='answered_by_owner' or resolution.get('chat_id')!=CHAT
+                    or type(resolution.get('message_id')) is not int or not resolution.get('receipt_key')
+                    or not self.db.get(resolution['receipt_key'])):
+                raise RuntimeError('Owner resolution lacks scoped delivery receipt')
+            if not self.db.update(key,inbox|{'status':'owner_resolved','resolved_at':stamp(),
+                    'resolution_key':'china_agent:owner_dialog_resolution:v1:job:'+str(jid)},inbox['status']):return 'claim_lost'
+            return 'owner_resolved'
         journal=CLOUD+'job:'+str(jid);state=self.db.get(journal)
         analytics=self.db.get(ROOT+'analytics:'+str(jid))
         if inbox['status']=='collecting' and (not analytics or analytics.get('status') not in ('calculated','failed')):return 'waiting_analytics'

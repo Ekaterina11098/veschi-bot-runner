@@ -25,10 +25,15 @@ def main(mode):
     if not db.get(m.STATE):w.run("bootstrap")
     c["setup_verified_at"]=m.now();c["status"]="preview_verified"
     db.put(m.CONFIG,c)
-   else:results[cabinet]=w.run(mode)
+   else:
+    results[cabinet]=w.run(mode)
+    if mode=="run" and os.environ.get("FBS_EXECUTION_KIND")=="daily" and results[cabinet].get("status")=="waiting_for_daily_time":
+     detail={**results[cabinet],"status":"missed_daily_schedule","owner_confirmation_required":True,"message":"Плановый запуск пришел вне разрешенного времени. Списания не выполнены; требуется согласование внепланового запуска."}
+     db.put("fbs_document_chain:"+cabinet+":missed_daily_run:v1",detail)
+     results[cabinet]=detail
   except Exception as e:
    db.put("fbs_document_chain:"+cabinet+":worker_error:v1",{"at":m.now(),"error":str(e) if isinstance(e,m.Stop) else type(e).__name__})
    results[cabinet]={"status":"failed"}
  print(json.dumps(results))
- if any(x.get("status")=="failed" for x in results.values()):sys.exit(1)
+ if any(x.get("status") in ("failed","missed_daily_schedule") for x in results.values()):sys.exit(1)
 if __name__=="__main__":main(sys.argv[1] if len(sys.argv)>1 else "run")

@@ -4,7 +4,7 @@ from ip_apply_nine_20261103 import SixTransport,projection,stamp,HOST
 from ip_daily_png_contract import digest,action_id,ready
 from ip_bags_growth_20261104 import active_ids
 PLAN='ip_agent:png17:2026-11-05:v1';EXEC=PLAN+':execution'
-FROZEN='58414ce2272e2b992bd271d0a75182c5b3c21e84da6c29c56c8ce3e5f39d3876'
+FROZEN='b376d6869b9a3b52e64fb4689d72e045e7f24a644c56ae3e466f4ac7fee91f45'
 def prepare(p,before,stock):
  stage=copy.deepcopy(before);pending=[];items=[]
  for a in p['actions']:

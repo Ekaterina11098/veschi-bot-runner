@@ -1,0 +1,86 @@
+name: Owner historical positive stock cost recovery
+on:
+  push:
+    paths: ['.github/workflows/owner-fixed-buyout-cost-history5.yml']
+permissions:
+  contents: read
+concurrency:
+  group: owner-fixed-buyout-cost-history5
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /*.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0
+      - name: Owner authorized evidence only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: disabled-no-send
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+        run: |
+          PYTHONPATH=scripts:source python - <<'PY'
+          import json,re
+          from datetime import datetime,timezone
+          from china_cloud_cost_control import Cache,stamp
+          from china_moysklad_read import Reader,BASE
+          ROOT='china_agent:owner_fixed_buyout_profit:2026-11-05:v1'
+          c=Cache();src=c.get(ROOT);wanted={r['article'].casefold():r['article'] for r in src['stock']['rows'] if not (r.get('price') or 0)>0}
+          k=ROOT+':historical_costs'
+          if c.get(k):raise ValueError('Already read')
+          reader=Reader();stores=[s for s in reader.pages('/entity/store',{}) if s.get('name')=='МСК' and not s.get('archived')]
+          if len(stores)!=1:raise ValueError('MSK ambiguous')
+          store=stores[0]['meta']['href'];products=reader.pages('/entity/product',{})
+          mapping={};out=dict(status='reading',warehouse='МСК',started_at=stamp(),wanted=list(wanted.values()),history={},found={},product_metadata={},errors=[],moysklad_writes=0,wb_calls=0,telegram_calls=0)
+          for key,article in wanted.items():
+           matched=[p for p in products if p.get('article','').casefold()==key]
+           if len(matched)!=1:out['errors'].append(dict(article=article,error='ambiguous or missing product'));continue
+           p=matched[0];href=p['meta']['href']
+           if not re.fullmatch(re.escape(BASE)+r'/entity/product/[0-9a-f-]{36}',href):raise ValueError('Product identity')
+           mapping[article]=href;out['product_metadata'][article]={key:p.get(key) for key in ('id','created','updated','article','buyPrice')}
+          dates=['2026-11-04','2026-11-03','2026-10-31','2026-10-24','2026-10-13','2026-09-30','2026-08-31','2026-07-31','2026-06-30','2026-03-31','2025-12-31','2025-10-31','2024-12-31']
+          for day in dates:
+           remaining=[(a,h) for a,h in mapping.items() if a not in out['found']]
+           if not remaining:break
+           for start in range(0,len(remaining),20):
+            group=remaining[start:start+20];allowed={h:a for a,h in group}
+            filt='store='+store+';moment='+day+' 23:59:59;stockMode=all;quantityMode=all'+''.join(';product='+h for a,h in group)
+            rows=reader.pages('/report/stock/all',{'filter':filt})
+            for r in rows:
+             href=r.get('meta',{}).get('href','').split('?')[0]
+             if href not in allowed:raise ValueError('Historical scope mismatch')
+             article=allowed[href]
+             if r.get('article','').casefold()!=article.casefold():raise ValueError('Historical article mismatch')
+             value={key:r.get(key) for key in ('article','price','stock','reserve','quantity')};value.update(moment=day+' 23:59:59',source='MoySklad stock/all filter moment and exact MSK store/product')
+             out['history'].setdefault(article,[]).append(value)
+             if (r.get('price') or 0)>0 and (r.get('stock') or 0)>0:out['found'][article]=value
+            c.put(k,out)
+          out.update(status='complete',completed_at=stamp(),read_attempts=reader.read_attempts,unresolved=[a for a in mapping if a not in out['found']]);c.put(k,out)
+          print(json.dumps(dict(status=out['status'],found=len(out['found']),unresolved=out['unresolved'],reads=reader.read_attempts)))
+          
+          PY

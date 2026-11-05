@@ -1,0 +1,27 @@
+name: IP three bags verified receipt
+on:
+  workflow_run:
+    workflows: ['Apply exact three IP bags Nov5']
+    types: [completed]
+permissions:
+  contents: read
+jobs:
+  receipt:
+    if: ${{ github.event.workflow_run.id == 42010357604 && github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 6b0265b17e9a2ea45446aa5cd94f5d9a8a70a0dc
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            ip_bags3_completion_20261105.py
+            ip_apply_nine_20261103.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python ip_bags3_completion_20261105.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}

@@ -1,0 +1,103 @@
+name: Read missed WB document batch for November 4
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/read-missed-wb-20261104.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Read sources and verify duplicate and stock checks only
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          import sys,os,copy,collections,datetime
+          sys.path.insert(0,'scripts')
+          import fbs_document_chain as m
+          from fbs_wb_cabinets import ScopedCache
+          ROOT='fbs_document_recovery:20261104_1900:'
+          START=m.stamp('2026-11-03T16:00:00Z');END=m.stamp('2026-11-04T16:00:00Z')
+          class Read(m.Transport):
+           def request(self,base,path,method='GET',body=None,params=None):
+            if base==m.MS and method!='GET':raise m.Stop('Preflight forbids inventory writes')
+            return super().request(base,path,method,body,params)
+          tokens={k:os.environ['WB_TOKEN_'+v] for k,v in {'china':'3','ip':'2','ooo':'1'}.items()}
+          result={'started_at':m.now(),'status':'reading','cabinet_results':{}}
+          master=m.Cache(Read())
+          for cabinet in ('ip','ooo','china'):
+           os.environ['WB_TOKEN_3']=tokens[cabinet]
+           m.CONFIG='fbs_document_chain:'+cabinet+':config:v1';m.STATE='fbs_document_chain:'+cabinet+':state:v1';m.PREFIX='fbs_document_chain:'+cabinet+':supply:v1:'
+           t=Read();db=ScopedCache(t,cabinet);c=db.get(m.CONFIG);w=m.Worker(t,db,c)
+           cr={'at':m.now(),'ready':[],'already_complete':[],'blocked':[],'after_cutoff':[]}
+           try:
+            base=db.get(m.STATE);assert c['writes_enabled'] and c['scope_confirmed'] and base
+            supplies=w.supplies()
+            baseline=set(base['baseline_done_ids'])
+            selected=[s for s in supplies if s.get('done') and s.get('closedAt') and START<m.stamp(s['closedAt'])<=END and s['id'] not in baseline and m.stamp(s['closedAt'])>m.stamp(base['activated_at'])]
+            cr['after_cutoff']=[{'id':s['id'],'name':s.get('name'),'closedAt':s['closedAt']} for s in supplies if s.get('done') and s.get('closedAt') and END<m.stamp(s['closedAt'])<m.stamp('2026-11-04T21:00:00Z')]
+            for supply in sorted(selected,key=lambda s:s['closedAt']):
+             record={'supply':supply,'checked_at':m.now()}
+             try:
+              key=m.PREFIX+supply['id'];state=db.get(key) or {'supply':supply,'status':'discovered','discovered_at':m.now()}
+              if 'positions' not in state:state['positions'],state['order_ids']=w.positions(supply)
+              w.validate_source(state)
+              annotation=w.order_annotation(supply);docs={};existing={}
+              for kind in m.TYPES:
+               ext=c.get('document_prefix','fbs-china')+':'+supply['id']+':'+kind
+               matches=w.ms_rows('entity/'+kind,{'filter':'externalCode='+ext})
+               if len(matches)>1:raise m.Stop('Duplicate '+kind)
+               existing[kind]=matches
+               if matches:docs[kind]=matches[0]
+              manual=w.ms_rows('entity/customerorder',{'filter':'name='+supply['id']})
+              if any(d['id'] not in [x['id'] for x in existing['customerorder']] for d in manual):raise m.Stop('Manual customer order requires reconciliation')
+              record.update(quantity=sum(p['quantity'] for p in state['positions']),positions=len(state['positions']),order_ids=state['order_ids'],state=state,existing={k:[{'id':d['id'],'name':d['name']} for d in a] for k,a in existing.items()})
+              links={}
+              for kind in m.TYPES:
+               if kind not in docs:continue
+               body={**c['templates'][kind],'positions':state['positions'],'description':annotation['description']}
+               if kind=='demand':
+                if 'customerorder' not in docs:raise m.Stop('Shipment without customer order')
+                body['customerOrder']=m.meta(docs['customerorder'])
+               if kind=='salesreturn':
+                if 'demand' not in docs:raise m.Stop('Return without shipment')
+                body['demand']=m.meta(docs['demand'])
+               w.verify(kind,docs[kind],body)
+              if len(docs)==len(m.TYPES):
+               record['status']='already_complete';cr['already_complete'].append(record);continue
+              if state.get('status')=='complete':raise m.Stop('Completed ledger has missing or deleted documents; owner review required')
+              if state.get('inflight') and not existing.get(state['inflight']):raise m.Stop('Uncertain previous write requires reconciliation')
+              if not existing['demand']:
+               stock=w.ms_rows('report/stock/all',{'filter':'store='+m.href(c['templates']['demand']['store']),'stockMode':'all','quantityMode':'all'})
+               byid={m.href(x).split('?')[0]:x for x in stock};needed=collections.Counter()
+               for p in state['positions']:needed[m.href(p['assortment']).split('?')[0]]+=p['quantity']
+               shortages=[]
+               for ident,q in needed.items():
+                row=byid.get(ident,{})
+                if row.get('stock',0)<q or row.get('quantity',0)<q:
+                 product=t.request(m.MS,ident[len(m.MS):])
+                 shortages.append({'article':product.get('article'),'needed':q,'stock':row.get('stock',0),'available':row.get('quantity',0),'store':m.href(c['templates']['demand']['store'])})
+               if shortages:record['shortages']=shortages;raise m.Stop('Insufficient available stock')
+              record['status']='ready';cr['ready'].append(record)
+             except Exception as e:
+              record.update(status='blocked',error=str(e) if isinstance(e,m.Stop) else type(e).__name__);cr['blocked'].append(record)
+             master.put(ROOT+'preflight:'+cabinet+':v1',cr)
+           except Exception as e:cr.update(status='cabinet_read_failed',error=str(e) if isinstance(e,m.Stop) else type(e).__name__)
+           cr['completed_at']=m.now();master.put(ROOT+'preflight:'+cabinet+':v1',cr)
+           result['cabinet_results'][cabinet]={'ready':len(cr['ready']),'complete':len(cr['already_complete']),'blocked':len(cr['blocked']),'error':cr.get('error')}
+           master.put(ROOT+'summary:v1',result)
+          result.update(status='preflight_complete',completed_at=m.now());master.put(ROOT+'summary:v1',result)
+          print('Read-only source, duplicate and stock checks saved privately. No inventory documents written.')

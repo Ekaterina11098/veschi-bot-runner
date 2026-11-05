@@ -1,0 +1,126 @@
+name: Fill two owner-specified Jackie cards
+on:
+  push:
+    branches: [madison-fill-20261105]
+    paths: ['.github/workflows/jackie-apply-20261105.yml']
+permissions:
+  contents: read
+concurrency:
+  group: jackie-fill-20261105
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Fill existing Jackie cards and verify exact values
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          ARTICLES=['025-MadisonBag-zblack','026-MadisonBag-zcoffee','027-MadisonBag-zdarkred']
+          def request(url,body=None,method=None,headers=None):
+              h=headers if headers is not None else {'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'}
+              req=urllib.request.Request(url,headers=h,data=None if body is None else json.dumps(body).encode(),method=method or ('POST' if body is not None else 'GET'))
+              with urllib.request.urlopen(req,timeout=45) as f:
+                  raw=f.read()
+                  return json.loads(raw) if raw else None
+          def save(key,payload):
+              now=datetime.datetime.now(datetime.timezone.utc);k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              return request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',{'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()},headers=h)
+          
+          KEY='jackie_fill:china:20261105:execution:v1'
+          TEXTS=json.loads("{\"68-jackiebag-black\":\"Женская сумка на плечо Джеки станет вашим стильным аксессуаром в повседневной жизни. Компактная модель боулер из натуральной кожи подойдёт девушкам и женщинам, которые ценят лаконичный дизайн и удобный формат. Глубокий чёрный цвет дополнит как повседневный, так и более нарядный образ.\\n\\nВнутри сумки — одно отделение с текстильной подкладкой и внутренний открытый карман для небольших вещей. Застёжка-молния закрывает содержимое и обеспечивает удобный доступ к повседневным мелочам.\\n\\nРучки позволяют носить сумочку в руке или на плече. Небольшой вес делает модель удобным выбором для прогулок, встреч и поездок по городу. Кожаная сумка боулер дополнит гардероб для офиса, повседневных дел или вечернего выхода.\\n\\nГладкая фактура натуральной кожи и металлическая фурнитура подчёркивают лаконичное оформление. Чёрная сумка с ручками сочетается с джинсами, трикотажем, платьями и жакетами, сохраняя сдержанный и женственный характер образа.\\n\\nДжеки подойдёт тем, кто ищет небольшую женскую сумку из натуральной кожи на плечо с одним отделением и внутренним карманом.\\n\\nВ комплект входят сумка и фирменный пыльник. Для упаковки используются фирменный пыльник и фирменный пакет с бегунком.\\n\\nРазмеры сумочки без упаковки: высота — 14 см, ширина — 22 см, глубина — 10 см. Вес — 226 г.\",\"69-jackiebag-coffee\":\"Женская сумка на плечо Джеки станет вашим стильным аксессуаром в повседневной жизни. Компактная модель боулер из натуральной кожи подойдёт девушкам и женщинам, которые ценят лаконичный дизайн и удобный формат. Тёплый кофейный цвет дополнит как повседневный, так и более нарядный образ.\\n\\nВнутри сумки — одно отделение с текстильной подкладкой и внутренний открытый карман для небольших вещей. Застёжка-молния закрывает содержимое и обеспечивает удобный доступ к повседневным мелочам.\\n\\nРучки позволяют носить сумочку в руке или на плече. Небольшой вес делает модель удобным выбором для прогулок, встреч и поездок по городу. Кожаная сумка боулер дополнит гардероб для офиса, повседневных дел или вечернего выхода.\\n\\nГладкая фактура натуральной кожи и металлическая фурнитура подчёркивают лаконичное оформление. Кофейная сумка с ручками сочетается с джинсами, трикотажем, платьями и жакетами, сохраняя сдержанный и женственный характер образа.\\n\\nДжеки подойдёт тем, кто ищет небольшую женскую сумку из натуральной кожи на плечо с одним отделением и внутренним карманом.\\n\\nВ комплект входят сумка и фирменный пыльник. Для упаковки используются фирменный пыльник и фирменный пакет с бегунком.\\n\\nРазмеры сумочки без упаковки: высота — 14 см, ширина — 22 см, глубина — 10 см. Вес — 226 г.\"}")
+          def norm(s):return s.lower().lstrip('0')
+          def cache(key):
+              k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              rows=request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?cache_key=eq.'+key+'&select=payload',headers=h)
+              return rows[0]['payload'] if rows else None
+          if cache(KEY):print('Already journaled; no repeat.');raise SystemExit(0)
+          reference=cache('cristine_fill:china:20261105:preflight:v1')
+          if not reference or reference['status']!='received':raise RuntimeError('Missing category reference')
+          pre=dict(reference)
+          wanted={'68-jackiebag-black','69-jackiebag-coffee'};found={};cursor={'limit':100}
+          for page in range(6):
+              d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':cursor,'filter':{'withPhoto':-1}}})
+              for c in d.get('cards',[]):
+                  if norm(c.get('vendorCode','')) in wanted:
+                      n=norm(c['vendorCode'])
+                      if n in found and found[n]['nmID']!=c['nmID']:raise RuntimeError('Duplicate article identity')
+                      found[n]=c
+              if len(found)==2:break
+              cur=d.get('cursor',{})
+              if cur.get('total',0)<100:break
+              cursor={k:cur[k] for k in ['updatedAt','nmID']};cursor['limit']=100;time.sleep(1)
+          if set(found)!=wanted:raise RuntimeError('Missing two exact Jackie cards')
+          pre['cards']=list(found.values())
+          IDS={c['vendorCode']:c['nmID'] for c in pre['cards']}
+          COLORS={'68-jackiebag-black':['черный','глубокий черный','черный матовый','черный графит','антрацитовый'],'69-jackiebag-coffee':['кофейный','коричневый','темно-коричневый','шоколадный','насыщенный коричневый']}
+          allowed={c['name'] for c in pre['colors']['data']}
+          if any(set(v)-allowed for v in COLORS.values()):raise RuntimeError('Color not in WB dictionary')
+          if not any(str(x['tnved'])=='4202210000' for x in pre['tnved']['data']):raise RuntimeError('TN VED not available')
+          CHANGES={4:['молния'],13:['гладкая'],721:['внутренний открытый'],1015:['текстиль'],14975:1,23796:['повседневная','офис','вечерняя мода'],59122:['боулер'],85571:['фирменный пыльник','фирменный пакет с бегунком'],89008:226,90630:14,90652:10,90673:22,115112:['Женская сумка на плечо','сумка с ручками из натуральной кожи'],204557:['Женский'],378533:['сумка - 1 шт','фирменный пыльник'],7488315:['осень-зима 2026'],14177450:['натуральная кожа','металлическая фурнитура'],14177451:['Китай'],15000001:['4202210000'],15004139:['4202210000']}
+          schema={c['charcID']:c for c in pre['schema']['data']}
+          for ident,value in CHANGES.items():
+              if ident not in schema or schema[ident]['existNamedField']:raise RuntimeError('Unsupported attribute')
+              if isinstance(value,list) and len(value)>schema[ident]['maxCount']:raise RuntimeError('Too many attribute values')
+          def read_cards():
+              got={}
+              for article,nm in IDS.items():
+                  d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':str(nm)}}})
+                  for c in d.get('cards',[]):
+                      if c.get('vendorCode')==article and c.get('nmID')==nm:got[article]=c
+                  time.sleep(1)
+              if len(got)<2:
+                  d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1}}})
+                  for c in d.get('cards',[]):
+                      if IDS.get(c.get('vendorCode'))==c.get('nmID'):got[c['vendorCode']]=c
+              return got
+          out={'status':'preflight','before':[],'after':[],'wb_write_requests':0,'telegram_sends':0}
+          try:
+              cards=read_cards()
+              if len(cards)!=2:raise RuntimeError('Missing exact two Jackie cards')
+              payload=[]
+              for article,c in cards.items():
+                  if c.get('subjectID')!=50 or c.get('brand')!='':raise RuntimeError('Category/brand mismatch')
+                  out['before'].append(c)
+                  attrs={x['id']:{'id':x['id'],'value':x['value']} for x in (c.get('characteristics') or [])}
+                  attrs.update({ident:{'id':ident,'value':v} for ident,v in CHANGES.items()})
+                  attrs[14177449]={'id':14177449,'value':COLORS[norm(article)]}
+                  prices=request('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter?limit=10&filterNmID='+str(c['nmID']))
+                  ps=[p for p in prices.get('data',{}).get('listGoods',[]) if p['nmID']==c['nmID'] and p.get('currencyIsoCode4217')=='CNY']
+                  if len(ps)!=1:raise RuntimeError('China price identity missing')
+                  bysize={s['sizeID']:s['price'] for s in ps[0]['sizes']}
+                  sizes=[{**{k:v for k,v in s.items() if k in ['chrtID','techSize','wbSize','skus']},'price':bysize[s['chrtID']]} for s in c['sizes']]
+                  p={'nmID':c['nmID'],'vendorCode':article,'brand':'','title':'Сумка натуральная кожа на плечо','description':TEXTS[norm(article)],'kizMarked':c.get('kizMarked',False),'dimensions':{'length':24,'width':12,'height':16,'weightBrutto':0.426},'characteristics':list(attrs.values()),'sizes':sizes,'documents':{'excludeDocuments':c.get('documents',{}).get('excludeDocuments',False)}}
+                  if len(p['description'])>2000 or chr(92)+'n' in p['description']:raise RuntimeError('Invalid description')
+                  payload.append(p);time.sleep(1)
+              out.update(requests=payload,status='submitting');save(KEY,out)
+              r=request('https://content-api.wildberries.ru/content/v2/cards/update',payload)
+              out.update(response=r,wb_write_requests=1,status='rejected' if r.get('error') else 'accepted_pending_verification');save(KEY,out)
+              if out['status']=='rejected':raise SystemExit(0)
+          except Exception as e:
+              out.update(status='uncertain' if out['status']=='submitting' else 'error',error=str(e));save(KEY,out);raise SystemExit(0)
+          def eq(a,b):return set(a)==set(b) if isinstance(a,list) and isinstance(b,list) else a==b
+          for attempt in range(18):
+              time.sleep(10)
+              try:
+                  got=read_cards();out['after']=list(got.values());checks={}
+                  for p in payload:
+                      c=got.get(p['vendorCode'],{});attrs={x['id']:x['value'] for x in (c.get('characteristics') or [])}
+                      checks[p['vendorCode']]={'title':c.get('title')==p['title'],'description':c.get('description')==p['description'],'characteristics':all(eq(attrs.get(x['id']),x['value']) for x in p['characteristics']),'dimensions':all(abs(float(c.get('dimensions',{}).get(k,-1))-v)<1e-6 for k,v in p['dimensions'].items()),'brand':c.get('brand')=='','barcodes':[(s['chrtID'],s['skus']) for s in c.get('sizes',[])]==[(s['chrtID'],s['skus']) for s in p['sizes']]}
+                  out['checks']=checks
+                  if all(all(v.values()) for v in checks.values()):out['status']='verified';save(KEY,out);break
+                  save(KEY,out)
+                  if attempt in [0,8,17]:
+                      out['validation_errors']=request('https://content-api.wildberries.ru/content/v2/cards/error/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100}}});save(KEY,out)
+              except Exception as e:out['read_error']=str(e);save(KEY,out)
+          else:out['status']='verification_pending';save(KEY,out)
+          print('Jackie fill journaled privately; check verified receipt.')
+          
+          PY

@@ -2,7 +2,7 @@ name: Owner requested missing Nov4 IP report data only
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/ip-report-recovery-20261105.yml']
+    paths: ['.github/disabled/ip-report-recovery-20261105.never']
 permissions:
   contents: read
 concurrency:

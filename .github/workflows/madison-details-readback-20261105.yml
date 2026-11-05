@@ -1,0 +1,76 @@
+name: Verify Madison approved details without writes
+on:
+  push:
+    branches: [madison-fill-20261105]
+    paths: ['.github/workflows/madison-details-readback-20261105.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Read back cards and validation errors
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          ARTICLES=['025-MadisonBag-zblack','026-MadisonBag-zcoffee','027-MadisonBag-zdarkred']
+          def request(url,body=None,method=None,headers=None):
+              h=headers if headers is not None else {'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'}
+              req=urllib.request.Request(url,headers=h,data=None if body is None else json.dumps(body).encode(),method=method or ('POST' if body is not None else 'GET'))
+              with urllib.request.urlopen(req,timeout=45) as f:
+                  raw=f.read()
+                  return json.loads(raw) if raw else None
+          def save(key,payload):
+              now=datetime.datetime.now(datetime.timezone.utc);k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              return request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',{'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()},headers=h)
+          
+          KEY='madison_fill:china:20261105:details:readback:v1'
+          def cache(key):
+              k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              d=request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?cache_key=eq.'+key+'&select=payload',headers=h)
+              return d[0]['payload'] if d else None
+          execution=cache('madison_fill:china:20261105:details:v1')
+          if not execution or not execution.get('response') or execution['response'].get('error'):raise RuntimeError('No accepted update receipt')
+          wanted={p['vendorCode']:p for p in execution['requests']}
+          before={c['vendorCode']:c for c in execution['before']}
+          out={'status':'reading','wb_writes':0,'checks':{},'after':[]}
+          def value_same(a,b):
+              return set(a)==set(b) if isinstance(a,list) and isinstance(b,list) else a==b
+          for attempt in range(15):
+              try:
+                  got={}
+                  listing=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1}}})
+                  for c in listing.get('cards',[]):
+                      if c.get('vendorCode') in wanted and c['nmID']==wanted[c['vendorCode']]['nmID']:got[c['vendorCode']]=c
+                  for article,p in wanted.items():
+                      if article in got:continue
+                      d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':str(p['nmID'])}}})
+                      for c in d.get('cards',[]):
+                          if c.get('vendorCode')==article and c.get('nmID')==p['nmID']:got[article]=c
+                      time.sleep(1)
+                  out['after']=list(got.values());out['checks']={}
+                  for article,p in wanted.items():
+                      c=got.get(article,{});attrs={a['id']:a['value'] for a in c.get('characteristics',[])}
+                      out['checks'][article]={'present':bool(c),'description':c.get('description')==p['description'],'all_attributes':all(value_same(attrs.get(a['id']),a['value']) for a in p['characteristics']),'five_colors':len(attrs.get(14177449,[]))==5,'unchanged_fields':all(c.get(k)==before[article].get(k) for k in ['title','brand','sizes','dimensions'])}
+                  if all(all(v.values()) for v in out['checks'].values()):
+                      out['status']='verified';save(KEY,out);break
+                  out['status']='pending';save(KEY,out)
+                  if attempt in [0,5,14]:
+                      try:
+                          errors=request('https://content-api.wildberries.ru/content/v2/cards/error/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100}}})
+                          out['validation_errors']=errors;save(KEY,out)
+                      except Exception:pass
+              except Exception as e:
+                  out.update(status='read_error',error=str(e));save(KEY,out)
+              time.sleep(10)
+          else:out['status']='verification_pending';save(KEY,out)
+          print('Read-only detailed verification saved.')
+          
+          PY

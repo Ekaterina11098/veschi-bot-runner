@@ -100,3 +100,5 @@ jobs:
           proof.update(status="page_downloaded",short_page=len(data)<100000,pagination_exhausted=False,report_ids=sorted({r["reportId"] for r in data}),currencies=sorted({r.get("currency") for r in data}),completed_page_at=m.now())
           db.put(ROOT+"source_proof:v1",proof)
           print("Requested financial source page saved privately; pagination and account cooldown recorded.")
+
+# Resume the authorized source-completeness check after the account gate.

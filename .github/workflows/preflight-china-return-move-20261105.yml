@@ -68,6 +68,11 @@ jobs:
              issues.append({**row,"issue":"product_family_or_tracking","product":{"id":p["id"],"name":p.get("name"),"code":p.get("code"),"article":p.get("article"),"variantsCount":p.get("variantsCount"),"trackingType":p.get("trackingType")}});continue
             mapping.append({**row,"id":p["id"],"code":p.get("code"),"article":p.get("article"),"name":p["name"],"assortment":m.meta(p),"mapping_reason":reason})
            result.update(mapping=mapping,mapping_issues=issues)
+           result["mapping_reviews"]=[]
+           for issue in issues:
+            number=issue["number"];pattern=re.compile(r"(?<!\\d)0*"+re.escape(str(int(number)))+r"(?!\\d)")
+            candidates=[p for p in products if any(pattern.search(str(p.get(field) or "")) for field in ("code","article","name"))]
+            result["mapping_reviews"].append({"source_label":issue["source_label"],"quantity":issue["quantity"],"products":[{"id":p["id"],"name":p.get("name"),"article":p.get("article"),"code":p.get("code"),"archived":p.get("archived"),"variantsCount":p.get("variantsCount",0),"meta":p["meta"]} for p in candidates]})
            current=t.request(m.MS,"report/stock/bystore/current",params={"stockType":"freeStock","include":"zeroLines"})
            if not isinstance(current,list):raise m.Stop("Current available stock report incomplete")
            by={}

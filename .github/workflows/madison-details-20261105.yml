@@ -1,0 +1,99 @@
+name: Apply owner corrections to all three Madison cards
+on:
+  push:
+    branches: [madison-fill-20261105]
+    paths: ['.github/workflows/madison-details-20261105.yml']
+permissions:
+  contents: read
+concurrency:
+  group: madison-fill-20261105
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Validate dictionary colors and apply approved Madison details
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          ARTICLES=['025-MadisonBag-zblack','026-MadisonBag-zcoffee','027-MadisonBag-zdarkred']
+          def request(url,body=None,method=None,headers=None):
+              h=headers if headers is not None else {'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'}
+              req=urllib.request.Request(url,headers=h,data=None if body is None else json.dumps(body).encode(),method=method or ('POST' if body is not None else 'GET'))
+              with urllib.request.urlopen(req,timeout=45) as f:
+                  raw=f.read()
+                  return json.loads(raw) if raw else None
+          def save(key,payload):
+              now=datetime.datetime.now(datetime.timezone.utc);k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              return request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',{'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()},headers=h)
+          
+          KEY='madison_fill:china:20261105:details:v1'
+          def cache(key):
+              k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              d=request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?cache_key=eq.'+key+'&select=payload',headers=h)
+              return d[0]['payload'] if d else None
+          if cache(KEY):print('Already journaled; no repeat.');raise SystemExit(0)
+          IDS={'025-MadisonBag-zblack':2128711871,'026-MadisonBag-zcoffee':2128836687,'027-MadisonBag-zdarkred':2128836688}
+          def card(article):
+              d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':str(IDS[article])}}})
+              cs=[c for c in d.get('cards',[]) if c.get('vendorCode')==article and c.get('nmID')==IDS[article]]
+              if len(cs)!=1:raise RuntimeError('Exact identity not found: '+article)
+              return cs[0]
+          out={'status':'preflight','change':'owner Madison details and five color aliases','wb_write_requests':0,'before':[],'after':[],'telegram_sends':0}
+          try:
+              COLORS={'025-MadisonBag-zblack':['черный','глубокий черный','черный матовый','черный графит','антрацитовый'],'026-MadisonBag-zcoffee':['кофейный','коричневый','темно-коричневый','шоколадный','насыщенный коричневый'],'027-MadisonBag-zdarkred':['темно-красный','бордовый','винный','бургунди','вишневый']}
+              directory=request('https://content-api.wildberries.ru/content/v2/directory/colors?locale=ru')
+              allowed={x['name'] for x in directory['data']}
+              for colors in COLORS.values():
+                  if len(colors)!=5 or set(colors)-allowed:raise RuntimeError('Unsupported color in planned values')
+              CHANGES={4:['молния'],690:['на руку','Через плечо','на запястье'],1015:['текстиль'],14975:1,23796:['повседневная','офис','вечерняя мода'],85571:['фирменный пыльник','фирменный пакет с бегунком'],378533:['сумка - 1 шт','ремешок - 1 шт','фирменный пыльник'],7488315:['осень-зима 2026'],14177450:['натуральная замша','металлическая фурнитура']}
+              schema=request('https://content-api.wildberries.ru/content/v2/object/charcs/50')
+              allowed_attrs={x['charcID']:x for x in schema['data']}
+              for ident,v in CHANGES.items():
+                  if ident not in allowed_attrs or allowed_attrs[ident]['existNamedField']:raise RuntimeError('Unsupported attribute')
+                  if isinstance(v,list) and len(v)>allowed_attrs[ident]['maxCount']:raise RuntimeError('Attribute limit exceeded')
+              payload=[]
+              for article,nm in IDS.items():
+                  c=card(article);out['before'].append(c)
+                  attrs={x['id']:{'id':x['id'],'value':x['value']} for x in c.get('characteristics',[])}
+                  attrs.update({ident:{'id':ident,'value':v} for ident,v in CHANGES.items()})
+                  attrs[14177449]={'id':14177449,'value':COLORS[article]}
+                  d=request('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter?limit=10&filterNmID='+str(nm))
+                  ps=[x for x in d.get('data',{}).get('listGoods',[]) if x.get('nmID')==nm and x.get('currencyIsoCode4217')=='CNY']
+                  if len(ps)!=1:raise RuntimeError('China price identity missing')
+                  sizeprices={x['sizeID']:x['price'] for x in ps[0]['sizes']}
+                  sizes=[{**{k:v for k,v in s.items() if k in ['chrtID','techSize','wbSize','skus']},'price':sizeprices[s['chrtID']]} for s in c['sizes']]
+                  p={k:c[k] for k in ['nmID','vendorCode','brand','title','description','kizMarked'] if k in c}
+                  p.update(dimensions={k:v for k,v in c['dimensions'].items() if k in ['length','width','height','weightBrutto']},characteristics=list(attrs.values()),sizes=sizes,documents={'excludeDocuments':c.get('documents',{}).get('excludeDocuments',False)})
+                  p['description']=c['description'].replace('Подкладка выполнена из хлопка.','Внутри — одно отделение с текстильной подкладкой. Сумка закрывается на молнию.').replace('Размеры без упаковки:','В комплект входят сумка, ремешок и фирменный пыльник.\u005cn\u005cnРазмеры без упаковки:')
+                  if 'хлопк' in p['description']:raise RuntimeError('Old lining statement remains')
+                  payload.append(p);time.sleep(1)
+              out['requests']=payload;out['status']='submitting';save(KEY,out)
+              result=request('https://content-api.wildberries.ru/content/v2/cards/update',payload)
+              out.update(response=result,wb_write_requests=1,status='rejected' if result and result.get('error') else 'accepted_pending_verification');save(KEY,out)
+              if out['status']=='rejected':raise SystemExit(0)
+              for attempt in range(12):
+                  time.sleep(8)
+                  after=[card(x) for x in IDS];checks={}
+                  for before,c,p in zip(out['before'],after,payload):
+                      chars={a['id']:a['value'] for a in c.get('characteristics',[])}
+                      oldchars={a['id']:a['value'] for a in before.get('characteristics',[]) if a['id'] not in set(CHANGES)|{14177449}}
+                      checks[c['vendorCode']]={'five_colors':set(chars.get(14177449,[]))==set(COLORS[c['vendorCode']]),'requested_attributes':all(chars.get(ident)==v for ident,v in CHANGES.items()),'description':c.get('description')==p['description'],'other_fields':all(c.get(k)==before.get(k) for k in ['title','brand','sizes','dimensions']),'other_characteristics':all(chars.get(k)==v for k,v in oldchars.items())}
+                  out.update(after=after,checks=checks)
+                  if all(all(v.values()) for v in checks.values()):out['status']='verified';save(KEY,out);break
+                  save(KEY,out)
+              else:out['status']='verification_pending';save(KEY,out)
+          except urllib.error.HTTPError as e:
+              out.update(status='uncertain' if out['status']=='submitting' else 'error',http_status=e.code);save(KEY,out)
+          except Exception as e:
+              out.update(status='uncertain' if out['status']=='submitting' else 'error',error=str(e));save(KEY,out)
+          print('Madison details update journaled privately; check receipt.')
+          
+          PY

@@ -68,28 +68,30 @@ def build_contract(store,view):
  protected_additions.update(registry.get('protected_addition_nms') or [])
  for record in registry.get('records',[]):
   p=store.cache_get(record['approval_key']) or {};e=store.cache_get(record['execution_key']) or {}
-  for name,at in [('before','configuration_observed_at'),('membership_readback','membership_readback_at'),('after','readback_at')]:
+  for name,at in [('before','configuration_observed_at'),('membership_readback','membership_readback_at'),('after','readback_at'),('recovery_readback','recovery_readback_at')]:
    if isinstance(e.get(name),dict) and e.get(at):donors.append((e[at],e[name]))
   scope=p.get('actions') or p.get('scope') or p.get('entries') or []
   verified=str(e.get('status','')).startswith('verified')
-  completed=e.get('readback_at') or e.get('finished_at')
+  completed=e.get('readback_at') or e.get('recovery_readback_at') or e.get('finished_at')
   completed_day=None
   if completed:
    from zoneinfo import ZoneInfo
    completed_day=datetime.fromisoformat(completed.replace('Z','+00:00')).astimezone(ZoneInfo('Europe/Moscow')).date().isoformat()
   for a in scope:
+   if not a.get('kind') and 'target_bid_minor' in a:a=dict(a,kind='add')
    cid=a.get('campaign');nm=a.get('nm')
+   item_verified=verified or any(i.get('campaign')==cid and i.get('nm')==nm and i.get('status')=='verified' for i in e.get('items',[]))
    if a.get('kind')=='remove':protected_additions.add(nm)
-   if verified and completed_day and cid and nm:
+   if item_verified and completed_day and cid and nm:
     if a.get('kind') in ('raise_bid','lower_bid'):sku_changes[nm]=max(sku_changes.get(nm,''),completed_day)
     elif a.get('kind') in ('remove','add','add_to_existing'):pair_changes[(cid,nm)]=max(pair_changes.get((cid,nm),''),completed_day)
    if not record.get('show_recent'):continue
-   relevant=not verified or not completed_day or view['period']<=completed_day
+   relevant=not item_verified or not completed_day or view['period']<=completed_day
    if not relevant:continue
    if not cid or not nm or a.get('kind') not in ('remove','add','raise_bid','lower_bid'):continue
    authorized.add((cid,nm));pending_nms.add(nm)
    d=copy.deepcopy(a)
-   d['display_status']='Выполнено '+str(completed_day)+'. Повторно не применять.' if verified else 'Результат не подтверждён; повтор не выполнять.' if e.get('status')=='attention' else 'Согласовано; в исполнении.' if e else 'Согласовано; ожидает исполнителя.'
+   d['display_status']='Выполнено '+str(completed_day)+'. Повторно не применять.' if item_verified else 'Не выполнено: исполнитель остановлен; повтор не запускать.' if e.get('finished_at') and e.get('error') else 'Результат не подтверждён; повтор не выполнять.' if e.get('status')=='attention' else 'Согласовано; в исполнении.' if e else 'Согласовано; ожидает исполнителя.'
    display.append(d)
  config_at=rows[0].get('collected_at','') if rows else ''
  observed_by_cid={cid:config_at for cid in configs}
@@ -123,7 +125,9 @@ def build_contract(store,view):
  if not details.get('days'):
   compatible=sorted(set.intersection(*(set(a['daily']) for a in actions if a['kind']!='add'))) if any(a['kind']!='add' for a in actions) else [period]
   details['days']=compatible[-3:] or [period];details['period_label']='–'.join((details['days'][0],details['days'][-1])) if len(details['days'])>1 else period
- result=dict(version='ip-daily-png-v1',chat_id=CHAT,bot_id=BOT,period=period,actions=actions,plan_sha256=digest(actions),
+ saved_notes=store.cache_get('advertising:ip:daily-notes:v1:'+period) or {}
+ campaign_notes={cid:n['notes'] for cid,n in saved_notes.items() if isinstance(n,dict) and n.get('rows_sha256')==digest(next((c.get('sku_rows') for c in view['campaigns'] if str(c['campaign_id'])==cid),None))}
+ result=dict(version='ip-daily-png-v1',chat_id=CHAT,bot_id=BOT,period=period,actions=actions,plan_sha256=digest(actions),campaign_notes=campaign_notes,
   details=details,excluded_incomplete=cached.get('excluded_incomplete') or [],display_only=display,
   campaign_labels={str(cid):dict(name=c['settings'].get('name'),payment=c['settings'].get('payment_type')) for cid,c in configs.items()},review_coverage=review_coverage,
   historical_profit_only=True,automatic_execution=False)

@@ -1,0 +1,117 @@
+name: Fill Madison using verified numeric card IDs
+on:
+  push:
+    branches: [madison-fill-20261105]
+    paths: ['.github/workflows/madison-apply-v3-20261105.yml']
+permissions:
+  contents: read
+concurrency:
+  group: madison-fill-20261105
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Update exact three Madison cards and verify
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          ARTICLES=['025-MadisonBag-zblack','026-MadisonBag-zcoffee','027-MadisonBag-zdarkred']
+          def request(url,body=None,method=None,headers=None):
+              h=headers if headers is not None else {'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'}
+              req=urllib.request.Request(url,headers=h,data=None if body is None else json.dumps(body).encode(),method=method or ('POST' if body is not None else 'GET'))
+              with urllib.request.urlopen(req,timeout=45) as f:
+                  raw=f.read()
+                  return json.loads(raw) if raw else None
+          def save(key,payload):
+              now=datetime.datetime.now(datetime.timezone.utc);k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              return request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',{'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()},headers=h)
+          
+          def read_cache(key):
+              k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              url=os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?cache_key=eq.'+key+'&select=payload'
+              rows=request(url,headers=h)
+              return rows[0]['payload'] if rows else None
+          def find(article):
+              lookup={'025-MadisonBag-zblack':2128711871,'026-MadisonBag-zcoffee':2128836687,'027-MadisonBag-zdarkred':2128836688}
+              query=str(lookup.get(article,article))
+              d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':query}}})
+              hits=[c for c in d.get('cards',[]) if c.get('vendorCode')==article]
+              if len(hits)!=1:
+                  d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1}}})
+                  hits=[c for c in d.get('cards',[]) if c.get('vendorCode')==article]
+              if len(hits)!=1:raise RuntimeError('Exact article match failed for '+article+' count '+str(len(hits)))
+              return hits[0]
+          KEY='madison_fill:china:20261105:execution:v3'
+          if read_cache(KEY):
+              print('Execution already journaled; not repeated.');raise SystemExit(0)
+          pre=read_cache('madison_fill:china:20261105:preflight:v1')
+          if not pre or pre.get('status')!='received':raise RuntimeError('Missing preflight')
+          plans=json.loads("[{\"article\":\"025-MadisonBag-zblack\",\"color\":\"чёрный\",\"title\":\"Сумка натуральная замша через плечо\",\"description\":\"Натуральная замша, глубокий чёрный цвет и лаконичная форма — сумка Мэдисон для образов, в которых важны фактуры и детали. Компактный трапециевидный корпус дополнит мягкий трикотаж, плотный деним, шерстяное пальто или лёгкое платье.\\n\\nЖенскую сумку можно носить за короткую ручку или через плечо на длинном регулируемом ремне. Меняйте способ ношения под одежду и планы на день. Подкладка выполнена из хлопка.\\n\\nЗамшевая сумка кросс-боди подойдёт для повседневных выходов, прогулок и встреч. Однотонное оформление легко сочетать с базовыми вещами и акцентными аксессуарами.\\n\\nРазмеры без упаковки: высота — 20 см, ширина — 23 см, глубина — 15 см. Вес — 640 г.\"},{\"article\":\"026-MadisonBag-zcoffee\",\"color\":\"кофейный\",\"title\":\"Сумка натуральная замша через плечо\",\"description\":\"Натуральная замша, тёплый кофейный цвет и лаконичная форма — сумка Мэдисон для образов, в которых важны фактуры и детали. Компактный трапециевидный корпус дополнит мягкий трикотаж, плотный деним, шерстяное пальто или лёгкое платье.\\n\\nЖенскую сумку можно носить за короткую ручку или через плечо на длинном регулируемом ремне. Меняйте способ ношения под одежду и планы на день. Подкладка выполнена из хлопка.\\n\\nЗамшевая сумка кросс-боди подойдёт для повседневных выходов, прогулок и встреч. Однотонное оформление легко сочетать с базовыми вещами и акцентными аксессуарами.\\n\\nРазмеры без упаковки: высота — 20 см, ширина — 23 см, глубина — 15 см. Вес — 640 г.\"},{\"article\":\"027-MadisonBag-zdarkred\",\"color\":\"тёмно-красный\",\"title\":\"Сумка натуральная замша через плечо\",\"description\":\"Натуральная замша, насыщенный тёмно-красный цвет и лаконичная форма — сумка Мэдисон для образов, в которых важны фактуры и детали. Компактный трапециевидный корпус дополнит мягкий трикотаж, плотный деним, шерстяное пальто или лёгкое платье.\\n\\nЖенскую сумку можно носить за короткую ручку или через плечо на длинном регулируемом ремне. Меняйте способ ношения под одежду и планы на день. Подкладка выполнена из хлопка.\\n\\nЗамшевая сумка кросс-боди подойдёт для повседневных выходов, прогулок и встреч. Однотонное оформление легко сочетать с базовыми вещами и акцентными аксессуарами.\\n\\nРазмеры без упаковки: высота — 20 см, ширина — 23 см, глубина — 15 см. Вес — 640 г.\"}]")
+          expected={'025-MadisonBag-zblack':2128711871,'026-MadisonBag-zcoffee':2128836687,'027-MadisonBag-zdarkred':2128836688}
+          schema={x['charcID']:x for x in pre['charcs']['data']}
+          prices={x['nmID']:x for x in pre['prices']}
+          out={'status':'preparing','cabinet':'token_3','wb_write_requests':0,'telegram_sends':0,'before':[],'requests':[],'after':[]}
+          payload=[]
+          try:
+              sibling=None
+              listing=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1}}})
+              siblings=[c for c in listing.get('cards',[]) if c.get('imtID')==pre['cards'][0]['imtID'] and c.get('vendorCode') not in ARTICLES]
+              if siblings:sibling=siblings[0]
+              out['untouched_sibling_before']=sibling
+              for plan in plans:
+                  c=find(plan['article'])
+                  if c['nmID']!=expected[plan['article']] or c.get('subjectID')!=50 or c.get('brand')!='':raise RuntimeError('Identity, category or blank brand mismatch')
+                  original=next(x for x in pre['cards'] if x['nmID']==c['nmID'])
+                  if c.get('sizes')!=original.get('sizes') or c.get('title')!=original.get('title') or c.get('updatedAt')!=original.get('updatedAt'):raise RuntimeError('Concurrent card change before submission')
+                  if prices[c['nmID']]['currencyIsoCode4217']!='CNY':raise RuntimeError('Wrong cabinet currency')
+                  out['before'].append(c)
+                  color={'025-MadisonBag-zblack':['черный'],'026-MadisonBag-zcoffee':['кофейный','коричневый'],'027-MadisonBag-zdarkred':['темно-красный']}[plan['article']]
+                  changes={12:['однотонный'],13:['ворсистая'],690:['на руку','Через плечо'],1015:['хлопок'],23796:['повседневная'],59122:['кросс-боди'],89008:640,90630:20,90652:15,90673:23,115112:['регулируемый ремень'],204557:['Женский'],14177449:color,14177450:['натуральная замша'],14177451:['Китай']}
+                  for ident,val in changes.items():
+                      if ident not in schema or schema[ident]['existNamedField']:raise RuntimeError('Invalid characteristic')
+                      if isinstance(val,list) and len(val)>schema[ident]['maxCount']:raise RuntimeError('Characteristic value limit')
+                  charcs={x['id']:{'id':x['id'],'value':x['value']} for x in c.get('characteristics',[])}
+                  charcs.update({ident:{'id':ident,'value':v} for ident,v in changes.items()})
+                  price_sizes={p['sizeID']:p['price'] for p in prices[c['nmID']]['sizes']}
+                  sizes=[{**{k:v for k,v in z.items() if k in ['chrtID','techSize','wbSize','skus']},'price':price_sizes[z['chrtID']]} for z in c['sizes']]
+                  p={'nmID':c['nmID'],'vendorCode':c['vendorCode'],'brand':'','title':plan['title'],'description':plan['description'],'kizMarked':c.get('kizMarked',False),'dimensions':{'length':25,'width':17,'height':22,'weightBrutto':0.84},'characteristics':list(charcs.values()),'sizes':sizes,'documents':{'excludeDocuments':c.get('documents',{}).get('excludeDocuments',False)}}
+                  payload.append(p)
+                  time.sleep(1)
+              out['requests']=payload;out['status']='submitting';save(KEY,out)
+              response=request('https://content-api.wildberries.ru/content/v2/cards/update',payload)
+              out['wb_write_requests']=1;out['response']=response
+              if response and response.get('error'):out['status']='rejected';save(KEY,out);raise SystemExit(0)
+              out['status']='accepted_pending_verification';save(KEY,out)
+              def checks(card,p):
+                  actual={x['id']:x['value'] for x in card.get('characteristics',[])}
+                  desired={x['id']:x['value'] for x in p['characteristics']}
+                  return {'title':card.get('title')==p['title'],'description':card.get('description')==p['description'],'brand':card.get('brand')=='','dimensions':all(abs(float(card.get('dimensions',{}).get(k,-1))-float(v))<1e-6 for k,v in p['dimensions'].items()),'characteristics':all(actual.get(k)==v for k,v in desired.items()),'barcodes':[(z.get('chrtID'),z.get('skus')) for z in card['sizes']]==[(z.get('chrtID'),z.get('skus')) for z in p['sizes']]}
+              for attempt in range(10):
+                  time.sleep(8)
+                  after=[find(x['vendorCode']) for x in payload]
+                  out['after']=after;out['checks']={c['vendorCode']:checks(c,p) for c,p in zip(after,payload)}
+                  if all(all(x.values()) for x in out['checks'].values()):
+                      sib_after=find(sibling['vendorCode']) if sibling else None;out['untouched_sibling_after']=sib_after
+                      same=all(sib_after.get(k)==sibling.get(k) for k in ['title','description','characteristics','dimensions','sizes','brand']) if sibling else True
+                      out['untouched_sibling_preserved']=same
+                      out['status']='verified' if same else 'sibling_change_detected'
+                      save(KEY,out);break
+                  save(KEY,out)
+              else:out['status']='verification_pending';save(KEY,out)
+          except urllib.error.HTTPError as e:
+              out.update(status='uncertain' if out['status']=='submitting' else 'error',http_status=e.code)
+              save(KEY,out)
+          except Exception as e:
+              out.update(status='uncertain' if out['status']=='submitting' else 'error',error=str(e))
+              save(KEY,out)
+          print('Owner-authorized three-card update journaled privately; inspect receipt for actual status.')
+          
+          PY

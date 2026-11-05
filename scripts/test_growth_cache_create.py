@@ -12,6 +12,9 @@ class IO:
   self.calls.append('patch')
   if k in self.rows:self.rows[k]=copy.deepcopy(v)
 class Tests(unittest.TestCase):
+ def test_new_dated_fx_cache_created(self):
+  io=IO();save_analytic_cache(io,'china_agent:cbr_cny:v1:2026-11-05',{'rub_per_cny':12.1})
+  self.assertEqual(io.calls,['create'])
  def test_missing_created_not_patched(self):
   io=IO();save_analytic_cache(io,KEY,{'rows':{1:{'orders':2}}})
   self.assertEqual(io.calls,['create']);self.assertEqual(io.rows[KEY]['rows'],{'1':{'orders':2}})

@@ -1,0 +1,100 @@
+name: Apply owner-approved sample-style Madison descriptions
+on:
+  push:
+    branches: [madison-fill-20261105]
+    paths: ['.github/workflows/madison-description-approved-20261105.yml']
+permissions:
+  contents: read
+concurrency:
+  group: madison-fill-20261105
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Change only descriptions for three exact Madison cards
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          ARTICLES=['025-MadisonBag-zblack','026-MadisonBag-zcoffee','027-MadisonBag-zdarkred']
+          def request(url,body=None,method=None,headers=None):
+              h=headers if headers is not None else {'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'}
+              req=urllib.request.Request(url,headers=h,data=None if body is None else json.dumps(body).encode(),method=method or ('POST' if body is not None else 'GET'))
+              with urllib.request.urlopen(req,timeout=45) as f:
+                  raw=f.read()
+                  return json.loads(raw) if raw else None
+          def save(key,payload):
+              now=datetime.datetime.now(datetime.timezone.utc);k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              return request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',{'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()},headers=h)
+          
+          KEY='madison_fill:china:20261105:approved_description:v1'
+          IDS={'025-MadisonBag-zblack':2128711871,'026-MadisonBag-zcoffee':2128836687,'027-MadisonBag-zdarkred':2128836688}
+          TEXTS=json.loads("{\"025-MadisonBag-zblack\":\"Женская сумка через плечо Мэдисон станет вашим стильным аксессуаром в повседневной жизни. Компактная модель из натуральной замши подойдёт девушкам и женщинам, которые ценят лаконичный дизайн и выразительные фактуры. Трапециевидная форма и глубокий чёрный цвет дополнят как повседневный, так и более нарядный образ.\\n\\nВнутри сумки — одно отделение с текстильной подкладкой для повседневных мелочей. Застёжка-молния закрывает содержимое и обеспечивает удобный доступ к вещам. Небольшой формат подойдёт для прогулок, встреч и поездок по городу.\\n\\nКороткая ручка позволяет носить сумочку в руке, а длинный регулируемый ремень — через плечо. Выбирайте удобную длину и носите модель в формате кросс-боди, оставляя руки свободными.\\n\\nНатуральная замша придаёт сумке мягкую ворсистую фактуру. Чёрная замшевая сумка сочетается с джинсами, трикотажем, платьями и жакетами. Она дополнит гардероб для офиса, повседневных дел или вечернего выхода, сохраняя сдержанный и женственный характер образа.\\n\\nЛаконичное оформление и металлическая фурнитура подчёркивают фактуру материала. Мэдисон подойдёт тем, кто ищет женскую сумку из натуральной замши с короткой ручкой и возможностью ношения через плечо.\\n\\nВ комплект входят сумка, один ремешок и фирменный пыльник. Для упаковки используются фирменный пыльник и фирменный пакет с бегунком.\\n\\nРазмеры сумочки без упаковки: высота — 20 см, ширина — 23 см, глубина — 15 см. Вес — 640 г.\",\"026-MadisonBag-zcoffee\":\"Женская сумка через плечо Мэдисон станет вашим стильным аксессуаром в повседневной жизни. Компактная модель из натуральной замши подойдёт девушкам и женщинам, которые ценят лаконичный дизайн и выразительные фактуры. Трапециевидная форма и тёплый кофейный цвет дополнят как повседневный, так и более нарядный образ.\\n\\nВнутри сумки — одно отделение с текстильной подкладкой для повседневных мелочей. Застёжка-молния закрывает содержимое и обеспечивает удобный доступ к вещам. Небольшой формат подойдёт для прогулок, встреч и поездок по городу.\\n\\nКороткая ручка позволяет носить сумочку в руке, а длинный регулируемый ремень — через плечо. Выбирайте удобную длину и носите модель в формате кросс-боди, оставляя руки свободными.\\n\\nНатуральная замша придаёт сумке мягкую ворсистую фактуру. Кофейная замшевая сумка сочетается с джинсами, трикотажем, платьями и жакетами. Она дополнит гардероб для офиса, повседневных дел или вечернего выхода, сохраняя сдержанный и женственный характер образа.\\n\\nЛаконичное оформление и металлическая фурнитура подчёркивают фактуру материала. Мэдисон подойдёт тем, кто ищет женскую сумку из натуральной замши с короткой ручкой и возможностью ношения через плечо.\\n\\nВ комплект входят сумка, один ремешок и фирменный пыльник. Для упаковки используются фирменный пыльник и фирменный пакет с бегунком.\\n\\nРазмеры сумочки без упаковки: высота — 20 см, ширина — 23 см, глубина — 15 см. Вес — 640 г.\",\"027-MadisonBag-zdarkred\":\"Женская сумка через плечо Мэдисон станет вашим стильным аксессуаром в повседневной жизни. Компактная модель из натуральной замши подойдёт девушкам и женщинам, которые ценят лаконичный дизайн и выразительные фактуры. Трапециевидная форма и насыщенный тёмно-красный цвет дополнят как повседневный, так и более нарядный образ.\\n\\nВнутри сумки — одно отделение с текстильной подкладкой для повседневных мелочей. Застёжка-молния закрывает содержимое и обеспечивает удобный доступ к вещам. Небольшой формат подойдёт для прогулок, встреч и поездок по городу.\\n\\nКороткая ручка позволяет носить сумочку в руке, а длинный регулируемый ремень — через плечо. Выбирайте удобную длину и носите модель в формате кросс-боди, оставляя руки свободными.\\n\\nНатуральная замша придаёт сумке мягкую ворсистую фактуру. Тёмно-красная замшевая сумка сочетается с джинсами, трикотажем, платьями и жакетами. Она дополнит гардероб для офиса, повседневных дел или вечернего выхода, сохраняя сдержанный и женственный характер образа.\\n\\nЛаконичное оформление и металлическая фурнитура подчёркивают фактуру материала. Мэдисон подойдёт тем, кто ищет женскую сумку из натуральной замши с короткой ручкой и возможностью ношения через плечо.\\n\\nВ комплект входят сумка, один ремешок и фирменный пыльник. Для упаковки используются фирменный пыльник и фирменный пакет с бегунком.\\n\\nРазмеры сумочки без упаковки: высота — 20 см, ширина — 23 см, глубина — 15 см. Вес — 640 г.\"}")
+          def cache(key):
+              k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              rows=request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?cache_key=eq.'+key+'&select=payload',headers=h)
+              return rows[0]['payload'] if rows else None
+          def read_cards():
+              cards={}
+              for article,nm in IDS.items():
+                  d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':str(nm)}}})
+                  for c in d.get('cards',[]):
+                      if c.get('nmID')==nm and c.get('vendorCode')==article:cards[article]=c
+                  time.sleep(1)
+              if len(cards)<3:
+                  d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1}}})
+                  for c in d.get('cards',[]):
+                      if IDS.get(c.get('vendorCode'))==c.get('nmID'):cards[c['vendorCode']]=c
+              return cards
+          def same_attrs(c,b):
+              a={x['id']:x['value'] for x in c.get('characteristics',[])}
+              z={x['id']:x['value'] for x in b.get('characteristics',[])}
+              return a==z
+          if cache(KEY):print('Execution journal exists; no repeat');raise SystemExit(0)
+          out={'status':'preflight','wb_write_requests':0,'before':[],'after':[]}
+          try:
+              cards=read_cards()
+              if len(cards)!=3:raise RuntimeError('Exact three-card preflight unavailable')
+              payload=[]
+              for article,nm in IDS.items():
+                  c=cards[article];out['before'].append(c)
+                  if c.get('subjectID')!=50 or c.get('brand')!='':raise RuntimeError('Card category or brand mismatch')
+                  if len(TEXTS[article])>2000 or chr(92)+'n' in TEXTS[article]:raise RuntimeError('Invalid description length/format')
+                  d=request('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter?limit=10&filterNmID='+str(nm))
+                  ps=[p for p in d.get('data',{}).get('listGoods',[]) if p['nmID']==nm and p.get('currencyIsoCode4217')=='CNY']
+                  if len(ps)!=1:raise RuntimeError('China price identity unavailable')
+                  prices={s['sizeID']:s['price'] for s in ps[0]['sizes']}
+                  p={k:c[k] for k in ['nmID','vendorCode','brand','title','kizMarked'] if k in c}
+                  p.update(description=TEXTS[article],dimensions={k:v for k,v in c['dimensions'].items() if k in ['length','width','height','weightBrutto']},characteristics=[{'id':x['id'],'value':x['value']} for x in c.get('characteristics',[])],sizes=[{**{k:v for k,v in s.items() if k in ['chrtID','techSize','wbSize','skus']},'price':prices[s['chrtID']]} for s in c['sizes']],documents={'excludeDocuments':c.get('documents',{}).get('excludeDocuments',False)})
+                  payload.append(p);time.sleep(1)
+              out.update(requests=payload,status='submitting');save(KEY,out)
+              r=request('https://content-api.wildberries.ru/content/v2/cards/update',payload)
+              out.update(response=r,wb_write_requests=1,status='rejected' if r.get('error') else 'accepted_pending_verification');save(KEY,out)
+              if out['status']=='rejected':raise SystemExit(0)
+          except Exception as e:
+              out.update(status='uncertain' if out['status']=='submitting' else 'error',error=str(e));save(KEY,out);raise SystemExit(0)
+          for attempt in range(18):
+              time.sleep(10)
+              try:
+                  after=read_cards();out['after']=list(after.values());checks={}
+                  for article,b in cards.items():
+                      c=after.get(article,{})
+                      checks[article]={'description':c.get('description')==TEXTS[article],'other_fields':all(c.get(k)==b.get(k) for k in ['title','brand','sizes','dimensions']),'attributes':same_attrs(c,b),'no_literal_escapes':chr(92)+'n' not in c.get('description','')}
+                  out['checks']=checks
+                  if all(all(v.values()) for v in checks.values()):out['status']='verified';save(KEY,out);break
+                  save(KEY,out)
+                  if attempt in [0,8,17]:
+                      errors=request('https://content-api.wildberries.ru/content/v2/cards/error/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100}}})
+                      out['validation_errors']=errors;save(KEY,out)
+              except Exception as e:out['read_error']=str(e);save(KEY,out)
+          else:out['status']='verification_pending';save(KEY,out)
+          print('Approved descriptions update journaled privately.')
+          
+          PY

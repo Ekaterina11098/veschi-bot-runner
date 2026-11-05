@@ -60,23 +60,27 @@ jobs:
            return rows[0]['total']
           def main():
            a,p=auth();validate_identity(c,w)
-           if c.get(ROOT+':execution'):raise ValueError('Existing execution; no replay permitted')
+           previous=c.get(ROOT+':execution')
+           if previous:
+            if previous.get('status')!='attention_required' or previous.get('wb_writes')!=0 or previous.get('operations'):raise ValueError('Existing submitted/uncertain execution; no replay permitted')
+            if not c.create(ROOT+':execution:attempt1-before-minimum-shape-fix',previous):raise ValueError('Previous retry already archived')
            old=c.get(a['original_execution_key']) or {};states={s['id']:s for s in old.get('items',[])}
            if len(states)!=12 or sum(s['status']=='verified' for s in states.values())!=7:raise ValueError('Original partial journal changed')
            for i in a['items']:
             s=states[i['id']]
             if s['status']!='blocked' or s.get('submitted_at') or 'Invalid isoformat' not in s.get('reason',''):raise ValueError('Remaining action was submitted or differs')
            e=dict(status='preflight',created_at=stamp(),approval_key=ROOT+':approval',operations={},campaigns={},items=[],wb_writes=0)
-           if not c.create(ROOT+':execution',e):raise RuntimeError('Concurrent executor')
+           if previous:put(ROOT+':execution',e)
+           elif not c.create(ROOT+':execution',e):raise RuntimeError('Concurrent executor')
            try:
             # Complete all safety/economics checks before the first mutation.
             for i in a['items']:
              cid=i['campaign_id'];s=read(cid);n=nmrows(s).get(i['nm_id'])
              if s['status']!=9 or s['currency']!='CNY' or s['bid_type']!='manual' or s['settings']['payment_type']!='cpc' or not n or n['bids_kopecks'].get(i['placement'])!=i['old_minor']:raise ValueError('Current campaign/member/bid changed: '+i['article'])
              validate_raise(io,i,s)
-             q=w.minimums(cid,[i['nm_id']],i['placement']);vals=[b['value']for r in q.get('bids',[])if r['nm_id']==i['nm_id']for b in r['bids']if b['currency']=='CNY'and b['type']==('search'if i['placement']=='search'else'recommendation')]
-             if len(vals)!=1 or vals[0]>i['target_minor']:raise ValueError('Exact WB minimum changed')
-             e['items'].append(dict(id=i['id'],article=i['article'],status='preflight_verified',old_minor=i['old_minor'],target_minor=i['target_minor'],minimum_minor=vals[0]));put(ROOT+':execution',e)
+             q=w.minimums(cid,[i['nm_id']],i['placement']);minimum=q.get(i['nm_id'])
+             if type(minimum)is not int or minimum>i['target_minor']:raise ValueError('Exact WB minimum changed')
+             e['items'].append(dict(id=i['id'],article=i['article'],status='preflight_verified',old_minor=i['old_minor'],target_minor=i['target_minor'],minimum_minor=minimum));put(ROOT+':execution',e)
             for cid in sorted({i['campaign_id'] for i in a['items']}):
              auth();selected=[i for i in a['items'] if i['campaign_id']==cid];before=read(cid)
              if any(nmrows(before)[i['nm_id']]['bids_kopecks'][i['placement']]!=i['old_minor']for i in selected):raise ValueError('Bid changed after preflight')

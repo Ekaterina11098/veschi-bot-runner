@@ -1,0 +1,82 @@
+name: Correct paragraph breaks in Madison descriptions
+on:
+  push:
+    branches: [madison-fill-20261105]
+    paths: ['.github/workflows/madison-format-20261105.yml']
+permissions:
+  contents: read
+concurrency:
+  group: madison-fill-20261105
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Correct literal line breaks and verify descriptions
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          ARTICLES=['025-MadisonBag-zblack','026-MadisonBag-zcoffee','027-MadisonBag-zdarkred']
+          def request(url,body=None,method=None,headers=None):
+              h=headers if headers is not None else {'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'}
+              req=urllib.request.Request(url,headers=h,data=None if body is None else json.dumps(body).encode(),method=method or ('POST' if body is not None else 'GET'))
+              with urllib.request.urlopen(req,timeout=45) as f:
+                  raw=f.read()
+                  return json.loads(raw) if raw else None
+          def save(key,payload):
+              now=datetime.datetime.now(datetime.timezone.utc);k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              return request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',{'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()},headers=h)
+          
+          KEY='madison_fill:china:20261105:format:v1'
+          def cache(key):
+              k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              rows=request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?cache_key=eq.'+key+'&select=payload',headers=h)
+              return rows[0]['payload'] if rows else None
+          if cache(KEY):print('Already submitted; no repeat');raise SystemExit(0)
+          base=cache('madison_fill:china:20261105:details:readback:v1')
+          if base.get('status')!='verified':raise RuntimeError('Missing verified source')
+          out={'status':'preparing','wb_write_requests':0,'requests':[],'after':[]}
+          payload=[]
+          for c in base['after']:
+              p={k:c[k] for k in ['nmID','vendorCode','brand','title','description','kizMarked'] if k in c}
+              p['description']=p['description'].replace(chr(92)+'n',chr(10))
+              p['dimensions']={k:v for k,v in c['dimensions'].items() if k in ['length','width','height','weightBrutto']}
+              p['characteristics']=[{'id':x['id'],'value':x['value']} for x in c['characteristics']]
+              p['sizes']=[{**{k:v for k,v in s.items() if k in ['chrtID','techSize','wbSize','skus']},'price':0} for s in c['sizes']]
+              p['documents']={'excludeDocuments':c.get('documents',{}).get('excludeDocuments',False)}
+              payload.append(p)
+          out.update(requests=payload,status='submitting');save(KEY,out)
+          try:
+              r=request('https://content-api.wildberries.ru/content/v2/cards/update',payload)
+              out.update(response=r,wb_write_requests=1,status='accepted_pending_verification');save(KEY,out)
+              if r.get('error'):out['status']='rejected';save(KEY,out);raise SystemExit(0)
+          except Exception as e:
+              out.update(status='uncertain',error=str(e));save(KEY,out);raise SystemExit(0)
+          for attempt in range(15):
+              try:
+                  time.sleep(10)
+                  cards={}
+                  for p in payload:
+                      d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':str(p['nmID'])}}})
+                      for c in d.get('cards',[]):
+                          if c.get('nmID')==p['nmID'] and c.get('vendorCode')==p['vendorCode']:cards[c['nmID']]=c
+                      time.sleep(1)
+                  checks={}
+                  for p in payload:
+                      c=cards.get(p['nmID'],{});chars={a['id']:a['value'] for a in c.get('characteristics',[])}
+                      checks[p['vendorCode']]={'description':c.get('description')==p['description'],'all_attrs':all(chars.get(a['id'])==a['value'] for a in p['characteristics']),'no_literal_escapes':chr(92)+'n' not in c.get('description',''),'barcodes':[(s['chrtID'],s['skus']) for s in c.get('sizes',[])]==[(s['chrtID'],s['skus']) for s in p['sizes']]}
+                  out.update(after=list(cards.values()),checks=checks)
+                  if all(all(c.values()) for c in checks.values()):out['status']='verified';save(KEY,out);break
+                  save(KEY,out)
+              except Exception as e:out['read_error']=str(e);save(KEY,out)
+          else:out['status']='verification_pending';save(KEY,out)
+          print('Paragraph format check completed privately.')
+          
+          PY

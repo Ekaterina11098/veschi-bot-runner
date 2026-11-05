@@ -1,0 +1,53 @@
+name: Read current Jackie card visibility data
+on:
+  push:
+    branches: [madison-fill-20261105]
+    paths: ['.github/workflows/jackie-visibility-20261105.yml']
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Read card content photos prices and errors only
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          ARTICLES=['025-MadisonBag-zblack','026-MadisonBag-zcoffee','027-MadisonBag-zdarkred']
+          def request(url,body=None,method=None,headers=None):
+              h=headers if headers is not None else {'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'}
+              req=urllib.request.Request(url,headers=h,data=None if body is None else json.dumps(body).encode(),method=method or ('POST' if body is not None else 'GET'))
+              with urllib.request.urlopen(req,timeout=45) as f:
+                  raw=f.read()
+                  return json.loads(raw) if raw else None
+          def save(key,payload):
+              now=datetime.datetime.now(datetime.timezone.utc);k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              return request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',{'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()},headers=h)
+          
+          out={'status':'reading','wb_writes':0,'observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'cards':[]}
+          IDS={'68-JackieBag-black':2129199357,'69-JackieBag-coffee':2129199358}
+          try:
+              for article,nm in IDS.items():
+                  d=request('https://content-api.wildberries.ru/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':str(nm)}}})
+                  hits=[c for c in d.get('cards',[]) if c.get('vendorCode')==article and c.get('nmID')==nm]
+                  if not hits:raise RuntimeError('Exact card not returned: '+article)
+                  c=hits[0]
+                  attrs={str(a['id']):a['value'] for a in c.get('characteristics',[])}
+                  out['cards'].append({'article':article,'nmID':nm,'title':c.get('title'),'description':c.get('description'),'updatedAt':c.get('updatedAt'),'photos':len(c.get('photos',[])),'dimensions':c.get('dimensions'),'characteristics':attrs})
+                  prices=request('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter?limit=10&filterNmID='+str(nm))
+                  out['cards'][-1]['price_data']=prices.get('data',{}).get('listGoods',[])
+                  time.sleep(1)
+              errors=request('https://content-api.wildberries.ru/content/v2/cards/error/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100}}})
+              out['validation_errors']=[x for x in errors.get('data',{}).get('items',[]) if set(x.get('vendorCodes',[]))&set(IDS)]
+              out['status']='received'
+          except Exception as e:out.update(status='error',error=str(e))
+          save('jackie_fill:china:20261105:visibility_check:v1',out)
+          print('Read-only visibility check saved privately.')
+          
+          PY

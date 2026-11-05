@@ -31,11 +31,33 @@ export function reportProposals(answer:string) {
  return rows;
 }
 
+async function resolveBoundPriceReply(config:any,message:any,deps:any):Promise<any>{
+ const quoted=message?.reply_to_message;
+ if(quoted?.from?.id!==config.bot_id||!Number.isSafeInteger(quoted.message_id))return message;
+ const key='china_agent:price_report_message:v1:'+quoted.message_id;
+ const records=await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(key)+'&select=payload&limit=1');
+ if(!records?.length)return message;
+ const binding=records[0].payload;
+ const now=deps.now?deps.now():new Date();
+ const today=new Date(now.getTime()+3*3600000).toISOString().slice(0,10);
+ if(binding?.status!=='sent'||binding.chat_id!==config.chat_id||binding.bot_id!==config.bot_id||
+    binding.message_id!==quoted.message_id||binding.report_date!==today||
+    !Number.isFinite(Date.parse(binding.expires_at))||Date.parse(binding.expires_at)<=now.getTime())
+  throw Error('Ценовой отчёт устарел или не подтверждена его доставка. Нужен новый список.');
+ const jobs=await deps.database('business_agent_jobs?id=eq.'+binding.report_job_id+'&agent_id=eq.china&chat_id=eq.'+config.chat_id+'&status=eq.done&select=id,answer,tool_trace&limit=1');
+ if(jobs?.length!==1||typeof jobs[0].answer!=='string'||await deps.digest(jobs[0].answer)!==binding.report_sha256||
+    !jobs[0].tool_trace?.some((t:any)=>t.name==='china_report_delivery'&&t.message_ids?.includes(quoted.message_id)))
+  throw Error('Не удалось проверить состав этого ценового отчёта. Подтверждение не принято.');
+ return {...message,reply_to_message:{...quoted,text:jobs[0].answer}};
+}
+
 export async function handlePriceApproval(config:any,message:any,text:string,updateId:number,deps:any):Promise<Response|null>{
- const natural=/^(?:(?:да|хорошо|ок|ладно)[, ]+)?(?:сделай(?:\s+вс[её])?|делай|выполни(?:\s+вс[её])?|выполняй|примени(?:\s+вс[её])?|применяй|подтверждаю|согласен|согласна|запускай|да)[.!]?$/iu.test(text.trim());
- if(natural && (message?.reply_to_message?.from?.id!==config.bot_id || !/^(?:Повышение|Снижение) · .+ Продавец:/mu.test(message?.reply_to_message?.text??'')))return null;
  const intent=priceApprovalIntent(text);
  if(!intent)return null;
+ try{message=await resolveBoundPriceReply(config,message,deps);}
+ catch(error){return Response.json({method:'sendMessage',chat_id:config.chat_id,text:error instanceof Error?error.message:'Не удалось проверить ценовой отчёт.'});}
+ const natural=/^(?:(?:да|хорошо|ок|ладно)[, ]+)?(?:сделай(?:\s+вс[её])?|делай|выполни(?:\s+вс[её])?|выполняй|примени(?:\s+вс[её])?|применяй|подтверждаю|согласен|согласна|запускай|да)[.!]?$/iu.test(text.trim());
+ if(natural && (message?.reply_to_message?.from?.id!==config.bot_id || !/^(?:Повышение|Снижение) · .+ Продавец:/mu.test(message?.reply_to_message?.text??'')))return null;
  const answer=(t:string)=>Response.json({method:'sendMessage',chat_id:config.chat_id,text:t});
  if(!config.active||message?.chat?.id!==config.chat_id||!['group','supergroup'].includes(message.chat.type)||
     !Number.isSafeInteger(message?.from?.id)||message.from.id<=0||message.from.is_bot||message.sender_chat||

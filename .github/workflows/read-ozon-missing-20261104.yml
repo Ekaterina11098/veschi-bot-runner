@@ -1,0 +1,98 @@
+name: Read Ozon acts and missing documents for November 4
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/read-ozon-missing-20261104.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Read act posting sets and current stocks without document writes
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          import sys,collections,copy
+          sys.path.insert(0,'scripts')
+          import fbs_document_chain as m
+          import fbs_ozon_chain as oz
+          ROOT='ozon_document_recovery:20261104:'
+          class Read(m.Transport):
+           def request(self,base,path,method='GET',body=None,params=None):
+            if base==m.MS and method!='GET':raise m.Stop('Read-only preflight prohibits document writes')
+            return super().request(base,path,method,body,params)
+          t=Read();db=m.Cache(t);c=db.get(oz.CONFIG)
+          assert c and c['cabinet']=='ozon' and c['scope_confirmed']
+          result={'status':'reading','started_at':m.now(),'ready':[],'already_complete':[],'blocked':[]}
+          listed=oz.acts()
+          selected=[a for a in listed if a.get('departure_date')=='2026-11-04']
+          result['acts_for_date']=selected
+          db.put(ROOT+'preflight:v1',result)
+          for act in sorted(selected,key=lambda a:a['id']):
+           record={'act':act,'checked_at':m.now()}
+           try:
+            scope=oz.snapshot(act);record['scope']=scope
+            if not scope['ready']:raise m.Stop('Act postings have not reached delivery transition')
+            if not scope['included']:raise m.Stop('Act contains no included posting')
+            w=oz.OzonWorker(t,db,c,act,scope);supply=oz.virtual_supply(act,scope)
+            state=db.get(oz.PREFIX+supply['id']) or {'act':act,'supply':supply,'status':'waiting_delivery'}
+            if state.get('skipped_all_cancelled'):raise m.Stop('Previously cancelled act requires reconciliation')
+            if 'positions' in state and (state.get('picking_scope',{}).get('included')!=scope['included'] or state.get('picking_scope',{}).get('counts')!=scope['counts']):raise m.Stop('Frozen act composition changed')
+            if 'positions' not in state:state['positions'],state['order_ids']=w.positions(supply)
+            state['supply']=supply;state['act']=act;state['picking_scope']=scope
+            w.validate_source(state);annotation=w.order_annotation(supply)
+            existing={};docs={}
+            for kind in m.TYPES:
+             ext=c['document_prefix']+':'+supply['id']+':'+kind
+             found=w.ms_rows('entity/'+kind,{'filter':'externalCode='+ext})
+             if len(found)>1:raise m.Stop('Duplicate '+kind+' externalCode')
+             existing[kind]=[{'id':d['id'],'name':d['name']} for d in found]
+             if found:docs[kind]=found[0]
+            manual=w.ms_rows('entity/customerorder',{'filter':'name='+w.order_name})
+            expected=c['document_prefix']+':'+supply['id']+':customerorder'
+            if any(d.get('description')==w.comment and d.get('externalCode')!=expected for d in manual):raise m.Stop('Existing manual order already covers this posting set')
+            if any(d.get('externalCode')!=expected for d in manual):
+             collisions=w.ms_rows('entity/customerorder',{'filter':'name='+w.order_name+' '+str(act['id'])})
+             if any(d.get('externalCode')!=expected for d in collisions):raise m.Stop('Order number collision')
+            record.update(state=state,quantity=sum(p['quantity'] for p in state['positions']),positions=len(state['positions']),existing=existing)
+            for kind,doc in docs.items():
+             body={**c['templates'][kind],'positions':state['positions'],'description':annotation['description']}
+             if kind=='demand':
+              if 'customerorder' not in docs:raise m.Stop('Shipment without matching order')
+              body['customerOrder']=m.meta(docs['customerorder'])
+             elif kind=='salesreturn':
+              if 'demand' not in docs:raise m.Stop('Return without shipment')
+              body['demand']=m.meta(docs['demand'])
+             w.verify(kind,doc,body)
+            if len(docs)==3:
+             record['status']='already_complete';result['already_complete'].append(record);db.put(ROOT+'preflight:v1',result);continue
+            if state.get('status')=='complete':raise m.Stop('Completed journal has missing documents')
+            if state.get('inflight') and not existing.get(state['inflight']):raise m.Stop('Uncertain prior creation requires reconciliation')
+            if not existing['demand']:
+             stock=w.ms_rows('report/stock/all',{'filter':'store='+m.href(c['templates']['demand']['store']),'stockMode':'all','quantityMode':'all'})
+             byid={m.href(s).split('?')[0]:s for s in stock};needed=collections.Counter()
+             for p in state['positions']:needed[m.href(p['assortment']).split('?')[0]]+=p['quantity']
+             shortages=[]
+             for ident,q in needed.items():
+              s=byid.get(ident,{})
+              if s.get('stock',0)<q or s.get('quantity',0)<q:
+               product=t.request(m.MS,ident[len(m.MS):])
+               shortages.append({'article':product.get('article'),'needed':q,'stock':s.get('stock',0),'available':s.get('quantity',0)})
+             if shortages:record['shortages']=shortages;raise m.Stop('Insufficient available stock')
+            record['status']='ready';result['ready'].append(record)
+           except Exception as error:
+            record.update(status='blocked',error=str(error) if isinstance(error,m.Stop) else type(error).__name__);result['blocked'].append(record)
+           db.put(ROOT+'preflight:v1',result)
+          result.update(status='preflight_complete',completed_at=m.now())
+          db.put(ROOT+'preflight:v1',result)
+          print('Ozon date-specific read-only preflight saved privately; no documents written.')

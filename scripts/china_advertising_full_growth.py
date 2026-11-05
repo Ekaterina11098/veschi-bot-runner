@@ -6,7 +6,7 @@ ROOT='china_agent:advertising_full_growth:'
 def normalized(v):return json.loads(json.dumps(v))
 def save_analytic_cache(io,key,value):
  """Analyst cache entries are new per period; PATCH cannot create a missing row."""
- if not key.startswith('china_agent:analytic_read:v1:'):
+ if not key.startswith(('china_agent:analytic_read:v1:','china_agent:cbr_cny:v1:')):
   raise ValueError('Unexpected analytical cache key')
  value=normalized(value)
  if io.get(key) is None:

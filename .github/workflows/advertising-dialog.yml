@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 837700337abc3479db1c163027b4526ce7a14fc4
+          ref: 839eafd0e07cedeec2b71a7d3aa1788c18847ab3
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -54,3 +54,12 @@ jobs:
         run: |
           if ! [[ "$DIALOG_JOB_ID" =~ ^[1-9][0-9]*$ ]]; then exit 1; fi
           python ip_cloud_dialog.py --job "$DIALOG_JOB_ID"
+
+      - name: Check queue completion without a model or new schedule
+        if: always()
+        env:
+          IP_CLOUD_RUN_FAILED: ${{ job.status == 'failure' && 'true' || 'false' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+        run: python ip_cloud_dialog.py --health

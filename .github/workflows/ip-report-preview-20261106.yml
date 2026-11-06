@@ -1,0 +1,42 @@
+name: Saved-only Nov5 IP report preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ip-report-preview-20261106
+  cancel-in-progress: false
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d54cfcc391eb3bdb0128188e946fe120e3f5a79e
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            ip_report_preview_20261106.py
+            advertising_budget_evidence.py
+            advertising_daily_png.py
+            ip_daily_png_contract.py
+            ip_daily_retained_review.py
+            ip_campaign_table_png.py
+            ip_budget_table_png.py
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 2f798a9509b72030d6fb5ec68fb915c5d216c31b
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r private-source/requirements.txt cryptography==46.0.2 Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Existing missing-only reader; no WB or Telegram tokens
+        run: python ip_report_preview_20261106.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_EGRESS_OPTIMIZED: 'true'
+          ADVERTISING_EXECUTION_ENABLED: 'false'

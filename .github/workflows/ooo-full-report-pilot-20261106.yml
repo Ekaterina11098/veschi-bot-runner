@@ -1,0 +1,31 @@
+name: OOO bounded full report pilot completion
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ooo-full-report-pilot-20261106.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ooo-cloud-pilot-20261106-v1
+  cancel-in-progress: false
+jobs:
+  complete:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 6d2c3fd752c2f29c80d67590a768c0e43384c3f4
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0 openai==3.42.1 --quiet
+      - run: python -m py_compile scripts/ooo_pilot_full_worker.py scripts/ooo_pilot_full_renderer.py
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OOO_TELEGRAM_BOT_TOKEN: ${{ secrets.OOO_TELEGRAM_BOT_TOKEN }}
+        run: python -u scripts/ooo_pilot_full_worker.py

@@ -84,6 +84,7 @@ def render_ip(view,contract,outdir):
   campaigns.append(dict(id=cid,name=name,status=raw.get('status_id'),last=metrics(raw),period=period,period_count=len(days),attention=[{'action':a} for a in current],focus=[],direction_recommendations=rec,no_order_count=raw.get('no_order_count'),no_order_spend=raw.get('no_order_spend')))
  bundle=dict(days=days,campaigns=campaigns,source_observed_at='Сохранённые данные: '+str(sum(c.get('metrics_complete') is True for c in view['campaigns']))+'/'+str(total)+' РК за '+view['period']+' · в команде только новые действия')
  bundle['review_coverage']=contract.get('review_coverage') or {}
+ bundle['analysis_notice']=contract.get('analysis_notice')
  files=render_campaign_table(bundle)
  if len(files)!=1:raise ValueError('Campaign table exceeds one PNG; explicit layout review required, no clipped or unbound actions')
  out=Path(outdir);out.mkdir(parents=True,exist_ok=True);path=out/'recommendations.png';path.write_bytes(files[0]['bytes'])
@@ -152,6 +153,7 @@ def render_campaign_table(bundle):
   d.text((x+d.textlength(label,font=font(29,True)),y+132),pct(value),font=font(29,True),fill=color(value))
  footer='ДРР = сумма расходов / сумма рекламных заказов по сохранённому источнику. Дни без заказов входят в расходы. Нет заказов — сумма заказов 0, ДРР не вычисляется. Исторические расходы исключённых товаров и архивных РК включены в итог. Атрибуция не равна выкупам и прибыли. Новые тесты отмечены; период может включать прежний состав. Итог относится только к кабинету ИП. Архивные РК учтены в итоге, без рекомендаций запуска. Предложения не выполнены и требуют согласования. Суммы SKU могут отличаться от РК из-за округления.'
  if (bundle.get('review_coverage') or {}).get('conditional_basis_used'):footer+=' Часть усилений — исследовательские предложения по сохранённому сценарию выкупа при той же цене. Это не подтверждённая прибыль текущего периода или следующих заказов.'
+ if bundle.get('analysis_notice'):footer+=' '+bundle['analysis_notice']
  for j,line in enumerate(wrap(d,footer,W-88,24)):d.text((44,y+218+j*31),line,font=font(24),fill='#536b79')
  finish(im,y+240+len(wrap(d,footer,W-88,24))*31,'drr',actions)
  return files

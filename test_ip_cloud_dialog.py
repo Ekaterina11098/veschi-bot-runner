@@ -41,6 +41,13 @@ class Tests(unittest.TestCase):
   s=FakeState();b=Budget(s);b.reserve(1,True)
   value=b.settle(1,dict(input_tokens=1202,output_tokens=199,input_tokens_details={'cache_write_tokens':1199,'cached_tokens':0}))
   self.assertEqual(value,10389)
+ def test_owner_disabled_daily_limits_preserves_monthly_cap(self):
+  st=FakeState();st.data[ROOT+'policy'].update(daily_micro_usd=None,max_calls_per_day=None)
+  b=Budget(st)
+  for j in range(25):b.reserve(j)
+  self.assertEqual(st.data[ROOT+'ledger']['days'][__import__('ip_cloud_dialog').mskday()]['calls'],25)
+  ledger=st.data[ROOT+'ledger'];ledger['months'][__import__('ip_cloud_dialog').mskday()[:7]]=10000000-RESERVE+1
+  with self.assertRaises(Halt):b.reserve(1000)
  def test_turn_limit_even_cheap_calls(self):
   s=FakeState();b=Budget(s)
   for j in range(20):b.reserve(j);b.settle(j,dict(input_tokens=100,output_tokens=10))
@@ -91,4 +98,3 @@ class Tests(unittest.TestCase):
    self.assertEqual(post.call_count,2)
 
 if __name__=='__main__':unittest.main()
-

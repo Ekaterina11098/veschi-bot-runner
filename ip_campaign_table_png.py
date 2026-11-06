@@ -98,7 +98,7 @@ def render_campaign_table(bundle):
   d.text((44,28),title,font=font(48,True),fill='white')
   bd=bundle.get('budget_days') or []
   subtitle=('Резерв: '+bd[0]+'—'+bd[-1]+' · 2 завершённых дня МСК' if 'бюджеты' in title and len(bd)==3 else 'День: '+bundle['days'][-1]+' · '+period_label+': '+bundle['days'][0]+'—'+bundle['days'][-1]+' · цель ДРР 5%')
-  if bundle.get('intraday') and 'бюджеты' not in title:subtitle+=' · сегодня неполный'
+  if bundle.get('intraday') and 'бюджеты' not in title:subtitle='Сегодня: '+str(bundle.get('observed_day'))+' · неполный день · база решений: '+bundle['days'][0]+'—'+bundle['days'][-1]
   d.text((44,100),subtitle,font=font(29,True),fill='white')
   d.text((44,150),'Срез: '+(str(bundle['source_observed_at'])+(' · остатки: '+bundle['budget_balance_observed_at'] if 'бюджеты' in title and bundle.get('budget_balance_observed_at') else '')),font=font(24),fill='#dce9f0')
   return im,d
@@ -118,7 +118,7 @@ def render_campaign_table(bundle):
  def table():
   im,d=canvas('ИП · ДРР и рекламные расходы')
   d.text((44,216),'Рекомендации по завершённым дням · ДРР: ≤ 5% зелёный, > 5% красный',font=font(24),fill=INK)
-  for i,label in enumerate(['Кампания WB','Расход, RUB','ДРР '+period_label,'ДРР день','Товары: данные за '+period_label,'Рекомендации']):
+  for i,label in enumerate(['Кампания WB','Расход, RUB','ДРР '+period_label,('ДРР сегодня*' if bundle.get('intraday') else 'ДРР день'),'Товары: данные за '+period_label,'Рекомендации']):
    for j,line in enumerate(wrap(d,label,xs[i+1]-xs[i]-28,29)):d.text((xs[i],267+j*35),line,font=font(29,True),fill=NAVY)
   return im,d
  im,d=table();y=365;actions=[]

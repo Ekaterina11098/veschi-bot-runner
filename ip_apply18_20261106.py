@@ -5,6 +5,15 @@ from ip_daily_png_contract import digest,action_id,ready
 from ip_bags_growth_20261104 import active_ids
 PLAN='ip_agent:png18:2026-11-06:v1';EXEC=PLAN+':execution'
 FROZEN='8f79150e8e45b9f85aa106bfaf8ac4a4ca8f86095e2efcdf06ea49f159ce4e3f'
+def scope_digest(value):
+ def canonical(v):
+  if isinstance(v,float):
+   if not math.isfinite(v):raise ValueError('Nonfinite scope number')
+   return int(v) if v.is_integer() else v
+  if isinstance(v,dict):return {k:canonical(x) for k,x in v.items()}
+  if isinstance(v,list):return [canonical(x) for x in v]
+  return v
+ return digest(canonical(value))
 def prepare(p,before,stock):
  stage=copy.deepcopy(before);pending=[];items=[]
  for a in p['actions']:
@@ -50,7 +59,7 @@ def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise PermissionError('Public main only')
  t=SixTransport();p=t.get(PLAN)
  def guard():
-  if not p or p.get('status')!='owner_authorized' or p.get('budgets_authorized')is not False or len(p['actions'])!=18 or digest(p['actions'])!=FROZEN or any(not ready(a,p['period']) for a in p['actions']):raise PermissionError('Exact18approval missing')
+  if not p or p.get('status')!='owner_authorized' or p.get('budgets_authorized')is not False or len(p['actions'])!=18 or scope_digest(p['actions'])!=FROZEN or any(not ready(a,p['period']) for a in p['actions']):raise PermissionError('Exact18approval missing')
   if datetime.datetime.now(datetime.timezone.utc)>=datetime.datetime.fromisoformat(p['expires_at']) or t.get(PLAN)!=p:raise PermissionError('Approval expired/changed')
  guard();state=dict(status='preflight',approval_key=PLAN,run_id=os.environ['GITHUB_RUN_ID'],steps={},items=[],wb_write_attempts=0,wb_accepted_requests=0,started_at=stamp(),telegram_sends=0)
  if not t.create(EXEC,state):print('Existing18execution retained; no replay');return

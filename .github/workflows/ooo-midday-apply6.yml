@@ -1,0 +1,30 @@
+name: OOO one approved midday manifest
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ooo-midday-apply6.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ooo-token1-owner-writes
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 145
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 8af0dbbf517ba85bc59b1a33f85bde640e1acf93
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 --quiet
+      - run: python -m py_compile scripts/ooo_midday_apply6.py
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+        run: python -u scripts/ooo_midday_apply6.py

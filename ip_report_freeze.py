@@ -74,13 +74,16 @@ def main():
  images=[]
  for item in[recommendation]+([budget]if budget else[]):
   raw=Path(item['path']).read_bytes();images.append(dict(kind=item['kind'],sha256=hashlib.sha256(raw).hexdigest(),data=base64.b64encode(raw).decode()))
- if verify:return dict(status='verified_saved_only',period=full['period'],analysis=contract.get('sol_analysis'),model_calls=contract['sol_analysis']['model_calls_this_run'],charged_micro_usd=contract['sol_analysis'].get('charged_micro_usd'),actions=[{k:a.get(k)for k in('sku','campaign','kind','target_bid_minor')}for a in contract['actions']],images=[{k:i[k]for k in('kind','sha256')}for i in images],source_calls=0,wb_writes=0,telegram_calls=0)
+ if verify:
+  store.cache_set('advertising:ip:report-analysis:v1:'+full['period']+':preview',dict(contract=contract,images=images,view=full),ttl_days=32)
+  return dict(status='verified_saved_only',period=full['period'],analysis=contract.get('sol_analysis'),model_calls=contract['sol_analysis']['model_calls_this_run'],charged_micro_usd=contract['sol_analysis'].get('charged_micro_usd'),actions=[{k:a.get(k)for k in('sku','campaign','kind','target_bid_minor')}for a in contract['actions']],images=[{k:i[k]for k in('kind','sha256')}for i in images],source_calls=0,wb_writes=0,telegram_calls=0)
  plan_key=None
  if slot=='morning':
   plan_key,_=freeze_plan(store,contract,images[0]['sha256'])
   from ip_cloud_dialog import publish_context
   publish_context(store,full,contract)
  credentials()
+ store.cache_set('advertising:ip:report-analysis:v1:'+full['period']+':prepared',dict(contract=contract,view=full,images=[{k:i[k]for k in('kind','sha256')}for i in images],verified_saved_only=verify),ttl_days=32)
  payload=dict(status='ready',slot=slot,day=day,data_period=full['period'],images=images,chat_id=CHAT,bot_id=BOT,plan_key=plan_key,new_actions=len(contract['actions']),budget_coverage=coverage,prepared_at=now.isoformat(),intraday=slot=='midday',own_summary=source.get('own_summary'))
  store.cache_set(key,payload,ttl_days=32)
  if store.cache_get(key)!=payload:raise RuntimeError('Frozen PNG readback mismatch')

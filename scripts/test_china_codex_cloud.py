@@ -36,6 +36,23 @@ class FakeWorker(c.Worker):
     def generate(self,*args):
         self.calls+=1;return json.dumps(self.response)
 class Tests(unittest.TestCase):
+    def test_commentary_before_final_answer_is_parsed_without_inference(self):
+        i=inbox()|{'status':'cloud_processing'};db=FakeDB(i)
+        db.values[c.CLOUD+'job:231']={'status':'uncertain'}
+        text='Проверяю данные.\n'+json.dumps({'kind':'answer','answer':'Расчёт готов.\nРекламу не запускал.'},ensure_ascii=False)
+        db.values[c.CLOUD+'completion:231:question']={'text':text}
+        w=FakeWorker(db)
+        self.assertEqual(w.process(c.ROOT+'inbox:231',i),'ready')
+        self.assertEqual(w.calls,0)
+        self.assertEqual(db.get(c.ROOT+'outbox:231')['answer'],'Расчёт готов.\nРекламу не запускал.')
+    def test_ambiguous_malformed_or_trailing_output_rejected(self):
+        good=json.dumps({'kind':'answer','answer':'Готово'})
+        for text in [good+'\n'+good,'Комментарий\n'+good+' хвост','Комментарий\n{"kind":"answer","answer":','Комментарий без JSON','[]','null']:
+            with self.subTest(text=text),self.assertRaises(ValueError):c.envelope(text)
+    def test_preamble_does_not_bypass_response_validation(self):
+        for response in [{'kind':'answer','answer':''},{'kind':'answer','answer':'x'*12001},{'kind':'preliminary_profit','day_msk':'2020-01-01'},{'kind':'execute','answer':'Запусти рекламу'}]:
+            with self.subTest(kind=response['kind']),self.assertRaises(ValueError):
+                c.envelope('Комментарий\n'+json.dumps(response))
     def test_scope_and_message_binding(self):
         i=inbox();j=job(i);self.assertTrue(c.validate(i,j))
         for field,value in [('chat_id',3),('sender_id',7)]:

@@ -63,7 +63,7 @@ def main():
  for c in full['campaigns']:c['campaign_name']=c.get('campaign_name')or(contract.get('campaign_labels',{}).get(str(c['campaign_id']))or{}).get('name')or''
  out=Path(os.environ['RUNNER_TEMP'])/'ip-report-frozen'
  recommendation=midday_image(full,current,contract,out)if slot=='midday'else render_recommendations(full,contract,out)
- budgetview=copy.deepcopy(full);budgetview['observed_day']=day
+ budgetview=copy.deepcopy(full);budgetview['observed_day']=day;budgetview['intraday']=slot=='midday'
  if slot=='midday':
   for c in budgetview['campaigns']:
    recent=next((r for r in current['campaigns']if r['campaign_id']==c['campaign_id']),{})
@@ -92,4 +92,3 @@ def main():
 if __name__=='__main__':
  try:print(json.dumps(main()))
  except Exception as e:print(json.dumps({'status':'report_freeze_blocked','error_type':type(e).__name__}));raise SystemExit(1)
-

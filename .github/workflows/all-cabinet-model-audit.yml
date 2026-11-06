@@ -2,7 +2,7 @@ name: All cabinet model inventory
 on:
   push:
     branches: [main]
-    paths: ['scripts/audit_all_models.py', 'scripts/migrate_sol_session_settings.py', 'scripts/test_all_model_policy.py', '.github/workflows/all-cabinet-model-audit.yml']
+    paths: ['**/*.py', '**/*.mjs', '**/*.js', '**/*.ts', '**/*.yml', '**/*.yaml', '**/*.toml']
   workflow_dispatch:
 permissions: {contents: read}
 jobs:
@@ -28,11 +28,5 @@ jobs:
           filter: blob:none
       - name: Verify all executable runtime literals and bounded OOO model choice
         run: python -m unittest discover -s scripts -p test_all_model_policy.py
-      - name: Update only saved provider model settings, without inference
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: PYTHONPATH=scripts python scripts/migrate_sol_session_settings.py
       - name: Inventory public runner and private default branch without any API calls
         run: python scripts/audit_all_models.py . private-audit

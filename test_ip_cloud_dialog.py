@@ -35,8 +35,12 @@ class Tests(unittest.TestCase):
   with self.assertRaises(Halt):b.reserve(2)
  def test_daily_cap(self):
   s=FakeState();b=Budget(s)
-  for j in range(13):b.reserve(j)
+  for j in range(6):b.reserve(j)
   with self.assertRaises(Halt):b.reserve(99)
+ def test_cache_write_not_ignored(self):
+  s=FakeState();b=Budget(s);b.reserve(1,True)
+  value=b.settle(1,dict(input_tokens=1202,output_tokens=199,input_tokens_details={'cache_write_tokens':1199,'cached_tokens':0}))
+  self.assertEqual(value,10389)
  def test_turn_limit_even_cheap_calls(self):
   s=FakeState();b=Budget(s)
   for j in range(20):b.reserve(j);b.settle(j,dict(input_tokens=100,output_tokens=10))

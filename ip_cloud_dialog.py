@@ -113,7 +113,7 @@ def publish_context(store,view,contract=None,recent=None):
 def select_scope(text,index,campaigns):
  full=[(nm,a)for nm,a in index.items()if a.casefold()in text.casefold()]
  if not full:
-  nums=re.findall(r'(?<!\d)\d{1,4}(?!\d)',text)
+  nums=[m.group()for m in re.finditer(r'(?<![\d.,])\d{1,4}(?![\d.,])',text)if not re.match(r'\s*(?:%|₽|руб\b|процент)',text[m.end():],re.I)]
   full=[(nm,a)for nm,a in index.items()if a.split('-')[0]in nums]
  nm=[int(n)for n,a in full];known={c['campaign_id']for c in campaigns}
  ids=[int(n)for n in re.findall(r'(?<!\d)\d{7,10}(?!\d)',text)]
@@ -252,6 +252,16 @@ class Worker:
   if len(rows)!=1:return {'status':'missing'}
   job=rows[0];meta=job.get('delivery')or{};policy=self.s.get(ROOT+'policy')or{}
   if job['chat_id']!=CHAT or meta.get('route')!='saved-dialog-v1':return {'status':'ignored_scope'}
+  correction=self.s.get(ROOT+'owner-correction:'+str(jid))or{}
+  if correction.get('authorization_source')=='owner_codex'and correction.get('chat_id')==CHAT and correction.get('reply_to_message_id')==meta.get('incoming_message_id')and isinstance(correction.get('text'),str)and 0<len(correction['text'])<=2000:
+   claim=ROOT+'owner-correction:'+str(jid)+':delivery'
+   if not self.s.once(claim,dict(status='uncertain',started_at=stamp())):return {'status':'correction_already_claimed','job_id':jid}
+   token=os.environ['ADVERTISING_TELEGRAM_BOT_TOKEN'].strip()
+   response=requests.post('https://api.telegram.org/bot'+token+'/sendMessage',json={'chat_id':CHAT,'text':correction['text'],'reply_parameters':{'message_id':correction['reply_to_message_id'],'allow_sending_without_reply':False}},timeout=(10,35))
+   value=response.json()
+   if not value.get('ok'):raise Halt('Correction delivery not confirmed; no blind repeat')
+   self.s.put(claim,dict(status='confirmed',message_id=value['result']['message_id'],chat_id=CHAT,receipt_at=stamp(),model_calls=0,wb_writes=0))
+   return {'status':'correction_delivered','job_id':jid,'message_id':value['result']['message_id'],'model_calls':0}
   if job['status']!='pending':return {'status':'duplicate_ignored','job_id':jid}
   if not policy.get('enabled')or (policy.get('mode')=='pilot'and not meta.get('cloud_pilot')):return {'status':'disabled_for_job'}
   if job['created_at']<policy['cutover_at']and not meta.get('cloud_pilot'):return {'status':'ignored_old_job'}

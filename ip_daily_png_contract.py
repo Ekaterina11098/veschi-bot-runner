@@ -131,6 +131,8 @@ def build_contract(store,view):
   details=details,excluded_incomplete=cached.get('excluded_incomplete') or [],display_only=display,
   campaign_labels={str(cid):dict(name=c['settings'].get('name'),payment=c['settings'].get('payment_type')) for cid,c in configs.items()},review_coverage=review_coverage,
   historical_profit_only=True,automatic_execution=False)
+ result['verified_change_days']=dict(pairs={str(cid)+':'+str(nm):day for (cid,nm),day in pair_changes.items()},skus={str(nm):day for nm,day in sku_changes.items()})
+ result['configuration_observed_at']={str(cid):at for cid,at in observed_by_cid.items()}
  store.cache_set('advertising:ip:daily-review-audit:v1:'+period,dict(period_to=period,coverage=review_coverage,new_actions=[{k:a.get(k) for k in ('sku','nm','campaign','kind','stored_bid_minor','target_bid_minor','source','criterion')} for a in actions],display_only_count=len(display),source_calls=0,wb_writes=0),ttl_days=365)
  return result
 def render_recommendations(view,contract,outdir):

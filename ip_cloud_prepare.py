@@ -34,5 +34,8 @@ def main():
   publish_context(store,view,plan,recent)
   return {'status':'compact_cache_prepared','period':day,'source_calls':0,'wb_writes':0}
  finally:requests.sessions.Session.request=native
-if __name__=='__main__':print(json.dumps(main()))
+if __name__=='__main__':
+ try:print(json.dumps(main()))
+ except Exception as exc:
+  print(json.dumps({'status':'prepare_stopped','error_type':type(exc).__name__}));raise SystemExit(1)
 

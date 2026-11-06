@@ -12,7 +12,7 @@ concurrency:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,6 +58,8 @@ jobs:
           prior=db.get(KEY)
           if os.getenv("BARCODE_APPLY")=="1" and prior and prior.get("status")=="verified":
               print("Already verified; no repeat");raise SystemExit(0)
+          if prior and prior.get("applied"):
+              db.put(KEY+":history:"+str(prior.get("run_id")),prior)
           result={"status":"reading","at":now(),"run_id":os.environ["GITHUB_RUN_ID"],"writes":0}
           try:
               cards=wb_cards()
@@ -89,7 +91,7 @@ jobs:
               db.put(KEY,result)
           
               if os.getenv("BARCODE_APPLY")=="1":
-                  result.update(status="applying",applied=[],inflight=None);db.put(KEY,result)
+                  result.update(status="applying",applied=list((prior or {}).get("applied",[])),writes=len((prior or {}).get("applied",[])),inflight=None);db.put(KEY,result)
                   for item in plan:
                       path="entity/product/"+item["id"]
                       live=t.request(MS,path)

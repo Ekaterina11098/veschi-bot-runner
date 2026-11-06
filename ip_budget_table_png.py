@@ -65,8 +65,13 @@ def render_budget_png(view,outdir):
   text('ДРР периода: '+ratio(ps,pr),860,y+202,714,27,True,color=RED if not pr or ps/pr>.05 else INK)
   text('ДРР дня: '+ratio(c['spend'],c['revenue']),860,y+244,714,27,True,color=RED if not c['revenue'] or c['spend']/c['revenue']>.05 else INK)
   text('Рекомендация по пополнению',1630,y+16,714,27,True,color=NAVY)
-  text('Предлагается '+str(c['proposal'])+' ₽',1630,y+65,714,31,True)
-  text('После исполнения рекомендаций РК.\nПополнение не выполнено.',1630,y+112,714,27);y+=height+18
+  if not c['revenue'] or c['spend']/c['revenue']>.05 or (pr and ps/pr>.05):
+   text('Пока не пополнять',1630,y+65,714,31,True,color=RED)
+   text('Сначала скорректировать рекламу. Расчётная нехватка не означает, что пополнение целесообразно.',1630,y+112,714,27)
+  else:
+   text('Предлагается '+str(c['proposal'])+' ₽',1630,y+65,714,31,True)
+   text('После исполнения рекомендаций РК.\nПополнение не выполнено.',1630,y+112,714,27)
+  y+=height+18
  if not rows:
   y+=text('Расчётной нехватки на 3 суток по доступным данным нет. Проверено активных РК: '+str(coverage['known'])+' из '+str(coverage['active'])+'.' if coverage['active'] else 'Активных РК нет. Пополнения не предлагаются.',44,y,W-88,30,True)+30
  notes=['* Ориентир на 3 суток = расход '+view['period']+' × 3; нехватка = ориентир − наблюдавшийся баланс. Это условная оценка, не фактический расход за три дня и не гарантия срока.',

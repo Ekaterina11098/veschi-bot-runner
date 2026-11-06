@@ -11,11 +11,16 @@ def run():
   if fresh!=a or a.get('status')!='approved'or a.get('manifest_sha256')!=digest(m)or m.get('cabinet')!='token_1'or m.get('currency')!='KGS'or m.get('other_changes')!=[]:raise PermissionError('Exact dated owner authorization required')
   if datetime.datetime.now(datetime.timezone.utc)>=datetime.datetime.fromisoformat(a['expires_at']):raise PermissionError('Authorization expired')
  scope()
- if db.get(ROOT+':execution'):print('Existing receipt retained; no replay');return
+ prior=db.get(ROOT+':execution')
+ recovering=bool(prior and prior.get('status')=='attention'and prior.get('safe_error')=='Exact cache update readback mismatch'and prior.get('steps')=={}and prior.get('before')and time.time()-datetime.datetime.fromisoformat(prior['baseline_observed_at']).timestamp()<3600)
+ if prior and not recovering:print('Existing receipt retained; no replay');return
  token=os.environ['WB_TOKEN_1'];cl=json.loads(base64.urlsafe_b64decode(token.split('.')[1]+'==='));ident=db.api('GET','analytics_snapshots',{'cabinet':'eq.token_1','source':'eq.seller_identity','status':'eq.complete','select':'payload','limit':100})
  if cl.get('exp',0)<time.time()or cl.get('t')is not False or int(cl.get('s',0))&(1<<30)or not cl.get('sid')or{r['payload'].get('sid')for r in ident}!={cl['sid']}:raise PermissionError('OOO seller mismatch')
- state={'status':'starting','run_id':os.environ['GITHUB_RUN_ID'],'started_at':stamp(),'manifest':m,'manifest_sha256':digest(m),'steps':{},'model_calls':0,'telegram_calls':0};db.once(ROOT+':execution',state)
- def save():db.update(ROOT+':execution',state)
+ state={'status':'starting','run_id':os.environ['GITHUB_RUN_ID'],'started_at':stamp(),'manifest':m,'manifest_sha256':digest(m),'steps':{},'model_calls':0,'telegram_calls':0}
+ if recovering:
+  state=prior;state.update(status='recovering_before_writes',previous_run_id=state['run_id'],run_id=os.environ['GITHUB_RUN_ID']);state.pop('safe_error',None)
+ else:db.once(ROOT+':execution',state)
+ def save():db.update(ROOT+':execution',json.loads(json.dumps(state)))
  def req(method,path,body=None,params=None,step=None):
   allowed={('GET','/api/advert/v2/adverts'),('PATCH','/adv/v0/auction/nms'),('PATCH','/api/advert/v1/bids'),('GET','/adv/v0/start'),('GET','/adv/v0/pause')}
   if(method,path)not in allowed:raise PermissionError('Endpoint scope')
@@ -53,7 +58,7 @@ def run():
   if set(out)!=set(ids):raise RuntimeError('Incomplete configuration coverage')
   return out
  try:
-  ids=sorted(set(x['cid']for x in m['actions'])|{39605581});before=configs();state.update(before=before,baseline_observed_at=stamp());save();expected=copy.deepcopy(before)
+  ids=sorted(set(x['cid']for x in m['actions'])|{39605581});before={int(k):v for k,v in prior['before'].items()}if recovering else configs();state.update(before=before,baseline_observed_at=prior['baseline_observed_at']if recovering else stamp());save();expected=copy.deepcopy(before)
   members={};bids={};statuses=[]
   for cid,c in before.items():
    if c['currency']!='KGS'or c['status']not in[9,11]or c['bid_type']!='manual'or c['settings']['payment_type']!='cpc':raise RuntimeError('Unsupported current campaign')

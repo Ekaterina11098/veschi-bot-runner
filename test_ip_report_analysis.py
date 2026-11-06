@@ -49,7 +49,7 @@ class AnalysisTests(unittest.TestCase):
   with patch('ip_report_analysis.State',return_value=state),patch('ip_report_analysis.load_inputs',return_value=inp):
    a=review_report(Store(),v,c,model);b=review_report(Store(),v,c,model)
   self.assertEqual(len(calls),1);self.assertEqual(b['sol_analysis']['model_calls_this_run'],0);self.assertEqual(a['actions'][0]['target_bid_minor'],309)
-  self.assertNotIn('baseline',calls[0]['allowed_actions'][0]);self.assertNotIn('own',calls[0])
+  self.assertEqual(calls[0]['allowed_actions'][0]['target_bid_rub'],3.09);self.assertEqual(calls[0]['allowed_actions'][0]['bid_currency'],'RUB');self.assertIn('change_basis',calls[0]['allowed_actions'][0]);self.assertNotIn('baseline',calls[0]['allowed_actions'][0]);self.assertNotIn('own',calls[0])
  def test_uncertain_model_is_not_replayed(self):
   inp,c,v=fixture();state=FakeState();state.data[ROOT+'policy']['report_review_enabled']=True
   with patch('ip_report_analysis.State',return_value=state),patch('ip_report_analysis.load_inputs',return_value=inp):

@@ -51,7 +51,6 @@ def main():
    path.write_bytes(raw);images.append(dict(kind=item['kind'],path=str(path)))
   report.update(view=view,new_action_count=len(contract['actions']),budget_coverage=saved.get('budget_coverage'),own_summary=saved.get('own_summary'))
   budget_image=images[1]
-  import hashlib
   messages=[]
   for image in images:
    caption=('ИП · рекомендации за '+view['period']+'. Ответьте «Сделай всё» на этот PNG, чтобы применить только новые перечисленные действия. Ранее согласованные изменения не повторяются.' if contract['actions'] else 'ИП · отчёт за '+view['period']+'. Новых готовых команд нет.') if image['kind']=='drr' else ('Бюджеты · отчёт '+view['observed_day']+' · время МСК. Срок условный, по расходу '+view['period']+'.')

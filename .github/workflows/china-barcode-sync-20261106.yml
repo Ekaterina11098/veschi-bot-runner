@@ -8,7 +8,7 @@ permissions:
   contents: read
 concurrency:
   group: china-barcode-sync-20261106
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   audit:
     runs-on: ubuntu-latest

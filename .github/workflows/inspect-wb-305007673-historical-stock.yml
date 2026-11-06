@@ -39,7 +39,7 @@ jobs:
            store=m.href(c["templates"]["demand"]["store"])
            snapshots={}
            for moment in ("2026-11-05 10:11:00","2026-11-05 10:11:55","2026-11-05 19:00:00"):
-            rows=w.ms_rows("report/stock/all",{"filter":"store="+store,"stockMode":"all","quantityMode":"all","moment":moment})
+            rows=w.ms_rows("report/stock/all",{"filter":"store="+store+";stockMode=all;quantityMode=all;moment="+moment})
             index={m.href(x).split("?")[0]:x for x in rows};lines=[]
             for p in s["positions"]:
              v=index.get(m.href(p["assortment"]),{})

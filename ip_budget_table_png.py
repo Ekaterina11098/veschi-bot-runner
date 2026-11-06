@@ -48,7 +48,7 @@ def render_budget_png(view,outdir):
   return len(lines)*(n+8)
  def date(s):return datetime.fromisoformat(s.replace('Z','+00:00')).astimezone(ZoneInfo('Europe/Moscow')).strftime('%d.%m %H:%M')
  def ratio(cost,rev):return 'нет данных' if not number(rev) else money(100*cost/rev)+'%' if rev>0 else 'без заказов' if cost>0 else 'нет расхода'
- d.rectangle((0,0,W,205),fill=NAVY)
+ d.rectangle((0,0,W,205),fill='#176B4A' if view.get('intraday') else NAVY)
  d.text((44,28),'ИП · бюджеты и суммы пополнения',font=font(48,True),fill='white')
  d.text((44,100),'Предложения · только РК с расчётной нехваткой · RUB',font=font(29,True),fill='white')
  d.text((44,150),'Отчёт '+view['observed_day']+' · база расхода: полный день '+view['period']+' · время МСК',font=font(24),fill='#dce9f0');y=240
@@ -82,3 +82,4 @@ def render_budget_png(view,outdir):
  if y+25>H:raise ValueError('Budget layout overflow; do not clip')
  out=Path(outdir);out.mkdir(parents=True,exist_ok=True);path=out/'budgets.png';im.crop((0,0,W,y+25)).save(path,optimize=True)
  return dict(kind='budgets',path=str(path)),coverage
+

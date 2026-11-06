@@ -53,6 +53,23 @@ class AnalysisTests(unittest.TestCase):
    def fail(*a):raise TimeoutError('unknown')
    with self.assertRaises(TimeoutError):review_report(None,v,c,fail)
    with self.assertRaises(Halt):review_report(None,v,c,lambda *a:self.fail('repeated'))
+ def test_monthly_stop_keeps_figures_and_no_unreviewed_commands(self):
+  inp,c,v=fixture();state=FakeState();state.data[ROOT+'policy']['report_review_enabled']=True
+  with patch('ip_report_analysis.State',return_value=state),patch('ip_report_analysis.load_inputs',return_value=inp):
+   def stop(*a):raise Halt('Paid budget limit reached')
+   result=review_report(None,v,c,stop)
+   self.assertEqual(result['actions'],[]);self.assertEqual(result['sol_analysis']['model_calls_this_run'],0);self.assertIn('месячный',result['analysis_notice'])
+   result=review_report(None,v,c,lambda *a:self.fail('repeat'))
+   self.assertEqual(result['actions'],[])
+ def test_changed_evidence_does_not_expand_prior_sol_selection(self):
+  inp,c,v=fixture();state=FakeState();state.data[ROOT+'policy']['report_review_enabled']=True
+  class Store:
+   def cache_set(self,*a,**kw):pass
+  def model(s,identity,data):return dict(selected=[data['allowed_actions'][0]['id']],directions={k:'checked'for k in('raise','add','reduce','exclude')},research=[],summary='reviewed'),dict(model='gpt-6.1-sol',model_calls=1)
+  with patch('ip_report_analysis.State',return_value=state),patch('ip_report_analysis.load_inputs',return_value=inp):
+   review_report(Store(),v,c,model);c['actions'][0]['target_bid_minor']=308
+   result=review_report(Store(),v,c,lambda *a:self.fail('repeat'))
+   self.assertEqual(result['actions'],[])
  def test_global_concurrency_includes_report_and_dialog(self):
   from ip_cloud_dialog import Budget
   s=FakeState();b=Budget(s);b.reserve('report:'+DAY)

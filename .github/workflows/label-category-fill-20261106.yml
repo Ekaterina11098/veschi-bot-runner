@@ -1,0 +1,67 @@
+name: Fill missing label categories in reviewed barcode scope
+on:
+  push:
+    paths: ['.github/workflows/label-category-fill-20261106.yml']
+permissions:
+  contents: read
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,re
+          sys.path.insert(0,'scripts')
+          from fbs_document_chain import Transport,Cache,MS,Stop,now
+          t=Transport();db=Cache(t)
+          scope=db.get('barcode_sync:china:20261106:v1')
+          ids={p['id'] for key in ('plan','already','issues') for p in scope[key]}
+          if len(ids)!=317:raise Stop('Scope mismatch')
+          defs=t.request(MS,'entity/product/metadata/attributes')['rows']
+          matches=[a for a in defs if a['name']=='Категория товара' and a['type']=='string']
+          if len(matches)!=1:raise Stop('Category definition mismatch')
+          definition=matches[0]
+          rows=[];offset=0
+          while True:
+              page=t.request(MS,'entity/product',params={'filter':'archived=false','limit':1000,'offset':offset})
+              rows+=page['rows'];offset+=len(page['rows'])
+              if offset==page['meta']['size']:break
+              if not page['rows']:raise Stop('Incomplete page')
+          items=[p for p in rows if p['id'] in ids]
+          if len(items)!=317:raise Stop('Products mismatch')
+          plan=[];unresolved=[];existing=0
+          for p in items:
+              attr=[a for a in p.get('attributes',[]) if a['name']=='Категория товара']
+              if attr and str(attr[0].get('value','')).strip():existing+=1;continue
+              name=p['name'].replace('Cумка','Сумка')
+              m=re.match(r'^(Сумка|Зонт|Ремень|Шарф|Панама|Манишка|Берет|Кеппи|Платок|Рюкзак|Косынка)(?:\b|[- ])',name)
+              if not m:unresolved.append({'id':p['id'],'article':p.get('article'),'name':p['name']});continue
+              plan.append({'id':p['id'],'article':p.get('article'),'category':m[1]})
+          key='label_utility:categories:20261106:v1'
+          audit={'status':'prepared','at':now(),'plan':plan,'unresolved':unresolved,'existing':existing,'done':[]}
+          db.put(key,audit)
+          for item in plan:
+              path='entity/product/'+item['id'];p=t.request(MS,path)
+              current=[a for a in p.get('attributes',[]) if a['name']=='Категория товара']
+              if current and str(current[0].get('value','')).strip():continue
+              entry={'meta':definition['meta'],'value':item['category']}
+              t.request(MS,path,'PUT',{'attributes':[entry]})
+              after=t.request(MS,path)
+              attrs={a['name']:a.get('value') for a in after.get('attributes',[])}
+              if attrs.get('Категория товара')!=item['category']:raise Stop('Category readback mismatch')
+              if after.get('barcodes')!=p.get('barcodes') or after.get('article')!=p.get('article'):raise Stop('Other field changed')
+              for a in p.get('attributes',[]):
+                  if a['name']!='Категория товара' and attrs.get(a['name'])!=a.get('value'):raise Stop('Other attribute changed')
+              audit['done'].append(item['id'])
+          audit.update(status='verified',verified_at=now());db.put(key,audit)
+          print('Category fill verified. Updated:',len(audit['done']),'Existing:',existing,'Unresolved:',len(unresolved))
+

@@ -1,0 +1,86 @@
+name: China barcode audit for MoySklad
+on:
+  push:
+    paths:
+      - '.github/workflows/china-barcode-sync-20261106.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-barcode-sync-20261106
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read and match; save private audit
+        shell: python
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import os,json,time,urllib.request,urllib.error,gzip,collections,sys
+          sys.path.insert(0,"scripts")
+          from fbs_document_chain import Transport,Cache,Worker,MS,Stop,now
+          t=Transport();db=Cache(t);w=Worker(t,db,{})
+          KEY="barcode_sync:china:20261106:v1"
+          def wb_cards():
+              out=[];cursor={"limit":100};seen=set()
+              while True:
+                  req=urllib.request.Request("https://content-api.wildberries.ru/content/v2/get/cards/list",data=json.dumps({"settings":{"sort":{"ascending":False},"cursor":cursor,"filter":{"withPhoto":-1}}}).encode(),headers={"Authorization":os.environ["WB_TOKEN_3"],"Content-Type":"application/json"},method="POST")
+                  try:
+                      with urllib.request.urlopen(req,timeout=45) as f:d=json.load(f)
+                  except urllib.error.HTTPError as e:raise Stop("WB HTTP_"+str(e.code)) from None
+                  batch=d.get("cards")
+                  if not isinstance(batch,list) or not isinstance(d.get("cursor"),dict):raise Stop("Incomplete WB response")
+                  for c in batch:
+                      if c["nmID"] in seen:raise Stop("Repeated WB card")
+                      seen.add(c["nmID"]);out.append(c)
+                  if d["cursor"].get("total",0)<100:return out
+                  cursor={"limit":100,"updatedAt":d["cursor"]["updatedAt"],"nmID":d["cursor"]["nmID"]}
+                  if len(out)>20000:raise Stop("WB scope too large")
+                  time.sleep(.7)
+          def vals(p):
+              return {str(v) for b in p.get("barcodes",[]) for v in b.values()}
+          def norm(s):return str(s or "").strip().casefold()
+          result={"status":"reading","at":now(),"run_id":os.environ["GITHUB_RUN_ID"],"writes":0}
+          try:
+              cards=wb_cards()
+              products=w.ms_rows("entity/product")
+              variants=w.ms_rows("entity/variant")
+              bundles=w.ms_rows("entity/bundle")
+              owners=collections.defaultdict(set);idx=collections.defaultdict(list);wbowners=collections.defaultdict(set)
+              for p in products+variants+bundles:
+                  for b in vals(p):owners[b].add(p["id"])
+              for p in products:
+                  if not p.get("archived"):idx[norm(p.get("article"))].append(p)
+              for c in cards:
+                  for s in c.get("sizes",[]):
+                      for b in s.get("skus",[]):wbowners[str(b)].add((c["nmID"],s["chrtID"]))
+              plan=[];issues=[];already=[]
+              for c in cards:
+                  article=c.get("vendorCode");ps=idx[norm(article)]
+                  skus=sorted({str(b) for s in c.get("sizes",[]) for b in s.get("skus",[])})
+                  base={"article":article,"nmID":c["nmID"],"barcodes":skus}
+                  if not skus:issues.append({**base,"reason":"no_barcodes"});continue
+                  if len(ps)!=1:issues.append({**base,"reason":"missing_product" if not ps else "duplicate_article","candidates":[{"id":p["id"],"name":p["name"]} for p in ps]});continue
+                  p=ps[0];base.update(id=p["id"],name=p["name"])
+                  if len(c.get("sizes",[]))!=1 or p.get("variantsCount",0):issues.append({**base,"reason":"requires_variant_mapping"});continue
+                  if any(len(wbowners[b])!=1 or owners[b]-{p["id"]} for b in skus):issues.append({**base,"reason":"barcode_conflict"});continue
+                  missing=[b for b in skus if b not in vals(p)]
+                  if missing:plan.append({**base,"missing":missing,"before":p.get("barcodes",[])})
+                  else:already.append(base)
+              result.update(status="audited",cards_count=len(cards),product_count=len(products),plan=plan,issues=issues,already=already,planned_products=len(plan),planned_barcodes=sum(len(p["missing"]) for p in plan))
+              db.put(KEY,result)
+              print(json.dumps({k:result[k] for k in ["status","cards_count","planned_products","planned_barcodes","writes"]}))
+          except Exception as e:
+              result.update(status="error",error=str(e) if isinstance(e,Stop) else type(e).__name__)
+              db.put(KEY,result);print("Audit stopped; details in private cache");raise SystemExit(1)
+          

@@ -1,0 +1,30 @@
+name: Verify description update errors
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-description-errors-20261106.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: 91bd9ee72a9890b8c34970cb639b23447d6e5559, persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Read update errors only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          from owner_description_append_20261106 import Run,ROOT,stamp
+          r=Run()
+          data=r.read('/content/v2/cards/error/list',{'cursor':{'limit':100},'order':{'ascending':False}})
+          r.c.put(ROOT+':update_errors',{'response':data,'observed_at':stamp()})
+          print('Private update error report saved; no marketplace writes')
+          PY

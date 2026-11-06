@@ -225,7 +225,7 @@ class Worker:
   rows=self.store.db('GET','advertising_agent_jobs',params={'chat_id':'eq.'+str(CHAT),'created_at':'gte.'+policy['cutover_at'],'status':'in.(pending,running)','delivery->>route':'eq.saved-dialog-v1','select':'id,status,created_at,lease_until,delivery','order':'id.asc','limit':1})or[]
   if not rows:return {'status':'no_active_head'}
   j=rows[0];age=(datetime.now(timezone.utc)-datetime.fromisoformat(j['created_at'].replace('Z','+00:00'))).total_seconds()
-  if age>(600 if j['status']=='pending'else900):self.health('attention_required',j['id'],'queue_head_stalled_'+j['status']);return {'status':'stalled','job_id':j['id']}
+  if age>(600 if j['status']=='pending'else 900):self.health('attention_required',j['id'],'queue_head_stalled_'+j['status']);return {'status':'stalled','job_id':j['id']}
   return {'status':'waiting','job_id':j['id']}
  def process(self,jid,pilot=False):
   self.model_calls=0

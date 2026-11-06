@@ -1,5 +1,5 @@
 """IP saved-data cloud adapter. No source/WB operations, no model retries or hidden history."""
-import copy,hashlib,json,os,re,time,uuid
+import base64,copy,hashlib,json,os,re,time,uuid
 from datetime import datetime,timedelta,timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo

@@ -7,6 +7,10 @@ import china_analytic_dialog as a
 from conversion_watches import Worker
 
 class CheckpointTests(unittest.TestCase):
+ def setUp(self):
+  # Checkpoint tests supply only synthetic model responses.
+  guard=patch('china_no_paid.require_paid_api')
+  guard.start();self.addCleanup(guard.stop)
  def test_exact_product_sources_are_scoped_and_cached_without_other_skus(self):
   w=W();w.catalog=lambda:[('100','one-bag'),('200','two-bag')];an=a.Analyst(w,{},[])
   with patch.object(an,'collect',return_value=dict(source='MPStats',rows=[dict(nm_id=100),dict(nm_id=200)])) as collect:

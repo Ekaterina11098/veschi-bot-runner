@@ -1,5 +1,5 @@
 """Persistent, scoped China Telegram Codex consumer. No WB or Telegram credentials."""
-import argparse,json,os,re,uuid
+import argparse,json,os,re,uuid,time
 from datetime import datetime,timedelta,timezone,date
 from zoneinfo import ZoneInfo
 from china_model_context import MODEL,COLUMN_RULE,message as compact_message
@@ -20,7 +20,7 @@ INSTRUCTIONS="""Ты постоянная облачная сессия Codex д
 Прогноз прибыли надо рассчитать, а не отказывать из-за отсутствия закрытой прибыли. Если нужен предварительный прогноз конкретного дня и готового analytics нет, верни JSON {"kind":"preliminary_profit","day_msk":"YYYY-MM-DD"} без текста. Только дата от runtime today-14 до today. При неясной дате уточни её человеческим вопросом. Уже ожидающий сбор не повторять; failed/uncertain не повторять. Если analytics.status=calculated, используй result после проверки coverage/unmodelled/errors, источников, ownbuyout/цены/COGS/комиссии/налога/логистики/обратной/рекламы и общих неизвестных расходов; дай число/окно/допущения, не называй закрытой чистой прибылью.
 Для остальных ответов и готового прогноза верни JSON {"kind":"answer","answer":"человеческий текст с Markdown при необходимости"}. Обычно до3500знаков, таблицы до12000. В поле answer настоящие переносы строк, без технического JSON/диагностики. Используй ссылки на источники только когда они реально доступны.
 Новый протокол точных данных: если для ответа не хватает данных, верни JSON {"kind":"read","topic":"catalogue|products|prices|stock|advertising|orders","nm_ids":[точные nmID Китая],"date_from":"YYYY-MM-DD","date_to":"YYYY-MM-DD"}. До3 разных запросов на вопрос, до30nmID и31дня; источник orders не содержит денежных сумм, для samehour суммы бери hourly snapshot с двумя базами. Пустой nm_ids только для всего кабинета. Результат придёт в analytics, после него отвечай по фактам, не проси уже рассчитанное повторно. Неполные результаты не нули.
-Павлу sender307200273 отвечай очень кратко, только на его вопрос, конкретными данными с периодом; без служебных причин ошибок, маршрутизации и лишних советов. Для остальных и отчётов соблюдай заданный формат.
+Павлу sender307200273 отвечай до450символов, когда достаточно краткого ответа. Если нужен более длинный ответ, верни его целиком: код отрисует PNG без дополнительного вызова модели. Отвечай очень кратко, только на его вопрос, конкретными данными с периодом; без служебных причин ошибок, маршрутизации и лишних советов. Для остальных и отчётов соблюдай заданный формат.
 """
 
 INSTRUCTIONS += '\n'+COLUMN_RULE
@@ -111,6 +111,11 @@ class Worker:
     def __init__(self,db=None):
         self.db=db or DB()
         self.client=None
+    def timing(self,jid,stage,started,**extra):
+        key='china_agent:reply_latency:v1:'+str(jid);value=dict(self.db.get(key)or{})
+        value.update(stage=stage,job_id=jid,observed_at=stamp(),**{stage+'_ms':round((time.perf_counter()-started)*1000,3)},**extra)
+        if self.db.get(key):self.db.update(key,value)
+        else:self.db.once(key,value)
     def sdk(self):
         from china_no_paid import require_paid_api
         require_paid_api()
@@ -182,7 +187,7 @@ class Worker:
         catalogue=self.db.get('china_agent:prices:v1')or{}
         if catalogue.get('cabinet')=='token_3':
             ctx['china_catalogue']={'observed_at':catalogue.get('observed_at'),'rows':[{k:r.get(k)for k in ('nmID','vendorCode','price','discount','currencyIsoCode4217')}for r in catalogue.get('rows',[])]}
-        ctx['cloud_runtime_contract']={'read_requests':{'kind':'read','topic':['catalogue','products','prices','stock','advertising','orders'],'nm_ids':'at most30 exact China nmIDs, [] only whole-cabinet','date_from':'YYYY-MM-DD','date_to':'YYYY-MM-DD','maximum_requests':3,'maximum_days':31,'purpose':'Use when exact data needed; wait for analytics, never invent missing facts.'},'pavel_style':'Для sender307200273: очень кратко, чёткие данные, только на его вопрос. Без технических причин, лишних советов и служебных подробностей.','today_partial_is_not_bid_decision_basis':True,'both_sales_baselines_required':True}
+        ctx['cloud_runtime_contract']={'read_requests':{'kind':'read','topic':['catalogue','products','prices','stock','advertising','orders'],'nm_ids':'at most30 exact China nmIDs, [] only whole-cabinet','date_from':'YYYY-MM-DD','date_to':'YYYY-MM-DD','maximum_requests':3,'maximum_days':31,'purpose':'Use when exact data needed; wait for analytics, never invent missing facts.'},'pavel_style':'Для sender307200273: текст до450символов; длиннее код отправит PNG без дополнительной модели. Очень кратко, чёткие данные, только на его вопрос. Без технических причин, лишних советов и служебных подробностей.','today_partial_is_not_bid_decision_basis':True,'both_sales_baselines_required':True}
 
         ctx['report_reading_rules']={'delivery_is_not_data_freshness':True,'compare_source_observed_at_to_report_time':True,'quoted_report_has_priority_for_question_scope':True,'missing_context_is_not_proof_of_missing_delivery':True}
 
@@ -222,7 +227,9 @@ class Worker:
     def finish(self,inbox,key,completion,journal):
         jid=inbox['job_id'];existing=self.db.get(ROOT+'outbox:'+str(jid))
         if existing:return existing['status']
+        parse_started=time.perf_counter()
         response=envelope(completion['text'])
+        self.timing(jid,'response_parse',parse_started)
         if response['kind'] in ('preliminary_profit','read'):
             reqkey=ROOT+'data_request:'+str(jid);prior=self.db.get(reqkey)or{}
             from hashlib import sha256
@@ -244,11 +251,19 @@ class Worker:
         self.db.update(key,inbox|{'status':'answered'},'cloud_processing')
         if (self.db.get(key) or {}).get('status')!='answered':raise RuntimeError('Inbox answer readback mismatch')
         self.db.update(journal,self.db.get(journal)|{'status':'ready','completed_at':stamp()})
+        ready_at=datetime.now(timezone.utc);queued=inbox.get('created_at')
+        if queued:
+            elapsed=max(0,(ready_at-datetime.fromisoformat(queued.replace('Z','+00:00'))).total_seconds()*1000)
+            self.timing(jid,'answer_ready',parse_started,queue_to_answer_ms=round(elapsed,3))
         # Do not copy arbitrary nonbusiness questions into shared WORK memory.
         # The durable cloud session holds its conversation; outbox is scoped to this group.
         return 'ready'
     def process(self,key,inbox):
-        jid=inbox['job_id']
+        process_started=time.perf_counter();jid=inbox['job_id']
+        for label,instant in [('queue_wait',inbox.get('created_at'))]:
+            if instant:
+                elapsed=max(0,(datetime.now(timezone.utc)-datetime.fromisoformat(instant.replace('Z','+00:00'))).total_seconds()*1000)
+                self.timing(jid,'worker_entry',process_started,**{label+'_ms':round(elapsed,3)})
         jobs=self.db.api('GET','business_agent_jobs',{'id':'eq.'+str(jid),'chat_id':'eq.'+str(CHAT),'select':'id,chat_id,sender_id,request_text,tool_trace'})
         if len(jobs)!=1 or not validate(inbox,jobs[0]):raise RuntimeError('Original question scope mismatch')
         out=self.db.get(ROOT+'outbox:'+str(jid))
@@ -293,18 +308,20 @@ class Worker:
         if inbox['status'] not in ('queued','collecting'):return 'not_queued'
         claimed=inbox|{'status':'cloud_processing','cloud_consumer':True}
         if not self.db.update(key,claimed,inbox['status']):return 'claim_lost'
-        sid=self.bootstrap()['session_id'];token='codex-cloud-job-'+str(jid)+'-'+phase
+        bootstrap_started=time.perf_counter();sid=self.bootstrap()['session_id'];self.timing(jid,'session_ready',bootstrap_started);token='codex-cloud-job-'+str(jid)+'-'+phase
         state={'status':'running','job_id':jid,'session_id':sid,'job_token':token,'phase':phase,
                'submission_key':token,'started_at':stamp(),'model_resubmissions':0}
         if self.db.get(journal):self.db.update(journal,state)
         else:self.db.once(journal,state)
-        ctx=self.context(inbox)
+        context_started=time.perf_counter();ctx=self.context(inbox)
         markers=[m for m in jobs[0].get('tool_trace',[]) if isinstance(m,dict) and m.get('name')=='china_saved_question']
         if markers:
             ctx['telegram_reply_context']={k:markers[-1].get(k) for k in ('message_id','reply_message_id','thread_id','reply_text','original_request_text')}
         message=compact_message({'runtime_scope':{'job_token':token,'today_msk':str(today()),'time_msk':datetime.now(ZoneInfo('Europe/Moscow')).isoformat(),'chat_id':CHAT,'sender_id':inbox['sender_id'],'wb_action_permission':False},
               'dated_work_context':ctx,'untrusted_telegram_question':inbox['request_text']})
-        text=self.generate(sid,message,token)
+        self.timing(jid,'context_prepare',context_started,context_chars=len(message),context_bytes=len(message.encode('utf-8')))
+        model_started=time.perf_counter();text=self.generate(sid,message,token)
+        self.timing(jid,'model_response',model_started,model_submissions=1,model_resubmissions=0)
         completion={'text':text,'created_at':stamp(),'phase':phase,'recovered':False}
         self.db.once(completion_key,completion)
         return self.finish(claimed,key,completion,journal)
@@ -332,4 +349,6 @@ def main():
     print(json.dumps(result))
     if result['status']=='attention_required':raise SystemExit(1)
 if __name__=='__main__':main()
+
+
 

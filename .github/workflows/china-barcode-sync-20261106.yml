@@ -8,7 +8,7 @@ permissions:
   contents: read
 concurrency:
   group: china-barcode-sync-20261106
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -91,35 +91,44 @@ jobs:
               db.put(KEY,result)
           
               if os.getenv("BARCODE_APPLY")=="1":
-                  result.update(status="applying",applied=list((prior or {}).get("applied",[])),writes=len((prior or {}).get("applied",[])),inflight=None);db.put(KEY,result)
-                  for item in plan:
-                      path="entity/product/"+item["id"]
-                      live=t.request(MS,path)
-                      if norm(live.get("article"))!=norm(item["article"]) or live.get("archived") or live.get("variantsCount",0):raise Stop("Product identity changed")
-                      before=live.get("barcodes",[])
-                      missing=[b for b in item["missing"] if b not in vals(live)]
-                      if not missing:continue
-                      # Live cross-entity barcode lookup catches assignments made since preflight.
-                      for b in missing:
-                          hits=w.ms_rows("entity/assortment",{"filter":"barcode="+b})
-                          if any(x["id"]!=live["id"] for x in hits):raise Stop("Barcode collision on live lookup")
-                      expected=before+[{"code128":b} for b in missing]
-                      result["inflight"]={"id":live["id"],"article":live["article"],"before":before,"expected":expected}
-                      db.put(KEY,result)
-                      try:t.request(MS,path,"PUT",{"barcodes":expected})
-                      except Stop:
-                          check=t.request(MS,path)
-                          if check.get("barcodes",[])!=expected:raise
-                      after=t.request(MS,path)
-                      if after.get("barcodes",[])!=expected:raise Stop("Barcode readback mismatch")
-                      result["applied"].append({**result["inflight"],"after":after["barcodes"]})
-                      result["writes"]+=1;result["inflight"]=None;db.put(KEY,result)
-                  for item in plan:
-                      check=t.request(MS,"entity/product/"+item["id"])
-                      if not set(item["barcodes"])<=vals(check):raise Stop("Final coverage mismatch")
-                      if not all(b in check.get("barcodes",[]) for b in item["before"]):raise Stop("Existing barcode lost")
-                  result.update(status="verified",verified_at=now());db.put(KEY,result)
-          
+                  applied=list((prior or {}).get("applied",[]))
+                  old_inflight=(prior or {}).get("inflight")
+                  if old_inflight:
+                      p=t.request(MS,"entity/product/"+old_inflight["id"])
+                      if p.get("barcodes",[])==old_inflight["expected"]:
+                          if not any(x["id"]==p["id"] for x in applied):applied.append({**old_inflight,"after":p["barcodes"],"reconciled":True})
+                      elif p.get("barcodes",[])!=old_inflight["before"]:raise Stop("Previous inflight barcode state changed")
+                  result.update(status="applying",applied=applied,writes=len(applied),inflight=None,inflight_batch=None);db.put(KEY,result)
+                  for offset in range(0,len(plan),25):
+                      fresh=w.ms_rows("entity/product")
+                      current={p["id"]:p for p in fresh}
+                      all_current=fresh+w.ms_rows("entity/variant")+w.ms_rows("entity/bundle")
+                      own=collections.defaultdict(set)
+                      for p in all_current:
+                          for b in vals(p):own[b].add(p["id"])
+                      changes=[]
+                      for item in plan[offset:offset+25]:
+                          live=current[item["id"]]
+                          if norm(live.get("article"))!=norm(item["article"]) or live.get("archived") or live.get("variantsCount",0):raise Stop("Product identity changed")
+                          missing=[b for b in item["missing"] if b not in vals(live)]
+                          if not missing:continue
+                          if any(own[b]-{live["id"]} for b in missing):raise Stop("Barcode collision on refreshed catalog")
+                          before=live.get("barcodes",[])
+                          changes.append({"id":live["id"],"article":live["article"],"before":before,"expected":before+[{"code128":b} for b in missing],"meta":{k:live["meta"][k] for k in ("href","type","mediaType")}})
+                      if not changes:continue
+                      result["inflight_batch"]=changes;db.put(KEY,result)
+                      response=t.request(MS,"entity/product","POST",[{"meta":x["meta"],"barcodes":x["expected"]} for x in changes])
+                      checked={p["id"]:p for p in w.ms_rows("entity/product")}
+                      for x in changes:
+                          if checked[x["id"]].get("barcodes",[])!=x["expected"]:raise Stop("Batch readback mismatch")
+                          result["applied"].append({**x,"after":checked[x["id"]]["barcodes"]})
+                      result["writes"]=len(result["applied"]);result["inflight_batch"]=None;db.put(KEY,result)
+                  checked={p["id"]:p for p in w.ms_rows("entity/product")}
+                  for item in plan+already:
+                      if not set(item["barcodes"])<=vals(checked[item["id"]]):raise Stop("Final coverage mismatch")
+                  for item in result["applied"]:
+                      if not all(b in checked[item["id"]].get("barcodes",[]) for b in item["before"]):raise Stop("Existing barcode lost")
+                  result.update(status="verified",verified_at=now(),covered_cards=len(plan)+len(already));db.put(KEY,result)
               print(json.dumps({k:result[k] for k in ["status","cards_count","planned_products","planned_barcodes","writes"]}))
           except Exception as e:
               result.update(status="error",error=str(e) if isinstance(e,Stop) else type(e).__name__)

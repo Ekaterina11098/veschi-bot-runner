@@ -4,7 +4,7 @@ from datetime import datetime,timezone,timedelta
 from statistics import median
 from urllib.parse import urlsplit
 from ip_cloud_dialog import Budget,State,ROOT,MODEL,Halt,digest
-ROOT_REPORT='advertising:ip:report-analysis:v1:'
+ROOT_REPORT=ROOT+'report-analysis:v1:'
 RULES={'cabinet':'token_2','currency':'RUB','tax_reserve_rate':.15,'tax_base':'positive net seller realized revenue',
  'financial_ads':'already included in reconciled for_pay; never deduct twice','raise_max_pct':5,
  'fbo_only_subjects':[51,57,255,756],'msk50_required':False,'daily_ad_caps':False,'wb_permission':False}
@@ -70,6 +70,10 @@ def metrics(action):
  total={k:sum(v[k]for _,v in valid)for k in('spend','orders','revenue')}
  total.update(days=[d for d,_ in valid],clicks=sum(v.get('clicks',0)for _,v in valid)if valid and all(amount(v.get('clicks'))for _,v in valid)else None,views=sum(v.get('views',0)for _,v in valid)if valid and all(amount(v.get('views'))for _,v in valid)else None)
  total['drr']=100*total['spend']/total['revenue']if total['revenue']else None
+ total['actual_cpc']=total['spend']/total['clicks']if total['clicks']else None
+ total['ctr_pct']=100*total['clicks']/total['views']if total['views']and total['clicks']is not None else None
+ total['cr_pct']=100*total['orders']/total['clicks']if total['clicks']else None
+ total['average_direct_order']=total['revenue']/total['orders']if total['orders']else None
  total['high_days']=sum(v['revenue']>0 and v['spend']/v['revenue']>.05 for _,v in valid)
  return total
 def screen(contract,view,inputs):
@@ -149,7 +153,7 @@ def review_report(store,view,contract,call=None):
  allowed={a['analysis_id']:a for a in actions};known={(a['nm'],a['campaign'])for a in contract['actions']}
  compact=[]
  for ident,a in allowed.items():
-  e=a['ip_economics'];compact.append(dict(id=ident,sku=a['sku'],nm=a['nm'],campaign=a['campaign'],kind=a['kind'],old=a.get('stored_bid_minor'),target=a.get('target_bid_minor'),metrics=a['analysis_metrics'],profit_after_ads=e.get('profit_after_ads'),profit_status=e.get('profit_status'),conditional_model=e.get('conditional_model'),gaps=e.get('gaps'),reserve=a.get('growth_reserve'),marginal_cpa=a.get('modeled_cpa_same_cr')))
+  e=a['ip_economics'];compact.append(dict(id=ident,sku=a['sku'],nm=a['nm'],campaign=a['campaign'],kind=a['kind'],old=a.get('stored_bid_minor'),target=a.get('target_bid_minor'),metrics=a['analysis_metrics'],own_orders=e.get('orders'),own_orders_sum=e.get('orders_sum'),stock={'fbo':e.get('fbo'),'fbs':e.get('fbs'),'known':e.get('stock_known')},profit_after_ads=e.get('profit_after_ads'),profit_status=e.get('profit_status'),conditional_model=e.get('conditional_model'),gaps=e.get('gaps'),reserve=a.get('growth_reserve'),marginal_cpa=a.get('modeled_cpa_same_cr')))
  data=dict(period=view['period'],rules=RULES,coverage=audit['coverage'],allowed_actions=compact,research=audit['research'],coverage_gaps=audit['gaps'],note='All retained own articles scanned by code; only exact prevalidated candidates supplied. Finance period and campaign attribution differ explicitly.')
  identity=view['period'];key=ROOT_REPORT+identity;fingerprint=digest(data);old=state.get(key);claimed=False
  if old and old.get('status')=='waiting_shared_model':

@@ -5,10 +5,23 @@ ROOT='ooo_agent:midday:2026-11-06:requested'
 def run():
  db=DB();p=db.get(ROOT+':request')or{}
  if p.get('read_only')is not True or p.get('cabinet')!='token_1':raise PermissionError('OOO read request required')
- if db.get(ROOT+':read'):print('Existing missing-hour read retained');return
+ prior=db.get(ROOT+':read')
+ if prior and not(prior.get('status')=='waiting_provider'and prior.get('http_status')==429 and not prior.get('data')):print('Existing completed or ambiguous read retained');return
  token=os.environ['WB_TOKEN_1'];cl=json.loads(base64.urlsafe_b64decode(token.split('.')[1]+'==='));ids=db.api('GET','analytics_snapshots',{'cabinet':'eq.token_1','source':'eq.seller_identity','status':'eq.complete','select':'payload','limit':100})
  if cl.get('exp',0)<time.time()or{r['payload'].get('sid')for r in ids}!={cl.get('sid')}:raise PermissionError('Seller identity mismatch')
- out={'status':'waiting_shared_quota','started_at':stamp(),'run_id':os.environ['GITHUB_RUN_ID'],'wb_writes':0,'model_calls':0,'telegram_calls':0};db.once(ROOT+':read',out)
+ out={'status':'waiting_shared_quota','started_at':stamp(),'run_id':os.environ['GITHUB_RUN_ID'],'previous_read_run':prior.get('run_id')if prior else None,'known_rejected_429_continuation':bool(prior),'wb_writes':0,'model_calls':0,'telegram_calls':0}
+ if prior:db.update(ROOT+':read',out)
+ else:db.once(ROOT+':read',out)
+ status_path='/adv/v1/promotion/count';status_key='wb-pause:'+hashlib.sha256((token+'advert-api.wildberries.ru'+status_path).encode()).hexdigest();status_pause=float((db.get(status_key)or{}).get('until',0))
+ if status_pause>time.time():raise RuntimeError('Status read shared quota pending; no bypass')
+ sr=requests.get('https://advert-api.wildberries.ru'+status_path,headers={'Authorization':token},timeout=(10,60),allow_redirects=False)
+ if sr.status_code!=200:raise RuntimeError('Current status read unavailable')
+ statuses={}
+ for group in sr.json().get('adverts',[]):
+  for item in group.get('advert_list',[]):
+   if item['advertId']in p['campaign_ids']:statuses[str(item['advertId'])]={'status':group['status'],'type':group['type'],'changeTime':item.get('changeTime')}
+ if set(statuses)!=set(map(str,p['campaign_ids'])):raise ValueError('Current campaign status coverage incomplete')
+ out['current_statuses']=statuses;out['statuses_observed_at']=stamp();db.update(ROOT+':read',out)
  path='/adv/v3/fullstats';key='wb-pause:'+hashlib.sha256((token+'advert-api.wildberries.ru'+path).encode()).hexdigest();until=float((db.get(key)or{}).get('until',0))
  if until>time.time():out['resume_after']=datetime.datetime.fromtimestamp(until,datetime.timezone.utc).isoformat();db.update(ROOT+':read',out)
  while time.time()<until:

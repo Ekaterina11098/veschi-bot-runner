@@ -38,7 +38,25 @@ def validate(inbox,job):
 def envelope(text):
     clean=text.strip()
     if clean.startswith(chr(96)*3):clean=clean.split('\n',1)[1].rsplit(chr(96)*3,1)[0].strip()
-    value=json.loads(clean)
+    try:
+        value=json.loads(clean)
+    except json.JSONDecodeError as original:
+        # Streaming can include commentary before the final structured reply.
+        # Accept one complete trailing envelope, never repair JSON or guess text.
+        candidates=[]
+        decoder=json.JSONDecoder()
+        for match in re.finditer(r'(?m)^[ \t]*\{',clean):
+            start=match.end()-1
+            try:
+                candidate,end=decoder.raw_decode(clean,start)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate,dict) and candidate.get('kind') in ('answer','read','preliminary_profit'):
+                candidates.append((candidate,end))
+        if len(candidates)!=1 or clean[candidates[0][1]:].strip():
+            raise ValueError('Missing or ambiguous final response envelope') from original
+        value=candidates[0][0]
+    if not isinstance(value,dict):raise ValueError('Invalid response envelope')
     if value.get('kind')=='answer':
         answer=value.get('answer')
         if not isinstance(answer,str) or not 0<len(answer)<=12000:raise ValueError('Invalid answer')
@@ -305,3 +323,4 @@ def main():
     print(json.dumps(result))
     if result['status']=='attention_required':raise SystemExit(1)
 if __name__=='__main__':main()
+

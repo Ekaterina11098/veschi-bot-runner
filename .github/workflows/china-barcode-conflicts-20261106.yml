@@ -32,8 +32,9 @@ jobs:
         run: |
           import sys,json,os
           sys.path.insert(0,"scripts")
-          from fbs_document_chain import Transport,Cache,MS,now
-          t=Transport();db=Cache(t)
+          from fbs_document_chain import Transport,Cache,Worker,MS,now
+          t=Transport();db=Cache(t);w=Worker(t,db,{})
+          all_items={p["id"]:p for typ in ("product","variant","bundle") for p in w.ms_rows("entity/"+typ)}
           audit=db.get("barcode_sync:china:20261106:v1")
           if not audit or len(audit.get("issues",[]))!=3:raise RuntimeError("Expected exactly three reviewed conflicts")
           out={"status":"prepared","at":now(),"writes":0,"items":[]}
@@ -41,8 +42,10 @@ jobs:
               target=t.request(MS,"entity/product/"+issue["id"])
               olds=[]
               for owner in issue["owners"]:
-                  old=t.request(MS,"entity/product/"+owner["id"])
+                  old=all_items[owner["id"]]
                   fields={k:old.get(k) for k in ["id","name","article","code","archived","barcodes","description","variantsCount","pathName","updated"]}
+                  fields["type"]=old["meta"]["type"]
+                  if fields["type"]=="bundle":fields["components"]=w.ms_rows("entity/bundle/"+old["id"]+"/components")
                   fields["proposed_barcodes"]=[b for b in old.get("barcodes",[]) if not set(str(v) for v in b.values())&set(issue["barcodes"])]
                   olds.append(fields)
               before=target.get("barcodes",[])

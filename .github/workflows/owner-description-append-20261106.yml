@@ -8,10 +8,10 @@ concurrency:
   group: china-owner-description-writes
   cancel-in-progress: false
 jobs:
-  preflight:
-    if: github.event.head_commit.message == 'Preflight owner-approved append-only descriptions'
+  apply:
+    if: github.event.head_commit.message == 'Publish owner-approved append-only descriptions'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,11 +21,12 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5
-      - name: Fresh card preservation preflight; no WB writes
+      - name: Append approved descriptions and verify preservation
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-          MODE: preflight
+          MODE: apply
+          APPROVED_MANIFEST_SHA: bd409799376936129ad65222c2285525a400d53ee3574f0ff65552e6efc597f7
           PYTHONPATH: scripts
         run: python scripts/owner_description_append_20261106.py

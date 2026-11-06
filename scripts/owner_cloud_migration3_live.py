@@ -164,11 +164,11 @@ def correct_png():
 def api_recheck():
  from china_codex_cloud import Worker
  db=DB();worker=Worker(db)
- value=dict(status='checking',observed_at=stamp(),model='gpt-6-astra',wb_writes=0,telegram_calls=0)
+ value=dict(status='checking',observed_at=stamp(),model='gpt-6.1-sol',wb_writes=0,telegram_calls=0)
  put_db=lambda val:db.update(ROOT+':api_recheck_latest',val) if db.get(ROOT+':api_recheck_latest') else db.once(ROOT+':api_recheck_latest',val)
  put_db(value)
  try:
-  with worker.sdk().beta.agents.sessions.create(agent={'model':'gpt-6-astra','instructions':'Ответь только ОК.'},environment={'type':'none'},input='Проверка доступности API: ответь ОК.',stream=True).with_result_collection() as events:
+  with worker.sdk().beta.agents.sessions.create(agent={'model':'gpt-6.1-sol','instructions':'Ответь только ОК.'},environment={'type':'none'},input='Проверка доступности API: ответь ОК.',stream=True).with_result_collection() as events:
    for event in events:
     if event.type.endswith(('.failed','.cancelled')):raise RuntimeError('Availability probe failed')
    sid=events.get_final_result().session_id

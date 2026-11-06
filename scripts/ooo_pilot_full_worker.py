@@ -1,6 +1,8 @@
 """One bounded report completion, using private cache and acknowledged Telegram photos."""
 import os,json,time,datetime,hashlib
 from decimal import Decimal
+MODEL='gpt-6.1-sol'
+SOL_RATES={'input':2,'cached_input':0.1,'output':10}
 from openai import OpenAI
 from ooo_cloud_pilot_20261106 import Cache,ROOT,stamp,cost,send_once
 from ooo_pilot_full_renderer import render
@@ -21,15 +23,15 @@ def run():
  messages=[{'role':'developer','content':instructions},{'role':'user','content':raw}]
  size=len(json.dumps(messages,ensure_ascii=False).encode())
  if size>16000:raise ValueError('Prompt byte limit')
- prior=c.get(ROOT+':model_receipt');spent=Decimal(prior['calculated_cost_usd']);cap=Decimal(str(a['migration_cap_usd']));rates=original['rates_usd_per_million']
+ prior=c.get(ROOT+':model_receipt');spent=Decimal(prior['calculated_cost_usd']);cap=Decimal(str(a['migration_cap_usd']));rates=SOL_RATES
  reserve=(Decimal(16000)*Decimal(str(rates['input']))+Decimal(2000)*Decimal(str(rates['output'])))/1000000
  if spent+reserve>cap:raise PermissionError('Cumulative migration cap')
  state={'status':'model_submitting','run_id':os.environ['GITHUB_RUN_ID'],'started_at':stamp(),'model_calls':1,'wb_calls':0,'schedule_changes':0,'input_bytes':size}
  c.once(CHILD+':execution',state);c.once(CHILD+':budget',{'status':'reserved','previous_spend_usd':str(spent),'reserved_usd':str(reserve),'cap_usd':str(cap)})
  try:
-  started=time.monotonic();response=OpenAI(max_retries=0,timeout=90).responses.create(model=original['model'],input=messages,max_output_tokens=2000,reasoning={'effort':'low'},store=False,tools=[],extra_headers={'Idempotency-Key':CHILD})
+  started=time.monotonic();response=OpenAI(max_retries=0,timeout=90).responses.create(model=MODEL,input=messages,max_output_tokens=2000,reasoning={'effort':'low'},store=False,tools=[],extra_headers={'Idempotency-Key':CHILD})
   usage=response.usage.model_dump();actual=cost(usage,rates);total=spent+actual
-  c.once(CHILD+':model_receipt',{'model':original['model'],'response_id':response.id,'usage':usage,'seconds':round(time.monotonic()-started,3),'calculated_cost_usd':str(actual),'cumulative_usd':str(total)})
+  c.once(CHILD+':model_receipt',{'model':MODEL,'response_id':response.id,'usage':usage,'seconds':round(time.monotonic()-started,3),'calculated_cost_usd':str(actual),'cumulative_usd':str(total)})
   c.update(CHILD+':budget',{'status':'settled','actual_usd':str(actual),'previous_usd':str(spent),'cumulative_usd':str(total),'remaining_usd':str(cap-total),'cap_usd':str(cap)})
   if total>cap:raise RuntimeError('Cost cap reached; no further paid processing')
   decision=validate_decision(json.loads(response.output_text),bundle);c.once(CHILD+':decision',decision)

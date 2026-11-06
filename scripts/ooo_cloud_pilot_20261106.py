@@ -1,6 +1,8 @@
 """One manual, cache-only OOO cloud pilot. No WB credentials, webhook changes or schedules."""
 import os,json,time,hashlib,io,datetime,sys
 from decimal import Decimal
+MODEL='gpt-6.1-sol'
+SOL_RATES={'input':2,'cached_input':0.1,'output':10}
 from china_codex_cloud import DB
 ROOT='ooo_agent:cloud_pilot:2026-11-06:v1'
 def stamp():return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -104,13 +106,13 @@ def run(resume_binding=False):
   if tg('getChatMember',{'chat_id':trigger['chat_id'],'user_id':trigger['sender_id']}).get('status')not in('creator','administrator'):raise PermissionError('Pilot sender is not group owner/admin')
   cache.once(ROOT+':inbox',{'status':'claimed','received_at':stamp(),**trigger})
   state.update(status='group_bound',bot_id=bot['id'],chat_id=trigger['chat_id'],input_message_id=trigger['input_message_id']);cache.update(state_key,state)
-  msg=model_message(policy);rates=policy['rates_usd_per_million'];reserve=(Decimal(10000)*Decimal(str(rates['input']))+Decimal(2000)*Decimal(str(rates['output'])))/Decimal(1000000)
+  msg=model_message(policy);rates=SOL_RATES;reserve=(Decimal(10000)*Decimal(str(rates['input']))+Decimal(2000)*Decimal(str(rates['output'])))/Decimal(1000000)
   if reserve>Decimal(str(policy['migration_cap_usd']))or reserve>Decimal('0.20'):raise PermissionError('Prepaid reservation exceeds consent')
   cache.once(ROOT+':budget',{'status':'reserved','reserved_usd':str(reserve),'cap_usd':policy['migration_cap_usd'],'reserved_at':stamp(),'model_calls_allowed':1})
   state.update(status='model_submitting',model_calls=1,reserved_usd=str(reserve),input_bytes=len(json.dumps(msg,ensure_ascii=False).encode()));cache.update(state_key,state)
   from openai import OpenAI
   start=time.monotonic()
-  response=OpenAI(max_retries=0,timeout=90).responses.create(model=policy['model'],input=msg,max_output_tokens=2000,reasoning={'effort':'low'},store=False,tools=[],extra_headers={'Idempotency-Key':ROOT})
+  response=OpenAI(max_retries=0,timeout=90).responses.create(model=MODEL,input=msg,max_output_tokens=2000,reasoning={'effort':'low'},store=False,tools=[],extra_headers={'Idempotency-Key':ROOT})
   usage=response.usage.model_dump();actual=cost(usage,rates)
   cache.once(ROOT+':model_receipt',{'response_id':response.id,'model':response.model,'status':response.status,'usage':usage,'calculated_cost_usd':str(actual),'cost_basis':'actual API tokens multiplied by approved standard tariff, not invoice settlement','seconds':round(time.monotonic()-start,3),'received_at':stamp()})
   cache.update(ROOT+':budget',{'status':'settled','reserved_usd':str(reserve),'calculated_spend_usd':str(actual),'released_usd':str(max(Decimal(0),reserve-actual)),'cap_usd':policy['migration_cap_usd']})

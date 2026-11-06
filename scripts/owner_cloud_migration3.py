@@ -31,11 +31,11 @@ def main():
   sidkey='china_agent:codex_cloud:v2:session';session=db.get(sidkey)
   worker=Worker(db)
   if not session:
-   with worker.sdk().beta.agents.sessions.create(agent={'model':'gpt-6-astra','instructions':INSTRUCTIONS},environment={'type':'none'},input='Это новая версия продолжающегося рабочего диалога VESCHI Китай. Общая рабочая память и последние ответы придут перед каждым вопросом. Ничего не отправляй и не меняй. Ответь только: Готова.',stream=True).with_result_collection() as events:
+   with worker.sdk().beta.agents.sessions.create(agent={'model':'gpt-6.1-sol','instructions':INSTRUCTIONS},environment={'type':'none'},input='Это новая версия продолжающегося рабочего диалога VESCHI Китай. Общая рабочая память и последние ответы придут перед каждым вопросом. Ничего не отправляй и не меняй. Ответь только: Готова.',stream=True).with_result_collection() as events:
     for event in events:
      if event.type.endswith(('.failed','.cancelled')):raise RuntimeError('V2 bootstrap failed')
     sid=events.get_final_result().session_id
-   session=dict(status='active',session_id=sid,created_at=datetime.now(timezone.utc).isoformat(),model='gpt-6-astra',version=2,environment='none',tools=[],instructions_revision='cloud-migration3')
+   session=dict(status='active',session_id=sid,created_at=datetime.now(timezone.utc).isoformat(),model='gpt-6.1-sol',version=2,environment='none',tools=[],instructions_revision='cloud-migration3')
    db.once(sidkey,session)
   token='migration3-read-protocol'
   request='Техническая проверка нового протокола без отправки людям. Нужен адресный свежий остаток МСК nm1535337770, результата stock в этом тестовом контексте нет. Верни ровно read JSON, topic stock, nm_ids [1535337770], date_from2026-11-03, date_to2026-11-03; реальный сбор этот тест не запускает.'

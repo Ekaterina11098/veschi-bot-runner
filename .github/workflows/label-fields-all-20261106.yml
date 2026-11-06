@@ -1,4 +1,4 @@
-name: Read all label fields for owner requested completion
+name: Fill label fields for verified China barcode scope
 on:
   push:
     paths: ['.github/workflows/label-fields-all-20261106.yml']
@@ -7,7 +7,7 @@ permissions:
 jobs:
   fields:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,24 +24,75 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          import sys,os,json,time,urllib.request
+          import sys,os,re
           sys.path.insert(0,"scripts")
           from fbs_document_chain import Transport,Cache,Worker,MS,now,Stop
           t=Transport();db=Cache(t);w=Worker(t,db,{})
-          out={"at":now(),"items":[],"definitions":{}}
-          for typ in ("product",):
-              out["definitions"][typ]=w.ms_rows("entity/"+typ+"/metadata/attributes")
-              for p in w.ms_rows("entity/"+typ):
-                  if not p.get("archived"):
-                      out["items"].append({k:p.get(k) for k in ("id","meta","name","article","code","barcodes","attributes","archived")}|{"entity_type":typ})
-          out["wb_cards"]=[];cursor={"limit":100}
-          while True:
-              req=urllib.request.Request("https://content-api.wildberries.ru/content/v2/get/cards/list",data=json.dumps({"settings":{"cursor":cursor,"filter":{"withPhoto":-1}}}).encode(),headers={"Authorization":os.environ["WB_TOKEN_3"],"Content-Type":"application/json"},method="POST")
-              with urllib.request.urlopen(req,timeout=30) as f:d=json.load(f)
-              if not isinstance(d.get("cards"),list):raise Stop("Incomplete WB cards")
-              out["wb_cards"] += [{"nmID":c["nmID"],"article":c["vendorCode"],"characteristics":c.get("characteristics",[])} for c in d["cards"]]
-              if d["cursor"]["total"]<100:break
-              cursor={"limit":100,"nmID":d["cursor"]["nmID"],"updatedAt":d["cursor"]["updatedAt"]};time.sleep(.7)
-          db.put("label_fields:all:20261106:preflight:v1",out)
-          print("Private current fields and definitions read")
+          KEY="label_fields:china:20261106:execution:v1"
+          prior=db.get(KEY)
+          if prior and prior.get("status")=="verified":print("Already verified");raise SystemExit(0)
+          audit=db.get("barcode_sync:china:20261106:v1")
+          pre=db.get("label_fields:all:20261106:preflight:v1")
+          if not audit or audit["status"]!="verified" or not pre:raise Stop("Missing verified barcode scope and field preflight")
+          scope={p["id"]:p for part in ("plan","already","issues") for p in audit[part]}
+          if len(scope)!=317:raise Stop("Unexpected barcode scope")
+          wb={p["nmID"]:p for p in pre["wb_cards"]}
+          defs={a["name"]:a for a in pre["definitions"]["product"] if a["name"] in ("Цвет","ВендорКод")}
+          if len(defs)!=2 or any(a["type"]!="string" for a in defs.values()):raise Stop("Unexpected field definitions")
+          def value(p,n):
+              return next((a.get("value") for a in (p.get("attributes") or []) if a.get("name")==n),None)
+          def populated(v):return v is not None and str(v).strip()!=""
+          products={p["id"]:p for p in w.ms_rows("entity/product")}
+          plan=[];unresolved=[]
+          for ident,ref in scope.items():
+              p=products[ident];c=wb[ref["nmID"]]
+              if p.get("archived") or p.get("article","").strip().casefold()!=c["article"].strip().casefold():raise Stop("Scope article mismatch")
+              changes={}
+              if not populated(value(p,"Цвет")):
+                  fields=[a for a in c["characteristics"] if a["id"]==14177449]
+                  color=fields[0]["value"][0] if len(fields)==1 and isinstance(fields[0].get("value"),list) and fields[0]["value"] else None
+                  if not isinstance(color,str) or not color.strip():unresolved.append({"id":ident,"article":p["article"],"field":"Цвет","reason":"No primary WB color"})
+                  else:changes["Цвет"]=color
+              if not populated(value(p,"ВендорКод")):
+                  m=re.match(r"^(\d+)-",p["article"].strip())
+                  if m:changes["ВендорКод"]=m[1]
+                  else:unresolved.append({"id":ident,"article":p["article"],"field":"ВендорКод","reason":"Owner requested separate review of unnumbered articles"})
+              if changes:plan.append({"id":ident,"article":p["article"],"changes":changes,"before":p.get("attributes",[]),"barcodes":p.get("barcodes",[])})
+          result={"at":now(),"run_id":os.environ["GITHUB_RUN_ID"],"status":"preflight","scope_count":len(scope),"plan":plan,"unresolved":unresolved,"verified":[],"inflight":None}
+          db.put(KEY,result)
+          try:
+              for start in range(0,len(plan),25):
+                  current={p["id"]:p for p in w.ms_rows("entity/product")}
+                  batch=[];journal=[]
+                  for item in plan[start:start+25]:
+                      p=current[item["id"]]
+                      if p.get("article")!=item["article"] or p.get("barcodes",[])!=item["barcodes"]:raise Stop("Product changed since field preflight")
+                      attrs=list(p.get("attributes",[]));byname={a.get("name"):a for a in attrs}
+                      for name,v in item["changes"].items():
+                          if populated(value(p,name)) and value(p,name)!=v:raise Stop("Label field changed concurrently")
+                          entry={"meta":defs[name]["meta"],"id":defs[name]["id"],"name":name,"type":"string","value":v}
+                          attrs=[a for a in attrs if a.get("name")!=name]+[entry]
+                      batch.append({"meta":{k:p["meta"][k] for k in ("href","type","mediaType")},"attributes":attrs})
+                      journal.append({"id":p["id"],"changes":item["changes"],"before":p.get("attributes",[])})
+                  result.update(status="applying",inflight=journal);db.put(KEY,result)
+                  response=t.request(MS,"entity/product","POST",batch)
+                  checked={p["id"]:p for p in w.ms_rows("entity/product")}
+                  for item in plan[start:start+25]:
+                      p=checked[item["id"]]
+                      if any(value(p,n)!=v for n,v in item["changes"].items()):raise Stop("Label field readback mismatch")
+                      if p.get("barcodes",[])!=item["barcodes"]:raise Stop("Barcode changed during field update")
+                      for old in item["before"]:
+                          if old.get("name") not in item["changes"] and value(p,old.get("name"))!=old.get("value"):raise Stop("Unrelated attribute changed")
+                      result["verified"].append(item["id"])
+                  result["inflight"]=None;db.put(KEY,result)
+              checked={p["id"]:p for p in w.ms_rows("entity/product")}
+              result["colors_ready"]=sum(populated(value(checked[i],"Цвет")) for i in scope)
+              result["vendor_ready"]=sum(populated(value(checked[i],"ВендорКод")) for i in scope)
+              result["labels_ready"]=sum(all(populated(value(checked[i],n)) for n in defs) for i in scope)
+              result.update(status="verified",verified_at=now());db.put(KEY,result)
+              catalog={"generated_at":now(),"source":"МойСклад","products":[{k:p.get(k) for k in ("id","name","article","code","barcodes","attributes","archived")} for p in checked.values() if not p.get("archived")]}
+              db.put("label_utility:catalog:20261106:v1",catalog)
+              print("Owner requested scoped label fields verified; catalog refreshed privately")
+          except Exception as e:
+              result.update(status="error",error=str(e) if isinstance(e,Stop) else type(e).__name__);db.put(KEY,result);raise
           

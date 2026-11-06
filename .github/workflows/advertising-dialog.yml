@@ -16,9 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
+      - name: Record workflow start time
+        run: echo "IP_WORKFLOW_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
-          ref: eeb09f30aae097344a5c19498c0713685d739eb4
+          ref: 494619e296f9e7078dec42b636714177d8a4aacc
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -26,6 +28,7 @@ jobs:
             /ip_cloud_dialog.py
             /ip_cloud_prepare.py
             /test_ip_cloud_dialog.py
+            /test_ip_dialog_format_timing.py
             /advertising_budget_evidence.py
       - uses: actions/checkout@v4
         with:
@@ -38,7 +41,7 @@ jobs:
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 cryptography==46.0.2 Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Focused offline regression; no credentials
-        run: python -m unittest test_ip_cloud_dialog
+        run: python -m unittest test_ip_cloud_dialog test_ip_dialog_format_timing
       - name: Prepare compact saved evidence once; no sources or model
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

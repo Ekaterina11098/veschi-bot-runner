@@ -1,0 +1,30 @@
+name: OOO China results column correction
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ooo-results-clean6.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ooo-cloud-pilot-20261106-v1
+  cancel-in-progress: false
+jobs:
+  replace:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c09474150b34497572eb1bbddeb6a334d266b32b
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 --quiet
+      - run: python -m py_compile scripts/ooo_results_clean_delivery6.py
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OOO_TELEGRAM_BOT_TOKEN: ${{ secrets.OOO_TELEGRAM_BOT_TOKEN }}
+        run: python -u scripts/ooo_results_clean_delivery6.py

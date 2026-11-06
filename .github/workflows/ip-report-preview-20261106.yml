@@ -1,6 +1,7 @@
 name: Saved-only Nov5 IP report preview
 on:
-  workflow_dispatch:
+  push:
+    paths: [".github/disabled/ip-report-preview-20261106.never"]
 permissions:
   contents: read
 concurrency:

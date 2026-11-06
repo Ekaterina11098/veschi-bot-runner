@@ -1,4 +1,4 @@
-import json,unittest
+import copy,json,unittest
 from datetime import datetime,timedelta,timezone
 from unittest.mock import patch
 import china_codex_cloud as c
@@ -10,6 +10,10 @@ def job(i):
     return {'id':i['job_id'],'chat_id':c.CHAT,'sender_id':i['sender_id'],'request_text':'/codex '+i['request_text'],
         'tool_trace':[{'name':'china_saved_question','bot_id':c.BOT,'message_id':i['input_message_id'],
           'codex_bridge':True,'codex_thread_id':c.THREAD,'bridge_request_text':i['request_text']}]}
+def outbox(i,status='ready'):
+    return {'status':status,'job_id':i['job_id'],'chat_id':i['chat_id'],
+            'thread_id':i['thread_id'],'input_message_id':i['input_message_id'],
+            'answer':'Ранее подготовленный ответ.'}
 class FakeDB:
     def __init__(self,i):
         self.values={c.ROOT+'inbox:231':i.copy()};self.original=job(i);self.api_calls=[]
@@ -59,8 +63,28 @@ class Tests(unittest.TestCase):
     def test_invalid_or_old_profit_date_rejected(self):
         with self.assertRaises(ValueError):c.envelope('{"kind":"preliminary_profit","day_msk":"2020-01-01"}')
     def test_existing_outbox_never_generates_or_overwrites(self):
-        i=inbox();db=FakeDB(i);db.values[c.ROOT+'outbox:231']={'status':'uncertain'}
-        w=FakeWorker(db);self.assertEqual(w.process(c.ROOT+'inbox:231',i),'existing_outbox');self.assertEqual(w.calls,0)
+        for status,target in [('ready','answered'),('delivered','delivered')]:
+            with self.subTest(status=status):
+                i=inbox();db=FakeDB(i);saved=outbox(i,status)
+                db.values[c.ROOT+'outbox:231']=copy.deepcopy(saved)
+                w=FakeWorker(db)
+                self.assertEqual(w.process(c.ROOT+'inbox:231',i),'existing_outbox')
+                self.assertEqual(w.calls,0)
+                self.assertEqual(db.get(c.ROOT+'outbox:231'),saved)
+                self.assertEqual(db.get(c.ROOT+'inbox:231')['status'],target)
+    def test_uncertain_or_unbound_outbox_stops_without_generation(self):
+        i=inbox()
+        invalid=[{'status':'uncertain'},outbox(i,'uncertain'),outbox(i)|{'chat_id':3},
+                 outbox(i)|{'thread_id':'other'},outbox(i)|{'job_id':999},
+                 outbox(i)|{'input_message_id':999},outbox(i)|{'status':'delivered','chat_id':3}]
+        for saved in invalid:
+            with self.subTest(outbox=saved):
+                db=FakeDB(i);db.values[c.ROOT+'outbox:231']=copy.deepcopy(saved)
+                before=copy.deepcopy(db.values);w=FakeWorker(db)
+                with self.assertRaisesRegex(RuntimeError,'Existing outbox scope/status'):
+                    w.process(c.ROOT+'inbox:231',i)
+                self.assertEqual(w.calls,0)
+                self.assertEqual(db.values,before)
     def test_new_answer_cloud_source_not_exact_thread(self):
         i=inbox();db=FakeDB(i);w=FakeWorker(db)
         self.assertEqual(w.process(c.ROOT+'inbox:231',i),'ready')

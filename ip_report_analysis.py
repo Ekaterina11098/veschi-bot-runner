@@ -150,9 +150,6 @@ def validate(value,allowed,known):
  for r in value['research']:r['reason']=r['reason'][:400]
  return value
 def data_only(contract,view,audit,reason):
- if savings:
-  result['research']=[]
-  for direction in('raise','add'):result['directions'][direction]='Временно запрещено владельцем: только сокращение расходов'
  out=copy.deepcopy(contract);out['actions']=[];out['plan_sha256']=digest([]);out['ip_economic_review']=audit
  out['sol_analysis']=dict(status='unavailable',model=MODEL,model_calls_this_run=0,charged_micro_usd=0,summary=reason)
  out['analysis_notice']='Анализ рекомендаций Sol недоступен: '+reason+'. Показатели сохранённых данных показаны отдельно; отсутствие рекомендаций не означает отсутствия рисков.'

@@ -118,6 +118,10 @@ class Watches(unittest.TestCase):
         w=Memory();w.command(job(CREATE));w.command(job('Перенеси на 13:00',2));self.assertEqual(w.watches()[0][1]['clock'],'13:00')
 
 class Dialog(unittest.TestCase):
+    def setUp(self):
+        # Only these synthetic legacy-model fixtures bypass the transport guard.
+        guard=patch('china_no_paid.require_paid_api')
+        guard.start();self.addCleanup(guard.stop)
     def test_free_form_tool_and_followup_context(self):
         try:from business_agents import conversation
         except ImportError:self.skipTest('Source checkout needed for dialog integration')

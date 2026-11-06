@@ -77,6 +77,10 @@ class SharedMemory(unittest.TestCase):
   self.assertIn('не исполнен',context(w,job())['notes'][0]['quote'])
 
 class DialogIntegration(unittest.TestCase):
+ def setUp(self):
+  # Only these synthetic legacy-model fixtures bypass the transport guard.
+  guard=patch('china_no_paid.require_paid_api')
+  guard.start();self.addCleanup(guard.stop)
  def test_general_question_answers_without_marketplace_tools(self):
   import sys
   import test_china_analytic_dialog as base

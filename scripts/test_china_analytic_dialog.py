@@ -12,6 +12,10 @@ class W:
  def db(self,*args,**kwargs):return []
 
 class Rules(unittest.TestCase):
+ def setUp(self):
+  # Only these synthetic legacy-model fixtures bypass the transport guard.
+  guard=patch('china_no_paid.require_paid_api')
+  guard.start();self.addCleanup(guard.stop)
  def test_math_is_numeric_only(self):
   self.assertAlmostEqual(a.calculate('19 / 1698 * 100')['value'],1.11896348)
   for s in ["__import__('os').system('echo bad')",'sum([1,2])','2**100000','True+1','1/0']:

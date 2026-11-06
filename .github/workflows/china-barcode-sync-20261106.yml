@@ -81,7 +81,7 @@ jobs:
                   if len(ps)!=1:issues.append({**base,"reason":"missing_product" if not ps else "duplicate_article","candidates":[{"id":p["id"],"name":p["name"]} for p in ps]});continue
                   p=ps[0];base.update(id=p["id"],name=p["name"])
                   if len(c.get("sizes",[]))!=1 or p.get("variantsCount",0):issues.append({**base,"reason":"requires_variant_mapping"});continue
-                  if any(len(wbowners[b])!=1 or owners[b]-{p["id"]} for b in skus):issues.append({**base,"reason":"barcode_conflict","owners":[{"id":q["id"],"article":q.get("article"),"name":q.get("name"),"archived":q.get("archived")} for q in products+variants+bundles if q["id"] in set().union(*(owners[b] for b in skus))],"wb_owners":{b:list(wbowners[b]) for b in skus}});continue
+                  if any(len(wbowners[b])!=1 or owners[b]-{p["id"]} for b in skus):issues.append({**base,"reason":"barcode_conflict","owners":[{"id":q["id"],"article":q.get("article"),"name":q.get("name"),"archived":q.get("archived")} for q in products+variants+bundles if q["id"] in set().union(*(owners[b] for b in skus))],"wb_owners":{b:[list(v) for v in sorted(wbowners[b])] for b in skus}});continue
                   missing=[b for b in skus if b not in vals(p)]
                   if missing:plan.append({**base,"missing":missing,"before":p.get("barcodes",[])})
                   else:already.append(base)

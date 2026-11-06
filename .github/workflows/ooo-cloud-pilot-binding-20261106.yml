@@ -1,0 +1,26 @@
+name: OOO failed pilot binding diagnosis only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ooo-cloud-pilot-binding-20261106.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ooo-cloud-pilot-20261106-v1
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 --quiet
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OOO_TELEGRAM_BOT_TOKEN: ${{ secrets.OOO_TELEGRAM_BOT_TOKEN }}
+        run: python -u scripts/ooo_cloud_pilot_binding_20261106.py

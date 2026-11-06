@@ -1,6 +1,7 @@
 name: Deliver reviewed Nov5 IP PNGs once
 on:
-  workflow_dispatch:
+  push:
+    paths: [".github/disabled/ip-report-delivery-20261106.never"]
 permissions:
   contents: read
 concurrency:

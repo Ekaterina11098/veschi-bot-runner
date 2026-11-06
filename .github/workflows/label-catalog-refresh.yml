@@ -54,7 +54,7 @@ jobs:
               def attrs(p):
                   result={}
                   for a in p.get('attributes',[]):
-                      if a.get('name') not in ('Цвет','ВендорКод'): continue
+                      if a.get('name') not in ('Цвет','ВендорКод','Категория товара'): continue
                       value=a.get('value','')
                       if isinstance(value,dict): value=value.get('name','')
                       result[a['name']]=str(value) if value is not None else ''

@@ -11,6 +11,10 @@ class FakeState:
  def cas(self,k,p,old):
   if self.conflict:return False
   self.data[k]=copy.deepcopy(p);return True
+ def once(self,k,p):
+  if k in self.data:return False
+  self.data[k]=copy.deepcopy(p);return True
+ def put(self,k,p):self.data[k]=copy.deepcopy(p)
 
 class Tests(unittest.TestCase):
  def setUp(self):

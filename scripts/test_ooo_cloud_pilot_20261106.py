@@ -39,5 +39,11 @@ class Tests(unittest.TestCase):
  def test_prompt_bound(self):
   policy={'snapshot':{'day':'2026-11-05','three_days':['2026-11-03','2026-11-05'],'advertising_at':'dated','totals':{'junk':'x'*7000}}}
   with self.assertRaises(ValueError):p.model_message(policy)
+ def test_resume_only_pre_model_failure(self):
+  s={'status':'attention','last_stage':'starting','model_calls':0,'safe_error':'Expected one authorized pilot group command'}
+  self.assertTrue(p.binding_resume_allowed(s,[None,None]))
+  self.assertFalse(p.binding_resume_allowed(s,[{'status':'reserved'}]))
+  self.assertFalse(p.binding_resume_allowed(s|{'model_calls':1},[]))
+  self.assertFalse(p.binding_resume_allowed(s|{'last_stage':'model_submitting'},[]))
 if __name__=='__main__':unittest.main()
 

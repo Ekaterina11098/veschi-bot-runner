@@ -2,7 +2,7 @@
 import unittest,sys,copy,types,json,ast,time
 from pathlib import Path
 from datetime import datetime,timezone
-sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts'))
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import china_table_png as png
 class Store:
  def __init__(self):self.rows={}

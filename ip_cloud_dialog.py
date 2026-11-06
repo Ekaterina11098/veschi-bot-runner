@@ -308,7 +308,11 @@ def main():
     else:raise Halt('Private write scope violation')
   elif not(u.hostname=='api.openai.com'and u.path in('/v1/responses','/v1/responses/input_tokens')and method.upper()=='POST')and not(u.hostname=='api.telegram.org'and (u.path.endswith('/sendMessage')or u.path.endswith('/sendPhoto'))and method.upper()=='POST'and(kw.get('json')or kw.get('data')or{}).get('chat_id')==CHAT):raise Halt('Sources and WB forbidden')
   r=native(session,method,url,*a,**kw);worker.bytes[u.hostname]=worker.bytes.get(u.hostname,0)+len(r.content)
-  if sum(worker.bytes.values())>300000:raise Halt('Question transfer budget exceeded')
+  if u.hostname==host and u.path.endswith('/telegram_api_cache')and method.upper()=='GET'and(kw.get('params')or{}).get('cache_key')=='eq.'+ROOT+'owner-active-report:'+str(args.job):
+   if len(r.content)>750000:raise Halt('Approved PNG transfer budget exceeded')
+   worker.approved_png_bytes=getattr(worker,'approved_png_bytes',0)+len(r.content)
+   if worker.approved_png_bytes>750000:raise Halt('Approved PNG fetched more than once')
+  if sum(worker.bytes.values())-getattr(worker,'approved_png_bytes',0)>300000:raise Halt('Question transfer budget exceeded')
   return r
  requests.sessions.Session.request=guard
  try:

@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: b0e2e018b74824fab5a98efa567bb592e5d5b129
+          ref: 122186071056b0bd4205c2fa47b3fceb18dc5c85
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -38,6 +38,8 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 cryptography==46.0.2 Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - name: Offline economic, scope, budget and dedup regression
+        run: python -m unittest test_ip_cloud_dialog test_ip_report_analysis
       - name: Reuse dated data and read only missing report fields; no WB credentials
         if: inputs.verify_only != true
         env:
@@ -53,9 +55,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           ADVERTISING_TELEGRAM_BOT_TOKEN: ${{ secrets.ADVERTISING_TELEGRAM_BOT_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           if [ "$IP_REPORT_VERIFY_ONLY" = "true" ]; then
-            python -c 'import json;from ip_report_freeze import credentials,main;credentials();print(json.dumps(main()))'
+            python -c 'import json;from ip_report_freeze import credentials,main;credentials();r=main();print(json.dumps({k:r.get(k) for k in ("status","period","model_calls","charged_micro_usd","source_calls","wb_writes","telegram_calls")}))'
           else
             python ip_report_freeze.py
           fi

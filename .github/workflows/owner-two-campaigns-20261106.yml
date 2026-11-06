@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: china-confirmed-advertising-writes
+  group: china-owner-two-campaigns-20261106
   cancel-in-progress: false
 jobs:
   apply:

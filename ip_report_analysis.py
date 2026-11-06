@@ -137,6 +137,11 @@ def validate(value,allowed,known):
  for r in value['research']:
   if not isinstance(r,dict)or set(r)!=set(('nm','campaign','direction','reason'))or (r['nm'],r['campaign'])not in known or r['direction']not in('raise','add')or not isinstance(r['reason'],str)or len(r['reason'])>400:raise Halt('Unverified research scope')
  return value
+def data_only(contract,view,audit,reason):
+ out=copy.deepcopy(contract);out['actions']=[];out['plan_sha256']=digest([]);out['ip_economic_review']=audit
+ out['sol_analysis']=dict(status='unavailable',model=MODEL,model_calls_this_run=0,charged_micro_usd=0,summary=reason)
+ out['analysis_notice']='Анализ рекомендаций Sol недоступен: '+reason+'. Показатели сохранённых данных показаны отдельно; отсутствие рекомендаций не означает отсутствия рисков.'
+ return out
 def review_report(store,view,contract,call=None):
  state=State(store);policy=state.get(ROOT+'policy')or{}
  if policy.get('report_review_enabled')is not True:raise Halt('Scheduled IP analysis is not enabled')
@@ -146,7 +151,11 @@ def review_report(store,view,contract,call=None):
  for ident,a in allowed.items():
   e=a['ip_economics'];compact.append(dict(id=ident,sku=a['sku'],nm=a['nm'],campaign=a['campaign'],kind=a['kind'],old=a.get('stored_bid_minor'),target=a.get('target_bid_minor'),metrics=a['analysis_metrics'],profit_after_ads=e.get('profit_after_ads'),profit_status=e.get('profit_status'),conditional_model=e.get('conditional_model'),gaps=e.get('gaps'),reserve=a.get('growth_reserve'),marginal_cpa=a.get('modeled_cpa_same_cr')))
  data=dict(period=view['period'],rules=RULES,coverage=audit['coverage'],allowed_actions=compact,research=audit['research'],coverage_gaps=audit['gaps'],note='All retained own articles scanned by code; only exact prevalidated candidates supplied. Finance period and campaign attribution differ explicitly.')
- identity=view['period'];key=ROOT_REPORT+identity;fingerprint=digest(data);old=state.get(key)
+ identity=view['period'];key=ROOT_REPORT+identity;fingerprint=digest(data);old=state.get(key);claimed=False
+ if old and old.get('status')=='waiting_shared_model':
+  if not state.cas(key,dict(status='preflight',source_sha256=fingerprint,period=identity),state.row(key)):raise Halt('Report preflight claim conflict')
+  claimed=True;old=None
+ if old and old.get('status')=='definite_model_not_started':return data_only(contract,view,audit,old['reason'])
  if old:
   if old.get('status')!='complete':raise Halt('Prior report model outcome unresolved; no replay')
   retained=copy.deepcopy(old['result'])
@@ -157,14 +166,19 @@ def review_report(store,view,contract,call=None):
   result=validate(retained,allowed,known);receipt=old['receipt']
  else:
   if len(json.dumps(data,ensure_ascii=False).encode())>22000:raise Halt('Compact report evidence exceeds context; no silent truncation')
-  if not state.once(key,dict(status='preflight',source_sha256=fingerprint,period=identity)):raise Halt('Report analysis claim conflict')
+  if not claimed and not state.once(key,dict(status='preflight',source_sha256=fingerprint,period=identity)):raise Halt('Report analysis claim conflict')
   try:
    result,receipt=(call or sol_call)(state,identity,data)
    result=validate(result,allowed,known)
    state.put(key,dict(status='complete',source_sha256=fingerprint,period=identity,result=result,receipt=receipt,wb_writes=0,source_calls=0))
   except Exception as exc:
+   if isinstance(exc,Halt)and('budget limit'in str(exc)or'price period expired'in str(exc)):
+    reason='достигнут месячный предел оплаты'if'budget limit'in str(exc)else'требуется проверка тарифа модели'
+    state.put(key,dict(status='definite_model_not_started',reason=reason,source_sha256=fingerprint,period=identity));return data_only(contract,view,audit,reason)
+   if isinstance(exc,Halt)and'concurrency lease busy'in str(exc):
+    state.put(key,dict(status='waiting_shared_model',source_sha256=fingerprint,period=identity));raise
    state.put(key,dict(status='uncertain_no_retry',source_sha256=fingerprint,period=identity,error_type=type(exc).__name__,wb_writes=0,source_calls=0));raise
- out=copy.deepcopy(contract);out['actions']=[allowed[i]for i in result['selected']];out['plan_sha256']=digest(out['actions']);out['ip_economic_review']=audit;out['sol_analysis']=dict(receipt,model_calls_this_run=0 if old else 1,period=identity,selected_ids=result['selected'],directions=result['directions'],research=result['research'],summary=result['summary']);out['historical_profit_only']=not any(e.get('profit_after_ads')is not None for e in audit['economics'].values())
+ out=copy.deepcopy(contract);out['actions']=[allowed[i]for i in result['selected']];out.setdefault('review_coverage',{})['conditional_basis_used']=sum(bool(a['ip_economics'].get('conditional_model'))for a in out['actions']if a['kind']in('raise_bid','add'));out['plan_sha256']=digest(out['actions']);out['ip_economic_review']=audit;out['sol_analysis']=dict(receipt,model_calls_this_run=0 if old else 1,period=identity,selected_ids=result['selected'],directions=result['directions'],research=result['research'],summary=result['summary']);out['historical_profit_only']=not any(e.get('profit_after_ads')is not None for e in audit['economics'].values())
  store.cache_set(ROOT_REPORT+identity+':audit',dict(audit,sol_analysis=out['sol_analysis'],new_actions=len(out['actions']),source_calls=0,wb_writes=0),ttl_days=365)
  return out
 def sol_call(state,identity,data):

@@ -60,6 +60,8 @@ def main():
  active={c['campaign_id']for c in current['campaigns']if c.get('status_id')==9}
  contract['actions']=[a for a in contract['actions']if a['campaign']in active]
  contract['plan_sha256']=hashlib.sha256(json.dumps(contract['actions'],ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+ from ip_report_analysis import review_report
+ contract=review_report(store,full,contract)
  for c in full['campaigns']:c['campaign_name']=c.get('campaign_name')or(contract.get('campaign_labels',{}).get(str(c['campaign_id']))or{}).get('name')or''
  out=Path(os.environ['RUNNER_TEMP'])/'ip-report-frozen'
  recommendation=midday_image(full,current,contract,out)if slot=='midday'else render_recommendations(full,contract,out)
@@ -72,7 +74,7 @@ def main():
  images=[]
  for item in[recommendation]+([budget]if budget else[]):
   raw=Path(item['path']).read_bytes();images.append(dict(kind=item['kind'],sha256=hashlib.sha256(raw).hexdigest(),data=base64.b64encode(raw).decode()))
- if verify:return dict(status='verified_saved_only',period=full['period'],images=[{k:i[k]for k in('kind','sha256')}for i in images],source_calls=0,wb_writes=0,telegram_calls=0)
+ if verify:return dict(status='verified_saved_only',period=full['period'],analysis=contract.get('sol_analysis'),model_calls=contract['sol_analysis']['model_calls_this_run'],charged_micro_usd=contract['sol_analysis'].get('charged_micro_usd'),actions=[{k:a.get(k)for k in('sku','campaign','kind','target_bid_minor')}for a in contract['actions']],images=[{k:i[k]for k in('kind','sha256')}for i in images],source_calls=0,wb_writes=0,telegram_calls=0)
  plan_key=None
  if slot=='morning':
   plan_key,_=freeze_plan(store,contract,images[0]['sha256'])
@@ -90,5 +92,6 @@ def main():
  return dict(status='ready',images=len(images),source_calls=0,wb_writes=0,telegram_calls=0)
 
 if __name__=='__main__':
- try:print(json.dumps(main()))
+ try:
+  result=main();print(json.dumps({k:result[k]for k in('status','period','source_calls','wb_writes','telegram_calls')if k in result}))
  except Exception as e:print(json.dumps({'status':'report_freeze_blocked','error_type':type(e).__name__}));raise SystemExit(1)

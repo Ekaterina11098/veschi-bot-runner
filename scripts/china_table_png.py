@@ -3,6 +3,8 @@ import base64
 import hashlib
 import io
 import re
+import time
+from datetime import datetime, timezone
 
 PREFIX = 'CHINA_TABLE_PNG:'
 KEY = 'china_agent:table_png:v1:'
@@ -94,10 +96,16 @@ def delivery_parts(w, job, answer, split):
     if saved:
         if saved['chat_id'] != job['chat_id'] or saved['answer_sha256'] != hashlib.sha256(answer.encode()).hexdigest(): raise PermissionError('Frozen table scope changed')
         return saved['parts']
+    started = time.perf_counter()
+    pavel_long = job.get('sender_id') == 307200273 and len(answer) > 450
     parsed = blocks(answer)
-    if not any(kind == 'table' for kind, _ in parsed): return split(answer)
+    if pavel_long:
+        parsed = [('table', (['Ответ Павлу'], [[data] if kind == 'text' else [' | '.join(data[0]) + '\n' + '\n'.join(' | '.join(row) for row in data[1])] for kind, data in parsed]))]
+    if not any(kind == 'table' for kind, _ in parsed): return [answer] if job.get('sender_id') == 307200273 else split(answer)
     # A deployment must not change identities for an already partially delivered answer.
-    if w.get('china_agent:conversion_watch_delivery:v1:question:'+str(job['id'])+':0'): return split(answer)
+    if any(w.get('china_agent:conversion_watch_delivery:v1:'+prefix+str(job['id'])+':0') for prefix in ('question:', 'codex_bridge:')):
+        if pavel_long: raise PermissionError('Existing delivery requires frozen original parts')
+        return split(answer)
     files = []; parts = []
     for kind, data in parsed:
         if kind == 'text': parts.extend(split(data))
@@ -106,6 +114,7 @@ def delivery_parts(w, job, answer, split):
                 index = len(files)
                 files.append(dict(sha256=hashlib.sha256(blob).hexdigest(), data=base64.b64encode(blob).decode()))
                 parts.append(PREFIX+key+':'+str(index))
+    w.save('china_agent:reply_latency:v1:'+str(job['id']), dict(job_id=job['id'], stage='render', render_ms=round((time.perf_counter()-started)*1000, 3), observed_at=datetime.now(timezone.utc).isoformat(), answer_chars=len(answer), png_only=pavel_long, additional_model_calls=0))
     saved = dict(status='frozen', job_id=job['id'], chat_id=job['chat_id'], answer_sha256=hashlib.sha256(answer.encode()).hexdigest(), files=files, parts=parts)
     if not w.save(key, saved, insert=True):
         return delivery_parts(w, job, answer, split)

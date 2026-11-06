@@ -42,6 +42,7 @@ class Budget:
  def reserve(self,jid,pilot=False):
   policy=self.s.get(ROOT+'policy')or{}
   if not policy.get('enabled')or policy.get('model')!=MODEL or policy.get('wb_permission')is not False:raise Halt('Paid processing disabled')
+  if policy.get('price_valid_until')and datetime.now(timezone.utc)>=datetime.fromisoformat(policy['price_valid_until']):raise Halt('Verified price period expired; no paid call')
   key=ROOT+'ledger';old=self.s.row(key);ledger=copy.deepcopy(old['payload'] if old else {'days':{},'months':{},'jobs':{},'transfer':0})
   ident=str(jid);day=mskday();month=day[:7]
   if ident in ledger['jobs']or self.s.get(ROOT+'reservation:'+ident):raise Halt('Prior model reservation exists; never resubmit')

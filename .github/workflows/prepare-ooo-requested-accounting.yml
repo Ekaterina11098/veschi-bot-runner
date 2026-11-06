@@ -1,0 +1,92 @@
+name: Prepare requested OOO weekly accounting
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/prepare-ooo-requested-accounting.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: requested-ooo-weekly-accounting
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Read current accounting preflight privately
+        shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,json,collections,datetime,urllib.request,xml.etree.ElementTree as ET
+          from decimal import Decimal,ROUND_HALF_UP
+          sys.path.insert(0,'scripts')
+          import fbs_document_chain as m
+          ROOT='weekly_report_review:ooo:20261026_20261031:'
+          class ReadOnly(m.Transport):
+           def request(self,base,path,method='GET',body=None,params=None):
+            if base==m.MS and method!='GET':raise m.Stop('MS writes prohibited in preparation')
+            return super().request(base,path,method,body,params)
+          t=ReadOnly();db=m.Cache(t);w=m.Worker(t,db,{})
+          request=db.get(ROOT+'request:v1');assert request['writes_authorized'] is True
+          proof=db.get(ROOT+'source_proof:v1');final=db.get(ROOT+'final_excel:v1')
+          assert proof['status']=='complete' and proof['pagination_exhausted'] is True and final['status']=='complete'
+          source=[]
+          for chunk in proof['chunks']:source+=db.get(chunk['key'])
+          assert len(source)==proof['rows'] and len({x['rrdId'] for x in source})==len(source)
+          norm=lambda x:m.href(x).split('?')[0]
+          byarticle=collections.defaultdict(lambda:{'s':[],'r':[]})
+          for i,r in sorted(enumerate(source),key=lambda x:(Decimal(x[1]['forPay']),x[0])):
+           j=r['docTypeName'].strip().casefold();k=r['sellerOperName'].strip().casefold()
+           typ='s' if j=='продажа' and k in ('продажа','добровольная компенсация при возврате') else 'r' if j=='возврат' and k=='возврат' else None
+           if typ:
+            assert r['quantity']==1
+            byarticle[r['vendorCode'].strip().casefold()][typ].append(i)
+          sales={};returns={};red=0
+          for a,g in byarticle.items():
+           p=min(len(g['s']),len(g['r']));red+=p
+           if len(g['s'])>p:sales[a]=len(g['s'])-p
+           if len(g['r'])>p:returns[a]=len(g['r'])-p
+          assert sum(sales.values())==final['unpaired_sales'] and red==final['red_pairs'] and not returns
+          prior=t.request(m.MS,'entity/customerorder/'+request['prior_order'],params={'expand':'organization,agent,store,rate.currency'})
+          out={k:prior[k] for k in ('organization','agent','store','rate')}
+          assert out['store']['name']=='Киргизия WB FBO' and 'Лазарев' in out['organization']['name']
+          currency=t.request(m.MS,norm(out['rate']['currency'])[len(m.MS):])
+          assert currency['name']=='руб'
+          out['products']={}
+          for p in w.ms_rows('entity/product',{'filter':'archived=false'}):
+           a=(p.get('article') or '').strip().casefold()
+           if a in sales:out['products'].setdefault(a,[]).append({k:p.get(k) for k in ('id','article','name','meta','buyPrice')})
+          duplicates=[]
+          for kind in ('customerorder','demand','salesreturn'):
+           for d in w.ms_rows('entity/'+kind,{'filter':'organization='+norm(prior['organization'])+';store='+norm(prior['store'])+';moment>=2026-10-26 00:00:00'}):
+            if any(str(report) in d.get('name','')+' '+d.get('description','') for report in proof['report_ids']) or final['filename'][:-5] in d.get('description',''):
+             duplicates.append({'type':kind,'document':d})
+          stock=w.ms_rows('report/stock/all',{'filter':'store='+norm(prior['store']),'stockMode':'all','quantityMode':'all'})
+          byid={norm(r):r for r in stock};exceptions=[]
+          for a,q in sales.items():
+           ps=out['products'].get(a,[])
+           if len(ps)!=1:exceptions.append({'article':a,'wanted':q,'mapping_count':len(ps)});continue
+           s=byid.get(norm(ps[0]),{})
+           if s.get('stock',0)<q or s.get('quantity',0)<q or s.get('price',0)<=0:exceptions.append({'article':a,'wanted':q,'stock':s.get('stock',0),'quantity':s.get('quantity',0),'cost':s.get('price',0)})
+          out.update(status='prepared',at=m.now(),stock_exceptions=exceptions,duplicates=duplicates,currency=currency)
+          db.put(ROOT+'prepare:v1',out)
+          db.put(ROOT+'stock:v1',{'status':'read_verified','at':m.now(),'return_cost_stock':{},'exceptions':exceptions})
+          today=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date()
+          url='https://www.cbr.ru/scripts/XML_daily.asp?date_req='+today.strftime('%d/%m/%Y')
+          with urllib.request.urlopen(url,timeout=45) as response:fxroot=ET.fromstring(response.read())
+          val=next(v for v in fxroot.findall('Valute') if v.findtext('CharCode')=='KGS')
+          fx={'nominal':val.findtext('Nominal'),'rub':val.findtext('Value').replace(',','.'),'date':fxroot.attrib['Date'],'url':url}
+          assert datetime.datetime.strptime(fx['date'],'%d.%m.%Y').date()<=today
+          comment=final['filename'][:-5]
+          plan={'authorized':True,'excel_verified':True,'prepared_on':today.isoformat(),'sales':sales,'returns':returns,'basis':{},'fx':fx,'name':','.join(map(str,proof['report_ids'])),'comment':comment,'external_prefix':'weekly-ooo-requested-20261026-31-'}
+          db.put(ROOT+'plan:v1',plan)
+          db.put(ROOT+'accounting_preflight:v1',{'at':m.now(),'status':'ready' if not exceptions and not duplicates else 'blocked','exceptions':exceptions,'duplicates':duplicates,'sales_units':sum(sales.values()),'positions':len(sales),'fx':fx,'scope':{k:out[k]['name'] for k in ('organization','agent','store')}})
+          print('Read-only accounting preflight completed; private result saved.')

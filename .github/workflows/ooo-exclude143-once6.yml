@@ -1,0 +1,30 @@
+name: OOO owner approved single membership exclusion
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ooo-exclude143-once6.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ooo-cloud-pilot-20261106-v1
+  cancel-in-progress: false
+jobs:
+  exclude:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 28c364b5a7d38023789e6691b34115badf70e150
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 --quiet
+      - run: python -m py_compile scripts/ooo_exclude143_once6.py
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+        run: python -u scripts/ooo_exclude143_once6.py

@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 906dc5cb7fc09ff9b1317ff6c2d705f90c9e38a6
+          ref: 73f24be2f6349973c266717a68ee8425a8fedfe0
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -39,7 +39,7 @@ jobs:
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 cryptography==46.0.2 Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Offline economic, scope, budget and dedup regression
-        run: python -m unittest test_ip_cloud_dialog test_ip_report_analysis
+        run: python -m unittest test_ip_cloud_dialog test_ip_report_analysis test_full_retained_review test_ip_restrictions
       - name: Reuse dated data and read only missing report fields; no WB credentials
         if: inputs.verify_only != true
         env:

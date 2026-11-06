@@ -21,7 +21,7 @@ def run():
  messages=[{'role':'developer','content':instructions},{'role':'user','content':raw}]
  size=len(json.dumps(messages,ensure_ascii=False).encode())
  if size>16000:raise ValueError('Prompt byte limit')
- prior=c.get(ROOT+':model_receipt');spent=Decimal(prior['calculated_cost_usd']);cap=Decimal(str(a['migration_cap_usd']));rates=original['rates_per_million']
+ prior=c.get(ROOT+':model_receipt');spent=Decimal(prior['calculated_cost_usd']);cap=Decimal(str(a['migration_cap_usd']));rates=original['rates_usd_per_million']
  reserve=(Decimal(16000)*Decimal(str(rates['input']))+Decimal(2000)*Decimal(str(rates['output'])))/1000000
  if spent+reserve>cap:raise PermissionError('Cumulative migration cap')
  state={'status':'model_submitting','run_id':os.environ['GITHUB_RUN_ID'],'started_at':stamp(),'model_calls':1,'wb_calls':0,'schedule_changes':0,'input_bytes':size}

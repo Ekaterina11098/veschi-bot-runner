@@ -45,10 +45,13 @@ class Budget:
   if policy.get('price_valid_until')and datetime.now(timezone.utc)>=datetime.fromisoformat(policy['price_valid_until']):raise Halt('Verified price period expired; no paid call')
   key=ROOT+'ledger';old=self.s.row(key);ledger=copy.deepcopy(old['payload'] if old else {'days':{},'months':{},'jobs':{},'transfer':0})
   ident=str(jid);day=mskday();month=day[:7]
+  inflight=ledger.get('model_inflight')or{}
+  if inflight.get('until')and datetime.fromisoformat(inflight['until'])>datetime.now(timezone.utc):raise Halt('Shared model concurrency lease busy; no paid call')
   if ident in ledger['jobs']or self.s.get(ROOT+'reservation:'+ident):raise Halt('Prior model reservation exists; never resubmit')
   d=ledger['days'].get(day,{'charged':0,'calls':0});m=ledger['months'].get(month,0)
   daily_calls=policy.get('max_calls_per_day',20);daily_money=policy.get('daily_micro_usd',500000)
   if (daily_calls is not None and d['calls']>=daily_calls) or (daily_money is not None and d['charged']+RESERVE>daily_money) or m+RESERVE>10000000 or pilot and ledger['transfer']+RESERVE>1000000:raise Halt('Paid budget limit reached')
+  ledger['model_inflight']={'job':ident,'until':(datetime.now(timezone.utc)+timedelta(seconds=180)).isoformat()}
   ledger['jobs'][ident]=dict(status='reserved_uncertain',charged=RESERVE,day=day,month=month,pilot=pilot)
   ledger['days'][day]=dict(charged=d['charged']+RESERVE,calls=d['calls']+1);ledger['months'][month]=m+RESERVE
   if pilot:ledger['transfer']+=RESERVE
@@ -66,6 +69,7 @@ class Budget:
   if entry['status']!='reserved_uncertain':raise Halt('Already settled')
   delta=entry['charged']-actual;v['days'][entry['day']]['charged']-=delta;v['months'][entry['month']]-=delta
   if entry['pilot']:v['transfer']-=delta
+  if (v.get('model_inflight')or{}).get('job')==str(jid):v.pop('model_inflight')
   entry.update(status='settled',charged=actual,usage=usage,settled_at=stamp())
   if not self.s.cas(ROOT+'ledger',v,old):raise Halt('Usage settlement conflict; no model retry')
   self.s.put(ROOT+'reservation:'+str(jid),entry)

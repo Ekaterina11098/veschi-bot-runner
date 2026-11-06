@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 5fafdd6df74b9b551fd97b2dbf58f2425072a5d2
+          ref: ecda1757714dd8d8f4799a83e6e7f72dc3c89893
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |

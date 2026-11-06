@@ -44,16 +44,17 @@ class Budget:
   if not policy.get('enabled')or policy.get('model')!=MODEL or policy.get('wb_permission')is not False:raise Halt('Paid processing disabled')
   key=ROOT+'ledger';old=self.s.row(key);ledger=copy.deepcopy(old['payload'] if old else {'days':{},'months':{},'jobs':{},'transfer':0})
   ident=str(jid);day=mskday();month=day[:7]
-  if ident in ledger['jobs']:raise Halt('Prior model reservation exists; never resubmit')
+  if ident in ledger['jobs']or self.s.get(ROOT+'reservation:'+ident):raise Halt('Prior model reservation exists; never resubmit')
   d=ledger['days'].get(day,{'charged':0,'calls':0});m=ledger['months'].get(month,0)
   if d['calls']>=20 or d['charged']+RESERVE>500000 or m+RESERVE>10000000 or pilot and ledger['transfer']+RESERVE>1000000:raise Halt('Paid budget limit reached')
   ledger['jobs'][ident]=dict(status='reserved_uncertain',charged=RESERVE,day=day,month=month,pilot=pilot)
   ledger['days'][day]=dict(charged=d['charged']+RESERVE,calls=d['calls']+1);ledger['months'][month]=m+RESERVE
   if pilot:ledger['transfer']+=RESERVE
   # Retain current accounting windows, not full request/response history.
-  ledger['jobs']={k:v for k,v in ledger['jobs'].items() if v['month']==month or v['status']=='reserved_uncertain'}
+  ledger['jobs']={k:v for k,v in ledger['jobs'].items() if v['day']==day or v['status']=='reserved_uncertain'}
   ledger['days']={k:v for k,v in ledger['days'].items() if k.startswith(month)}
   if not self.s.cas(key,ledger,old):raise Halt('Budget reservation conflict; no model call')
+  if not self.s.once(ROOT+'reservation:'+ident,ledger['jobs'][ident]):raise Halt('Reservation identity conflict; no model call')
   return ledger['jobs'][ident]
  def settle(self,jid,usage):
   inp=usage.get('input_tokens');out=usage.get('output_tokens');cached=(usage.get('input_tokens_details')or{}).get('cached_tokens',0)
@@ -65,6 +66,7 @@ class Budget:
   if entry['pilot']:v['transfer']-=delta
   entry.update(status='settled',charged=actual,usage=usage,settled_at=stamp())
   if not self.s.cas(ROOT+'ledger',v,old):raise Halt('Usage settlement conflict; no model retry')
+  self.s.put(ROOT+'reservation:'+str(jid),entry)
   return actual
 
 def names_from_own(payload):

@@ -150,6 +150,9 @@ def validate(value,allowed,known):
  for r in value['research']:r['reason']=r['reason'][:400]
  return value
 def data_only(contract,view,audit,reason):
+ if savings:
+  result['research']=[]
+  for direction in('raise','add'):result['directions'][direction]='Временно запрещено владельцем: только сокращение расходов'
  out=copy.deepcopy(contract);out['actions']=[];out['plan_sha256']=digest([]);out['ip_economic_review']=audit
  out['sol_analysis']=dict(status='unavailable',model=MODEL,model_calls_this_run=0,charged_micro_usd=0,summary=reason)
  out['analysis_notice']='Анализ рекомендаций Sol недоступен: '+reason+'. Показатели сохранённых данных показаны отдельно; отсутствие рекомендаций не означает отсутствия рисков.'
@@ -157,7 +160,12 @@ def data_only(contract,view,audit,reason):
 def review_report(store,view,contract,call=None):
  state=State(store);policy=state.get(ROOT+'policy')or{}
  if policy.get('report_review_enabled')is not True:raise Halt('Scheduled IP analysis is not enabled')
+ savings=policy.get('advertising_strategy')=='cost_reduction_only'
+ if savings:
+  contract=copy.deepcopy(contract);contract['actions']=[a for a in contract['actions']if a['kind']in('remove','lower_bid')]
+  contract.setdefault('review_coverage',{})['new_campaign_projects']=[]
  inputs=load_inputs(store,view);actions,audit=screen(contract,view,inputs)
+ if savings:audit['research']=[]
  allowed={a['analysis_id']:a for a in actions};known={(a['nm'],a['campaign'])for a in contract['actions']}
  compact=[]
  for ident,a in allowed.items():
@@ -179,6 +187,7 @@ def review_report(store,view,contract,call=None):
    retained['selected']=[i for i in retained['selected']if i in allowed]
    retained['research']=[r for r in retained['research']if(r['nm'],r['campaign'])in known]
    audit['gaps'].append('Изменившийся после разбора состав проверен кодом; новые кандидаты не выданы как уже рассмотренные Sol')
+  if savings:retained['research']=[]
   result=validate(retained,allowed,known);receipt=old['receipt']
  else:
   if len(json.dumps(data,ensure_ascii=False).encode())>22000:raise Halt('Compact report evidence exceeds context; no silent truncation')

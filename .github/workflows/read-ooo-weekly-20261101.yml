@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
+    if: ${{ false }} # Owner cancelled the November 1 report; do not resume after cooldown.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

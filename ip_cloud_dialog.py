@@ -219,6 +219,14 @@ class Worker:
    if charged>=limit*.8:
     key=ROOT+'budget-notice:'+period
     self.s.once(key,{'notification':'pending','message':'Израсходовано не менее 80% бюджета ответов ИП за '+('день'if len(period)>7 else'месяц')+'. При достижении лимита платные ответы остановятся; готовые отчёты продолжат отправляться.'});self.notice(key)
+ def audit_queue(self):
+  policy=self.s.get(ROOT+'policy')or{}
+  if not policy.get('cutover_at'):return {'status':'not_configured'}
+  rows=self.store.db('GET','advertising_agent_jobs',params={'chat_id':'eq.'+str(CHAT),'created_at':'gte.'+policy['cutover_at'],'status':'in.(pending,running)','delivery->>route':'eq.saved-dialog-v1','select':'id,status,created_at,lease_until,delivery','order':'id.asc','limit':1})or[]
+  if not rows:return {'status':'no_active_head'}
+  j=rows[0];age=(datetime.now(timezone.utc)-datetime.fromisoformat(j['created_at'].replace('Z','+00:00'))).total_seconds()
+  if age>(600 if j['status']=='pending'else900):self.health('attention_required',j['id'],'queue_head_stalled_'+j['status']);return {'status':'stalled','job_id':j['id']}
+  return {'status':'waiting','job_id':j['id']}
  def process(self,jid,pilot=False):
   self.model_calls=0
   rows=self.store.db('GET','advertising_agent_jobs',params={'id':'eq.'+str(jid),'select':'*','limit':1})or[]
@@ -252,7 +260,8 @@ def main():
  import argparse,sys
  sys.path.insert(0,str(Path(__file__).resolve().parent/'private-source'))
  from advertising_agent import agent_store as store
- parser=argparse.ArgumentParser();parser.add_argument('--job',type=int,required=True);args=parser.parse_args()
+ parser=argparse.ArgumentParser();parser.add_argument('--job',type=int,default=0);parser.add_argument('--health',action='store_true');args=parser.parse_args()
+ if not args.health and args.job<=0:raise Halt('Exact positive job id required')
  worker=Worker(store);native=requests.sessions.Session.request;host=__import__('urllib.parse',fromlist=['urlsplit']).urlsplit(os.environ['SUPABASE_URL']).hostname;allowed={args.job}
  def guard(session,method,url,*a,**kw):
   u=__import__('urllib.parse',fromlist=['urlsplit']).urlsplit(url)
@@ -268,6 +277,7 @@ def main():
   return r
  requests.sessions.Session.request=guard
  try:
+  if args.health:print(json.dumps(worker.audit_queue()));return
   policy=worker.s.get(ROOT+'policy')or{};pilot=policy.get('mode')=='pilot'
   if pilot:
    # One cloud pilot run handles two real incoming questions. No fabricated user messages.
@@ -290,5 +300,8 @@ def main():
   elif pilot:worker.s.put(ROOT+'pilot',dict(status='attention_required',result=result,run_id=os.environ.get('GITHUB_RUN_ID'),at=stamp()))
   print(json.dumps({k:result.get(k)for k in('status','job_id','message_id','model_calls')}))
  finally:requests.sessions.Session.request=native
-if __name__=='__main__':main()
+if __name__=='__main__':
+ try:main()
+ except Exception as exc:
+  print(json.dumps({'status':'cloud_stopped','error_type':type(exc).__name__}));raise SystemExit(1)
 

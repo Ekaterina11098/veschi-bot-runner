@@ -252,12 +252,18 @@ class Worker:
   if len(rows)!=1:return {'status':'missing'}
   job=rows[0];meta=job.get('delivery')or{};policy=self.s.get(ROOT+'policy')or{}
   if job['chat_id']!=CHAT or meta.get('route')!='saved-dialog-v1':return {'status':'ignored_scope'}
-  correction=self.s.get(ROOT+'owner-correction:'+str(jid))or{}
+  active_report=self.s.get(ROOT+'owner-active-report:'+str(jid))or{}
+  correction=active_report or self.s.get(ROOT+'owner-correction:'+str(jid))or{}
   if correction.get('authorization_source')=='owner_codex'and correction.get('chat_id')==CHAT and correction.get('reply_to_message_id')==meta.get('incoming_message_id')and isinstance(correction.get('text'),str)and 0<len(correction['text'])<=2000:
-   claim=ROOT+'owner-correction:'+str(jid)+':delivery'
+   claim=ROOT+('owner-active-report:'if active_report else'owner-correction:')+str(jid)+':delivery'
    if not self.s.once(claim,dict(status='uncertain',started_at=stamp())):return {'status':'correction_already_claimed','job_id':jid}
    token=os.environ['ADVERTISING_TELEGRAM_BOT_TOKEN'].strip()
-   response=requests.post('https://api.telegram.org/bot'+token+'/sendMessage',json={'chat_id':CHAT,'text':correction['text'],'reply_parameters':{'message_id':correction['reply_to_message_id'],'allow_sending_without_reply':False}},timeout=(10,35))
+   if active_report:
+    blob=base64.b64decode(active_report['png_data'],validate=True)
+    if len(blob)>8*1024*1024 or hashlib.sha256(blob).hexdigest()!=active_report.get('png_sha256')or len(correction['text'])>1024:raise Halt('Exact report PNG invalid')
+    response=requests.post('https://api.telegram.org/bot'+token+'/sendPhoto',data={'chat_id':CHAT,'caption':correction['text'],'reply_parameters':json.dumps({'message_id':correction['reply_to_message_id'],'allow_sending_without_reply':False})},files={'photo':('ip-active-saving.png',blob,'image/png')},timeout=(10,55))
+   else:
+    response=requests.post('https://api.telegram.org/bot'+token+'/sendMessage',json={'chat_id':CHAT,'text':correction['text'],'reply_parameters':{'message_id':correction['reply_to_message_id'],'allow_sending_without_reply':False}},timeout=(10,35))
    value=response.json()
    if not value.get('ok'):raise Halt('Correction delivery not confirmed; no blind repeat')
    self.s.put(claim,dict(status='confirmed',message_id=value['result']['message_id'],chat_id=CHAT,receipt_at=stamp(),model_calls=0,wb_writes=0))

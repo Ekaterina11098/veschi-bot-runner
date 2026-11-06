@@ -35,7 +35,7 @@ class Tests(unittest.TestCase):
   with self.assertRaises(Halt):b.reserve(2)
  def test_daily_cap(self):
   s=FakeState();b=Budget(s)
-  for j in range(6):b.reserve(j)
+  b.reserve(1);v=s.data[ROOT+'ledger'];v['days'][__import__('ip_cloud_dialog').mskday()]['charged']=500000;v.pop('model_inflight',None)
   with self.assertRaises(Halt):b.reserve(99)
  def test_cache_write_not_ignored(self):
   s=FakeState();b=Budget(s);b.reserve(1,True)
@@ -44,8 +44,10 @@ class Tests(unittest.TestCase):
  def test_owner_disabled_daily_limits_preserves_monthly_cap(self):
   st=FakeState();st.data[ROOT+'policy'].update(daily_micro_usd=None,max_calls_per_day=None)
   b=Budget(st)
-  for j in range(25):b.reserve(j)
-  self.assertEqual(st.data[ROOT+'ledger']['days'][__import__('ip_cloud_dialog').mskday()]['calls'],25)
+  for j in range(25):b.reserve(j);b.settle(j,dict(input_tokens=100,output_tokens=10))
+  ledger=st.data[ROOT+'ledger'];ledger['days'][__import__('ip_cloud_dialog').mskday()]['charged']=600000
+  b.reserve(999);b.settle(999,dict(input_tokens=100,output_tokens=10))
+  self.assertEqual(st.data[ROOT+'ledger']['days'][__import__('ip_cloud_dialog').mskday()]['calls'],26)
   ledger=st.data[ROOT+'ledger'];ledger['months'][__import__('ip_cloud_dialog').mskday()[:7]]=10000000-RESERVE+1
   with self.assertRaises(Halt):b.reserve(1000)
  def test_turn_limit_even_cheap_calls(self):

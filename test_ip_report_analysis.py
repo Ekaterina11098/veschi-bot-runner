@@ -85,6 +85,11 @@ class AnalysisTests(unittest.TestCase):
   with patch.dict(os.environ,{'OPENAI_API_KEY':'offline'}),patch('requests.post',side_effect=[Response({'input_tokens':100}),Response({'status':'completed','id':'offline','usage':{'input_tokens':100,'output_tokens':50},'output':[{'type':'message','content':[{'type':'output_text','text':__import__('json').dumps(result)}]}]})])as post:
    _,receipt=sol_call(state,DAY,{'saved':True})
    self.assertEqual(set(post.call_args_list[0].kwargs['json']),{'model','instructions','input','tools'});self.assertEqual(receipt['charged_micro_usd'],700)
+ def test_long_explanations_are_bounded_without_relaxing_scope(self):
+  value=dict(selected=['exact'],directions={k:'x'*800 for k in('raise','add','reduce','exclude')},research=[],summary='y'*1400)
+  result=validate(value,{'exact':{}},set());self.assertEqual(len(result['directions']['raise']),500);self.assertEqual(len(result['summary']),1200)
+  value['selected']=['new']
+  with self.assertRaises(Halt):validate(value,{'exact':{}},set())
  def test_global_concurrency_includes_report_and_dialog(self):
   from ip_cloud_dialog import Budget
   s=FakeState();b=Budget(s);b.reserve('report:'+DAY)

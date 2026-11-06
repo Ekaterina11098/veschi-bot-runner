@@ -73,6 +73,18 @@ class AnalysisTests(unittest.TestCase):
    review_report(Store(),v,c,model);c['actions'][0]['target_bid_minor']=308
    result=review_report(Store(),v,c,lambda *a:self.fail('repeat'))
    self.assertEqual(result['actions'],[])
+ def test_preflight_uses_only_supported_input_parameters(self):
+  from ip_report_analysis import sol_call
+  import os
+  state=FakeState()
+  class Response:
+   status_code=200
+   def __init__(self,v):self.v=v
+   def json(self):return self.v
+  result=dict(selected=[],directions={k:'checked'for k in('raise','add','reduce','exclude')},research=[],summary='ok')
+  with patch.dict(os.environ,{'OPENAI_API_KEY':'offline'}),patch('requests.post',side_effect=[Response({'input_tokens':100}),Response({'status':'completed','id':'offline','usage':{'input_tokens':100,'output_tokens':50},'output':[{'type':'message','content':[{'type':'output_text','text':__import__('json').dumps(result)}]}]})])as post:
+   _,receipt=sol_call(state,DAY,{'saved':True})
+   self.assertEqual(set(post.call_args_list[0].kwargs['json']),{'model','instructions','input','tools'});self.assertEqual(receipt['charged_micro_usd'],700)
  def test_global_concurrency_includes_report_and_dialog(self):
   from ip_cloud_dialog import Budget
   s=FakeState();b=Budget(s);b.reserve('report:'+DAY)

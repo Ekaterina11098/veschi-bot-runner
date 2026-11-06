@@ -1,0 +1,38 @@
+name: Read all label fields for owner requested completion
+on:
+  push:
+    paths: ['.github/workflows/label-fields-all-20261106.yml']
+permissions:
+  contents: read
+jobs:
+  fields:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+          sparse-checkout: scripts/fbs_document_chain.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys
+          sys.path.insert(0,"scripts")
+          from fbs_document_chain import Transport,Cache,Worker,MS,now,Stop
+          t=Transport();db=Cache(t);w=Worker(t,db,{})
+          out={"at":now(),"items":[],"definitions":{}}
+          for typ in ("product","bundle"):
+              out["definitions"][typ]=w.ms_rows("entity/"+typ+"/metadata/attributes")
+              for p in w.ms_rows("entity/"+typ):
+                  if not p.get("archived"):
+                      out["items"].append({k:p.get(k) for k in ("id","meta","name","article","code","barcodes","attributes","archived")}|{"entity_type":typ})
+          db.put("label_fields:all:20261106:preflight:v1",out)
+          print("Private current fields and definitions read")
+          

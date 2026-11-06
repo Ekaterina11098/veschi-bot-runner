@@ -1,0 +1,151 @@
+name: Complete approved WB supply 305007673 at 1900
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/complete-wb-305007673-at1900.yml']
+permissions:
+  contents: read
+concurrency:
+  group: fbs-document-chain-production
+  cancel-in-progress: false
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Complete only exact owner-requested document chain
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          import sys,copy,json,collections,math,urllib.error,urllib.request,gzip
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          S="WB-GI-305007673";ROOT="fbs_document_chain:china:repair:"+S+":20261106:"
+          KEY=m.PREFIX+S
+          TARGET="2026-11-05 19:00:00"
+          RESULT=ROOT+"at1900_result:v1"
+          errors=[]
+          original_urlopen=urllib.request.urlopen
+          def capture(*args,**kwargs):
+           try:return original_urlopen(*args,**kwargs)
+           except urllib.error.HTTPError as e:
+            raw=e.read()
+            if e.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+            try:data=json.loads(raw)
+            except Exception:data={}
+            errors.append({"status":e.code,"errors":[{k:x.get(k) for k in ("code","error","parameter")} for x in data.get("errors",[])]})
+            raise
+          urllib.request.urlopen=capture
+          class Scoped(m.Transport):
+           allowed_updates=set()
+           posts=set()
+           def request(self,base,path,method="GET",body=None,params=None):
+            if base==m.WB and method!="GET":raise m.Stop("WB writes prohibited")
+            if base==m.MS and method!="GET":
+             if method=="POST" and path in ("entity/demand","entity/salesreturn"):
+              typ=path.split("/")[-1]
+              if body.get("externalCode")!="fbs-china:"+S+":"+typ or typ in self.posts or body.get("moment")!=TARGET:raise m.Stop("Exact supply only; no repeated POST")
+              self.posts.add(typ)
+             elif method=="PUT" and path in self.allowed_updates and set(body)<={"state","description"}:pass
+             else:raise m.Stop("MS mutation outside requested repair")
+            return super().request(base,path,method,body,params)
+          class SafeWorker(m.Worker):
+           def ensure(self,typ,payload,state,key):
+            if typ in ("demand","salesreturn"):payload={**payload,"moment":TARGET}
+            return super().ensure(typ,payload,state,key)
+           def require_available_stock(self,payload,state):
+            issues=[]
+            for label,at in (("historical",TARGET),("current",None)):
+             filt="store="+m.href(payload["store"])+";stockMode=all;quantityMode=all"
+             if at:filt+=";moment="+at
+             rows=self.ms_rows("report/stock/all",{"filter":filt})
+             index={m.href(r).split("?")[0]:r for r in rows}
+             for p in payload["positions"]:
+              h=m.href(p["assortment"]);r=index.get(h,{})
+              vals=[r.get("stock"),r.get("quantity")]
+              if not all(type(v) in (int,float) and math.isfinite(v) for v in vals) or min(vals)<p["quantity"]:
+               issues.append({"time":label,"product":h,"article":r.get("article"),"needed":p["quantity"],"stock":r.get("stock"),"available":r.get("quantity")})
+            free=self.t.request(m.MS,"report/stock/bystore/current",params={"stockType":"freeStock","include":"zeroLines"})
+            if not isinstance(free,list):raise m.Stop("Incomplete current free stock report")
+            index={(r["storeId"],r["assortmentId"]):r["freeStock"] for r in free}
+            sid=m.href(payload["store"]).split("/")[-1]
+            for p in payload["positions"]:
+             pid=m.href(p["assortment"]).split("/")[-1];value=index.get((sid,pid))
+             if type(value) not in (int,float) or not math.isfinite(value) or value<p["quantity"]:
+              issues.append({"time":"current_free","product":pid,"needed":p["quantity"],"available":value})
+            if issues:
+             db.put(ROOT+"at1900_shortages:v1",{"at":m.now(),"shortages":issues,"owner_decision_required":True})
+             raise m.Stop("Insufficient or unknown stock; document not posted")
+          t=Scoped();db=m.Cache(t);c=db.get(m.CONFIG);s=db.get(KEY);w=SafeWorker(t,db,c)
+          report={"status":"preflight","at":m.now(),"supply_id":S,"quantity":62,"positions":23,"owner_confirmed":True}
+          try:
+           decision=db.get(ROOT+"owner_decision:v1")
+           if not decision or decision.get("owner_confirmed_time_change") is not True or decision.get("proposed_moment")!=TARGET or m.stamp(decision["expires_at"])<=m.stamp(m.now()):raise m.Stop("Exact owner time approval missing or expired")
+           inspection=db.get(ROOT+"inspection:v1")
+           if not inspection or inspection.get("status")!="inspected":raise m.Stop("Read-only preflight not completed")
+           if len(s.get("positions",[]))!=23 or sum(p["quantity"] for p in s["positions"])!=62 or s["supply"]["id"]!=S:raise m.Stop("Prepared scope changed")
+           if s.get("inflight"):raise m.Stop("Uncertain previous mutation needs reconciliation")
+           if c.get("scope_confirmed") is not True or not c.get("writes_enabled") or c.get("cabinet")!="token_3":raise m.Stop("Wrong scope or disabled configuration")
+           states=[x for x in t.request(m.MS,"entity/demand/metadata").get("states",[]) if x.get("name")=="Возврат на ФБО"]
+           if len(states)!=1:raise m.Stop("Demand status missing")
+           c=copy.deepcopy(c);c["templates"]["demand"]["state"]=m.meta(states[0]);w.c=c
+           w.validate_source(s)
+           annotation=w.order_annotation(s["supply"])
+           orderdocs=w.ms_rows("entity/customerorder",{"filter":"name="+S})
+           if len(orderdocs)!=1 or orderdocs[0]["id"]!=s["documents"]["customerorder"]["id"]:raise m.Stop("Order identity mismatch")
+           order=t.request(m.MS,"entity/customerorder/"+orderdocs[0]["id"]);t.allowed_updates.add("entity/customerorder/"+order["id"])
+           if not order.get("applicable"):raise m.Stop("Existing order not posted")
+           payload=copy.deepcopy(c["templates"]["customerorder"]);payload.update(positions=s["positions"],description=annotation["description"])
+           w.verify("customerorder",order,payload)
+           ds=w.ms_rows("entity/demand",{"filter":"moment>=2026-11-05 00:00:00;moment<2026-11-07 00:00:00"})
+           linked=[d for d in ds if m.href(d.get("customerOrder",{}))==m.href(order)]
+           exact=w.ms_rows("entity/demand",{"filter":"externalCode=fbs-china:"+S+":demand"})
+           known_hrefs={m.href(x) for x in exact}
+           if any(m.href(x) not in known_hrefs for x in order.get("demands",[])):raise m.Stop("Other shipment linked to order")
+           if len(exact)>1 or any(d["id"] not in {x["id"] for x in exact} for d in linked):raise m.Stop("Existing unjournaled shipment requires review")
+           if not exact:
+            stock_payload=copy.deepcopy(c["templates"]["demand"]);stock_payload["positions"]=s["positions"]
+            w.require_available_stock(stock_payload,s)
+           if not db.claim(ROOT+"at1900_execution_claim:v1",{"at":m.now(),"owner_instruction":"Repair this exact WB supply; missing shipment and status","supply_ids":[S]}):raise m.Stop("Repair already claimed; reconcile first")
+           db.put(ROOT+"at1900_original:v1",copy.deepcopy(s))
+           s["owner_approved_document_time"]={"moment":TARGET,"approval":ROOT+"owner_decision:v1","applies_to":["demand","salesreturn"],"original_closedAt_preserved":s["supply"]["closedAt"]}
+           report["status"]="executing";db.put(RESULT,report)
+           w._execution_permit={"kind":"manual","supply_ids":{S}}
+           w.process(s)
+           final=db.get(KEY)
+           checks=[]
+           for typ in m.TYPES:
+            doc=t.request(m.MS,"entity/"+typ+"/"+final["documents"][typ]["id"])
+            payload=copy.deepcopy(c["templates"][typ]);payload.update(positions=final["positions"],description=annotation["description"])
+            if typ=="demand":payload["customerOrder"]=final["documents"]["customerorder"]
+            if typ=="salesreturn":payload["demand"]=final["documents"]["demand"]
+            w.verify(typ,doc,payload)
+            if typ=="customerorder" and m.href(doc.get("state",{}))!=m.href(annotation["state"]):raise m.Stop("Order state mismatch")
+            checks.append({"type":typ,"id":doc["id"],"name":doc["name"],"posted":doc["applicable"],"sum":doc["sum"],"moment":doc["moment"],"url":doc["meta"].get("uuidHref"),"state":doc.get("state")})
+           if final.get("status")!="complete":raise m.Stop("Ledger incomplete")
+           for d in checks:
+            if d["type"] in ("demand","salesreturn") and d["moment"][:19]!=TARGET:raise m.Stop("Approved document time readback mismatch")
+           demand=next(d for d in checks if d["type"]=="demand")
+           if m.href(demand.get("state",{}))!=m.href(c["templates"]["demand"]["state"]):raise m.Stop("Shipment state mismatch")
+           stock=t.request(m.MS,"report/stock/bystore/current",params={"stockType":"freeStock","include":"zeroLines"})
+           si=m.href(c["templates"]["demand"]["store"]).split("/")[-1]
+           current={(r["storeId"],r["assortmentId"]):r["freeStock"] for r in stock}
+           for p in final["positions"]:
+            value=current.get((si,m.href(p["assortment"]).split("/")[-1]))
+            if type(value) not in (int,float) or value<0:raise m.Stop("Post-shipment source stock needs review")
+           decision.update(status="completed",completed_at=m.now(),documents=checks)
+           db.put(ROOT+"owner_decision:v1",decision)
+           report.update(status="verified",documents=checks,order_state_name="Возврат на ФБО",verified_at=m.now(),post_types=sorted(t.posts))
+          except Exception as exc:
+           report.update(status="blocked",error=str(exc) if isinstance(exc,m.Stop) else type(exc).__name__,api_errors=errors,post_types=sorted(t.posts),at=m.now())
+          db.put(RESULT,report)
+          print("Exact requested supply repair:",report["status"])
+          if report["status"]!="verified":sys.exit(1)

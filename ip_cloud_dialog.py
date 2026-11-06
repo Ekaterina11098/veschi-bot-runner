@@ -120,8 +120,28 @@ def select_scope(text,index,campaigns):
  nm+= [n for n in ids if str(n)in index];cid=[n for n in ids if n in known]
  return {'nms':sorted(set(nm)),'campaigns':sorted(set(cid))}
 
+def answer_uses_png(sender_id,answer):
+ limit=450 if sender_id==307200273 else 1000
+ return len(answer)>limit or answer.count('\n')>10 or bool(re.search(r'\|\s*:?-{3,}',answer))
+
+def stage_durations(t):
+ pairs={'queue_ms':('received_at','workflow_started_at'),'setup_ms':('workflow_started_at','worker_started_at'),'context_ms':('context_started_at','context_ready_at'),'token_preflight_ms':('token_preflight_started_at','token_preflight_completed_at'),'model_ms':('model_started_at','model_completed_at'),'delivery_ms':('delivery_started_at','delivery_confirmed_at'),'total_ms':('received_at','delivery_confirmed_at')}
+ out={}
+ for name,(a,b)in pairs.items():
+  if not t.get(a)or not t.get(b):continue
+  delta=(datetime.fromisoformat(t[b].replace('Z','+00:00'))-datetime.fromisoformat(t[a].replace('Z','+00:00'))).total_seconds()
+  if delta>=0:out[name]=round(delta*1000)
+ return out
+
 class Worker:
  def __init__(self,store):self.store=store;self.s=State(store);self.bytes={};self.model_calls=0
+ def mark_stage(self,job,name,at=None):
+  meta=copy.deepcopy(job.get('delivery')or{});timings=meta.setdefault('timings',{})
+  timings.setdefault('received_at',job.get('created_at'))
+  if os.environ.get('IP_WORKFLOW_STARTED_AT'):timings.setdefault('workflow_started_at',os.environ['IP_WORKFLOW_STARTED_AT'])
+  timings[name]=at or stamp();meta['duration_ms']=stage_durations(timings)
+  if self.store is None:job['delivery']=meta
+  else:self.save(job,{'delivery':meta})
  def save(self,job,fields):
   changed=self.store.db('PATCH','advertising_agent_jobs',params={'id':'eq.'+str(job['id']),'lease_token':'eq.'+job['lease_token']},body=fields,prefer='return=representation')or[]
   if len(changed)!=1:raise Halt('Question lease lost')
@@ -173,14 +193,18 @@ class Worker:
    context['selected'].pop();context['context_omitted']=True;body['input']=json.dumps({'question':job['request_text'],'facts':context},ensure_ascii=False,separators=(',',':'))
   if len(body['input'].encode())>22000:raise Halt('Question exceeds bounded context')
   key=os.environ['OPENAI_API_KEY'].strip();headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'}
-  count=requests.post('https://api.openai.com/v1/responses/input_tokens',headers=headers,json={k:body[k]for k in ('model','instructions','input','tools')},timeout=(10,35))
+  self.mark_stage(job,'token_preflight_started_at')
+  try:count=requests.post('https://api.openai.com/v1/responses/input_tokens',headers=headers,json={k:body[k]for k in ('model','instructions','input','tools')},timeout=(10,35))
+  finally:self.mark_stage(job,'token_preflight_completed_at')
   if count.status_code!=200:raise Halt('Provider input-token preflight unavailable')
   n=count.json().get('input_tokens')
   if type(n)is not int or n>8000:raise Halt('Input token limit reached')
   budget=Budget(self.s);budget.reserve(job['id'],pilot)
   # Reservation is durable before the sole model request; a crash never resubmits.
   self.model_calls+=1
-  response=requests.post('https://api.openai.com/v1/responses',headers=headers,json=body,timeout=(10,120))
+  self.mark_stage(job,'model_started_at')
+  try:response=requests.post('https://api.openai.com/v1/responses',headers=headers,json=body,timeout=(10,120))
+  finally:self.mark_stage(job,'model_completed_at')
   if response.status_code!=200:raise Halt('Provider outcome not usable; no model retry')
   r=response.json();usage=r.get('usage')or{};actual=budget.settle(job['id'],usage)
   self.s.put(ROOT+'usage:'+str(job['id']),{'status':'settled','usage':usage,'conservative_micro_usd':actual,'input_preflight':n,'response_id':r.get('id'),'model':r.get('model'),'at':stamp()})
@@ -191,7 +215,8 @@ class Worker:
  def deliver(self,job):
   meta=copy.deepcopy(job['delivery'])
   if meta.get('send_state')in('uncertain','confirmed'):raise Halt('Prior delivery has no safe resend')
-  use_png=len(job['answer'])>1000 or job['answer'].count('\n')>10 or bool(re.search(r'\|\s*:?-{3,}',job['answer']))
+  self.mark_stage(job,'delivery_started_at');meta=copy.deepcopy(job['delivery'])
+  use_png=answer_uses_png(job.get('sender_id'),job['answer'])
   blob=None
   if use_png:
    from ip_dialog_png import render_answer
@@ -205,6 +230,7 @@ class Worker:
    if not use_png:return requests.post(url,json=p,timeout=(10,35))
    data={k:(json.dumps(v)if isinstance(v,dict)else v)for k,v in p.items()if k!='text'};data['caption']='ИП · краткий ответ и показатели. Изменения не выполнены.'
    return requests.post(url,data=data,files={'photo':('ip-answer.png',blob,'image/png')},timeout=(10,35))
+  self.mark_stage(job,'telegram_request_started_at');meta=copy.deepcopy(job['delivery'])
   r=transmit()
   if r.status_code==429:
    delay=(r.json().get('parameters')or{}).get('retry_after')
@@ -213,7 +239,8 @@ class Worker:
     meta['send_state']='uncertain';self.save(job,{'delivery':meta});r=transmit()
   body=r.json()if r.status_code==200 else{};msg=body.get('result')or{}
   if not body.get('ok')or(msg.get('chat')or{}).get('id')!=CHAT or(msg.get('from')or{}).get('id')!=BOT or type(msg.get('message_id'))is not int:raise Halt('Telegram outcome uncertain; no repeat')
-  meta.update(send_state='confirmed',answer_message_id=msg['message_id'],receipt_at=stamp(),receipt_bot_id=BOT)
+  confirmed_at=stamp();meta.setdefault('timings',{})['delivery_confirmed_at']=confirmed_at;meta['duration_ms']=stage_durations(meta['timings'])
+  meta.update(send_state='confirmed',answer_message_id=msg['message_id'],receipt_at=confirmed_at,receipt_bot_id=BOT)
   self.save(job,{'status':'done','delivery':meta,'completed_at':stamp(),'lease_until':None,'error':None});return msg['message_id']
  def health(self,status,jid,stage):
   old=self.s.get(ROOT+'health')or{};event={'status':status,'job_id':jid,'stage':stage,'observed_at':stamp()}
@@ -275,11 +302,14 @@ class Worker:
   lease=str(uuid.uuid4());rows=self.store.db('PATCH','advertising_agent_jobs',params={'id':'eq.'+str(jid),'status':'eq.pending','attempts':'eq.'+str(job['attempts'])},body={'status':'running','lease_token':lease,'lease_until':(datetime.now(timezone.utc)+timedelta(minutes=5)).isoformat(),'attempts':job['attempts']+1},prefer='return=representation')or[]
   if len(rows)!=1:return {'status':'claim_conflict'}
   job=rows[0]
+  self.mark_stage(job,'worker_started_at');self.mark_stage(job,'context_started_at')
   try:
    context,meta,clarify=self.context(job)
    if meta:self.save(job,{'delivery':meta})
+   self.mark_stage(job,'context_ready_at')
    if clarify:answer=clarify
    else:answer=self.generate(job,context,pilot)
+   self.mark_stage(job,'answer_ready_at')
    self.save(job,{'answer':answer,'tool_trace':[{'name':'ip_cloud_saved_context','period':context.get('data_period'),'model':MODEL,'model_calls':self.model_calls,'source_calls':0,'wb_writes':0}]})
    mid=self.deliver(job);self.health('healthy',jid,'delivered');self.budget_notices()
    return {'status':'done','job_id':jid,'message_id':mid,'model_calls':self.model_calls,'period':context.get('data_period')}

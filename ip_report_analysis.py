@@ -156,7 +156,7 @@ def review_report(store,view,contract,call=None):
   e=a['ip_economics'];compact.append(dict(id=ident,sku=a['sku'],nm=a['nm'],campaign=a['campaign'],kind=a['kind'],old=a.get('stored_bid_minor'),target=a.get('target_bid_minor'),metrics=a['analysis_metrics'],own_orders=e.get('orders'),own_orders_sum=e.get('orders_sum'),stock={'fbo':e.get('fbo'),'fbs':e.get('fbs'),'known':e.get('stock_known')},profit_after_ads=e.get('profit_after_ads'),profit_status=e.get('profit_status'),conditional_model=e.get('conditional_model'),gaps=e.get('gaps'),reserve=a.get('growth_reserve'),marginal_cpa=a.get('modeled_cpa_same_cr')))
  data=dict(period=view['period'],rules=RULES,coverage=audit['coverage'],allowed_actions=compact,research=audit['research'],coverage_gaps=audit['gaps'],note='All retained own articles scanned by code; only exact prevalidated candidates supplied. Finance period and campaign attribution differ explicitly.')
  identity=view['period'];key=ROOT_REPORT+identity;fingerprint=digest(data);old=state.get(key);claimed=False
- if old and old.get('status')=='waiting_shared_model':
+ if old and old.get('status')in('waiting_shared_model','definite_preflight_rejected'):
   if not state.cas(key,dict(status='preflight',source_sha256=fingerprint,period=identity),state.row(key)):raise Halt('Report preflight claim conflict')
   claimed=True;old=None
  if old and old.get('status')=='definite_model_not_started':return data_only(contract,view,audit,old['reason'])
@@ -187,10 +187,11 @@ def review_report(store,view,contract,call=None):
  return out
 def sol_call(state,identity,data):
  import requests
- headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY'],'Content-Type':'application/json'}
- body=dict(model=MODEL,instructions=INSTRUCTIONS,input=json.dumps(data,ensure_ascii=False,separators=(',',':')),max_output_tokens=2000,reasoning={'effort':'low'},text={'verbosity':'low','format':{'type':'json_object'}},tools=[],store=False,service_tier='default')
- r=requests.post('https://api.openai.com/v1/responses/input_tokens',headers=headers,json={k:v for k,v in body.items()if k!='service_tier'},timeout=(10,30))
- if r.status_code!=200 or type(r.json().get('input_tokens'))is not int or r.json()['input_tokens']>8000:raise Halt('Report token preflight unavailable or too large')
+ headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY'].strip(),'Content-Type':'application/json'}
+ body=dict(model=MODEL,instructions=INSTRUCTIONS,input=json.dumps(data,ensure_ascii=False,separators=(',',':')),max_output_tokens=2000,reasoning={'effort':'low'},text={'verbosity':'low'},tools=[],store=False,service_tier='default')
+ r=requests.post('https://api.openai.com/v1/responses/input_tokens',headers=headers,json={k:body[k]for k in('model','instructions','input','tools')},timeout=(10,30))
+ pre=r.json();state.put(ROOT_REPORT+identity+':preflight',dict(http_status=r.status_code,input_tokens=pre.get('input_tokens'),error_code=(pre.get('error')or{}).get('code'),error_param=(pre.get('error')or{}).get('param')))
+ if r.status_code!=200 or type(pre.get('input_tokens'))is not int or pre['input_tokens']>8000:raise Halt('Report token preflight unavailable or too large')
  budget=Budget(state);jid='report:'+identity;budget.reserve(jid)
  response=requests.post('https://api.openai.com/v1/responses',headers=headers,json=body,timeout=(10,120))
  if response.status_code!=200:raise Halt('Report model outcome unknown; no retry')

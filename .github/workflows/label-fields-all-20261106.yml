@@ -19,20 +19,29 @@ jobs:
           python-version: '3.12'
       - shell: python
         env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          import sys
+          import sys,os,json,time,urllib.request
           sys.path.insert(0,"scripts")
           from fbs_document_chain import Transport,Cache,Worker,MS,now,Stop
           t=Transport();db=Cache(t);w=Worker(t,db,{})
           out={"at":now(),"items":[],"definitions":{}}
-          for typ in ("product","bundle"):
+          for typ in ("product",):
               out["definitions"][typ]=w.ms_rows("entity/"+typ+"/metadata/attributes")
               for p in w.ms_rows("entity/"+typ):
                   if not p.get("archived"):
                       out["items"].append({k:p.get(k) for k in ("id","meta","name","article","code","barcodes","attributes","archived")}|{"entity_type":typ})
+          out["wb_cards"]=[];cursor={"limit":100}
+          while True:
+              req=urllib.request.Request("https://content-api.wildberries.ru/content/v2/get/cards/list",data=json.dumps({"settings":{"cursor":cursor,"filter":{"withPhoto":-1}}}).encode(),headers={"Authorization":os.environ["WB_TOKEN_3"],"Content-Type":"application/json"},method="POST")
+              with urllib.request.urlopen(req,timeout=30) as f:d=json.load(f)
+              if not isinstance(d.get("cards"),list):raise Stop("Incomplete WB cards")
+              out["wb_cards"] += [{"nmID":c["nmID"],"article":c["vendorCode"],"characteristics":c.get("characteristics",[])} for c in d["cards"]]
+              if d["cursor"]["total"]<100:break
+              cursor={"limit":100,"nmID":d["cursor"]["nmID"],"updatedAt":d["cursor"]["updatedAt"]};time.sleep(.7)
           db.put("label_fields:all:20261106:preflight:v1",out)
           print("Private current fields and definitions read")
           

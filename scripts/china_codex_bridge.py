@@ -1,5 +1,5 @@
 """Opt-in exact-thread pilot. No WB tools or model calls; existing TG transport only."""
-import re,uuid
+import re,uuid,time
 from datetime import datetime,timedelta,timezone
 
 ROOT='china_agent:codex_bridge:v1:'
@@ -49,6 +49,16 @@ def question(text):
  return m.group(1).strip() if m else None
 
 def handle(w,job,cfg):
+ started=time.perf_counter()
+ def timing(stage,**extra):
+  k='china_agent:reply_latency:v1:'+str(job['id']);v=w.get(k) or {}
+  v.update(extra);v.update(job_id=job['id'],stage=stage,observed_at=stamp())
+  v[stage+'_elapsed_ms']=round((time.perf_counter()-started)*1000,3)
+  for label,instant in [('received',job.get('created_at')),('queued',(w.get(ROOT+'inbox:'+str(job['id'])) or {}).get('created_at')),('answer_ready',(w.get(ROOT+'outbox:'+str(job['id'])) or {}).get('created_at'))]:
+   if instant:
+    try:v[label+'_to_now_ms']=round((datetime.now(timezone.utc)-datetime.fromisoformat(instant.replace('Z','+00:00'))).total_seconds()*1000,3)
+    except (ValueError,TypeError):pass
+  w.save(k,v)
  text=question(job.get('request_text'))
  marker=next((x for x in job.get('tool_trace') or [] if x.get('name')=='china_saved_question'),{})
  if marker.get('codex_bridge') is True:text=marker.get('bridge_request_text') or text or job.get('request_text','')
@@ -92,11 +102,15 @@ def handle(w,job,cfg):
  w.active_question_id=job['id'];w.reply_id=marker['message_id']
  from china_table_png import delivery_parts
  from conversion_watches import split_message
+ timing('answer_ready')
  parts=delivery_parts(w,job,out['answer'],split_message)
+ timing('parts_ready',parts_count=len(parts))
  message_ids=[];outcome='sent'
  for index,part in enumerate(parts):
   delivery_key='codex_bridge:'+str(job['id'])+':'+str(index)
+  send_started=time.perf_counter()
   outcome=w.send_once(delivery_key,CHAT,part)
+  timing('delivery',last_part=index,last_send_ms=round((time.perf_counter()-send_started)*1000,3),delivery_outcome=outcome)
   receipt=w.get('china_agent:conversion_watch_delivery:v1:'+delivery_key) or {}
   if outcome!='sent' or receipt.get('status')!='sent' or not receipt.get('message_id'):
    if outcome=='sent':outcome='uncertain'

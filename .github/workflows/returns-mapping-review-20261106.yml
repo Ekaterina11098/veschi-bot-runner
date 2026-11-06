@@ -1,0 +1,39 @@
+name: Return mapping read-only review 20261106
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/returns-mapping-review-20261106.yml']
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 5b1aa0e255ffab7eb9a0491fecfd1aaf3e949152
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          import re
+          import fbs_document_chain as m
+          t=m.Transport(); db=m.Cache(t); w=m.Worker(t,db,{})
+          root="returns_transfer:china:20261106:batch1:"
+          result=db.get(root+"result:v1")
+          findings=[]
+          for issue in result.get("issues",[]):
+              number=re.match(r"[0-9]+",issue["code"])[0]
+              products=w.ms_rows("entity/product",{"search":number})
+              findings.append({"issue":issue,"candidates":[{k:p.get(k) for k in ("id","code","article","name","archived","variantsCount")} for p in products]})
+          db.put(root+"mapping_review:v1",{"at":m.now(),"findings":findings})
+          print("Read-only product review saved privately; no document writes")
+          PY

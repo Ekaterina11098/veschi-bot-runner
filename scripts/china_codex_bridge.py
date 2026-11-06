@@ -103,9 +103,12 @@ def handle(w,job,cfg):
  from china_table_png import delivery_parts
  from conversion_watches import split_message
  timing('answer_ready')
+ render_started=time.perf_counter()
  parts=delivery_parts(w,job,out['answer'],split_message)
- timing('parts_ready',parts_count=len(parts))
+ if job.get('sender_id')==307200273 and len(out['answer'])>450 and not all(p.startswith('CHINA_TABLE_PNG:')for p in parts):raise PermissionError('Long Pavel reply must be PNG-only')
+ timing('parts_ready',parts_count=len(parts),parts_prepare_ms=round((time.perf_counter()-render_started)*1000,3))
  message_ids=[];outcome='sent'
+ delivery_started=time.perf_counter()
  for index,part in enumerate(parts):
   delivery_key='codex_bridge:'+str(job['id'])+':'+str(index)
   send_started=time.perf_counter()
@@ -119,6 +122,9 @@ def handle(w,job,cfg):
  if outcome=='sent' and len(message_ids)==len(parts) and message_ids:
   w.save(ROOT+'outbox:'+str(job['id']),out|dict(status='delivered',message_id=message_ids[0],message_ids=message_ids,delivered_at=stamp(),receipt_key='china_agent:conversion_watch_delivery:v1:codex_bridge:'+str(job['id'])+':0',parts_count=len(parts)))
   w.save(key,inbox|dict(status='delivered',message_id=message_ids[0],message_ids=message_ids,delivered_at=stamp()))
+  timing('delivered',delivery_total_ms=round((time.perf_counter()-delivery_started)*1000,3),confirmed_message_ids=message_ids)
   patch(dict(status='done',answer=out['answer'],lease_until=None,error=None,completed_at=stamp()));return 'codex_bridge_delivered'
  patch(dict(status='pending' if outcome in ('waiting','rejected') else 'failed',lease_until=None,error='codex_bridge_delivery_'+outcome,retry_at=(now+timedelta(minutes=5)).isoformat()))
  return 'codex_bridge_delivery_'+outcome
+
+

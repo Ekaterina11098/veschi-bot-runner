@@ -1,0 +1,25 @@
+name: China model cost safeguards
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/china_model_context.py'
+      - 'scripts/china_codex_analysis.py'
+      - 'scripts/china_codex_cloud.py'
+      - 'scripts/test_china_model_cost_savings.py'
+      - '.github/workflows/china-model-cost-safeguards.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, filter: 'blob:none', sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Verify lossless context, Sol defaults, closed paid guard and no duplicate submissions
+        run: |
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_model_cost_savings.py
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_codex_cloud.py

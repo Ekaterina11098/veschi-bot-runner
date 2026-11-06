@@ -2,6 +2,7 @@
 import argparse,json,os,re,uuid
 from datetime import datetime,timedelta,timezone,date
 from zoneinfo import ZoneInfo
+from china_model_context import MODEL,COLUMN_RULE,message as compact_message
 from urllib.request import Request,urlopen
 from urllib.parse import urlencode
 
@@ -21,6 +22,8 @@ INSTRUCTIONS="""Ты постоянная облачная сессия Codex д
 Новый протокол точных данных: если для ответа не хватает данных, верни JSON {"kind":"read","topic":"catalogue|products|prices|stock|advertising|orders","nm_ids":[точные nmID Китая],"date_from":"YYYY-MM-DD","date_to":"YYYY-MM-DD"}. До3 разных запросов на вопрос, до30nmID и31дня; источник orders не содержит денежных сумм, для samehour суммы бери hourly snapshot с двумя базами. Пустой nm_ids только для всего кабинета. Результат придёт в analytics, после него отвечай по фактам, не проси уже рассчитанное повторно. Неполные результаты не нули.
 Павлу sender307200273 отвечай очень кратко, только на его вопрос, конкретными данными с периодом; без служебных причин ошибок, маршрутизации и лишних советов. Для остальных и отчётов соблюдай заданный формат.
 """
+
+INSTRUCTIONS += '\n'+COLUMN_RULE
 
 def stamp():return datetime.now(timezone.utc).isoformat()
 def today():return datetime.now(ZoneInfo('Europe/Moscow')).date()
@@ -122,14 +125,18 @@ class Worker:
     def bootstrap(self):
         session_key=(self.db.get(CLOUD+'policy')or{}).get('session_key')or CLOUD+'session'
         if not session_key.startswith('china_agent:codex_cloud:'):raise ValueError('Session key outside cloud scope')
+        # Keep historical Astra sessions for recovery; new work uses a separate Sol session.
+        session_key += ':sol:v2'
         existing=self.db.get(session_key)
-        if existing:return existing
-        with self.sdk().beta.agents.sessions.create(agent={'model':'gpt-6-astra','instructions':INSTRUCTIONS},
+        if existing:
+            if existing.get('model')!=MODEL:raise RuntimeError('Cloud session model mismatch')
+            return existing
+        with self.sdk().beta.agents.sessions.create(agent={'model':MODEL,'instructions':INSTRUCTIONS},
             environment={'type':'none'},input='Инициализация рабочего облачного диалога. Датированные рабочие записи придут перед каждым вопросом. Ответь только: Готова.',stream=True).with_result_collection() as events:
             for event in events:
                 if event.type.endswith(('.failed','.cancelled')):raise RuntimeError('Bootstrap turn failed')
             result=events.get_final_result()
-        value={'status':'active','session_id':result.session_id,'created_at':stamp(),'model':'gpt-6-astra','version':1,'environment':'none','tools':[]}
+        value={'status':'active','session_id':result.session_id,'created_at':stamp(),'model':MODEL,'version':1,'environment':'none','tools':[]}
         self.db.once(session_key,value)
         return value
     def context(self,inbox):
@@ -295,8 +302,8 @@ class Worker:
         markers=[m for m in jobs[0].get('tool_trace',[]) if isinstance(m,dict) and m.get('name')=='china_saved_question']
         if markers:
             ctx['telegram_reply_context']={k:markers[-1].get(k) for k in ('message_id','reply_message_id','thread_id','reply_text','original_request_text')}
-        message=json.dumps({'runtime_scope':{'job_token':token,'today_msk':str(today()),'time_msk':datetime.now(ZoneInfo('Europe/Moscow')).isoformat(),'chat_id':CHAT,'sender_id':inbox['sender_id'],'wb_action_permission':False},
-              'dated_work_context':ctx,'untrusted_telegram_question':inbox['request_text']},ensure_ascii=False)
+        message=compact_message({'runtime_scope':{'job_token':token,'today_msk':str(today()),'time_msk':datetime.now(ZoneInfo('Europe/Moscow')).isoformat(),'chat_id':CHAT,'sender_id':inbox['sender_id'],'wb_action_permission':False},
+              'dated_work_context':ctx,'untrusted_telegram_question':inbox['request_text']})
         text=self.generate(sid,message,token)
         completion={'text':text,'created_at':stamp(),'phase':phase,'recovered':False}
         self.db.once(completion_key,completion)

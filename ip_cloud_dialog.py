@@ -47,7 +47,8 @@ class Budget:
   ident=str(jid);day=mskday();month=day[:7]
   if ident in ledger['jobs']or self.s.get(ROOT+'reservation:'+ident):raise Halt('Prior model reservation exists; never resubmit')
   d=ledger['days'].get(day,{'charged':0,'calls':0});m=ledger['months'].get(month,0)
-  if d['calls']>=20 or d['charged']+RESERVE>500000 or m+RESERVE>10000000 or pilot and ledger['transfer']+RESERVE>1000000:raise Halt('Paid budget limit reached')
+  daily_calls=policy.get('max_calls_per_day',20);daily_money=policy.get('daily_micro_usd',500000)
+  if (daily_calls is not None and d['calls']>=daily_calls) or (daily_money is not None and d['charged']+RESERVE>daily_money) or m+RESERVE>10000000 or pilot and ledger['transfer']+RESERVE>1000000:raise Halt('Paid budget limit reached')
   ledger['jobs'][ident]=dict(status='reserved_uncertain',charged=RESERVE,day=day,month=month,pilot=pilot)
   ledger['days'][day]=dict(charged=d['charged']+RESERVE,calls=d['calls']+1);ledger['months'][month]=m+RESERVE
   if pilot:ledger['transfer']+=RESERVE
@@ -227,8 +228,9 @@ class Worker:
   if b.get('ok')and(msg.get('chat')or{}).get('id')==CHAT and(msg.get('from')or{}).get('id')==BOT and type(msg.get('message_id'))is int:self.s.put(key,dict(p,notification='confirmed',message_id=msg['message_id'],confirmed_at=stamp()))
  def budget_notices(self):
   v=self.s.get(ROOT+'ledger')or{};day=mskday();d=(v.get('days')or{}).get(day,{})
-  for period,charged,limit in [(day,d.get('charged',0),500000),(day[:7],(v.get('months')or{}).get(day[:7],0),10000000)]:
-   if charged>=limit*.8:
+  policy=self.s.get(ROOT+'policy')or{}
+  for period,charged,limit in [(day,d.get('charged',0),policy.get('daily_micro_usd',500000)),(day[:7],(v.get('months')or{}).get(day[:7],0),10000000)]:
+   if limit is not None and charged>=limit*.8:
     key=ROOT+'budget-notice:'+period
     self.s.once(key,{'notification':'pending','message':'Израсходовано не менее 80% бюджета ответов ИП за '+('день'if len(period)>7 else'месяц')+'. При достижении лимита платные ответы остановятся; готовые отчёты продолжат отправляться.'});self.notice(key)
  def audit_queue(self):
@@ -318,4 +320,3 @@ if __name__=='__main__':
  try:main()
  except Exception as exc:
   print(json.dumps({'status':'cloud_stopped','error_type':type(exc).__name__}));raise SystemExit(1)
-

@@ -13,6 +13,9 @@ def fixture():
  v=dict(period=DAY,campaigns=[dict(campaign_id=1,spend=100,budget=dict(valid=True,today_observation=True,balance=5000,observed_at='2026-11-06T04:30:00Z'),sku_rows=[])])
  return inp,c,v
 class AnalysisTests(unittest.TestCase):
+ def test_report_claim_stays_inside_existing_cloud_scope(self):
+  from ip_report_analysis import ROOT_REPORT
+  self.assertTrue(ROOT_REPORT.startswith(ROOT))
  def test_ip_tax_and_no_second_ad_deduction(self):
   v=dict(period_from=DAY,period_to=DAY,cabinet='token_2',currency='RUB',for_pay=700,seller_sales=1000,seller_returns=-200,net_units=1,own_unit_cost=100,financial_ads=50,for_pay_includes_ads=True,expenses_reconciled=True,own_cost_source='saved-own-cost')
   r=financial_result(v,DAY);self.assertEqual(r['tax_reserve'],120);self.assertEqual(r['after_ads'],480);self.assertEqual(r['before_ads'],530)

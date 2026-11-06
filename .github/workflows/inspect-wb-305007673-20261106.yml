@@ -1,0 +1,71 @@
+name: Inspect owner-selected WB supply 305007673
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/inspect-wb-305007673-20261106.yml']
+permissions:
+  contents: read
+concurrency:
+  group: fbs-document-chain-production
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Read selected order stock and related documents
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          import sys,copy,collections
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          S="WB-GI-305007673"
+          ROOT="fbs_document_chain:china:repair:"+S+":20261106:"
+          class ReadOnly(m.Transport):
+           def request(self,base,path,method="GET",body=None,params=None):
+            if base in (m.MS,m.WB) and method!="GET":raise m.Stop("Read-only inspection")
+            return super().request(base,path,method,body,params)
+          t=ReadOnly();db=m.Cache(t);c=db.get(m.CONFIG);s=db.get(m.PREFIX+S);w=m.Worker(t,db,c)
+          r={"at":m.now(),"supply_id":S,"ledger":s,"config_annotation":c.get("order_annotation"),"prefix":c.get("document_prefix","fbs-china")}
+          try:
+           w.validate_source(s)
+           r["source_verified"]=True
+           r["documents"]={}
+           for typ in m.TYPES:
+            docs=w.ms_rows("entity/"+typ,{"filter":"externalCode="+r["prefix"]+":"+S+":"+typ})
+            r["documents"][typ]=docs
+           orders=w.ms_rows("entity/customerorder",{"filter":"name="+S})
+           r["orders_by_name"]=orders
+           if len(orders)!=1:raise m.Stop("Order identity ambiguous")
+           order=orders[0];r["order_positions"]=w.ms_rows("entity/customerorder/"+order["id"]+"/positions")
+           r["demands_by_order"]=w.ms_rows("entity/demand",{"filter":"customerOrder="+m.href(order)})
+           r["products"]=[]
+           for p in s["positions"]:
+            path=m.href(p["assortment"]).removeprefix(m.MS)
+            live=t.request(m.MS,path)
+            r["products"].append({k:live.get(k) for k in ("id","name","code","article","archived","isSerialTrackable","trackingType","tnved","barcodes","uom")})
+           r["order_states"]=t.request(m.MS,"entity/customerorder/metadata").get("states",[])
+           r["demand_states"]=t.request(m.MS,"entity/demand/metadata").get("states",[])
+           stock=w.ms_rows("report/stock/all",{"filter":"store="+m.href(c["templates"]["demand"]["store"]),"stockMode":"all","quantityMode":"all"})
+           byhref={m.href(p).split("?")[0]:p for p in stock}
+           free=t.request(m.MS,"report/stock/bystore/current",params={"stockType":"freeStock","include":"zeroLines"})
+           byid={(x["storeId"],x["assortmentId"]):x["freeStock"] for x in free}
+           storeid=m.href(c["templates"]["demand"]["store"]).split("/")[-1]
+           r["stock"]=[]
+           for p in s["positions"]:
+            row=byhref.get(m.href(p["assortment"]),{})
+            r["stock"].append({"product":m.href(p["assortment"]),"article":row.get("article"),"name":row.get("name"),"need":p["quantity"],"stock":row.get("stock"),"quantity":row.get("quantity"),"freeStock":byid.get((storeid,m.href(p["assortment"]).split("/")[-1]))})
+           r["status"]="inspected"
+          except Exception as e:r.update(status="blocked",error=str(e) if isinstance(e,m.Stop) else type(e).__name__)
+          db.put(ROOT+"inspection:v1",r)
+          print("Exact supply read-only inspection:",r["status"])
+          if r["status"]!="inspected":sys.exit(1)

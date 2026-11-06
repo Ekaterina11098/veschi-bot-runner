@@ -36,6 +36,9 @@ try:
   if not found and key.endswith("с"):
    number=int(key[:-1])
    found=[p for p in products if not p.get("archived") and re.fullmatch(r"\d+с",norm(p.get("code",""))) and int(norm(p["code"])[:-1])==number]
+  if not found and key in req.get("verified_mapping_overrides",{}):
+   ref=req["verified_mapping_overrides"][key]
+   found=[p for p in products if not p.get("archived") and all(p.get(k)==v for k,v in ref.items()) and p.get("name","").casefold().startswith("сумка ")]
   if len(found)!=1:
    issues.append({"issue":"product_mapping","code":key,"quantity":quantity,"matches":[{"id":p["id"],"article":p.get("article"),"code":p.get("code"),"name":p["name"]} for p in found]});continue
   p=found[0];assert not p.get("variantsCount",0),"Variant mapping required"

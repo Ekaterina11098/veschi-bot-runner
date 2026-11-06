@@ -1,4 +1,4 @@
-name: Inspect three China barcode conflicts
+name: Apply three owner-approved barcode corrections
 on:
   push:
     paths:
@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Read old cards and prepare correction
+      - name: Apply exact reviewed correction and verify all owners
         shell: python
         env:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
@@ -30,27 +30,46 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          import sys,json,os
+          import sys,os
           sys.path.insert(0,"scripts")
-          from fbs_document_chain import Transport,Cache,Worker,MS,now
+          from fbs_document_chain import Transport,Cache,Worker,MS,now,Stop
           t=Transport();db=Cache(t);w=Worker(t,db,{})
-          all_items={p["id"]:p for typ in ("product","variant","bundle") for p in w.ms_rows("entity/"+typ)}
-          audit=db.get("barcode_sync:china:20261106:v1")
-          if not audit or len(audit.get("issues",[]))!=3:raise RuntimeError("Expected exactly three reviewed conflicts")
-          out={"status":"prepared","at":now(),"writes":0,"items":[]}
-          for issue in audit["issues"]:
-              target=t.request(MS,"entity/product/"+issue["id"])
-              olds=[]
-              for owner in issue["owners"]:
-                  old=all_items[owner["id"]]
-                  fields={k:old.get(k) for k in ["id","name","article","code","archived","barcodes","description","variantsCount","pathName","updated"]}
-                  fields["type"]=old["meta"]["type"]
-                  if fields["type"]=="bundle":fields["components"]=w.ms_rows("entity/bundle/"+old["id"]+"/components")
-                  fields["proposed_barcodes"]=[b for b in old.get("barcodes",[]) if not set(str(v) for v in b.values())&set(issue["barcodes"])]
-                  olds.append(fields)
-              before=target.get("barcodes",[])
-              missing=[b for b in issue["barcodes"] if b not in {str(v) for x in before for v in x.values()}]
-              out["items"].append({"wb":issue,"target":{k:target.get(k) for k in ["id","name","article","code","barcodes","archived"]},"proposed_target_barcodes":before+[{"code128":b} for b in missing],"old_owners":olds,"requires_owner_review":True,"proposal":"Remove only conflicting barcode from previous owners and append to exact article target; keep other barcodes and all cards"})
-          db.put("barcode_sync:china:20261106:conflict_proposal:v1",out)
-          print("Three conflict proposals saved privately; no product writes")
+          KEY="barcode_sync:china:20261106:conflict_apply:v1"
+          prior=db.get(KEY)
+          if prior and prior.get("status")=="verified":print("Already verified");raise SystemExit(0)
+          proposal=db.get("barcode_sync:china:20261106:conflict_proposal:v1")
+          if not proposal or len(proposal.get("items",[]))!=3:raise Stop("Missing reviewed three-item proposal")
+          ops=[]
+          for item in proposal["items"]:
+              for old in item["old_owners"]:
+                  ops.append({"path":"entity/"+old["type"]+"/"+old["id"],"id":old["id"],"before":old["barcodes"],"expected":old["proposed_barcodes"]})
+              target=item["target"]
+              ops.append({"path":"entity/product/"+target["id"],"id":target["id"],"before":target["barcodes"],"expected":item["proposed_target_barcodes"]})
+          if len(ops)!=8 or len({x["id"] for x in ops})!=8:raise Stop("Unexpected correction scope")
+          result={"status":"preflight","at":now(),"run_id":os.environ["GITHUB_RUN_ID"],"owner_approved":True,"operations":ops,"verified":[]}
+          try:
+              for op in ops:
+                  live=t.request(MS,op["path"])
+                  if live.get("barcodes",[]) not in (op["before"],op["expected"]):raise Stop("Barcode state changed since reviewed proposal")
+              db.put(KEY,result)
+              for op in ops:
+                  live=t.request(MS,op["path"])
+                  if live.get("barcodes",[])!=op["expected"]:
+                      if live.get("barcodes",[])!=op["before"]:raise Stop("Concurrent barcode change")
+                      result.update(status="applying",inflight=op);db.put(KEY,result)
+                      try:t.request(MS,op["path"],"PUT",{"barcodes":op["expected"]})
+                      except Stop:
+                          if t.request(MS,op["path"]).get("barcodes",[])!=op["expected"]:raise
+                  checked=t.request(MS,op["path"])
+                  if checked.get("barcodes",[])!=op["expected"]:raise Stop("Correction readback mismatch")
+                  result["verified"].append(op["id"]);result["inflight"]=None;db.put(KEY,result)
+              all_items=[p for typ in ("product","variant","bundle") for p in w.ms_rows("entity/"+typ)]
+              for item in proposal["items"]:
+                  for b in item["wb"]["barcodes"]:
+                      owners={p["id"] for p in all_items if b in {str(v) for x in p.get("barcodes",[]) for v in x.values()}}
+                      if owners!={item["target"]["id"]}:raise Stop("Corrected barcode owner is not unique")
+              result.update(status="verified",verified_at=now(),corrected_barcodes=3);db.put(KEY,result)
+              print("Three owner-approved barcode corrections verified; eight entities checked")
+          except Exception as e:
+              result.update(status="error",error=str(e) if isinstance(e,Stop) else type(e).__name__);db.put(KEY,result);print("Correction stopped; private journal retained");raise SystemExit(1)
           

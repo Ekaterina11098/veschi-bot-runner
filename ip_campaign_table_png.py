@@ -94,7 +94,7 @@ def render_campaign_table(bundle):
  count=len(bundle['days']);period_label=str(count)+' дн.'
  def canvas(title):
   im=Image.new('RGB',(W,H),BG);d=ImageDraw.Draw(im)
-  d.rectangle((0,0,W,205),fill=NAVY)
+  d.rectangle((0,0,W,205),fill='#176B4A' if bundle.get('intraday') else NAVY)
   d.text((44,28),title,font=font(48,True),fill='white')
   bd=bundle.get('budget_days') or []
   subtitle=('Резерв: '+bd[0]+'—'+bd[-1]+' · 2 завершённых дня МСК' if 'бюджеты' in title and len(bd)==3 else 'День: '+bundle['days'][-1]+' · '+period_label+': '+bundle['days'][0]+'—'+bundle['days'][-1]+' · цель ДРР 5%')
@@ -155,4 +155,5 @@ def render_campaign_table(bundle):
  for j,line in enumerate(wrap(d,footer,W-88,24)):d.text((44,y+218+j*31),line,font=font(24),fill='#536b79')
  finish(im,y+240+len(wrap(d,footer,W-88,24))*31,'drr',actions)
  return files
+
 

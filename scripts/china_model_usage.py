@@ -1,5 +1,6 @@
 """Private content-free model accounting; logging failure never repeats a paid call."""
 import json,os,time,uuid,re
+import china_no_paid
 from datetime import datetime,timezone
 PREFIX='china_agent:model_usage:v1:'
 def task_type(text):
@@ -43,6 +44,7 @@ def persist(value):
   json=dict(cache_key=key,payload=value,updated_at=value['recorded_at'],expires_at='2036-10-28T00:00:00+00:00'),timeout=5)
  return bool(r.ok)
 def metered_request(request,body,**context):
+ china_no_paid.require_paid_api()
  started=time.monotonic();context=dict(context,request_id=uuid.uuid4().hex)
  try:response=request(body)
  except Exception as error:

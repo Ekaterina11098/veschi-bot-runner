@@ -2,6 +2,9 @@ import unittest,json
 from unittest.mock import patch
 import china_model_usage as m
 class MeterTests(unittest.TestCase):
+ def setUp(self):
+  guard=patch.object(m.china_no_paid,'require_paid_api')
+  guard.start();self.addCleanup(guard.stop)
  def body(self):return dict(model='example',input=[dict(role='user',content='SECRET CHAT'),dict(type='function_call_output',call_id='c1',output='PRIVATE RESULT')],tools=[])
  def response(self):return dict(id='resp_fixture',model='example',status='completed',usage=dict(input_tokens=100,input_tokens_details=dict(cached_tokens=60,cache_write_tokens=20),output_tokens=10,output_tokens_details=dict(reasoning_tokens=4),total_tokens=110))
  def test_counts_and_privacy(self):

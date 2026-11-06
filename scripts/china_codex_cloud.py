@@ -109,6 +109,8 @@ class Worker:
         self.db=db or DB()
         self.client=None
     def sdk(self):
+        from china_no_paid import require_paid_api
+        require_paid_api()
         if self.client is None:
             from openai import OpenAI
             self.client=OpenAI(max_retries=0,timeout=120)

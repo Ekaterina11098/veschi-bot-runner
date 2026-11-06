@@ -77,13 +77,22 @@ def handle(w,job,cfg):
   w.save(key,inbox)
  out=w.get(ROOT+'outbox:'+str(job['id'])) or {}
  if not out:
+  from china_no_paid import enabled,safe_answer
+  if enabled(w):
+   answer=safe_answer(w,dict(job,request_text=text))
+   out=dict(status='ready',job_id=job['id'],chat_id=CHAT,input_message_id=inbox['input_message_id'],thread_id=THREAD,
+            answer=answer,created_at=stamp(),source_channel='deterministic_no_paid',paid_model_calls=0,wb_action_permission=False)
+   w.save(ROOT+'outbox:'+str(job['id']),out)
+   w.save(key,inbox|dict(status='answered',source_channel='deterministic_no_paid'))
+ if not out:
   prepare_analytics(w,job,inbox)
   patch(dict(status='pending',lease_until=None,retry_at=(now+timedelta(minutes=1)).isoformat(),error=None));return 'codex_bridge_queued'
  if (out.get('status') not in ('ready','delivered') or out.get('thread_id')!=THREAD or out.get('chat_id')!=CHAT or out.get('input_message_id')!=marker['message_id'] or out.get('job_id')!=job['id'] or not isinstance(out.get('answer'),str) or not 0<len(out['answer'])<=12000):
   patch(dict(status='failed',lease_until=None,error='codex_bridge_invalid_reply'));return 'codex_bridge_invalid_reply'
  w.active_question_id=job['id'];w.reply_id=marker['message_id']
  from china_table_png import delivery_parts
- parts=delivery_parts(w,job,out['answer'],lambda text:[text[i:i+3500] for i in range(0,len(text),3500)])
+ from conversion_watches import split_message
+ parts=delivery_parts(w,job,out['answer'],split_message)
  message_ids=[];outcome='sent'
  for index,part in enumerate(parts):
   delivery_key='codex_bridge:'+str(job['id'])+':'+str(index)

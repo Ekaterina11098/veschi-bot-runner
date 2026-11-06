@@ -751,7 +751,7 @@ def saved_network_guard():
             database=(u.scheme=='https' and u.hostname==base.hostname and u.path.startswith('/rest/v1/')
                       and (method=='GET' or (method=='PATCH' and u.path in ['/rest/v1/business_agent_jobs','/rest/v1/telegram_api_cache'])
                            or (method=='POST' and u.path=='/rest/v1/telegram_api_cache')))
-            model=(u.scheme=='https' and u.hostname=='api.openai.com' and u.path=='/v1/responses' and method=='POST')
+            model=False  # Owner disabled paid model egress.
             telegram=(u.scheme=='https' and u.hostname=='api.telegram.org'
                       and u.path in ('/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendMessage','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/sendPhoto','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/getChatMember','/bot'+os.environ['CHINA_TELEGRAM_BOT_TOKEN'].strip()+'/getMe') and method=='POST')
             from china_search_analytics import allowed_read

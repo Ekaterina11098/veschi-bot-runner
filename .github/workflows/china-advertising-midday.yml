@@ -48,7 +48,7 @@ jobs:
       - name: Read current China day and deliver green midday report
         working-directory: source
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: "" # Owner: no paid model API
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

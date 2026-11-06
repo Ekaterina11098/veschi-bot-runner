@@ -27,7 +27,7 @@ jobs:
       - run: pip install openai==3.42.1 --quiet
       - name: Continue persistent work conversation
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: "" # Owner: no paid model API
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |

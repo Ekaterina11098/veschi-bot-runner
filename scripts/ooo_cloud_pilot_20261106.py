@@ -1,5 +1,5 @@
 """One manual, cache-only OOO cloud pilot. No WB credentials, webhook changes or schedules."""
-import os,json,time,hashlib,io,datetime
+import os,json,time,hashlib,io,datetime,sys
 from decimal import Decimal
 from china_codex_cloud import DB
 ROOT='ooo_agent:cloud_pilot:2026-11-06:v1'
@@ -73,12 +73,18 @@ def send_once(cache,key,method,send,chat_id,body,files=None):
   cache.update(key,{'status':'uncertain','chat_id':chat_id,'observed_at':stamp()});raise RuntimeError('Delivery outcome uncertain; no resend')from None
  receipt={'status':'sent','chat_id':chat_id,'message_id':value['message_id'],'telegram_date':value.get('date'),'sent_at':stamp()}
  cache.update(key,receipt);return receipt
-def run():
+def binding_resume_allowed(prior,artifacts):
+ return bool(prior and prior.get('status')=='attention'and prior.get('last_stage')=='starting'and prior.get('model_calls')==0 and prior.get('safe_error')=='Expected one authorized pilot group command'and not any(artifacts))
+def run(resume_binding=False):
  cache=Cache();policy=cache.get(ROOT+':authorization')or{}
  if policy.get('approved')is not True or policy.get('maximum_cloud_runs')!=1 or policy.get('wb_actions_enabled')is not False or policy.get('schedules_enabled')is not False:raise PermissionError('Exact pilot-only consent missing')
  if datetime.datetime.now(datetime.timezone.utc)>=datetime.datetime.fromisoformat(policy['expires_at']):raise PermissionError('Pilot consent expired')
- if cache.get(ROOT+':execution'):print('Existing pilot retained; no repeated call or send');return
- state={'status':'starting','run_id':os.environ['GITHUB_RUN_ID'],'started_at':stamp(),'model_calls':0,'wb_calls':0,'schedule_changes':0};cache.once(ROOT+':execution',state)
+ state_key=ROOT+(':execution:binding_continuation'if resume_binding else':execution')
+ if resume_binding:
+  prior=cache.get(ROOT+':execution');artifacts=[cache.get(ROOT+':'+k)for k in ['budget','model_receipt','inbox','outbox','delivery:answer']]
+  if not binding_resume_allowed(prior,artifacts):raise PermissionError('Binding continuation requires known uncharged unsent failure')
+ if cache.get(state_key):print('Existing pilot retained; no repeated call or send');return
+ state={'status':'starting','run_id':os.environ['GITHUB_RUN_ID'],'started_at':stamp(),'model_calls':0,'wb_calls':0,'schedule_changes':0,'continuation_of':ROOT+':execution'if resume_binding else None};cache.once(state_key,state)
  token=os.environ['OOO_TELEGRAM_BOT_TOKEN'].strip()
  def tg(method,body=None,files=None):
   import requests
@@ -97,11 +103,11 @@ def run():
   trigger=select_trigger(tg('getUpdates',{'limit':20,'timeout':0,'allowed_updates':json.dumps(['message'])}),policy)
   if tg('getChatMember',{'chat_id':trigger['chat_id'],'user_id':trigger['sender_id']}).get('status')not in('creator','administrator'):raise PermissionError('Pilot sender is not group owner/admin')
   cache.once(ROOT+':inbox',{'status':'claimed','received_at':stamp(),**trigger})
-  state.update(status='group_bound',bot_id=bot['id'],chat_id=trigger['chat_id'],input_message_id=trigger['input_message_id']);cache.update(ROOT+':execution',state)
+  state.update(status='group_bound',bot_id=bot['id'],chat_id=trigger['chat_id'],input_message_id=trigger['input_message_id']);cache.update(state_key,state)
   msg=model_message(policy);rates=policy['rates_usd_per_million'];reserve=(Decimal(10000)*Decimal(str(rates['input']))+Decimal(2000)*Decimal(str(rates['output'])))/Decimal(1000000)
   if reserve>Decimal(str(policy['migration_cap_usd']))or reserve>Decimal('0.20'):raise PermissionError('Prepaid reservation exceeds consent')
   cache.once(ROOT+':budget',{'status':'reserved','reserved_usd':str(reserve),'cap_usd':policy['migration_cap_usd'],'reserved_at':stamp(),'model_calls_allowed':1})
-  state.update(status='model_submitting',model_calls=1,reserved_usd=str(reserve),input_bytes=len(json.dumps(msg,ensure_ascii=False).encode()));cache.update(ROOT+':execution',state)
+  state.update(status='model_submitting',model_calls=1,reserved_usd=str(reserve),input_bytes=len(json.dumps(msg,ensure_ascii=False).encode()));cache.update(state_key,state)
   from openai import OpenAI
   start=time.monotonic()
   response=OpenAI(max_retries=0,timeout=90).responses.create(model=policy['model'],input=msg,max_output_tokens=2000,reasoning={'effort':'low'},store=False,tools=[],extra_headers={'Idempotency-Key':ROOT})
@@ -112,7 +118,7 @@ def run():
   answer=response.output_text
   if response.status!='completed'or not answer or len(answer)>2200:raise RuntimeError('Model completion outside bounded answer contract')
   cache.once(ROOT+':outbox',{'status':'ready','chat_id':trigger['chat_id'],'answer':answer,'created_at':stamp()})
-  state.update(status='delivering',calculated_model_cost_usd=str(actual),input_tokens=usage['input_tokens'],output_tokens=usage['output_tokens']);cache.update(ROOT+':execution',state)
+  state.update(status='delivering',calculated_model_cost_usd=str(actual),input_tokens=usage['input_tokens'],output_tokens=usage['output_tokens']);cache.update(state_key,state)
   text='Облачный пилот ООО VESCHI\n\n'+answer+f"\n\nПилот: {usage['input_tokens']} входных / {usage['output_tokens']} выходных токенов; расчёт по тарифу ${actual:.6f}. WB не менялся. Расписания выключены."
   receipts=[send_once(cache,ROOT+':delivery:answer','sendMessage',tg,trigger['chat_id'],{'chat_id':trigger['chat_id'],'text':text,'reply_parameters':json.dumps({'message_id':trigger['input_message_id'],'allow_sending_without_reply':False})})]
   images=[]
@@ -122,13 +128,13 @@ def run():
   cache.once(ROOT+':images',{'artifacts':images,'model_used_for_images':False})
   cache.update(ROOT+':outbox',{'status':'delivered','chat_id':trigger['chat_id'],'answer':answer,'message_ids':[v['message_id']for v in receipts],'delivered_at':stamp()})
   state.update(status='verified',message_ids=[v['message_id']for v in receipts],images=images,cache_read_payload_bytes=cache.read_bytes,cache_write_payload_bytes=cache.write_bytes,byte_counters_basis='application payload estimates, not Supabase billing egress',finished_at=stamp(),seconds=round(time.monotonic()-started,3))
-  cache.update(ROOT+':execution',state)
+  cache.update(state_key,state)
  except Exception as e:
   safe=str(e)[:160]if isinstance(e,(ValueError,RuntimeError,PermissionError))else None
-  state.update(status='attention',error_type=type(e).__name__,error_code=getattr(e,'code',None),http_status=getattr(e,'status_code',None),safe_error=safe,failed_at=stamp(),last_stage=state.get('status'));cache.update(ROOT+':execution',state)
+  state.update(status='attention',error_type=type(e).__name__,error_code=getattr(e,'code',None),http_status=getattr(e,'status_code',None),safe_error=safe,failed_at=stamp(),last_stage=state.get('status'));cache.update(state_key,state)
   print('Pilot stopped; private receipt preserved; no automatic retry');return
  print('Pilot verified; private delivery and usage receipts saved')
 if __name__=='__main__':
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner'or os.environ.get('GITHUB_REF')!='refs/heads/main':raise PermissionError('Expected main repository')
- started=time.monotonic();run()
+ started=time.monotonic();run(resume_binding='--continue-binding'in sys.argv)
 

@@ -1,0 +1,53 @@
+name: Inspect three China barcode conflicts
+on:
+  push:
+    paths:
+      - '.github/workflows/china-barcode-conflicts-20261106.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-barcode-conflicts-20261106
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+          sparse-checkout: scripts/fbs_document_chain.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read old cards and prepare correction
+        shell: python
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,json,os
+          sys.path.insert(0,"scripts")
+          from fbs_document_chain import Transport,Cache,MS,now
+          t=Transport();db=Cache(t)
+          audit=db.get("barcode_sync:china:20261106:v1")
+          if not audit or len(audit.get("issues",[]))!=3:raise RuntimeError("Expected exactly three reviewed conflicts")
+          out={"status":"prepared","at":now(),"writes":0,"items":[]}
+          for issue in audit["issues"]:
+              target=t.request(MS,"entity/product/"+issue["id"])
+              olds=[]
+              for owner in issue["owners"]:
+                  old=t.request(MS,"entity/product/"+owner["id"])
+                  fields={k:old.get(k) for k in ["id","name","article","code","archived","barcodes","description","variantsCount","pathName","updated"]}
+                  fields["proposed_barcodes"]=[b for b in old.get("barcodes",[]) if not set(str(v) for v in b.values())&set(issue["barcodes"])]
+                  olds.append(fields)
+              before=target.get("barcodes",[])
+              missing=[b for b in issue["barcodes"] if b not in {str(v) for x in before for v in x.values()}]
+              out["items"].append({"wb":issue,"target":{k:target.get(k) for k in ["id","name","article","code","barcodes","archived"]},"proposed_target_barcodes":before+[{"code128":b} for b in missing],"old_owners":olds,"requires_owner_review":True,"proposal":"Remove only conflicting barcode from previous owners and append to exact article target; keep other barcodes and all cards"})
+          db.put("barcode_sync:china:20261106:conflict_proposal:v1",out)
+          print("Three conflict proposals saved privately; no product writes")
+          

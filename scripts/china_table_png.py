@@ -8,6 +8,15 @@ from datetime import datetime, timezone
 
 PREFIX = 'CHINA_TABLE_PNG:'
 KEY = 'china_agent:table_png:v1:'
+PAVEL_ID = 307200273
+PAVEL_TEXT_LIMIT = 450
+
+def render_timing(w, job, started, **extra):
+    key='china_agent:reply_latency:v1:'+str(job['id'])
+    value=dict(w.get(key) or {})
+    metric='artifact_cache_lookup_ms'if extra.get('artifact_cache_hit')else'render_ms'
+    value.update(job_id=job['id'], stage='render', observed_at=datetime.now(timezone.utc).isoformat(), **{metric:round((time.perf_counter()-started)*1000,3)}, **extra)
+    w.save(key,value)
 
 def cells(line):
     return [x.strip() for x in re.split(r'(?<!\\)\|', line.strip().strip('|'))]
@@ -92,12 +101,18 @@ def render(header, rows, title='Китай · аналитика'):
     return result
 
 def delivery_parts(w, job, answer, split):
+    started = time.perf_counter()
     key = KEY+str(job['id']); saved = w.get(key)
+    pavel = job.get('sender_id') == PAVEL_ID
+    pavel_long = pavel and len(answer) > PAVEL_TEXT_LIMIT
     if saved:
         if saved['chat_id'] != job['chat_id'] or saved['answer_sha256'] != hashlib.sha256(answer.encode()).hexdigest(): raise PermissionError('Frozen table scope changed')
+        if pavel_long and not all(p.startswith(PREFIX) for p in saved['parts']): raise PermissionError('Frozen long Pavel answer is not PNG-only; no blind delivery migration')
+        render_timing(w,job,started,answer_chars=len(answer),png_only=pavel_long,additional_model_calls=0,artifact_cache_hit=True)
         return saved['parts']
-    started = time.perf_counter()
-    pavel_long = job.get('sender_id') == 307200273 and len(answer) > 450
+    if pavel and not pavel_long:
+        render_timing(w,job,started,answer_chars=len(answer),png_only=False,additional_model_calls=0,artifact_cache_hit=False)
+        return [answer]
     parsed = blocks(answer)
     if pavel_long:
         parsed = [('table', (['Ответ Павлу'], [[data] if kind == 'text' else [' | '.join(data[0]) + '\n' + '\n'.join(' | '.join(row) for row in data[1])] for kind, data in parsed]))]
@@ -114,10 +129,12 @@ def delivery_parts(w, job, answer, split):
                 index = len(files)
                 files.append(dict(sha256=hashlib.sha256(blob).hexdigest(), data=base64.b64encode(blob).decode()))
                 parts.append(PREFIX+key+':'+str(index))
-    w.save('china_agent:reply_latency:v1:'+str(job['id']), dict(job_id=job['id'], stage='render', render_ms=round((time.perf_counter()-started)*1000, 3), observed_at=datetime.now(timezone.utc).isoformat(), answer_chars=len(answer), png_only=pavel_long, additional_model_calls=0))
+    render_timing(w,job,started,answer_chars=len(answer),png_only=pavel_long,additional_model_calls=0,artifact_cache_hit=False)
     saved = dict(status='frozen', job_id=job['id'], chat_id=job['chat_id'], answer_sha256=hashlib.sha256(answer.encode()).hexdigest(), files=files, parts=parts)
     if not w.save(key, saved, insert=True):
-        return delivery_parts(w, job, answer, split)
+        frozen=w.get(key) or {}
+        if frozen.get('chat_id')!=job['chat_id'] or frozen.get('answer_sha256')!=saved['answer_sha256'] or frozen.get('parts')!=parts: raise PermissionError('Concurrent artifact conflict; no recursive retry')
+        return frozen['parts']
     return parts
 
 def photo(w, chat, text):
@@ -169,3 +186,5 @@ def scheduled_photo(w, chat, text):
     part = saved['files'][i]; blob = base64.b64decode(part['data'], validate=True)
     if hashlib.sha256(blob).hexdigest() != part['sha256']: raise ValueError('Scheduled table PNG hash')
     return blob, 'Таблица к плановому аналитическому отчёту. Изменения не применены.'
+
+

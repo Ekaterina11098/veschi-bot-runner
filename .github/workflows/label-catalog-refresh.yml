@@ -1,0 +1,88 @@
+name: Refresh private label catalog from MoySklad
+on:
+  push:
+    paths: ['.github/workflows/label-catalog-refresh.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: label-catalog-refresh
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+          sparse-checkout: scripts/fbs_document_chain.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys
+          sys.path.insert(0, 'scripts')
+          from fbs_document_chain import Transport, Cache, MS, Stop, now
+          t=Transport(); db=Cache(t)
+          key='label_utility:catalog:auto:v1'
+          status_key='label_utility:catalog:auto:status:v1'
+          db.put(status_key, {'status':'running', 'started_at':now()})
+          try:
+              def rows(kind):
+                  result=[]; expected=None; offset=0
+                  while True:
+                      page=t.request(MS,'entity/'+kind,params={
+                          'filter':'archived=false','limit':1000,'offset':offset})
+                      total=page['meta']['size']
+                      if expected is not None and total!=expected: raise Stop('Catalog changed during pagination')
+                      expected=total
+                      batch=page['rows']
+                      result.extend(batch); offset+=len(batch)
+                      if offset==total: break
+                      if not batch or offset>total or offset>20000: raise Stop('Incomplete catalog page')
+                  if len({p['id'] for p in result})!=len(result): raise Stop('Duplicate catalog row')
+                  return result
+              products=rows('product'); bundles=rows('bundle'); variants=rows('variant')
+              parents={p['id']:p for p in products}
+              def attrs(p):
+                  result={}
+                  for a in p.get('attributes',[]):
+                      if a.get('name') not in ('Цвет','ВендорКод'): continue
+                      value=a.get('value','')
+                      if isinstance(value,dict): value=value.get('name','')
+                      result[a['name']]=str(value) if value is not None else ''
+                  return result
+              output=[]
+              for kind,items in [('product',products),('bundle',bundles),('variant',variants)]:
+                  for p in items:
+                      if p.get('archived'): raise Stop('Archived catalog item')
+                      parent={}
+                      if kind=='variant':
+                          pid=p.get('product',{}).get('meta',{}).get('href','').rsplit('/',1)[-1]
+                          parent=parents.get(pid)
+                          if parent is None: raise Stop('Variant parent missing')
+                      fields=attrs(parent); fields.update(attrs(p))
+                      for a in p.get('characteristics',[]):
+                          if a.get('name')=='Цвет' and a.get('value'): fields['Цвет']=str(a['value'])
+                      output.append({'id':p['id'],'name':p.get('name',''),
+                          'article':p.get('article') or parent.get('article',''),
+                          'barcodes':p.get('barcodes',[]),'archived':False,
+                          'meta':{'type':kind},'attributes':[{'name':k,'value':v} for k,v in fields.items()]})
+              if not output or len({p['id'] for p in output})!=len(output): raise Stop('Invalid catalog identities')
+              data={'schema':1,'source':'МойСклад · автоматическое обновление',
+                    'generated_at':now(),'complete':True,'count':len(output),'products':output}
+              db.put(key,data)
+              db.put(status_key,{'status':'ready','generated_at':data['generated_at'],'count':len(output)})
+              print('Private label catalog refreshed and verified. MS writes: 0. Items:',len(output))
+          except Exception:
+              db.put(status_key,{'status':'error','at':now(),'error':'catalog_refresh_failed'})
+              print('Catalog refresh failed; previous private snapshot preserved.')
+              raise SystemExit(1)
+

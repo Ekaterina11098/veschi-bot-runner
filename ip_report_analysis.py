@@ -4,7 +4,7 @@ from datetime import datetime,timezone,timedelta
 from statistics import median
 from urllib.parse import urlsplit
 from ip_cloud_dialog import Budget,State,ROOT,MODEL,Halt,digest
-ROOT_REPORT=ROOT+'report-analysis:v2:'
+ROOT_REPORT=ROOT+'report-analysis:v3:'
 RULES={'cabinet':'token_2','currency':'RUB','tax_reserve_rate':.15,'tax_base':'positive net seller realized revenue',
  'financial_ads':'already included in reconciled for_pay; never deduct twice','raise_max_pct':5,
  'fbo_only_subjects':[51,57,255,756],'msk50_required':False,'daily_ad_caps':False,'wb_permission':False}
@@ -136,10 +136,13 @@ def validate(value,allowed,known):
  if not isinstance(value,dict)or set(value)!=set(('selected','directions','research','summary')):raise Halt('Invalid report analysis contract')
  ids=value['selected']
  if not isinstance(ids,list)or len(set(ids))!=len(ids)or any(type(i)is not str or i not in allowed for i in ids):raise Halt('Sol changed the allowed action scope')
- if not isinstance(value['directions'],dict)or set(value['directions'])!=set(('raise','add','reduce','exclude'))or any(not isinstance(v,str)or len(v)>500 for v in value['directions'].values()):raise Halt('Four directions missing')
- if not isinstance(value['summary'],str)or len(value['summary'])>1200 or not isinstance(value['research'],list)or len(value['research'])>12:raise Halt('Oversized report review')
+ if not isinstance(value['directions'],dict)or set(value['directions'])!=set(('raise','add','reduce','exclude'))or any(not isinstance(v,str)for v in value['directions'].values()):raise Halt('Four directions missing')
+ if not isinstance(value['summary'],str)or not isinstance(value['research'],list)or len(value['research'])>12:raise Halt('Oversized report review')
  for r in value['research']:
-  if not isinstance(r,dict)or set(r)!=set(('nm','campaign','direction','reason'))or (r['nm'],r['campaign'])not in known or r['direction']not in('raise','add')or not isinstance(r['reason'],str)or len(r['reason'])>400:raise Halt('Unverified research scope')
+  if not isinstance(r,dict)or set(r)!=set(('nm','campaign','direction','reason'))or (r['nm'],r['campaign'])not in known or r['direction']not in('raise','add')or not isinstance(r['reason'],str):raise Halt('Unverified research scope')
+ value=copy.deepcopy(value)
+ value['directions']={k:v[:500]for k,v in value['directions'].items()};value['summary']=value['summary'][:1200]
+ for r in value['research']:r['reason']=r['reason'][:400]
  return value
 def data_only(contract,view,audit,reason):
  out=copy.deepcopy(contract);out['actions']=[];out['plan_sha256']=digest([]);out['ip_economic_review']=audit
@@ -159,6 +162,10 @@ def review_report(store,view,contract,call=None):
  if old and old.get('status')in('waiting_shared_model','definite_preflight_rejected'):
   if not state.cas(key,dict(status='preflight',source_sha256=fingerprint,period=identity),state.row(key)):raise Halt('Report preflight claim conflict')
   claimed=True;old=None
+ if old and old.get('status')=='uncertain_no_retry':
+  retained=state.get(key+':provider_result')or{}
+  if retained.get('status')=='completed'and isinstance(retained.get('result'),dict):
+   result=validate(retained['result'],allowed,known);old=dict(old,status='complete',result=result,receipt=dict(retained['receipt'],recovered_without_model=True));state.put(key,old)
  if old and old.get('status')=='definite_model_not_started':return data_only(contract,view,audit,old['reason'])
  if old:
   if old.get('status')!='complete':raise Halt('Prior report model outcome unresolved; no replay')
@@ -192,10 +199,14 @@ def sol_call(state,identity,data):
  r=requests.post('https://api.openai.com/v1/responses/input_tokens',headers=headers,json={k:body[k]for k in('model','instructions','input','tools')},timeout=(10,30))
  pre=r.json();state.put(ROOT_REPORT+identity+':preflight',dict(http_status=r.status_code,input_tokens=pre.get('input_tokens'),error_code=(pre.get('error')or{}).get('code'),error_param=(pre.get('error')or{}).get('param')))
  if r.status_code!=200 or type(pre.get('input_tokens'))is not int or pre['input_tokens']>8000:raise Halt('Report token preflight unavailable or too large')
- budget=Budget(state);jid='report:v2:'+identity;budget.reserve(jid)
+ budget=Budget(state);jid='report:v3:'+identity;budget.reserve(jid)
  response=requests.post('https://api.openai.com/v1/responses',headers=headers,json=body,timeout=(10,120))
  if response.status_code!=200:raise Halt('Report model outcome unknown; no retry')
  j=response.json();cost=budget.settle(jid,j.get('usage')or{})
  if j.get('status')!='completed':raise Halt('Incomplete report analysis; no replay')
  txt=''.join(c.get('text','')for o in j.get('output',[])if o.get('type')=='message'for c in o.get('content',[])if c.get('type')=='output_text')
- return json.loads(txt),dict(model=MODEL,response_id=j.get('id'),usage=j.get('usage'),charged_micro_usd=cost,model_calls=1,shared_monthly_cap_usd=10)
+ receipt=dict(model=MODEL,response_id=j.get('id'),usage=j.get('usage'),charged_micro_usd=cost,model_calls=1,shared_monthly_cap_usd=10)
+ state.put(ROOT_REPORT+identity+':provider_result',dict(status='completed',raw_text=txt,receipt=receipt))
+ result=json.loads(txt)
+ state.put(ROOT_REPORT+identity+':provider_result',dict(status='completed',result=result,receipt=receipt))
+ return result,receipt

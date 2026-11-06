@@ -18,10 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 759f4f517e3ee1a9e8cf8d0824d892a1da957c68
+          ref: b0e2e018b74824fab5a98efa567bb592e5d5b129
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            /ip_dialog_png.py
             /ip_cloud_dialog.py
             /ip_cloud_prepare.py
             /test_ip_cloud_dialog.py
@@ -35,7 +36,7 @@ jobs:
           path: private-source
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install requests==2.32.5 cryptography==46.0.2 > "$RUNNER_TEMP/dependencies.log" 2>&1
+      - run: pip install requests==2.32.5 cryptography==46.0.2 Pillow==12.3.0 > "$RUNNER_TEMP/dependencies.log" 2>&1
       - name: Focused offline regression; no credentials
         run: python -m unittest test_ip_cloud_dialog
       - name: Prepare compact saved evidence once; no sources or model

@@ -1,7 +1,6 @@
 name: Deliver reviewed Nov5 IP PNGs once
 on:
-  push:
-    paths: [".github/disabled/ip-report-delivery-20261106.never"]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -14,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: eeaecd5de9e512bf38272f1e9c563481749f65c2
+          ref: aea3e7eade85d4a1c4a8a9709d2dce3cc9ee7fe0
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             ip_report_delivery_20261106.py

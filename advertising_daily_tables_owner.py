@@ -46,6 +46,13 @@ def main():
    try:view['_recent_views'].append(load_daily_table_view(store,datetime.now(timezone.utc)-timedelta(days=offset)))
    except (ValueError,RuntimeError):pass # An independent historical gap must not block today's ready rows.
   contract=build_contract(store,view)
+  # Reuse the same dated calculations for cloud answers; no model or source calls.
+  try:
+   from ip_cloud_dialog import publish_context
+   publish_context(store,view,contract)
+   report["cloud_context_status"]="prepared"
+  except Exception as exc:
+   report["cloud_context_status"]="unavailable:"+type(exc).__name__ # Independent cache issue never blocks ready PNGs.
   for c in view['campaigns']:
    c['campaign_name']=c.get('campaign_name') or (contract.get('campaign_labels',{}).get(str(c['campaign_id'])) or {}).get('name') or ''
   # Approved shortage-only budget format; same delivery slots, no payment actions.

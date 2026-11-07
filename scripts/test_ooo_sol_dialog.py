@@ -44,4 +44,9 @@ class Tests(unittest.TestCase):
   with patch('ooo_sol_dialog.BoundedSol')as model:
    with self.assertRaises(PermissionError):w.process('key',{'status':'queued','update_id':1,'message':self.msg()['message']})
    model.assert_not_called()
+ def test_question_from_old_group_never_reaches_model(self):
+  w=Worker(object());u=self.msg();u['message']['chat']['id']=-5459387392
+  with patch('ooo_sol_dialog.BoundedSol')as model:
+   with self.assertRaises(PermissionError):w.process('key',{'status':'queued','update_id':None,'message':u['message']})
+   model.assert_not_called()
 if __name__=='__main__':unittest.main()

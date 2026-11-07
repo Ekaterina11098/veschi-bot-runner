@@ -44,9 +44,14 @@ def addressed(message):
 
 def eligible(update,policy):
  m=update.get('message')or{};sender=m.get('from')or{}
+ text=m.get('text')or''
+ direct=addressed(m)
+ ordinary=(policy.get('open_group_dialogue')is True and isinstance(text,str)
+   and 0<len(text.strip())<=4000 and not text.strip().startswith(('/','@'))
+   and type(m.get('date'))is int and m['date']>=policy.get('open_text_not_before_unix',policy['not_before_unix']))
  return (type(update.get('update_id'))is int and type(m.get('message_id'))is int
    and(m.get('chat')or{}).get('id')==CHAT and type(sender.get('id'))is int and not sender.get('is_bot')
-   and type(m.get('date'))is int and m['date']>=policy['not_before_unix'] and addressed(m))
+   and type(m.get('date'))is int and m['date']>=policy['not_before_unix'] and (direct or ordinary))
 
 class Worker:
  def __init__(self,db=None):self.db=db or DB()
@@ -63,7 +68,7 @@ class Worker:
   if hook.get('url'):raise PermissionError('Webhook exists: polling consumer not started')
   member=self.tg('getChatMember',{'chat_id':CHAT,'user_id':BOT})
   if member.get('status')not in('member','administrator','creator'):raise PermissionError('OOO bot is not a group member')
-  return {'status':'verified','bot_id':BOT,'chat_id':CHAT,'webhook_present':False,'can_read_all_group_messages':bot.get('can_read_all_group_messages',False),'observed_at':stamp()}
+  return {'status':'verified','bot_id':BOT,'chat_id':CHAT,'webhook_present':False,'can_read_all_group_messages':bot.get('can_read_all_group_messages',False),'group_member_status':member.get('status'),'unaddressed_delivery_available':bot.get('can_read_all_group_messages')is True or member.get('status')in('administrator','creator'),'observed_at':stamp()}
  def context(self,message):
   day=str(datetime.now(ZoneInfo('Europe/Moscow')).date())
   # Project fields server-side: images and encoded artifacts are never transferred.

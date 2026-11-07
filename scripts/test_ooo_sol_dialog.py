@@ -13,6 +13,16 @@ class Tests(unittest.TestCase):
  def test_reply_to_our_bot_is_addressed(self):
   u=self.msg();u['message']['text']='А почему?';u['message']['reply_to_message']={'from':{'id':BOT}}
   self.assertTrue(eligible(u,{'not_before_unix':99}))
+ def test_open_group_accepts_new_plain_text_without_an_address(self):
+  u=self.msg();u['message']['text']='Почему выросли расходы?'
+  p={'not_before_unix':90,'open_group_dialogue':True,'open_text_not_before_unix':99}
+  self.assertTrue(eligible(u,p))
+  u['message']['date']=98;self.assertFalse(eligible(u,p))
+ def test_open_group_still_rejects_foreign_commands_bots_and_other_chats(self):
+  p={'not_before_unix':90,'open_group_dialogue':True}
+  for text in ['/confirm 123','/ask@otherbot test','@otherbot test']:
+   u=self.msg();u['message']['text']=text;self.assertFalse(eligible(u,p))
+  u=self.msg();u['message']['from']['is_bot']=True;self.assertFalse(eligible(u,p))
  def test_uncertain_send_is_not_repeated(self):
   class DB:
    def __init__(self):self.v={}

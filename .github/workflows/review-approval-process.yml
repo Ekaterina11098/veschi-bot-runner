@@ -24,8 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: main
           persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*.py
+            /review-approval-preparation/
+            /.github/workflows/review-approval-process.yml
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -33,6 +39,12 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*.py
+            /tests/*.py
+            /*.md
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2 requests==2.32.5 python-dotenv==1.1.1

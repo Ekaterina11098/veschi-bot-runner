@@ -92,7 +92,7 @@ jobs:
         id: cloud_initial
         continue-on-error: true
         env:
-          OPENAI_API_KEY: "" # Owner: no paid model API
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
@@ -141,7 +141,7 @@ jobs:
         if: success() && contains(fromJSON('["collecting","waiting_analytics"]'), steps.cloud_initial.outputs.status)
         continue-on-error: true
         env:
-          OPENAI_API_KEY: "" # Owner: no paid model API
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
@@ -168,7 +168,7 @@ jobs:
         if: success() && contains(fromJSON('["collecting","waiting_analytics"]'), steps.cloud_continue_1.outputs.status)
         continue-on-error: true
         env:
-          OPENAI_API_KEY: "" # Owner: no paid model API
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
@@ -195,7 +195,7 @@ jobs:
         if: success() && contains(fromJSON('["collecting","waiting_analytics"]'), steps.cloud_continue_2.outputs.status)
         continue-on-error: true
         env:
-          OPENAI_API_KEY: "" # Owner: no paid model API
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
@@ -276,5 +276,6 @@ jobs:
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
       OPENAI_API_KEY: "" # Owner: no paid model API
+
 
 

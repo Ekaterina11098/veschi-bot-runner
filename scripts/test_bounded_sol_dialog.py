@@ -12,9 +12,9 @@ class Tests(unittest.TestCase):
   calls=[]
   def api(path,body):
    calls.append((path,body))
-   return {'input_tokens':100}if path.endswith('input_tokens')else{'status':'completed','model':MODEL,'id':'r1','usage':{'input_tokens':100,'output_tokens':10},'output':[{'type':'message','content':[{'type':'output_text','text':'�����'}]}]}
+   return {'input_tokens':100}if path.endswith('input_tokens')else{'status':'completed','model':MODEL,'id':'r1','usage':{'input_tokens':100,'output_tokens':10},'output':[{'type':'message','content':[{'type':'output_text','text':'Ответ'}]}]}
   w=BoundedSol(DB(),'test:',api)
-  self.assertEqual(w.answer('a','rules','question'),'�����');self.assertEqual(w.answer('a','rules','question'),'�����')
+  self.assertEqual(w.answer('a','rules','question'),'Ответ');self.assertEqual(w.answer('a','rules','question'),'Ответ')
   self.assertEqual(len(calls),2);self.assertEqual(calls[1][1]['tools'],[]);self.assertNotIn('previous_response_id',calls[1][1])
  def test_uncertain_submission_is_not_repeated(self):
   calls=[]

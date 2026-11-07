@@ -2,16 +2,16 @@ import unittest
 from unittest.mock import patch
 from ooo_sol_dialog import eligible,CHAT,BOT,Worker
 class Tests(unittest.TestCase):
- def msg(self):return {'update_id':1,'message':{'message_id':2,'date':100,'chat':{'id':CHAT},'from':{'id':3},'text':'�����, ������� �����'}}
+ def msg(self):return {'update_id':1,'message':{'message_id':2,'date':100,'chat':{'id':CHAT},'from':{'id':3},'text':'Агент, объясни отчёт'}}
  def test_only_new_group_addressed_human_messages(self):
   u=self.msg();self.assertTrue(eligible(u,{'not_before_unix':99}));self.assertFalse(eligible(u,{'not_before_unix':101}))
   u['message']['chat']['id']=1;self.assertFalse(eligible(u,{'not_before_unix':99}))
   u=self.msg();u['message']['from']['is_bot']=True;self.assertFalse(eligible(u,{'not_before_unix':99}))
  def test_foreign_commands_and_ordinary_chatter_ignored(self):
-  for text in ['/ask@otherbot test','/confirm 123','������, �����']:
+  for text in ['/ask@otherbot test','/confirm 123','Привет, Павел']:
    u=self.msg();u['message']['text']=text;self.assertFalse(eligible(u,{'not_before_unix':99}))
  def test_reply_to_our_bot_is_addressed(self):
-  u=self.msg();u['message']['text']='� ������?';u['message']['reply_to_message']={'from':{'id':BOT}}
+  u=self.msg();u['message']['text']='А почему?';u['message']['reply_to_message']={'from':{'id':BOT}}
   self.assertTrue(eligible(u,{'not_before_unix':99}))
  def test_uncertain_send_is_not_repeated(self):
   class DB:
@@ -24,7 +24,7 @@ class Tests(unittest.TestCase):
    raise TimeoutError()
   w.tg=tg;entry={'status':'queued','update_id':1,'message':self.msg()['message']}
   with patch('ooo_sol_dialog.BoundedSol')as model:
-   model.return_value.answer.return_value='�����'
+   model.return_value.answer.return_value='Ответ'
    with self.assertRaises(TimeoutError):w.process('key',entry)
    self.assertEqual(w.process('key',db.v['key']),'send_uncertain')
    self.assertEqual(model.return_value.answer.call_count,1)

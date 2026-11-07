@@ -1,0 +1,22 @@
+name: OOO read-only Telegram group identity check
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ooo-identity-check.yml','scripts/ooo_identity_check.py']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Read existing bot and chat metadata; no messages or paid calls
+        env:
+          OOO_TELEGRAM_BOT_TOKEN: ${{ secrets.OOO_TELEGRAM_BOT_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python scripts/ooo_identity_check.py

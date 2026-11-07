@@ -1,0 +1,29 @@
+name: OOO approved morning photo pair
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ooo-send-morning7.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ooo-telegram-photo-delivery
+  cancel-in-progress: false
+jobs:
+  send:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 378dec901462492f66b8932bb067ba968aa88959
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 --quiet
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OOO_TELEGRAM_BOT_TOKEN: ${{ secrets.OOO_TELEGRAM_BOT_TOKEN }}
+        run: python -u scripts/ooo_send_morning7.py

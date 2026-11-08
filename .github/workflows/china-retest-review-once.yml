@@ -56,3 +56,4 @@ jobs:
           print(json.dumps(dict(status=result.get('status'),summary=result.get('candidate_review'),paid_model_calls=0,wb_writes=0)))
           if result.get('status')!='reviewed':raise SystemExit('Candidate review incomplete; inspect private request state')
           PY
+# Recheck new-period insert handling before final candidate delivery.

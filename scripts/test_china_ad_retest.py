@@ -1,4 +1,4 @@
-import copy,unittest,sys,types
+import copy,unittest,sys,types,os
 from unittest.mock import patch,Mock
 import china_ad_retest as r
 from china_ad_candidate_review import build,deliver_review,ROOT
@@ -16,6 +16,21 @@ def improved():
  a=dict(period_from='2026-11-04',period_to='2026-11-07',row=dict(open_card_count=200,funnel_orders_count=5),source=12)
  return r.compare(event,b,a,'2026-11-07')
 class Retests(unittest.TestCase):
+ def test_missing_period_uses_insert_before_update_and_never_model(self):
+  class IO:
+   def __init__(self):self.mem={}
+   def db(self,*a):return []
+   def get(self,k):return self.mem.get(k)
+   def create(self,k,v):self.mem[k]=v;return True
+   def put(self,k,v):
+    if k not in self.mem:raise RuntimeError('State readback mismatch')
+    self.mem[k]=v
+  io=IO()
+  mods={'analytics.mpstats_probe':types.SimpleNamespace(discover=lambda *a,**kw:None),
+        'analytics.mpstats_gaps':types.SimpleNamespace(execute_reads=lambda *a,**kw:None)}
+  with patch.dict(sys.modules,mods),patch.dict(os.environ,MPSTATS_API_TOKEN='fixture'):
+   self.assertIsNone(r.period(io,'2026-11-04','2026-11-07',collect=True))
+  self.assertEqual(next(iter(io.mem.values()))['status'],'unavailable')
  def test_old_ad_spend_and_exclusion_are_not_permanent_bans(self):
   s=source();s['retest_evidence']={'1':improved()}
   rows=r.assess(s);self.assertEqual(len(rows),1);self.assertTrue(rows[0]['eligible'])

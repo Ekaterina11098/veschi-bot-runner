@@ -39,7 +39,9 @@ def period(io,first,last,collect=False):
         if cabinet=='token_3' and obs.get('tool')=='lk_wb_products' and obs.get('arguments')==args and obs.get('status')=='received' and obs.get('scope_verified') is True:
             observations.append(obs)
     def extra(call,checks,known):return execute_reads(call,checks,known,calls,{},persist,max_requests=1)
-    io.put(key,dict(status='collecting',at=now.isoformat()))
+    pending=dict(status='collecting',at=now.isoformat())
+    if old:io.put(key,pending)
+    elif not io.create(key,pending):return None
     try:
         discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=extra)
         if len(observations)!=1:raise ValueError('Exact-period evidence unavailable')

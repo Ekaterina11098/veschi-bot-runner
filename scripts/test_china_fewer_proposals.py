@@ -21,13 +21,14 @@ class Tests(unittest.TestCase):
  def test_negative_economics_and_missing_values_not_padded(self):
   s=source();s['stock'][0]['price']=99999999;s['stock'][1]['reserve']=None
   self.assertEqual([],choose(s,20,manual_review=True)[0]['orders'])
- def test_published_stock_and_current_minimum_used(self):
+ def test_moysklad_free_stock_and_current_minimum_used(self):
   s=source();s['campaigns']={'9':dict(id=9,status=9,currency='CNY',settings=dict(placements=dict(search=False,recommendations=True)),nm_settings=[dict(subject=dict(id=50))])}
-  groups={'orders':[dict(nm_id=1,subject_id=50),dict(nm_id=2,subject_id=50)]}
+  groups={'orders':[dict(nm_id=1,subject_id=50,stock=10),dict(nm_id=2,subject_id=50,stock=0)]}
   class IO:
-   def get(self,k):return dict(cabinet='token_3',status='complete',observed_at=datetime.now(timezone.utc).isoformat(),published_stock=dict(amounts={'1':10,'2':0}))
+   def get(self,k):return dict(cabinet='token_3',minimums={'9':{'bids':[dict(nm_id=100,bids=[dict(type='recommendation',currency='CNY',value=30)])]}})
+  s['campaigns']['9']['nm_settings'][0]['nm_id']=100
   with patch('china_new_ad_reports.Transport')as t:
-   t.return_value.minima.return_value={1:30};out,blocked=quote_groups(IO(),s,groups)
+   out,blocked=quote_groups(IO(),s,groups);t.assert_not_called()
   self.assertEqual(30,out['orders'][0]['bid_minor']);self.assertTrue(out['orders'][0]['minimum_verified']);self.assertEqual(1,len(blocked))
 if __name__=='__main__':unittest.main()
 

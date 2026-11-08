@@ -47,6 +47,15 @@ def complete(io,s,req):
     if nm in s.get('protected',[]) and (not ret or ret.get('status')!='improved'):reasons.append('Не подтверждено улучшение после исключения')
     if p.get('advertisement')is None:reasons.append('Не подтверждена история рекламных расходов')
     r=dict(nm_id=nm,article=p['sa_name'],subject_id=p['subject_id'],price_cny=price,stock=matches[0]['stock']-matches[0]['reserve'],paid=p['is_payed'],finished=p['finished_orders'],conversion=100*p['funnel_orders_count']/p['open_card_count'],recent_orders=0,group='demand',requires_review=reasons,retest=ret,memory_used=True,memory_event_ids=history['event_ids'])
+  if not e and o and (p.get('finished_orders')or 0)>=3:
+   matches=[v for v in s['stock']if str(v.get('article','')).casefold()==p['sa_name'].casefold()]
+   price=next((q['sizes'][0]['discountedPrice']for q in s['prices']if q['nmID']==nm),None)
+   fee=o.get('total_commission_without_spp_in_sales');log=policy['logistics_by_nm'].get(str(nm),{}).get('delivery_cny')
+   fxvalues={v['fx_rub_per_cny']for v in economics.values()if finite(v.get('fx_rub_per_cny')) and v.get('fx_date')==str(day)}
+   ratio=(p.get('price_after_spp')or 0)/(p.get('price_after_discount')or 1)
+   if len(matches)==1 and finite(matches[0].get('price')) and finite(price) and price>0 and finite(fee) and finite(log) and len(fxvalues)==1 and ratio>0:
+    fx=next(iter(fxvalues));buyout=p['is_payed']/p['finished_orders'];cost=matches[0]['price']/100
+    e=dict(sample_size=p['finished_orders'],buyout=buyout,buyout_fallback=False,stock_free=matches[0]['stock']-matches[0]['reserve'],seller_price_cny=price,own_cogs_rub=cost,logistics_cny=log,fx_rub_per_cny=fx,commission_pct=fee,tax_pct=5,expected_margin_before_ads_cny=buyout*(price*(1-fee/100-.05*ratio)-cost/fx)-log,model_reconstructed_from_exact_sources=True)
   record=dict(nm_id=nm,article=p['sa_name'],checks_complete=True,status='rejected',source_keys=['china_agent:new_ad_source:v1:'+str(day),'china_agent:advertising_full_growth:'+str(day)+':v1:inputs',post.get('source_key')or post.get('snapshot_id')])
   if nm in HOLD:record['reason']='Отдельный запрет владельца'
   elif nm in active:record.update(status='out_of_scope',reason='Уже в активной рекламе: не новый запуск и не повод создавать дубль')

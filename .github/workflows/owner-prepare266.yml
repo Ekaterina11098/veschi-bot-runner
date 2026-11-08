@@ -30,7 +30,9 @@ jobs:
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 Pillow==12.3.0
       - name: Verify consent with natural clarification
-        run: PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_ad_proposal_consent.py
+        run: |
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_ad_proposal_consent.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_fewer_proposals.py
       - name: Accept original consent and calculate scoped proposals without execution
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

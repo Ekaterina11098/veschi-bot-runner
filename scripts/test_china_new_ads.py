@@ -20,8 +20,8 @@ class IO:
   if not self.authorized:raise PermissionError('member left')
 
 class Transport:
- def __init__(self):self.c={};self.b={};self.l={};self.writes=[];self.fail=None;self.bad_second_min=False;self.mindaily=10000
- def config(self):return dict(currency='CNY',minTopUp=10000,minDailyLimit=self.mindaily,cpcStep=1)
+ def __init__(self):self.c={};self.b={};self.l={};self.writes=[];self.fail=None;self.bad_second_min=False;self.mindaily=10000;self.minfund=10000
+ def config(self):return dict(currency='CNY',minTopUp=self.minfund,minDailyLimit=self.mindaily,cpcStep=1)
  def preflight(self,items,owned):pass
  def campaign(self,cid):return copy.deepcopy(self.c[cid])
  def minima(self,cid,ids):return {i:1000 if self.bad_second_min and cid==102 else (28 if i==1 else 23) for i in ids}
@@ -49,11 +49,11 @@ class Transport:
 class NewAds(unittest.TestCase):
  def setup(self):
   p=plan();io=IO(p);a=dict(plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],reply_message_id=77);return p,io,a,Transport()
- def test_two_drafts_limits_budgets_before_first_launch(self):
+ def test_two_drafts_and_budgets_before_first_launch_without_daily_limits(self):
   p,io,a,t=self.setup();e=n.execute(io,a,p,t)
-  self.assertEqual(e['status'],'done');self.assertEqual([t.b[i] for i in [101,102]],[100,100]);self.assertEqual(len(t.writes),10)
+  self.assertEqual(e['status'],'done');self.assertEqual([t.b[i] for i in [101,102]],[100,100]);self.assertEqual(len(t.writes),8)
   first=next(i for i,r in enumerate(t.writes) if '/start' in r[0]);self.assertEqual(sum('/deposit' in r[0] for r in t.writes[:first]),2)
-  self.assertEqual([t.l[i]['dailyLimit'] for i in [101,102]],[10000,10000]);self.assertTrue(all(not t.l[i]['carryOverEnabled'] for i in [101,102]))
+  self.assertEqual(t.l,{});self.assertFalse(any('daily-limits'in r[0] for r in t.writes))
   count=len(t.writes);n.execute(io,a,p,t);n.execute(io,dict(a,job_id=999),p,t);self.assertEqual(len(t.writes),count)
  def test_timeout_after_deposit_never_deposits_or_creates_again(self):
   p,io,a,t=self.setup();t.fail='budget/deposit';e=n.execute(io,a,p,t);self.assertEqual(e['status'],'uncertain');self.assertEqual(t.b[101],100)
@@ -63,7 +63,10 @@ class NewAds(unittest.TestCase):
  def test_second_minimum_failure_leaves_both_unlaunched_unfunded(self):
   p,io,a,t=self.setup();t.bad_second_min=True;e=n.execute(io,a,p,t);self.assertEqual(e['status'],'blocked');self.assertEqual(sum(t.b.values()),0);self.assertTrue(all(c['status']==4 for c in t.c.values()))
  def test_changed_config_does_not_create_any_campaign(self):
-  p,io,a,t=self.setup();t.mindaily=20000;self.assertEqual(n.execute(io,a,p,t)['status'],'blocked');self.assertEqual(t.writes,[])
+  p,io,a,t=self.setup();t.minfund=20000;self.assertEqual(n.execute(io,a,p,t)['status'],'blocked');self.assertEqual(t.writes,[])
+ def test_daily_limit_minimum_is_irrelevant_and_never_requested(self):
+  p,io,a,t=self.setup();t.mindaily=99999999;t.limit=lambda cid:(_ for _ in()).throw(AssertionError('Prohibited daily limit read'))
+  self.assertEqual(n.execute(io,a,p,t)['status'],'done');self.assertFalse(any('daily-limits'in x[0]for x in t.writes))
  def test_mutated_amount_and_wrong_reply_refused_before_writes(self):
   p,io,a,t=self.setup();p['items'][0]['budget_cny']=200
   with self.assertRaises(ValueError):n.execute(io,a,p,t)

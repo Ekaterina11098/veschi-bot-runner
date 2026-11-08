@@ -61,5 +61,13 @@ class Tests(unittest.TestCase):
  def test_yes_does_not_override_negative_or_large_scope(self):
   for text in ('Да, но не готовь предложение','Да. Найди около 100 товаров'):
    w,_=self.setup_question();f.handle(w,job(266,text,800));self.assertFalse(w.get(REQUEST+'266'))
+ def test_yes_reply_to_accepted_preparation_returns_status_not_help(self):
+  w=W();w.values[REQUEST+'268']=dict(status='collecting',chat_id=c.CHAT,sender_id=307200273)
+  w.db=lambda *a,**kw:[{'payload':dict(job_id=268,status='delivered',chat_id=c.CHAT)}]
+  for text in ('Да','Да подготовб'):
+   reply=f.handle(w,job(269,text,771));self.assertIn('повторное согласие не требуется',reply);self.assertNotIn('Платные',reply)
+  self.assertEqual(1,sum(k.startswith(REQUEST)for k in w.values))
+ def test_explicit_twenty_pieces_is_not_default_twelve(self):
+  w=W();f.handle(w,job(268,'Покажи кандидатов для рекламы 20 штук'));self.assertEqual(20,w.get(REQUEST+'268')['maximum_count']);self.assertIn('20 товаров',w.get(REQUEST+'268')['request_text'])
 if __name__=='__main__':unittest.main()
 

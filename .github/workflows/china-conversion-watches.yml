@@ -8,7 +8,7 @@ on:
       action:
         description: Process owner commands and due watches, or verify without sending
         type: choice
-        options: [run, verify, smoke, dialog, reports]
+        options: [run, verify, smoke, dialog, dialog_free, reports]
         default: run
       job_id:
         description: Exact saved-data question job
@@ -70,6 +70,8 @@ jobs:
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_ads.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_order_decline.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_new_ads.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_free_ads.py
+          node --test scripts/test_codex_inbox.mjs scripts/test_codex_route.mjs
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_experience.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_analytic_dialog.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_profit_forecast31.py
@@ -92,7 +94,7 @@ jobs:
         id: cloud_initial
         continue-on-error: true
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: "" # Owner 8Nov: no paid API
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
@@ -123,7 +125,10 @@ jobs:
             MODE=$(python -c "import json;print(json.load(open('china-conversion-watches-request.json'))['action'])")
             DIALOG_JOB_ID=$(python -c "import json;print(json.load(open('china-conversion-watches-request.json')).get('job_id',''))")
           fi
-          if [ "$MODE" = dialog ]; then
+          if [ "$MODE" = dialog_free ]; then
+            python scripts/conversion_watches.py --exact-dialog-job "$DIALOG_JOB_ID"
+            PYTHONPATH=scripts:source python scripts/china_free_ad_work.py --job-id "$DIALOG_JOB_ID"
+          elif [ "$MODE" = dialog ]; then
             python scripts/conversion_watches.py --dialog-job "$DIALOG_JOB_ID"
           elif [ "$MODE" = reports ]; then
             python scripts/conversion_watches.py --reports-only
@@ -141,7 +146,7 @@ jobs:
         if: success() && contains(fromJSON('["collecting","waiting_analytics"]'), steps.cloud_initial.outputs.status)
         continue-on-error: true
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: "" # Owner 8Nov: no paid API
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
@@ -168,7 +173,7 @@ jobs:
         if: success() && contains(fromJSON('["collecting","waiting_analytics"]'), steps.cloud_continue_1.outputs.status)
         continue-on-error: true
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: "" # Owner 8Nov: no paid API
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
@@ -195,7 +200,7 @@ jobs:
         if: success() && contains(fromJSON('["collecting","waiting_analytics"]'), steps.cloud_continue_2.outputs.status)
         continue-on-error: true
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: "" # Owner 8Nov: no paid API
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |

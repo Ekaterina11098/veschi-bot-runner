@@ -25,7 +25,8 @@ class IO(BaseIO):
   if len(cfg)!=1 or cfg[0]!=dict(active=True,chat_id=CHAT,bot_id=BOT,owner_user_id=OWNER):raise ValueError('Registration changed')
   j=self.db('business_agent_jobs?id=eq.'+str(a['job_id'])+'&agent_id=eq.china&select=id,request_text,sender_id,chat_id,created_at,tool_trace')
   from china_advertising_plans import bid_confirmation
-  confirmation=bool(j) and (is_all(j[0]['request_text']) or a.get('execution_kind')=='advertising_dialog_v1' and bid_confirmation(j[0]['request_text']))
+  from china_free_ads import confirmation_text
+  confirmation=bool(j) and (is_all(confirmation_text(j[0])) or a.get('execution_kind')=='advertising_dialog_v1' and bid_confirmation(confirmation_text(j[0])))
   if a.get('execution_kind')=='daily_selected_v1' and len(j)==1:
    from china_daily_selected import validate
    confirmation=bool(validate(self,a,j[0]))

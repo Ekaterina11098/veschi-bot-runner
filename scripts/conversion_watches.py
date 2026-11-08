@@ -876,8 +876,12 @@ def drain_saved_questions(w,requested_id,limit=10):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--verify',action='store_true');parser.add_argument('--smoke',action='store_true');parser.add_argument('--dialog-job',type=int);parser.add_argument('--reports-only',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--verify',action='store_true');parser.add_argument('--smoke',action='store_true');parser.add_argument('--dialog-job',type=int);parser.add_argument('--exact-dialog-job',type=int);parser.add_argument('--reports-only',action='store_true');args=parser.parse_args()
     w=runtime()
+    if args.exact_dialog_job is not None:
+        w.collect=None
+        with saved_network_guard():result=w.question(args.exact_dialog_job)
+        print(json.dumps({'status':result,'job_id':args.exact_dialog_job,'paid_model_calls':0}));return
     if args.dialog_job is not None:
         w.collect=None
         results=drain_saved_questions(w,args.dialog_job)

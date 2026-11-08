@@ -79,7 +79,7 @@ def source(io):
  io.put(cache,result) if old else io.create(cache,result)
  return result
 
-def choose(s,maximum=12):
+def choose(s,maximum=12,nm_ids=()):
  if s.get('memory_used') is not True:raise ValueError('Память действий не проверена; подбор заблокирован')
  active={n['nm_id'] for c in s['campaigns'].values() for n in c.get('nm_settings',[])};protected=set(s['protected']);recent=set(s['experience'].get('recent_changed_nm_ids',[]))
  prices={p['nmID']:p for p in s['prices']};stocks={};counts={}
@@ -88,7 +88,9 @@ def choose(s,maximum=12):
  for o in s['orders']:counts[o['nmId']]=counts.get(o['nmId'],0)+1
  policy=s['policy'];groups={'orders':[],'demand':[]};rejected=0
  for row in s['products']:
-  nm=int(row['nm_id']);article=row['sa_name'];p=prices.get(nm);st=stocks.get(article.casefold(),[]);log=policy['logistics_by_nm'].get(str(nm))
+  nm=int(row['nm_id'])
+  if nm_ids and nm not in nm_ids:continue
+  article=row['sa_name'];p=prices.get(nm);st=stocks.get(article.casefold(),[]);log=policy['logistics_by_nm'].get(str(nm))
   if nm in active or nm in protected or nm in recent or not p or len(st)!=1 or not log:continue
   st=st[0];f=row.get('finished_orders');paid=row.get('is_payed');views=row.get('open_card_count');orders=row.get('funnel_orders_count')
   if not f or f<3 or paid is None or not views or orders is None or st.get('stock') is None or st.get('reserve') is None or st.get('price') is None:rejected+=1;continue
@@ -142,13 +144,18 @@ def render(p,rows,period,stock_at):
    b=io.BytesIO();im.save(b,format='PNG');pages.append(b.getvalue())
  return pages
 
-def process_requests(io):
- requests_=io.db('telegram_api_cache?cache_key=like.'+quote(REQUEST+'*',safe='')+'&payload->>status=eq.pending&select=cache_key,payload&limit=20')
+def process_requests(io,job_id=None):
+ request_filter='eq.'+quote(REQUEST+str(job_id),safe='') if job_id is not None else 'like.'+quote(REQUEST+'*',safe='')
+ requests_=io.db('telegram_api_cache?cache_key='+request_filter+'&payload->>status=eq.pending&select=cache_key,payload&limit=20')
  for entry in requests_:
-  req=entry['payload'];key=entry['cache_key'];io.put(key,dict(req,status='collecting'))
+  req=entry['payload'];key=entry['cache_key']
+  if job_id is not None and req.get('job_id')!=job_id:continue
+  io.put(key,dict(req,status='collecting'))
   try:
    s=source(io);number=re.search(r'(\d+)\s*(?:арт|товар|кандидат)',req['request_text'],re.I);maximum=min(50,max(2,int(number[1]))) if number else 12
-   groups,unassessed=choose(s,maximum)
+   nm_ids=req.get('nm_ids',[])
+   if nm_ids:maximum=min(50,max(2,len(nm_ids)))
+   groups,unassessed=choose(s,maximum,nm_ids)
    if not all(groups.values()):raise ValueError('Недостаточно обоснованных кандидатов для обеих целей; неполные или убыточные позиции не добавляю ради количества')
    minimum=max(s['config'].get('minTopUp',0),s['config'].get('minDailyLimit',0))
    if s['config'].get('currency')!='CNY' or minimum<=0 or minimum%100:raise ValueError('Минимум бюджета CNY не подтверждён')

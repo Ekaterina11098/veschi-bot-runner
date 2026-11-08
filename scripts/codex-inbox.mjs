@@ -1,5 +1,5 @@
 import {route,THREAD} from './codex-route.mjs';
-export async function acceptCodex(config,message,text,updateId,database) {
+export async function acceptCodex(config,message,text,updateId,database,dispatch) {
  const policy=(await database('telegram_api_cache?cache_key=eq.china_agent:codex_bridge:v1:policy&select=payload'))?.[0]?.payload;
  const selected=route(text,policy,message);
  if(selected.kind==='legacy')return {};
@@ -22,5 +22,8 @@ export async function acceptCodex(config,message,text,updateId,database) {
  await database('telegram_api_cache?on_conflict=cache_key','POST',{cache_key:key,payload,expires_at:'2036-11-02T00:00:00Z'},'resolution=ignore-duplicates,return=representation');
  const proof=(await database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(key)+'&select=payload'))?.[0]?.payload;
  if(proof?.job_id!==job.id||proof.input_message_id!==message.message_id||proof.thread_id!==THREAD||proof.chat_id!==config.chat_id)throw Error('Bridge inbox readback mismatch');
+ // Wake the exact durable job before acknowledging Telegram. On failure,
+ // Telegram retries the same update; database uniqueness retains its identity.
+ if(dispatch)await dispatch(job.id);
  return {response:new Response('OK')};
 }

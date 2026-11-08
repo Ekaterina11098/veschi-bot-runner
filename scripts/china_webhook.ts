@@ -91,9 +91,9 @@ async function migration(config: any, old: number, target: number, evidence: unk
   return result;
 }
 
-async function launch(job: number) {
+async function launch(job: number, action = 'dialog') {
   if(!GITHUB)throw new Error('Dispatch unavailable');
-  const r=await fetch('https://api.github.com/repos/Ekaterina11098/veschi-bot-runner/actions/workflows/china-conversion-watches.yml/dispatches',{method:'POST',headers:{Authorization:'Bearer '+GITHUB,Accept:'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'},body:JSON.stringify({ref:'main',inputs:{action:'dialog',job_id:String(job)}}),signal:AbortSignal.timeout(8000)});
+  const r=await fetch('https://api.github.com/repos/Ekaterina11098/veschi-bot-runner/actions/workflows/china-conversion-watches.yml/dispatches',{method:'POST',headers:{Authorization:'Bearer '+GITHUB,Accept:'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'},body:JSON.stringify({ref:'main',inputs:{action,job_id:String(job)}}),signal:AbortSignal.timeout(8000)});
   if(!r.ok)throw new Error('Dispatch pending');
 }
 
@@ -260,7 +260,7 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     if(!text)return new Response('OK');
     const first=text.split(/\s+/,1)[0];const parsed=/^\/(\S+?)(?:@([a-z0-9_]+))?$/i.exec(first);const cmd=parsed?.[1].toLowerCase();
     if(parsed?.[2]&&parsed[2].toLowerCase()!==config.bot_username?.toLowerCase())return new Response('OK');
-    const bridgeInput=await acceptCodex(config,message,text,update.update_id,database);
+    const bridgeInput=await acceptCodex(config,message,text,update.update_id,database,(job:number)=>launch(job,'dialog_free'));
     if(bridgeInput.response)return bridgeInput.response;
     if(bridgeInput.legacy_text!==undefined)text=bridgeInput.legacy_text;
     // A generic confirmation belongs to the actual bound advertising message, not the price route.

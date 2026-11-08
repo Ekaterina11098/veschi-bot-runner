@@ -8,12 +8,7 @@ CHAT=-1004342917488
 BOT=8780468043
 
 def require_paid_api(policy=None):
-    # Only explicitly restored group dialogue. Legacy scheduled analysis stays blocked.
-    p=policy or {}
-    if (p.get('enabled') is True and p.get('paid_api_allowed') is True
-        and p.get('chat_id')==CHAT and p.get('bot_id')==BOT
-        and p.get('model')=='gpt-6.1-sol' and p.get('wb_action_permission') is False):return
-    raise PermissionError('Paid model API disabled by owner; no request was sent')
+    raise PermissionError('Paid model API disabled by owner on 8Nov; no request was sent')
 
 def enabled(w):
     p=w.get(POLICY) or {}
@@ -33,6 +28,9 @@ def cells(value):
 def answer(w,job,history=()):
     text=re.sub(r'^/codex(?:@\w+)?\s*','',job.get('request_text',''),flags=re.I).strip()
     scoped=dict(job,request_text=text)
+    from china_free_ads import handle as advertising
+    advertising_reply=advertising(w,scoped)
+    if advertising_reply is not None:return advertising_reply
     if re.search(r'^(?:/start|/help|помощь|что умеешь)|бесплат|платн|списани',text,re.I):
         return HELP
     from conversion_watches import intent,report
@@ -98,6 +96,9 @@ def safe_answer(w,job,history=()):
     try:
         result=answer(w,job,history)
         if not isinstance(result,str) or not 0<len(result)<=12000:raise ValueError('Reply outside bounds')
+        if job.get('sender_id')==307200273 and len(result)>450 and not result.startswith('CHINA_'):
+            # Pavel's existing policy requires long replies as PNG, including help.
+            result='| Ответ |\n|---|\n'+'\n'.join('| '+cells(line)+' |' for line in result.splitlines() if line.strip())
         return result
     except Exception as exc:
         return ('Не удалось получить полный подтверждённый расчёт без ИИ ('+type(exc).__name__+'). '

@@ -1,4 +1,4 @@
-name: Complete Pavel270 checks before final proposal
+name: Complete Pavel270 checks after exact549 economics
 on:
   push:
     branches: [main]
@@ -33,6 +33,7 @@ jobs:
         run: |
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_ad_proposal_consent.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_sol_proposals.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_proposal_final_review.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_ad_retest.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_fewer_proposals.py
       - name: Accept original consent and calculate scoped proposals without execution

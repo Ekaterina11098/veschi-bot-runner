@@ -37,7 +37,10 @@ def handle(w,job,history=()):
   from china_group_permissions import allowed
   if not allowed(w,job) or m.get('bot_id')!=BOT or m.get('forwarded'):return ('Подтвердить этот план может действующий участник группы, ответом на исходный PNG.',[])
   p=w.get(PLAN+binding['plan_id'])
-  if p and (p.get('status')in('revoked','cancelled','superseded') or p.get('revoked_at') or p.get('invalidated_at')):return ('Этот план отозван или заменён. Подтвердите новый PNG; старый план не исполняю.',[])
+  if p and (p.get('status')in('revoked','cancelled','superseded') or p.get('revoked_at') or p.get('invalidated_at')):
+   latest=w.get(LATEST)or{};accepted=w.get('china_agent:new_ad_accept:v1:'+latest.get('plan_id',''))or{}
+   if accepted.get('status')in('approved','completed'):return ('Актуальный план уже подтверждён. Этот ответ пришёл на прежний PNG; повторять подтверждение не нужно. Проверяю результат исполнения принятого плана.',[])
+   return ('Этот PNG заменён итоговым предложением. Старый вариант не исполняю; используйте последнее предложение.',[])
   validate_plan(p or {})
   if binding.get('plan_sha256')!=p['plan_sha256'] or binding.get('chat_id')!=CHAT or m['reply_message_id'] not in p.get('report_message_ids',[]):raise ValueError('Wrong PNG binding')
   if w.now>datetime.fromisoformat(p['expires_at']):return ('Срок плана истёк. Запросите новый рекламный тест: проверю данные и пришлю новый PNG для подтверждения.',[])
@@ -170,10 +173,11 @@ def execute(io,a,p,t=None):
     if type(cid) is not int or cid<=0:raise ValueError('Creation receipt has no campaign ID; do not repeat')
     state['campaign_id']=cid;save()
    cid=state['campaign_id'];c=t.campaign(cid)
+   if not state.get('verified_before'):state['verified_before']=copy.deepcopy(c);save()
    if state.get('status')=='launched' or state['steps'].get('start'):
     check_campaign(c,spec,ready=False,bids=True)
     if c.get('status')!=9:e['status']='readback_pending';save();return e
-    state['status']='launched';save()
+    state['verified_after']=copy.deepcopy(c);state['status']='launched';save()
     continue
    check_campaign(c,spec)
    minima=t.minima(cid,[s['nm_id'] for s in spec['skus']])
@@ -202,7 +206,7 @@ def execute(io,a,p,t=None):
     write(state,'start','/adv/v0/start?id='+str(cid),'GET');c=t.campaign(cid)
    check_campaign(c,spec,ready=False,bids=True)
    if c.get('status')!=9:e['status']='readback_pending';save();return e
-   state.update(status='launched',verified_at=now().isoformat());save()
+   state.update(status='launched',verified_at=now().isoformat(),verified_after=copy.deepcopy(c));save()
   e.update(status='done',completed_at=now().isoformat());save()
   tracking=io.get('china_agent:new_ad_tests:tracking:v1') or dict(plans={})
   tracking['plans'][p['plan_id']]=dict(campaign_ids=[s['campaign_id'] for s in e['campaigns']],items=copy.deepcopy(specs),started_at=e['completed_at'],budget_cny=sum(s['budget_cny'] for s in specs),status='active',existing_reports=True)

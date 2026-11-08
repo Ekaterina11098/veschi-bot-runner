@@ -45,7 +45,7 @@ def requested_ids(w,job,text):
     if len(selected)>50:raise ValueError('В одном тестовом плане поддерживается до 50 товаров.')
     return sorted(selected)
 
-def prepare(w,job,ids,source_question_job_id=None):
+def prepare(w,job,ids,source_question_job_id=None,maximum_count=None,seed_nm_ids=()):
     from china_new_ads import REQUEST
     from china_group_permissions import allowed
     if not allowed(w,job):return 'Подготовить предложение могут действующие участники группы.'
@@ -54,9 +54,10 @@ def prepare(w,job,ids,source_question_job_id=None):
     if prior:
         if prior.get('nm_ids',[])!=ids:raise ValueError('Preparation request scope changed')
         return 'Подготовка этого предложения уже принята. Повторный расчёт или запуск не создаю.'
-    request=dict(status='pending',job_id=job['id'],chat_id=job['chat_id'],sender_id=job['sender_id'],reply_message_id=m.get('message_id'),request_text='Подготовь рекламный тест. '+text,created_at=w.now.isoformat(),nm_ids=list(ids),source_reply_message_id=m.get('reply_message_id'),source_question_job_id=source_question_job_id,original_request_text=text,paid_model_calls=0,grants_action_permission=False)
+    scope=(' До '+str(maximum_count)+' товаров.' if maximum_count else '')
+    request=dict(status='pending',job_id=job['id'],chat_id=job['chat_id'],sender_id=job['sender_id'],reply_message_id=m.get('message_id'),request_text='Подготовь рекламный тест.'+scope+' '+text,created_at=w.now.isoformat(),nm_ids=list(ids),seed_nm_ids=list(seed_nm_ids),maximum_count=maximum_count,source_reply_message_id=m.get('reply_message_id'),source_question_job_id=source_question_job_id,original_request_text=text,paid_model_calls=0,grants_action_permission=False)
     if not w.save(REQUEST+str(job['id']),request,insert=True):raise ValueError('Preparation request claim lost')
-    return 'Подготовлю после расчётов конкретный план: товары, РК и размещение, ставки и бюджет. Экономику и наличие проверю сам. Пришлю на отдельное подтверждение; это согласие только на подготовку, без запуска и пополнений.'
+    return ('Подготовлю предложение примерно до '+str(maximum_count)+' товаров, если расчёты подтвердят кандидатов. ' if maximum_count else 'Подготовлю после расчётов конкретный план. ')+'Сам подберу РК, размещение, ставки и бюджет, проверю экономику и наличие. Пришлю на отдельное подтверждение; это только подготовка, без запуска и пополнений.'
 
 def handle(w,job):
     from china_new_ads import handle as existing,REQUEST,BIND

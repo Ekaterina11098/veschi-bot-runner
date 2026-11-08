@@ -12,6 +12,7 @@ LATEST='china_agent:new_ad_report_latest:v1'
 def now():return datetime.now(timezone.utc)
 
 def validate_plan(p):
+ if p.get('status') in ('revoked','cancelled','superseded') or p.get('revoked_at') or p.get('invalidated_at'):raise ValueError('Plan revoked; new proposal required')
  if p.get('execution_kind')!='ad_create_campaigns' or p.get('chat_id')!=CHAT or p.get('bot_id')!=BOT or p.get('price_changes') is not False:raise ValueError('Wrong new-campaign plan scope')
  items=p.get('items',[])
  flexible=p.get('group_policy')=='available_qualified_groups'

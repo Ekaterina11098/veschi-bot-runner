@@ -15,6 +15,8 @@ def build(s,maximum=20,nm_ids=()):
                 wb_writes=0,paid_model_calls=0,execution_authorized=False)
 
 def deliver_review(io,req,s,maximum=20,nm_ids=()):
+    raise RuntimeError('Owner8Nov: intermediate candidate delivery disabled; complete final checks before delivery')
+    # Historical implementation retained below for audit; build() remains internal-only.
     from china_table_png import render
     key=ROOT+str(req['job_id']);saved=io.get(key)
     if saved:

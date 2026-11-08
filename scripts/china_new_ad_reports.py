@@ -196,19 +196,14 @@ def process_requests(io,job_id=None):
    if nm_ids:maximum=min(50,max(2,len(nm_ids)))
    if req.get('subject_ids'):
     s=dict(s,products=[r for r in s['products'] if r.get('subject_id') in req['subject_ids']])
-   groups,unassessed=choose(s,maximum,nm_ids,manual_review=bool(req.get('source_question_job_id')))
+   from china_proposal_final_review import complete
+   s,groups,final_review,final_review_key=complete(io,s,req)
+   unassessed=sum(v for k,v in final_review['counts'].items()if k!='ready')
    groups={k:v for k,v in groups.items()if v}
-   from china_ad_candidate_review import deliver_review
-   if req.get('review_only') is True or not groups:
-    review=deliver_review(io,req,s,maximum,nm_ids)
-    io.put(key,dict(req,status='reviewed',candidate_review=review));continue
-   try:groups,quote_blockers=quote_groups(io,s,groups)
-   except ValueError as ex:
-    s['review_blocker']=str(ex);groups={};quote_blockers=[]
-   if not groups:
-    s['quote_blockers']=quote_blockers
-    review=deliver_review(io,req,s,maximum,nm_ids)
-    io.put(key,dict(req,status='reviewed',candidate_review=review));continue
+   if not groups:raise ValueError('Полная проверка завершена: готовых действий нет. Причины сохранены в итоговом журнале '+final_review_key)
+   groups,quote_blockers=quote_groups(io,s,groups)
+   if quote_blockers:raise ValueError('Итоговый подбор не отправлен: точные условия не подтверждены для '+str(quote_blockers))
+   if not groups:raise ValueError('Нет подтверждённых ставок и совместимых РК для итогового подбора')
    minimum=max(s['config'].get('minTopUp',0),s['config'].get('minDailyLimit',0))
    if s['config'].get('currency')!='CNY' or minimum<=0 or minimum%100:raise ValueError('Минимум бюджета CNY не подтверждён')
    budget=minimum//100
@@ -219,9 +214,10 @@ def process_requests(io,job_id=None):
     if not re.fullmatch(r'[a-z0-9-]{1,40}',revision):raise ValueError('Invalid proposal revision')
     pid+='-'+revision
    for group,rows in groups.items():items.append(dict(id=group,kind='ad_create_campaign',group=group,name='Китай тест '+str(req['job_id'])+' '+group,skus=[{k:r[k] for k in ['nm_id','article','bid_minor']} for r in rows],payment_type='cpc',bid_type='manual',placements=['recommendations'],budget_cny=budget,daily_limit_minor=budget*100,carry_over_enabled=False,auto_topup=False))
-   p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='ad_create_campaigns',group_policy='available_qualified_groups',requested_maximum=maximum,selected_count=sum(len(v)for v in groups.values()),candidate_evidence={str(r['nm_id']):r for rows in groups.values()for r in rows},quote_blockers=quote_blockers,items=items,plan_sha256=digest(items),created_at=stamp.isoformat(),expires_at=(stamp+timedelta(hours=2)).isoformat(),report_message_ids=[],price_changes=False,unassessed=unassessed,source_observed_at=s['observed_at'])
+   p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='ad_create_campaigns',group_policy='available_qualified_groups',requested_maximum=maximum,selected_count=sum(len(v)for v in groups.values()),candidate_evidence={str(r['nm_id']):r for rows in groups.values()for r in rows},final_review_key=final_review_key,final_checks_complete=final_review['status']=='complete',scope_counts=final_review['counts'],quote_blockers=quote_blockers,items=items,plan_sha256=digest(items),created_at=stamp.isoformat(),expires_at=(stamp+timedelta(hours=2)).isoformat(),report_message_ids=[],price_changes=False,unassessed=unassessed,source_observed_at=s['observed_at'])
    for row in p['candidate_evidence'].values():
     stock=next((v for v in s['stock'] if str(v.get('article','')).casefold()==row['article'].casefold()),{})
+    if row.get('economics_detail'):continue
     row['economics_detail']=dict(cogs_rub=stock.get('price')/100 if type(stock.get('price'))in(int,float) else None,delivery_cny=(s['policy']['logistics_by_nm'].get(str(row['nm_id']))or{}).get('delivery_cny'),fx_rub_cny=12,scenario_drr_pct=5,unknown_costs=True)
    validate_plan(p);rows={int(n):r for n,r in p['candidate_evidence'].items()};images=render(p,rows,s['period_from']+' — '+s['period_to'],s['observed_at'])
    # Multi-page reports share one immutable plan; each delivered image binds the same scope.

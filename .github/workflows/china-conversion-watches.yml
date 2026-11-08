@@ -70,6 +70,7 @@ jobs:
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_ads.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_order_decline.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_new_ads.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_ad_retest.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_free_ads.py
           node --test scripts/test_codex_inbox.mjs scripts/test_codex_route.mjs
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_experience.py

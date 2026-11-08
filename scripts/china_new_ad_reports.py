@@ -129,24 +129,32 @@ def choose(s,maximum=12,nm_ids=(),manual_review=False):
  return groups,rejected
 
 def quote_groups(io,s,groups):
- # Published stock and WB bid minima are evidence, not guessed category defaults.
- day=datetime.now(MSK).date().isoformat();fresh=io.get('china_agent:advertising_full_growth:'+day+':v1:inputs')or{}
- if fresh.get('cabinet')!='token_3' or fresh.get('status')!='complete' or not fresh.get('observed_at') or datetime.now(timezone.utc)-datetime.fromisoformat(fresh['observed_at'])>timedelta(hours=2):raise ValueError('Нет свежего опубликованного остатка WB для точного предложения')
- published=fresh.get('published_stock',{}).get('amounts',{});transport=Transport(io);out={};blocked=[]
+ # Owner8Nov: China is FBS. Availability is MoySklad MSK minus reserve;
+ # published WB stock is not a prerequisite and this reader never publishes it.
+ day=datetime.now(MSK).date().isoformat()
+ memory=io.get('china_agent:advertising_full_growth:'+day+':v1:inputs')or{}
+ if memory.get('cabinet')!='token_3':raise ValueError('Нет сохранённых минимумов кабинета Китай')
+ out={};blocked=[]
  for group,rows in groups.items():
-  ready=[r for r in rows if type(published.get(str(r['nm_id'])))in(int,float) and published[str(r['nm_id'])]>0]
-  blocked += [dict(nm_id=r['nm_id'],reason='Опубликованный остаток WB не подтверждён')for r in rows if r not in ready]
+  ready=[r for r in rows if type(r.get('stock'))in(int,float) and r['stock']>0]
+  blocked += [dict(nm_id=r['nm_id'],reason='Свободный остаток МойСклад МСК минус резерв не подтверждён')for r in rows if r not in ready]
   if not ready:continue
   refs=[c for c in s['campaigns'].values()if c.get('status')==9 and c.get('currency')=='CNY' and c.get('settings',{}).get('placements')==dict(search=False,recommendations=True) and {n['subject']['id']for n in c.get('nm_settings',[])}=={ready[0]['subject_id']}]
   if not refs:
    blocked += [dict(nm_id=r['nm_id'],reason='Нет подтверждённой категории РК для чтения минимальной ставки')for r in ready];continue
-  minimum=transport.minima(min(c['id']for c in refs),[r['nm_id']for r in ready]);step=s['config'].get('cpcStep')
+  reference=min(refs,key=lambda c:c['id']);cid=reference['id'];subject=ready[0]['subject_id']
+  members={n['nm_id']for n in reference['nm_settings']if n['subject']['id']==subject}
+  saved=memory.get('minimums',{}).get(str(cid),{}).get('bids',[])
+  values={b['value']for n in saved if n.get('nm_id')in members for b in n.get('bids',[])if b.get('type')=='recommendation'and b.get('currency')=='CNY'and type(b.get('value'))is int}
+  if len(values)!=1:
+   blocked += [dict(nm_id=r['nm_id'],reason='В памяти нет однозначного минимума для РК '+str(cid)+', категории '+str(subject)+' и рекомендаций')for r in ready];continue
+  remembered=next(iter(values));minimum={r['nm_id']:remembered for r in ready};step=s['config'].get('cpcStep')
   if type(step)is not int or step<=0:raise ValueError('Шаг CPC не подтверждён')
   quoted=[]
   for r in ready:
    bid=minimum.get(r['nm_id'])
    if type(bid)is not int or bid<=0 or bid%step or bid>s['config'].get('cpcMaxBid',0):blocked.append(dict(nm_id=r['nm_id'],reason='Точная минимальная ставка не подтверждена'));continue
-   quoted.append(dict(r,bid_minor=bid,published_stock=published[str(r['nm_id'])],minimum_verified=True,minimum_reference_campaign_id=min(c['id']for c in refs)))
+   quoted.append(dict(r,bid_minor=bid,availability_basis='MoySklad_MSK_stock_minus_reserve',minimum_verified=True,minimum_source='saved_campaign_category_placement',minimum_reference_campaign_id=cid,minimum_subject_id=subject))
   if quoted:out[group]=quoted
  return out,blocked
 

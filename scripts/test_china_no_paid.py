@@ -10,7 +10,9 @@ class NoPaid(unittest.TestCase):
  def enabled(self,w):
   w.values[n.POLICY]={'enabled':True,'chat_id':n.CHAT,'bot_id':n.BOT,'paid_api_allowed':False}
  def test_sdk_blocked_before_client_creation(self):
-  w=cloud.Worker()
+  # Unit guards must not read mutable live policy or create a real API client.
+  db=types.SimpleNamespace(get=lambda key:dict(enabled=False,paid_api_allowed=False,chat_id=n.CHAT,bot_id=n.BOT,model='gpt-6.1-sol'))
+  w=cloud.Worker(db)
   with self.assertRaisesRegex(PermissionError,'no request'):w.sdk()
   self.assertIsNone(w.client)
  def test_legacy_meter_blocked_before_network(self):

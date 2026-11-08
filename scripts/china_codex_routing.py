@@ -7,11 +7,13 @@ def cloud_only(w):
  p=w.get(POLICY)or{}
  return p.get('status')=='active' and p.get('legacy_analysis_enabled')is False
 def bound_execution(w,job):
+ from china_daily_bid_selection import command as bid_selection
  from china_loss_control import is_all,marker
  from china_advertising_plans import bid_confirmation
  from china_daily_selected import selected_command
  text=job.get('request_text','')
- if not is_all(text) and not bid_confirmation(text) and not selected_command(text):return False
+ if text.startswith('/codex '):text=text[7:].strip()
+ if not is_all(text) and not bid_confirmation(text) and not selected_command(text) and not bid_selection(text):return False
  m=marker(job)
  if m.get('bot_id')!=BOT or m.get('forwarded')or not m.get('reply_message_id'):return False
  if selected_command(text) and m.get('parent_job_id'):
@@ -20,11 +22,17 @@ def bound_execution(w,job):
  return any((w.get(k+str(m['reply_message_id']))or{}).get('chat_id')==CHAT for k in BINDINGS)
 def execute_acknowledgement(w,job):
  if not bound_execution(w,job):raise ValueError('No exact current human-bound execution plan')
+ job=copy.deepcopy(job)
+ if job['request_text'].startswith('/codex '):job['request_text']=job['request_text'][7:].strip()
  from china_daily_ad_actions import handle as daily
  from china_advertising_plans import handle as ads
  for handler in (daily,ads):
   answer=handler(w,job)
-  if answer is not None:return answer
+  if answer is not None:
+   key='china_agent:codex_bridge:v1:inbox:'+str(job['id']);inbox=w.get(key)
+   if inbox and inbox.get('status')=='queued' and inbox.get('job_id')==job['id']:
+    if not w.save(key,dict(inbox,status='execution_routed',execution_job_id=job['id'])):raise RuntimeError('Execution routing readback failed')
+   return answer
  from china_new_ads import handle as new
  value=new(w,job,[])
  if value is not None:return value
@@ -45,3 +53,5 @@ def promote(w,job):
  rows=w.db('PATCH','business_agent_jobs',params=filters,body=dict(request_text='/codex '+text,tool_trace=traces),prefer='return=representation')or[]
  if len(rows)!=1:raise RuntimeError('Cloud routing claim lost')
  return rows[0]
+
+

@@ -8,7 +8,11 @@ CHAT=-1004342917488
 BOT=8780468043
 
 def require_paid_api(policy=None):
-    raise PermissionError('Paid model API disabled by owner on 8Nov; no request was sent')
+    if not (isinstance(policy,dict) and policy.get('enabled') is True
+            and policy.get('paid_api_allowed') is True and policy.get('chat_id')==CHAT
+            and policy.get('bot_id')==BOT and policy.get('model')=='gpt-6.1-sol'):
+        raise PermissionError('Paid model API requires current scoped owner permission; no request was sent')
+    return True
 
 def enabled(w):
     p=w.get(POLICY) or {}

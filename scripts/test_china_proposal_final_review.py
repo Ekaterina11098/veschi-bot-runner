@@ -6,6 +6,7 @@ class IO:
  def __init__(self):
   self.values={};self.full=dict(cabinet='token_3',status='complete',economics=dict(rows={'1':dict(sample_size=10,buyout=.8,buyout_fallback=False,stock_free=10,seller_price_cny=200,own_cogs_rub=100,logistics_cny=10,logistics_historical=True,fx_rub_per_cny=12,commission_pct=20,tax_pct=5,expected_margin_before_ads_cny=100),'3':dict(stock_free=0,model_unavailable='No available MSK stock')}),own=dict(rows=[dict(nm_id=1,backwardlogisticsum=0,average_delivery_cost=0)]))
  def get(self,k):return self.full if k.startswith('china_agent:advertising_full_growth:')else self.values.get(k)
+ def db(self,path):return []
  def put(self,k,v):self.values[k]=v
  def create(self,k,v):self.values[k]=v;return True
 
@@ -31,6 +32,11 @@ class FinalReviewTests(unittest.TestCase):
  def test_absent_completed_day_never_falls_back_to_today_or_review_table(self):
   with patch('china_proposal_final_review.period',return_value=None),patch('china_proposal_final_review.assess',return_value=[candidate()]),self.assertRaisesRegex(ValueError,'полного среза'):
    complete(IO(),source(),dict(job_id=1))
+ def test_same_day_verified_content_change_defers_candidate(self):
+  io=IO();io.db=lambda path:[dict(cache_key='china_agent:description_append:v2:verified:1',payload=dict(verified_at='2026-11-07T12:00:00Z'))]
+  with patch('china_proposal_final_review.assess',return_value=[candidate()]),patch('china_proposal_final_review.period',return_value=post()):
+   _,g,a,_=complete(io,source(),dict(job_id=1))
+  self.assertEqual(a['ledger'][0]['status'],'deferred');self.assertFalse(g['orders'])
  def test_known_future_experiment_window_is_terminal_defer_not_missing_data(self):
   r=candidate();r['requires_review']=['Недавнее изменение']
   s=source();s['experience']['experiences']=[dict(started_at='2026-11-05T12:00:00Z',action=dict(nm_ids=[1]),comparison=dict(evaluate_from='2026-11-09'))]

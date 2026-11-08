@@ -21,7 +21,7 @@ def validate_plan(p):
  for c in items:
   if c.get('kind')!='ad_create_campaign' or c.get('payment_type')!='cpc' or c.get('bid_type')!='manual' or c.get('placements')!=['recommendations']:raise ValueError('Unsupported campaign settings')
   if c.get('group') not in ['orders','demand'] or not c.get('name') or len(c['name'])>100:raise ValueError('Invalid campaign identity')
-  if type(c.get('budget_cny')) is not int or not 0<c['budget_cny']<=1000 or c.get('daily_limit_minor')!=c['budget_cny']*100 or c.get('carry_over_enabled') is not False or c.get('auto_topup') is not False:raise ValueError('Invalid budget controls')
+  if type(c.get('budget_cny')) is not int or not 0<c['budget_cny']<=1000 or c.get('auto_topup') is not False:raise ValueError('Invalid budget controls')
   if not 1<=len(c.get('skus',[]))<=50:raise ValueError('Invalid SKU count')
   for s in c['skus']:
    if type(s.get('nm_id')) is not int or s['nm_id']<=0 or not s.get('article') or type(s.get('bid_minor')) is not int or s['bid_minor']<=0:raise ValueError('Invalid SKU/bid')
@@ -51,7 +51,7 @@ def handle(w,job,history=()):
   a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)
   if not w.save(accepted,a,insert=True):return ('План уже принят другим подтверждением; дубли не создаю.',[])
   w.save(APPROVAL+str(job['id']),a,insert=True)
-  return ('Принято: РК в плане '+str(len(p['items']))+', бюджет '+str(sum(c['budget_cny'] for c in p['items']))+' ¥ суммарно. Проверю ставки и лимиты, затем запущу. Повторная команда не создаст дубли. Цены не меняю.',[dict(name='new_ad_campaigns_approval',plan_id=p['plan_id'])])
+  return ('Принято: РК в плане '+str(len(p['items']))+', бюджет '+str(sum(c['budget_cny'] for c in p['items']))+' ¥ суммарно. Проверю ставки, пополню на согласованную сумму и запущу. Повторная команда не создаст дубли. Цены не меняю.',[dict(name='new_ad_campaigns_approval',plan_id=p['plan_id'])])
  text=job.get('request_text','')
  if not ((re.search(r'реклам\w*\s+тест|тест\w*\s+реклам|кандидат\w*\s+(?:для|в|на)\s+реклам',text,re.I) or re.search(r'реклам',text,re.I) and re.search(r'без\s+(?:РК|реклам)|провер\w*\s+спрос|кандидат',text,re.I)) and re.search(r'подбер|подоб|предлож|подготов|сделай|покаж|отч[её]т|пришли|найди',text,re.I)):return None
  from china_group_permissions import allowed
@@ -63,9 +63,9 @@ class Transport:
  def __init__(self,io):self.io=io
  def request(self,path,method='GET',body=None):
   import requests
-  reads={'/api/advert/v1/config','/api/advert/v2/adverts','/api/advert/v0/daily-limits','/adv/v1/promotion/count'}
+  reads={'/api/advert/v1/config','/api/advert/v2/adverts','/adv/v1/promotion/count'}
   posts={'/api/advert/v1/bids/min','/api/advert/v2/budget','/adv/v2/seacat/save-ad','/adv/v1/budget/deposit'}
-  if not ((method=='GET' and path.split('?')[0] in reads|{'/adv/v0/start'}) or (method=='POST' and path.split('?')[0] in posts) or (method=='PUT' and path=='/api/advert/v0/daily-limits') or (method=='PATCH' and path=='/api/advert/v1/bids')):raise ValueError('Endpoint outside new-campaign scope')
+  if not ((method=='GET' and path.split('?')[0] in reads|{'/adv/v0/start'}) or (method=='POST' and path.split('?')[0] in posts) or (method=='PATCH' and path=='/api/advert/v1/bids')):raise ValueError('Endpoint outside new-campaign scope')
   time.sleep(1.3)
   r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':self.io.token},json=body,timeout=45)
   if not r.ok:raise RuntimeError('WB advertising HTTP '+str(r.status_code))
@@ -157,10 +157,10 @@ def execute(io,a,p,t=None):
   t.preflight(specs,{s['campaign_id'] for s in e['campaigns'] if s.get('campaign_id')})
   if cfg.get('currency')!='CNY':raise ValueError('Wrong cabinet currency')
   for spec in specs:
-   if cfg.get('minTopUp',10**12)>spec['budget_cny']*100 or cfg.get('minDailyLimit',10**12)>spec['daily_limit_minor']:raise ValueError('WB minimum budget increased; new approval required')
+   if cfg.get('minTopUp',10**12)>spec['budget_cny']*100:raise ValueError('WB minimum budget increased; new approval required')
    step=cfg.get('cpcStep')
    if type(step) is not int or step<=0 or any(s['bid_minor']%step or s['bid_minor']>cfg.get('cpcMaxBid',10**12) for s in spec['skus']):raise ValueError('Bid step/maximum changed')
-  # Build and verify BOTH drafts before funding either, and BOTH budgets before starting either.
+  # Owner forbids daily limits. Verify drafts, then approved budgets, then starts.
   for spec in specs:
    state=next((x for x in e['campaigns'] if x['group']==spec['group']),None)
    if not state:state=dict(group=spec['group'],status='preflight',steps={});e['campaigns'].append(state);save()
@@ -180,8 +180,7 @@ def execute(io,a,p,t=None):
    if any(type(minima[s['nm_id']]) is not int or minima[s['nm_id']]>s['bid_minor'] for s in spec['skus']):raise ValueError('Minimum bid above approved bid; no launch')
    write(state,'bids','/api/advert/v1/bids','PATCH',dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=s['nm_id'],bid_kopecks=s['bid_minor'],placement='recommendations') for s in spec['skus']])]))
    check_campaign(t.campaign(cid),spec,bids=True)
-   write(state,'limit','/api/advert/v0/daily-limits','PUT',dict(advertIds=[cid],enabled=True,dailyLimit=spec['daily_limit_minor'],carryOverEnabled=False))
-   check_limit(t.limit(cid),spec);state['status']='draft_verified';save()
+   state['status']='draft_verified';save()
   for spec in specs:
    state=next(s for s in e['campaigns'] if s['group']==spec['group']);cid=state['campaign_id']
    if state.get('status')=='launched':continue
@@ -189,7 +188,7 @@ def execute(io,a,p,t=None):
     if t.budget(cid)!=0:raise ValueError('Draft already funded; no duplicate deposit')
     write(state,'deposit','/adv/v1/budget/deposit?id='+str(cid),'POST',dict(sum=spec['budget_cny'],type=0))
    if t.budget(cid)!=spec['budget_cny']:raise ValueError('Budget readback differs from approved amount')
-   check_limit(t.limit(cid),spec);state['status']='funded_verified';save()
+   state['status']='funded_verified';save()
   for spec in specs:
    state=next(s for s in e['campaigns'] if s['group']==spec['group']);cid=state['campaign_id']
    if state.get('status')=='launched':continue
@@ -198,7 +197,7 @@ def execute(io,a,p,t=None):
     # Accepted start can be stale in WB cache; recovery only reads, never repeats GET start.
     if c.get('status')!=9:e['status']='readback_pending';save();return e
    else:
-    check_campaign(c,spec,bids=True);check_limit(t.limit(cid),spec)
+    check_campaign(c,spec,bids=True)
     if t.budget(cid)!=spec['budget_cny']:raise ValueError('Budget changed before start')
     write(state,'start','/adv/v0/start?id='+str(cid),'GET');c=t.campaign(cid)
    check_campaign(c,spec,ready=False,bids=True)

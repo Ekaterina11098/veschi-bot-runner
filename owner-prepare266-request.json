@@ -1,1 +1,1 @@
-{"job_id":266,"maximum_count":20,"allow_fewer":true,"owner_source":"исправляй, если их меньше, пусть представит меньше","execution_authorized":false,"revision":2}
+{"job_id":266,"maximum_count":20,"allow_fewer":true,"availability":"MoySklad MSK minus reserve","minima":"saved per campaign category placement","execution_authorized":false,"revision":3}

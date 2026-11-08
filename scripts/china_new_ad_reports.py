@@ -134,6 +134,20 @@ def quote_groups(io,s,groups):
   if quoted:out[group]=quoted
  return out,blocked
 
+def proposal_lines(camp,item,r,period):
+ detail=r.get('economics_detail')or{}
+ money=lambda v: 'нет данных' if v is None else f'{v:.2f}'
+ return [
+  r['article']+' · nmID '+str(item['nm_id'])+' · категория '+str(r.get('subject_id')),
+  'Предложение: новая РК «'+camp['name']+'», рекомендации CPC; '+str(item['bid_minor']/100)+' CNY/клик.',
+  'РК ещё не создана: ID появится после подтверждения. Минимум из памяти РК '+str(r.get('minimum_reference_campaign_id','?'))+'.',
+  'Цена '+money(r.get('price_cny'))+' CNY; COGS '+money(detail.get('cogs_rub'))+' RUB; логистика '+money(detail.get('delivery_cny'))+' CNY.',
+  'Свой выкуп '+str(r['paid'])+'/'+str(r['finished'])+'; МСК свободно '+str(r['stock'])+'; период '+period+'.',
+  'Сценарий ДРР 5%: предварительный остаток '+money(r.get('expected_rub_per_order'))+' RUB/созданный заказ.',
+  'Комиссия 20%, налог по модели 5%, FX 12 RUB/CNY, обработка 10 RUB; общие/обратные расходы неизвестны.',
+  'Бюджет '+str(camp['budget_cny'])+' CNY на РК; лимит/день '+str(camp['daily_limit_minor']/100)+'; без автопополнения.'
+ ]
+
 def render(p,rows,period,stock_at):
  from PIL import Image,ImageDraw,ImageFont
  import io
@@ -144,13 +158,24 @@ def render(p,rows,period,stock_at):
   return ImageFont.load_default(size=n)
  pages=[]
  for camp in p['items']:
-  for off in range(0,len(camp['skus']),12):
-   batch=camp['skus'][off:off+12];im=Image.new('RGB',(1700,400+len(batch)*100),'#f2f6fa');d=ImageDraw.Draw(im)
-   d.rectangle((0,0,1700,140),fill='#203c50');d.text((25,20),'Китай · '+('товары с заказами' if camp['group']=='orders' else 'проверка спроса'),font=f(34,True),fill='white');d.text((25,80),'Бюджет '+str(camp['budget_cny'])+' ¥ · без автопополнения · запуск только после подтверждения',font=f(23),fill='white')
-   for x,h in [(25,'Артикул'),(500,'Выкуп / спрос'),(1150,'МойСклад'),(1430,'CPC, ¥')]:d.text((x,165),h,font=f(24,True),fill='#243d50')
+  for off in range(0,len(camp['skus']),5):
+   batch=camp['skus'][off:off+5];im=Image.new('RGB',(1900,520+len(batch)*300),'#f2f6fa');d=ImageDraw.Draw(im)
+   d.rectangle((0,0,1900,125),fill='#203c50')
+   d.text((25,20),'Китай · конкретное предложение · '+str(p.get('selected_count',len(rows)))+' товаров в плане',font=f(33,True),fill='white')
+   d.text((25,77),'Только подготовка. Запуск и пополнение — после отдельного подтверждения этого плана.',font=f(24),fill='white')
    for i,item in enumerate(batch):
-    r=rows[item['nm_id']];y=215+i*100;d.rectangle((15,y,1685,y+94),fill='white');d.text((25,y+20),r['article'],font=f(23,True),fill='#243d50');d.text((500,y+12),str(r['paid'])+'/'+str(r['finished'])+'; клик-заказ '+str(r['conversion'])+'%',font=f(22),fill='#243d50');d.text((500,y+48),'Заказы за недавний период: '+str(r['recent_orders']),font=f(21),fill='#657985');d.text((1180,y+22),str(r['stock']),font=f(24),fill='#243d50');d.text((1430,y+22),str(item['bid_minor']/100),font=f(24,True),fill='#243d50')
-   for i,line in enumerate(['Выкуп/конверсия: '+period+'; остатки МойСклад: '+stock_at[:16]+'. Выборки малы.', 'Клик-заказ: заказы воронки / клики (открытия страницы товара) MPStats. ДРР5% — сценарий, не доказанный результат.', 'Лимит — на РК, не на SKU. При нуле заказов ДРР неопределена. Неизвестные расходы не ноль.', 'Всего РК в плане: '+str(len(p['items']))+'. Ответ «делай» на любую часть подтверждает весь план.']):d.text((25,im.height-145+i*31),line,font=f(19),fill='#657985')
+    y=145+i*300;d.rectangle((15,y,1885,y+288),fill='white')
+    for j,line in enumerate(proposal_lines(camp,item,rows[item['nm_id']],period)):
+     d.text((30,y+12+j*33),line,font=f(23,j==0),fill='#243d50')
+   footer=[
+    'Срез: '+stock_at+'. Выкуп и общий CR не доказывают будущую рекламную эффективность.',
+    'ДРР 5% — сценарий, не фактический результат; расчёт не равен закрытой прибыли. Малая выборка отмечена числом выкупов.',
+    'Оценка: исключить день запуска; первый полный следующий день МСК, разбор после его завершения.',
+    'При дневном лимите '+str(camp['daily_limit_minor']/100)+' CNY резерв на 3 дня '+str(camp['daily_limit_minor']*3/100)+' CNY.',
+    'Предлагаемое первое пополнение '+str(camp['budget_cny'])+' CNY. Дальнейшие пополнения требуют отдельной команды.',
+    'Все РК в плане: '+str(len(p['items']))+'. Подтверждение связано с этим PNG, hash и сроком; отозванный план не исполняется.'
+   ]
+   for i,line in enumerate(footer):d.text((25,im.height-225+i*33),line,font=f(22),fill='#526879')
    b=io.BytesIO();im.save(b,format='PNG');pages.append(b.getvalue())
  return pages
 
@@ -165,6 +190,8 @@ def process_requests(io,job_id=None):
    s=source(io);number=re.search(r'(\d+)\s*(?:арт|товар|кандидат|штук)',req['request_text'],re.I);maximum=min(50,max(1,req.get('maximum_count')or int(number[1]))) if req.get('maximum_count')or number else 12
    nm_ids=req.get('nm_ids',[])
    if nm_ids:maximum=min(50,max(2,len(nm_ids)))
+   if req.get('subject_ids'):
+    s=dict(s,products=[r for r in s['products'] if r.get('subject_id') in req['subject_ids']])
    groups,unassessed=choose(s,maximum,nm_ids,manual_review=bool(req.get('source_question_job_id')))
    groups={k:v for k,v in groups.items()if v}
    from china_ad_candidate_review import deliver_review
@@ -185,7 +212,10 @@ def process_requests(io,job_id=None):
    stamp=datetime.now(timezone.utc);pid='new-ad-test-'+str(req['job_id']);items=[]
    for group,rows in groups.items():items.append(dict(id=group,kind='ad_create_campaign',group=group,name='Китай тест '+str(req['job_id'])+' '+group,skus=[{k:r[k] for k in ['nm_id','article','bid_minor']} for r in rows],payment_type='cpc',bid_type='manual',placements=['recommendations'],budget_cny=budget,daily_limit_minor=budget*100,carry_over_enabled=False,auto_topup=False))
    p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='ad_create_campaigns',group_policy='available_qualified_groups',requested_maximum=maximum,selected_count=sum(len(v)for v in groups.values()),candidate_evidence={str(r['nm_id']):r for rows in groups.values()for r in rows},quote_blockers=quote_blockers,items=items,plan_sha256=digest(items),created_at=stamp.isoformat(),expires_at=(stamp+timedelta(hours=2)).isoformat(),report_message_ids=[],price_changes=False,unassessed=unassessed,source_observed_at=s['observed_at'])
-   validate_plan(p);rows={r['nm_id']:r for g in groups.values() for r in g};images=render(p,rows,s['period_from']+' — '+s['period_to'],s['observed_at'])
+   for row in p['candidate_evidence'].values():
+    stock=next((v for v in s['stock'] if str(v.get('article','')).casefold()==row['article'].casefold()),{})
+    row['economics_detail']=dict(cogs_rub=stock.get('price')/100 if type(stock.get('price'))in(int,float) else None,delivery_cny=(s['policy']['logistics_by_nm'].get(str(row['nm_id']))or{}).get('delivery_cny'),fx_rub_cny=12,scenario_drr_pct=5,unknown_costs=True)
+   validate_plan(p);rows={int(n):r for n,r in p['candidate_evidence'].items()};images=render(p,rows,s['period_from']+' — '+s['period_to'],s['observed_at'])
    # Multi-page reports share one immutable plan; each delivered image binds the same scope.
    p['png_sha256']=hashlib.sha256(images[0]).hexdigest();io.create(PLAN+pid,p)
    for idx,blob in enumerate(images):

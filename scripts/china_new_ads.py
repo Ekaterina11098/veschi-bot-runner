@@ -49,6 +49,9 @@ def handle(w,job,history=()):
   accepted='china_agent:new_ad_accept:v1:'+p['plan_id']
   prior=w.get(accepted)
   if prior:
+   actual=w.get(EXEC+p['plan_id'])or{}
+   if actual.get('status')=='done' and all(s.get('status')=='launched' and(s.get('verified_after')or{}).get('status')==9 for s in actual.get('campaigns',[])):
+    return ('Этот план уже выполнен и проверен в WB. Повторных РК и пополнений не будет.',[dict(name='new_ad_already_approved',plan_id=p['plan_id'])])
    w.save(APPROVAL+str(prior['job_id']),prior,insert=True)
    return ('Этот план уже подтверждён. Проверю исполнение; повторных РК и пополнений не будет.',[dict(name='new_ad_already_approved',plan_id=p['plan_id'])])
   a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)

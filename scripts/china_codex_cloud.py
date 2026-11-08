@@ -25,6 +25,7 @@ INSTRUCTIONS="""Ты постоянная облачная сессия Codex д
 
 INSTRUCTIONS=INSTRUCTIONS.replace('Для исполнения владелец использует «Агент, …» или /agent прежнему агенту; это не даёт тебе прав действий.', 'К этому же боту обращаются без обязательного /codex. Подтверждения актуальных планов исполняются связанным механизмом с проверкой WB. Не направляй к «прежнему агенту» или /agent и не проси дублировать уже принятую команду. Если точного плана нет, подготовь план или укажи конкретные недостающие условия. Исполнение подтверждается только canonical verified, не обещанием.')
 INSTRUCTIONS += '\n'+COLUMN_RULE
+INSTRUCTIONS += '''\nЕсли человек просит подобрать/пересчитать рекламное предложение или заменяет его категорию (например «зонты не хочу, давай сумки»), не ограничивайся обещанием. Верни JSON {"kind":"prepare_advertising","subject_ids":[50],"nm_ids":[],"maximum_count":20}. Сумки WB subject50, зонты61; точные nmID только из каталога. Это только расчёты: отдельный механизм подготовит и доставит конкретные РК/ставки/бюджет/экономику; запуск запрещён без нового подтверждения плана. Уточняй только неустранимую неоднозначность. Учитывай текущий отказ от прежнего предложения. МойСклад МСК минус резерв определяет наличие; опубликованный остаток WB не запрещает предложение. Минимальные ставки брать из датированной памяти по РК, категории и размещению. Не называй список кандидатов готовым предложением.'''
 
 def stamp():return datetime.now(timezone.utc).isoformat()
 def today():return datetime.now(ZoneInfo('Europe/Moscow')).date()
@@ -55,7 +56,7 @@ def envelope(text):
                 candidate,end=decoder.raw_decode(clean,start)
             except json.JSONDecodeError:
                 continue
-            if isinstance(candidate,dict) and candidate.get('kind') in ('answer','read','preliminary_profit'):
+            if isinstance(candidate,dict) and candidate.get('kind') in ('answer','read','preliminary_profit','prepare_advertising'):
                 candidates.append((candidate,end))
         if len(candidates)!=1 or clean[candidates[0][1]:].strip():
             raise ValueError('Missing or ambiguous final response envelope') from original
@@ -65,6 +66,13 @@ def envelope(text):
         answer=value.get('answer')
         if not isinstance(answer,str) or not 0<len(answer)<=12000:raise ValueError('Invalid answer')
         value['answer']=answer.replace('\\n','\n')
+    elif value.get('kind')=='prepare_advertising':
+        for field,limit in [('subject_ids',10),('nm_ids',30)]:
+            values=value.get(field,[])
+            if not isinstance(values,list) or len(values)>limit or any(type(n)is not int or n<=0 for n in values) or len(set(values))!=len(values):raise ValueError('Invalid advertising preparation scope')
+            value[field]=values
+        if type(value.get('maximum_count'))is not int or not 1<=value['maximum_count']<=50:raise ValueError('Invalid candidate count')
+        if set(value)-{'kind','subject_ids','nm_ids','maximum_count'}:raise ValueError('Preparation cannot contain execution instructions')
     elif value.get('kind')=='read':
         from china_codex_read_broker import validate_read
         value=validate_read(value,today())
@@ -244,6 +252,13 @@ class Worker:
         parse_started=time.perf_counter()
         response=envelope(completion['text'])
         self.timing(jid,'response_parse',parse_started)
+        if response['kind']=='prepare_advertising':
+            request_key='china_agent:new_ad_report_request:v1:'+str(jid)
+            request=self.db.get(request_key)
+            if not request:
+                request=dict(status='pending',job_id=jid,chat_id=CHAT,sender_id=inbox['sender_id'],reply_message_id=inbox['input_message_id'],request_text=inbox['request_text'],created_at=stamp(),nm_ids=response['nm_ids'],subject_ids=response['subject_ids'],maximum_count=response['maximum_count'],source_question_job_id=jid,grants_action_permission=False,source_channel='codex_cloud')
+                self.db.once(request_key,request)
+            response={'kind':'answer','answer':'Готовлю конкретное предложение после расчётов: товары, РК, размещение, ставки, бюджет и предварительная экономика. Пришлю готовые варианты; если их меньше запрошенного, покажу фактическое число. Запуск — только после отдельного подтверждения плана.'}
         if response['kind'] in ('preliminary_profit','read'):
             reqkey=ROOT+'data_request:'+str(jid);prior=self.db.get(reqkey)or{}
             from hashlib import sha256

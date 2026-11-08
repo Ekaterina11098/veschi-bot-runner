@@ -123,8 +123,12 @@ def handle(w,job,cfg):
   w.save(ROOT+'outbox:'+str(job['id']),out|dict(status='delivered',message_id=message_ids[0],message_ids=message_ids,delivered_at=stamp(),receipt_key='china_agent:conversion_watch_delivery:v1:codex_bridge:'+str(job['id'])+':0',parts_count=len(parts)))
   w.save(key,inbox|dict(status='delivered',message_id=message_ids[0],message_ids=message_ids,delivered_at=stamp()))
   timing('delivered',delivery_total_ms=round((time.perf_counter()-delivery_started)*1000,3),confirmed_message_ids=message_ids)
+  from china_ad_proposal_consent import bind as bind_proposal_question
+  bind_proposal_question(w,job['id'],message_ids,out['answer'])
   patch(dict(status='done',answer=out['answer'],lease_until=None,error=None,completed_at=stamp()));return 'codex_bridge_delivered'
  patch(dict(status='pending' if outcome in ('waiting','rejected') else 'failed',lease_until=None,error='codex_bridge_delivery_'+outcome,retry_at=(now+timedelta(minutes=5)).isoformat()))
  return 'codex_bridge_delivery_'+outcome
+
+
 
 

@@ -33,6 +33,14 @@ def complete(io,s,req):
  post=period(io,end,end,collect=True)
  if not post:raise ValueError('Нет полного среза общей воронки за '+str(end)+'; итоговый подбор не отправлен')
  postrows={int(r['nm_id']):r for r in post['rows']}
+ descriptions=io.db('telegram_api_cache?cache_key=like.'+quote('china_agent:description_append:*:verified:*',safe='')+'&select=cache_key,payload&limit=1000')
+ if len(descriptions)>=1000:raise ValueError('Неполная история verified описаний; итог не отправлен')
+ latest_description={}
+ for row in descriptions:
+  try:nm=int(row['cache_key'].rsplit(':',1)[1])
+  except (ValueError,KeyError):continue
+  at=row['payload'].get('verified_at')
+  if at and at>latest_description.get(nm,''):latest_description[nm]=at
  for p in products:
   nm=int(p['nm_id']);r=candidates.get(nm);e=economics.get(str(nm))or{};o=own.get(nm)or{}
   if r is None and e and not e.get('buyout_fallback') and e.get('sample_size',0)>=3 and e.get('stock_free',0)>=5 and nm not in active and nm not in HOLD:
@@ -98,11 +106,13 @@ def complete(io,s,req):
      elif nm not in postrows or not finite(postrows[nm].get('open_card_count')) or not finite(postrows[nm].get('funnel_orders_count')):record.update(status='blocked',checks_complete=False,reason='SKU отсутствует в полном срезе последнего завершённого дня')
      else:
       pr=postrows[nm];last_at=max([v['started_at']for v in s['experience']['experiences']if v.get('record_type')=='verified_action' and nm in(v.get('action')or{}).get('nm_ids',[]) and v.get('started_at')],default=None)
+      if latest_description.get(nm) and (not last_at or latest_description[nm]>last_at):last_at=latest_description[nm]
+      record['latest_verified_change_at']=last_at
       if last_at and datetime.fromisoformat(last_at.replace('Z','+00:00')).astimezone(ZoneInfo('Europe/Moscow')).date()>=end:record.update(status='deferred',reason='Нет полного дня после последнего verified изменения',eligible_after_msk=str(day+timedelta(days=1)))
       else:
        r['group']='orders'if pr.get('funnel_orders_count',0)>0 else'demand'
        r=dict(r,expected_rub_per_order=round(expected*fx,2),economics_detail=dict(cogs_rub=cost,delivery_cny=delivery,fx_rub_cny=fx,observed_reverse_per_created_order_cny=reverse/e['sample_size']/fx,scenario_drr_pct=5,unknown_costs=True),final_post_change_day=dict(day=str(end),views=pr.get('open_card_count'),orders=pr.get('funnel_orders_count'),source_key=post.get('source_key')or post.get('snapshot_id')),full_checks_completed=True)
-       record.update(status='ready',reason='Все необходимые доступные проверки завершены; ограниченный сценарный тест, не доказанная прибыль',last_full_day=str(end))
+       record.update(status='ready',group=r['group'],reason='Все необходимые доступные проверки завершены; ограниченный сценарный тест, не доказанная прибыль',last_full_day=str(end))
        groups[r['group']].append(r)
   ledger.append(record)
   if record['status']=='blocked':blocked.append(record)

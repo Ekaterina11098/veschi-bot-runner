@@ -212,8 +212,23 @@ def execute(io,a,p,t=None):
   e.update(status='uncertain' if e.get('status')=='uncertain' else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__);save()
  return e
 
+FINAL_POLICY='china_agent:proposal_delivery_policy:v1'
+def require_final_review(io,p):
+ policy=io.get(FINAL_POLICY)or{}
+ if policy.get('require_final_checks')is not True:return
+ review=io.get(p.get('final_review_key',''))or{}
+ ledger=review.get('ledger',[])
+ if p.get('final_checks_complete')is not True or review.get('status')!='complete' or not review.get('all_scope_accounted') or len(ledger)!=review.get('scope_count') or any(r.get('checks_complete')is not True or r.get('status')=='blocked'for r in ledger):
+  raise ValueError('Final scoped checks incomplete; intermediate proposal delivery prohibited')
+ ready={r['nm_id']for r in ledger if r.get('status')=='ready'}
+ selected={r['nm_id']for c in p.get('items',[])for r in c.get('skus',[])}
+ if not selected or not selected<=ready or len(selected)!=min(len(ready),p.get('requested_maximum',50)):
+  raise ValueError('Final proposal omits qualified scope or includes unchecked SKU')
+ return review
+
 def deliver(io,p,blob):
  validate_plan(p)
+ require_final_review(io,p)
  sha=hashlib.sha256(blob).hexdigest()
  if p.get('png_sha256')!=sha:raise ValueError('PNG hash mismatch')
  key='china_agent:new_ad_delivery:v1:'+p['plan_id'];state=io.get(key)

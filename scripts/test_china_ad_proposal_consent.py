@@ -54,5 +54,12 @@ class Tests(unittest.TestCase):
  def test_current_ready_plan_still_uses_existing_executor(self):
   w=W();w.values['new_bind:800']={'plan_id':'exact'}
   self.assertEqual('Точный план принят',f.handle(w,job(1,'Делай',800)))
+ def test_real_pavel_yes_with_twenty_refinement_is_preparation(self):
+  w,text=self.setup_question();reply=f.handle(w,job(266,'Да. Если можешь найти больше 5 найди. Лучше около 20 найти если это возможно',800));r=w.get(REQUEST+'266')
+  self.assertEqual(20,r['maximum_count']);self.assertEqual([],r['nm_ids']);self.assertEqual([101,102,104],r['seed_nm_ids']);self.assertIn('20',reply);self.assertFalse(r['grants_action_permission'])
+  self.assertFalse(any('approval' in k for k in w.values))
+ def test_yes_does_not_override_negative_or_large_scope(self):
+  for text in ('Да, но не готовь предложение','Да. Найди около 100 товаров'):
+   w,_=self.setup_question();f.handle(w,job(266,text,800));self.assertFalse(w.get(REQUEST+'266'))
 if __name__=='__main__':unittest.main()
 

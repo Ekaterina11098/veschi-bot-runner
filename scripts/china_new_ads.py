@@ -14,7 +14,8 @@ def now():return datetime.now(timezone.utc)
 def validate_plan(p):
  if p.get('execution_kind')!='ad_create_campaigns' or p.get('chat_id')!=CHAT or p.get('bot_id')!=BOT or p.get('price_changes') is not False:raise ValueError('Wrong new-campaign plan scope')
  items=p.get('items',[])
- if p.get('plan_sha256')!=digest(items) or len(items)!=2:raise ValueError('Plan hash/count mismatch')
+ flexible=p.get('group_policy')=='available_qualified_groups'
+ if p.get('plan_sha256')!=digest(items) or (not 1<=len(items)<=2 if flexible else len(items)!=2):raise ValueError('Plan hash/count mismatch')
  ids=[]
  for c in items:
   if c.get('kind')!='ad_create_campaign' or c.get('payment_type')!='cpc' or c.get('bid_type')!='manual' or c.get('placements')!=['recommendations']:raise ValueError('Unsupported campaign settings')
@@ -24,7 +25,8 @@ def validate_plan(p):
   for s in c['skus']:
    if type(s.get('nm_id')) is not int or s['nm_id']<=0 or not s.get('article') or type(s.get('bid_minor')) is not int or s['bid_minor']<=0:raise ValueError('Invalid SKU/bid')
    ids.append(s['nm_id'])
- if len(set(ids))!=len(ids) or {c['group'] for c in items}!={'orders','demand'}:raise ValueError('Duplicate SKU/group')
+ groups=[c['group']for c in items]
+ if len(set(ids))!=len(ids) or len(set(groups))!=len(groups) or (not set(groups)<={'orders','demand'} if flexible else set(groups)!={'orders','demand'}):raise ValueError('Duplicate SKU/group')
  return items
 
 def handle(w,job,history=()):
@@ -46,7 +48,7 @@ def handle(w,job,history=()):
   a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)
   if not w.save(accepted,a,insert=True):return ('План уже принят другим подтверждением; дубли не создаю.',[])
   w.save(APPROVAL+str(job['id']),a,insert=True)
-  return ('Принято: создам две РК по '+str(sum(c['budget_cny'] for c in p['items']))+' ¥ суммарно, проверю ставки и лимиты, затем запущу. Повторная команда не создаст дубли. Цены не меняю.',[dict(name='new_ad_campaigns_approval',plan_id=p['plan_id'])])
+  return ('Принято: РК в плане '+str(len(p['items']))+', бюджет '+str(sum(c['budget_cny'] for c in p['items']))+' ¥ суммарно. Проверю ставки и лимиты, затем запущу. Повторная команда не создаст дубли. Цены не меняю.',[dict(name='new_ad_campaigns_approval',plan_id=p['plan_id'])])
  text=job.get('request_text','')
  if not ((re.search(r'реклам\w*\s+тест|тест\w*\s+реклам|кандидат\w*\s+(?:для|в|на)\s+реклам',text,re.I) or re.search(r'реклам',text,re.I) and re.search(r'без\s+(?:РК|реклам)|провер\w*\s+спрос|кандидат',text,re.I)) and re.search(r'подбер|подоб|предлож|подготов|сделай|покаж|отч[её]т|пришли|найди',text,re.I)):return None
  from china_group_permissions import allowed
@@ -221,7 +223,7 @@ def deliver(io,p,blob):
  state['status']='sending';io.put(key,state)
  try:
   import requests
-  caption='Две новые РК · '+str(sum(c['budget_cny'] for c in p['items']))+' ¥ всего. Пока не запущены. Ответьте на этот PNG «делай», «согласен», «подтверждаю» или «сделай всё», чтобы запустить весь указанный план.'
+  caption='Новых РК: '+str(len(p['items']))+' · товаров: '+str(sum(len(c['skus'])for c in p['items']))+' · '+str(sum(c['budget_cny'] for c in p['items']))+' ¥ всего. Пока не запущены. Ответьте на этот PNG «делай» для запуска только указанного плана.'
   j=requests.post('https://api.telegram.org/bot'+io.bot+'/sendPhoto',data=dict(chat_id=CHAT,caption=caption),files={'photo':('china-ad-test.png',blob,'image/png')},timeout=45).json()
   if not j.get('ok') or j['result'].get('chat',{}).get('id')!=CHAT:raise RuntimeError('Telegram receipt missing')
   mid=j['result']['message_id']
@@ -246,4 +248,6 @@ def process_and_deliver(io,a,p):
   io.put(key,dict(status='sent',text=text,message_id=r['message_id']))
  except Exception:io.put(key,dict(status='uncertain',text=text))
  return e
+
+
 

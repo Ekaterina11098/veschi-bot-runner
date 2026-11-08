@@ -1,4 +1,4 @@
-name: Pavel270 calculated bag proposal
+name: Pavel270 concise maximum-candidate bag proposal
 on:
   push:
     branches: [main]

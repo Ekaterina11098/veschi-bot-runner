@@ -1,0 +1,32 @@
+name: Correct Telegram after verified272 recovery without daily limits
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-refresh272-telegram.yml']
+permissions: {contents: read}
+concurrency:
+  group: china-dialog-data
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/checkout@v4
+        with:
+          ref: 0101e5ed968160dc35e0cbbfafa0cea2a4e68601
+          path: previous-render
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/china_new_ad_reports.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 Pillow==12.3.0 --quiet
+      - name: Update exact existing messages from actual WB verification
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: python scripts/owner_refresh272_telegram.py

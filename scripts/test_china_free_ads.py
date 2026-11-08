@@ -33,13 +33,14 @@ class FreeAds(unittest.TestCase):
  def test_unknown_explicit_article_never_becomes_cabinet_wide(self):
   with self.assertRaises(ValueError):f.requested_ids(W(),job(),'Добавь 999-unknown в рекламу')
   with self.assertRaises(ValueError):f.requested_ids(W(),job(),'Добавь 59 в рекламу')
- def test_ad_request_prepares_scoped_plan_without_approval(self):
+ def test_launch_request_asks_consent_before_preparing(self):
   w=W()
   with patch('china_group_permissions.allowed',return_value=True):
    result=f.handle(w,job('Ты запустил на них рекламу? Если еще нет то запусти'))
-  req=w.get(REQUEST+'263')
-  self.assertEqual(req['nm_ids'],[100,200]);self.assertEqual(req['paid_model_calls'],0)
-  self.assertIn('Без подтверждения',result)
+  from china_ad_proposal_consent import QUESTION
+  req=w.get(QUESTION+'263')
+  self.assertEqual(req['nm_ids'],[100,200]);self.assertFalse(req['grants_action_permission'])
+  self.assertIn('Подготовить',result);self.assertIsNone(w.get(REQUEST+'263'))
   self.assertFalse(any('approval' in k for k in w.values))
  def test_negative_and_status_question_do_not_prepare(self):
   for text in ['Не запускай рекламу','Ты запустил рекламу?']:
@@ -60,3 +61,5 @@ class FreeAds(unittest.TestCase):
    result=run(w,263)
   process.assert_called_once_with(w,job_id=263);self.assertEqual(result['paid_model_calls'],0)
 if __name__=='__main__':unittest.main()
+
+

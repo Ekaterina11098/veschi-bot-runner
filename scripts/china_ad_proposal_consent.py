@@ -44,14 +44,21 @@ def handle(w,job):
  if now>datetime.fromisoformat(q['expires_at']) or at<datetime.fromisoformat(q['created_at']):return 'Уточнение устарело. Запросите подготовку свежего предложения; запуск не выполнялся.'
  text=re.sub(r'^/codex\s+','',job.get('request_text','').strip(),flags=re.I)
  yes=bool(re.fullmatch(r'(?:(?:да|давай|ок|хорошо)[,.!]?\s*)?(?:подготовь(?:\s+(?:предложение|план))?|сделай\s+(?:предложение|план)|создай\s+предложение)|(?:да|давай|ок|хорошо|делай|согласен|согласна)[.!]?',text,re.I))
+ # Natural scoped refinements remain consent to preparation, never execution.
+ if re.match(r'^(?:да|давай|хорошо|согласен|согласна)(?:[.!,:;]|\s)',text,re.I) and not re.search(r'запускай|пополни|поменяй|исключи|не\s+(?:готовь|надо|подготавливай)|отмен',text,re.I):yes=True
  no=bool(re.fullmatch(r'(?:нет|не\s+надо|не\s+готовь|отмена|отмени)[.!]?',text,re.I))
  if not yes and not no:return 'Уточняю только подготовку расчётов и предложения. Ответьте «Да, подготовь» или «Нет». Готовый план потребует отдельного подтверждения перед запуском.'
+ count=re.search(r'(?:около|примерно|до|лучше)\s+(\d+)\b|(\d+)\s*(?:товар|кандидат|артикул)',text,re.I)
+ maximum=int(next(v for v in count.groups()if v)) if count else None
+ if maximum is not None and not 1<=maximum<=50:return 'Для одного предложения укажите до 50 товаров. Запуск не выполнялся.'
+ expanded=bool(yes and (re.search(r'больше|ещ[её]|найди|найти',text,re.I) and maximum and maximum>len(q['nm_ids'])))
+ ids=[] if expanded else q['nm_ids']
  accepted=w.get(ACCEPT+str(q['job_id']))
  if accepted and accepted.get('job_id')!=job['id']:return 'На это уточнение уже получен ответ. Повторную подготовку и запуск не создаю.'
  if not accepted:
-  value=dict(job_id=job['id'],question_job_id=q['job_id'],decision='prepare' if yes else 'decline',nm_ids=q['nm_ids'],chat_id=CHAT,created_at=stamp(),grants_action_permission=False)
+  value=dict(job_id=job['id'],question_job_id=q['job_id'],decision='prepare' if yes else 'decline',nm_ids=ids,seed_nm_ids=q['nm_ids'],maximum_count=maximum,chat_id=CHAT,created_at=stamp(),grants_action_permission=False)
   if not w.save(ACCEPT+str(q['job_id']),value,insert=True):return 'Ответ уже принят; повторную подготовку не создаю.'
  if no:return 'Хорошо, предложение по этому запросу не готовлю. Запуска и изменений нет.'
  from china_free_ads import prepare
- return prepare(w,job,q['nm_ids'],source_question_job_id=q['job_id'])
+ return prepare(w,job,ids,source_question_job_id=q['job_id'],maximum_count=maximum,seed_nm_ids=q['nm_ids'])
 

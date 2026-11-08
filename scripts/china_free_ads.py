@@ -45,6 +45,23 @@ def requested_ids(w,job,text):
     if len(selected)>50:raise ValueError('В одном тестовом плане поддерживается до 50 товаров.')
     return sorted(selected)
 
+def continuation(w,job):
+    """A short reply to a preparation acknowledgement is not a new command."""
+    text=job.get('request_text','').strip()
+    if not re.fullmatch(r'(?:да|давай|ок|хорошо)(?:[,.!]?\s*подготов[ьб])?[.!]?',text,re.I):return None
+    m=next((x for x in job.get('tool_trace',[])if x.get('name')=='china_saved_question'),{})
+    if job.get('chat_id')!=-1004342917488 or m.get('bot_id')!=8780468043 or m.get('forwarded') or type(m.get('reply_message_id'))is not int:return None
+    rows=w.db('GET','telegram_api_cache',params={'cache_key':'like.china_agent:codex_bridge:v1:outbox:*','payload->>status':'eq.delivered','payload->>chat_id':'eq.-1004342917488','payload->message_ids':'cs.'+json.dumps([m['reply_message_id']]),'select':'payload','limit':2})or[]
+    if len(rows)!=1:return None
+    parent=rows[0]['payload'];jid=parent.get('job_id')
+    from china_new_ads import REQUEST
+    req=w.get(REQUEST+str(jid))or{}
+    if req.get('chat_id')!=-1004342917488 or req.get('sender_id')not in(job.get('sender_id'),5122667182):return None
+    if req.get('status')in('pending','collecting'):return 'Подбор уже принят, повторное согласие не требуется. Готовлю расчёты и конкретное предложение с РК, ставками и бюджетом; запуск будет только после отдельного подтверждения плана.'
+    if req.get('status')=='done':return 'Предложение уже подготовлено. Подтверждать запуск нужно ответом на его конкретный PNG; это сообщение ничего не запускает.'
+    if req.get('status')in('blocked','superseded_by_job266'):return 'Повторное согласие на расчёты не требуется. Готового плана пока нет: текущая проверка не подтвердила условия запуска. Это не доказательство отсутствия подходящих товаров. Реклама не запускалась.'
+    return None
+
 def prepare(w,job,ids,source_question_job_id=None,maximum_count=None,seed_nm_ids=()):
     from china_new_ads import REQUEST
     from china_group_permissions import allowed
@@ -64,6 +81,8 @@ def handle(w,job):
     from china_ad_proposal_consent import handle as consent,ask
     consent_reply=consent(w,job)
     if consent_reply is not None:return consent_reply
+    continued=continuation(w,job)
+    if continued is not None:return continued
     text=job.get('request_text','')
     marker=next((x for x in job.get('tool_trace',[]) if x.get('name')=='china_saved_question'),{})
     # An exact delivered PNG retains its original confirmation grammar and expiry.
@@ -83,6 +102,9 @@ def handle(w,job):
     if not allowed(w,job):return 'Подготовить предложение могут действующие участники группы.'
     if re.search(r'добав|запуст|запуск',text,re.I) and not re.search(r'подготов|рассчита|предложение',text,re.I):
         return ask(w,job,ids)
-    return prepare(w,job,ids)
+    count=re.search(r'(?:около|примерно|до)\s+(\d+)\b|(\d+)\s*(?:штук|товар|кандидат|артикул)',text,re.I)
+    maximum=int(next(v for v in count.groups()if v))if count else None
+    if maximum is not None and not 1<=maximum<=50:return 'В одном предложении можно рассмотреть до50 товаров. Запуск не выполнялся.'
+    return prepare(w,job,ids,maximum_count=maximum)
 
 

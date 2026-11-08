@@ -148,35 +148,39 @@ def proposal_lines(camp,item,r,period):
   'Бюджет '+str(camp['budget_cny'])+' CNY на РК; лимит/день '+str(camp['daily_limit_minor']/100)+'; без автопополнения.'
  ]
 
+def proposal_table(camp,rows):
+ header=['Артикул','Цена, CNY','COGS, RUB','Свой выкуп','МСК свободно','При ДРР 5%, RUB/заказ','Рекомендация']
+ table=[]
+ for item in camp['skus']:
+  r=rows[item['nm_id']];cost=(r.get('economics_detail')or{}).get('cogs_rub')
+  table.append([r['article'],f"{r['price_cny']:.2f}",'нет данных' if cost is None else f'{cost:.0f}',
+                str(r['paid'])+'/'+str(r['finished']),str(r['stock']),f"{r['expected_rub_per_order']:+.2f}",
+                'Добавить; CPC '+f"{item['bid_minor']/100:.2f}"+' CNY'])
+ return header,table
+
 def render(p,rows,period,stock_at):
+ from china_table_png import render as table_png
  from PIL import Image,ImageDraw,ImageFont
  import io
- def f(n,b=False):
-  for root,name in [('/usr/share/fonts/truetype/dejavu/','DejaVuSans'+('-Bold' if b else '')+'.ttf'),('C:/Windows/Fonts/','arialbd.ttf' if b else 'arial.ttf')]:
-   try:return ImageFont.truetype(root+name,n)
+ def font():
+  for path in ['C:/Windows/Fonts/arial.ttf','/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf']:
+   try:return ImageFont.truetype(path,22)
    except OSError:pass
-  return ImageFont.load_default(size=n)
+  return ImageFont.load_default(size=22)
  pages=[]
  for camp in p['items']:
-  for off in range(0,len(camp['skus']),5):
-   batch=camp['skus'][off:off+5];im=Image.new('RGB',(1900,520+len(batch)*300),'#f2f6fa');d=ImageDraw.Draw(im)
-   d.rectangle((0,0,1900,125),fill='#203c50')
-   d.text((25,20),'Китай · конкретное предложение · '+str(p.get('selected_count',len(rows)))+' товаров в плане',font=f(33,True),fill='white')
-   d.text((25,77),'Только подготовка. Запуск и пополнение — после отдельного подтверждения этого плана.',font=f(24),fill='white')
-   for i,item in enumerate(batch):
-    y=145+i*300;d.rectangle((15,y,1885,y+288),fill='white')
-    for j,line in enumerate(proposal_lines(camp,item,rows[item['nm_id']],period)):
-     d.text((30,y+12+j*33),line,font=f(23,j==0),fill='#243d50')
-   footer=[
-    'Срез: '+stock_at+'. Выкуп и общий CR не доказывают будущую рекламную эффективность.',
-    'ДРР 5% — сценарий, не фактический результат; расчёт не равен закрытой прибыли. Малая выборка отмечена числом выкупов.',
-    'Оценка: исключить день запуска; первый полный следующий день МСК, разбор после его завершения.',
-    'При дневном лимите '+str(camp['daily_limit_minor']/100)+' CNY резерв на 3 дня '+str(camp['daily_limit_minor']*3/100)+' CNY.',
-    'Предлагаемое первое пополнение '+str(camp['budget_cny'])+' CNY. Дальнейшие пополнения требуют отдельной команды.',
-    'Все РК в плане: '+str(len(p['items']))+'. Подтверждение связано с этим PNG, hash и сроком; отозванный план не исполняется.'
-   ]
-   for i,line in enumerate(footer):d.text((25,im.height-225+i*33),line,font=f(22),fill='#526879')
-   b=io.BytesIO();im.save(b,format='PNG');pages.append(b.getvalue())
+  header,table=proposal_table(camp,rows)
+  title='Китай · новая РК · рекомендации · '+str(len(camp['skus']))+' товаров'
+  notes=[
+   'РК «'+camp['name']+'». Бюджет '+str(camp['budget_cny'])+' CNY; лимит '+str(camp['daily_limit_minor']//100)+'/день; резерв на 3 дня '+str(camp['daily_limit_minor']*3//100)+' CNY.',
+   'Свой выкуп: '+period+'. Цена/МСК: '+stock_at[:16]+' UTC. Минимум: память РК '+str(rows[camp['skus'][0]['nm_id']].get('minimum_reference_campaign_id','?'))+'.',
+   'Экономика предварительная: сценарий ДРР 5%, не доказанная прибыль. Неизвестные расходы не ноль; выборка выкупа указана.',
+   'Оценка после первого полного дня МСК вслед за запуском. Без автопополнения. Запуск — отдельным подтверждением нового PNG.'
+  ]
+  for blob in table_png(header,table,title):
+   original=Image.open(io.BytesIO(blob)).convert('RGB');image=Image.new('RGB',(original.width,original.height+155),'#eff4f8');image.paste(original,(0,0));draw=ImageDraw.Draw(image)
+   for i,line in enumerate(notes):draw.text((24,original.height+8+i*34),line,font=font(),fill='#526879')
+   output=io.BytesIO();image.save(output,format='PNG');pages.append(output.getvalue())
  return pages
 
 def process_requests(io,job_id=None):
@@ -210,6 +214,10 @@ def process_requests(io,job_id=None):
    budget=minimum//100
    if budget>100:raise ValueError('Минимальный бюджет вырос выше согласованных 100 ¥ — требуется отдельное согласование')
    stamp=datetime.now(timezone.utc);pid='new-ad-test-'+str(req['job_id']);items=[]
+   revision=req.get('revision')
+   if revision:
+    if not re.fullmatch(r'[a-z0-9-]{1,40}',revision):raise ValueError('Invalid proposal revision')
+    pid+='-'+revision
    for group,rows in groups.items():items.append(dict(id=group,kind='ad_create_campaign',group=group,name='Китай тест '+str(req['job_id'])+' '+group,skus=[{k:r[k] for k in ['nm_id','article','bid_minor']} for r in rows],payment_type='cpc',bid_type='manual',placements=['recommendations'],budget_cny=budget,daily_limit_minor=budget*100,carry_over_enabled=False,auto_topup=False))
    p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='ad_create_campaigns',group_policy='available_qualified_groups',requested_maximum=maximum,selected_count=sum(len(v)for v in groups.values()),candidate_evidence={str(r['nm_id']):r for rows in groups.values()for r in rows},quote_blockers=quote_blockers,items=items,plan_sha256=digest(items),created_at=stamp.isoformat(),expires_at=(stamp+timedelta(hours=2)).isoformat(),report_message_ids=[],price_changes=False,unassessed=unassessed,source_observed_at=s['observed_at'])
    for row in p['candidate_evidence'].values():

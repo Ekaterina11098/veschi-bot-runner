@@ -13,8 +13,13 @@ def confirmation_text(job):
 
 def requested_ids(w,job,text):
     catalog=[(int(n),a) for n,a in w.catalog()]
+    article_tokens=re.findall(r'(?<![\w-])\d+-[A-Za-z][A-Za-z0-9_-]*',text)
+    if any(sum(a.casefold()==token.casefold() for _,a in catalog)!=1 for token in article_tokens):
+        raise ValueError('Один из артикулов не найден однозначно. Укажите полные артикулы конкретных вариантов.')
     selected={n for n,a in catalog if a.casefold() in text.casefold() or re.search(r'(?<!\d)'+str(n)+r'(?!\d)',text)}
     if selected:return sorted(selected)
+    if re.search(r'(?:артикул\w*|вариант\w*|позици\w*)\s*[:№]?\s*\d|(?:добавь|запусти)\s+\d',text,re.I):
+        raise ValueError('Укажите полные артикулы или nmID: короткие номера не должны расширять подбор на другие товары.')
     if not re.search(r'на\s+них|эти\w*\s+(?:товар|вариант|позиц|кандидат)|по\s+ним',text,re.I):return []
     marker=next((x for x in job.get('tool_trace',[]) if x.get('name')=='china_saved_question'),{})
     mid=marker.get('reply_message_id')

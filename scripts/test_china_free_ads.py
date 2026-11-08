@@ -30,6 +30,9 @@ class FreeAds(unittest.TestCase):
   w=W();w.db=lambda *a,**k:[]
   result=f.handle(w,job())
   self.assertIn('Не найден',result);self.assertEqual(w.values,{})
+ def test_unknown_explicit_article_never_becomes_cabinet_wide(self):
+  with self.assertRaises(ValueError):f.requested_ids(W(),job(),'Добавь 999-unknown в рекламу')
+  with self.assertRaises(ValueError):f.requested_ids(W(),job(),'Добавь 59 в рекламу')
  def test_ad_request_prepares_scoped_plan_without_approval(self):
   w=W()
   with patch('china_group_permissions.allowed',return_value=True):

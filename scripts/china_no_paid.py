@@ -28,6 +28,8 @@ def cells(value):
 def answer(w,job,history=()):
     text=re.sub(r'^/codex(?:@\w+)?\s*','',job.get('request_text',''),flags=re.I).strip()
     scoped=dict(job,request_text=text)
+    if re.fullmatch(r'где\s+прежний\s+агент[?.!]*',text,re.I):
+        return 'Отдельного «прежнего агента» нет — я неверно выразился. Пишите этому же боту без /codex. Команды к актуальному PNG передаются на исполнение с проверкой WB. Для нового запуска сначала нужны точные товары, ставки и бюджет; прошлое предложение ещё не подтверждает запуск.'
     from china_free_ads import handle as advertising
     advertising_reply=advertising(w,scoped)
     if advertising_reply is not None:return advertising_reply

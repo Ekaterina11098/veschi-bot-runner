@@ -37,6 +37,16 @@ class FinalReviewTests(unittest.TestCase):
   with patch('china_proposal_final_review.assess',return_value=[candidate()]),patch('china_proposal_final_review.period',return_value=post()):
    _,g,a,_=complete(io,source(),dict(job_id=1))
   self.assertEqual(a['ledger'][0]['status'],'deferred');self.assertFalse(g['orders'])
+ def test_delivery_guard_rejects_missing_or_partial_review_and_omitted_ready_sku(self):
+  from china_new_ads import require_final_review,FINAL_POLICY
+  io=IO();io.values[FINAL_POLICY]=dict(require_final_checks=True)
+  p=dict(final_review_key='review',final_checks_complete=True,requested_maximum=50,items=[dict(skus=[dict(nm_id=1)])])
+  with self.assertRaises(ValueError):require_final_review(io,p)
+  io.values['review']=dict(status='complete',all_scope_accounted=True,scope_count=2,ledger=[dict(nm_id=1,status='ready',checks_complete=True),dict(nm_id=2,status='ready',checks_complete=True)])
+  with self.assertRaises(ValueError):require_final_review(io,p)
+  p['items'][0]['skus'].append(dict(nm_id=2));self.assertEqual(require_final_review(io,p)['status'],'complete')
+  io.values['review']['ledger'][1]['checks_complete']=False
+  with self.assertRaises(ValueError):require_final_review(io,p)
  def test_known_future_experiment_window_is_terminal_defer_not_missing_data(self):
   r=candidate();r['requires_review']=['Недавнее изменение']
   s=source();s['experience']['experiences']=[dict(started_at='2026-11-05T12:00:00Z',action=dict(nm_ids=[1]),comparison=dict(evaluate_from='2026-11-09'))]

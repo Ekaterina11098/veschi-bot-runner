@@ -36,7 +36,9 @@ def handle(w,job,history=()):
   if not is_all(job.get('request_text','')):return None
   from china_group_permissions import allowed
   if not allowed(w,job) or m.get('bot_id')!=BOT or m.get('forwarded'):return ('Подтвердить этот план может действующий участник группы, ответом на исходный PNG.',[])
-  p=w.get(PLAN+binding['plan_id']);validate_plan(p or {})
+  p=w.get(PLAN+binding['plan_id'])
+  if p and (p.get('status')in('revoked','cancelled','superseded') or p.get('revoked_at') or p.get('invalidated_at')):return ('Этот план отозван или заменён. Подтвердите новый PNG; старый план не исполняю.',[])
+  validate_plan(p or {})
   if binding.get('plan_sha256')!=p['plan_sha256'] or binding.get('chat_id')!=CHAT or m['reply_message_id'] not in p.get('report_message_ids',[]):raise ValueError('Wrong PNG binding')
   if w.now>datetime.fromisoformat(p['expires_at']):return ('Срок плана истёк. Запросите новый рекламный тест: проверю данные и пришлю новый PNG для подтверждения.',[])
   at=datetime.fromisoformat(job['created_at'].replace('Z','+00:00'))

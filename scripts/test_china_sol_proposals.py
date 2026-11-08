@@ -10,6 +10,16 @@ class ProposalTests(unittest.TestCase):
   self.assertEqual(envelope(json.dumps(p)),p)
   for bad in [dict(p,maximum_count=0),dict(p,subject_ids=[True]),dict(p,nm_ids=[1,1]),dict(p,execute=True),dict(p,maximum_count=100)]:
    with self.assertRaises(ValueError):envelope(json.dumps(bad))
+ def test_preparation_completion_persists_only_calculation_request(self):
+  import china_codex_cloud as cloud
+  from test_china_codex_cloud import inbox,FakeDB,FakeWorker
+  i=inbox();db=FakeDB(i)
+  worker=FakeWorker(db,dict(kind='prepare_advertising',subject_ids=[50],nm_ids=[],maximum_count=20))
+  self.assertEqual(worker.process(cloud.ROOT+'inbox:231',i),'ready')
+  request=db.get('china_agent:new_ad_report_request:v1:231')
+  self.assertEqual(request['subject_ids'],[50]);self.assertFalse(request['grants_action_permission'])
+  self.assertEqual(request['reply_message_id'],i['input_message_id'])
+  self.assertFalse(any('approval:' in k or 'execution:' in k for k in db.values))
  def test_visible_proposal_contains_actual_economics_and_campaign(self):
   camp=dict(name='Сумки тест',budget_cny=100,daily_limit_minor=10000)
   item=dict(nm_id=1,bid_minor=28)

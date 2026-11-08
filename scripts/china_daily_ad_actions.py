@@ -27,6 +27,9 @@ def bind(io,f,receipt):
  if not old and not io.create(BIND+str(mid),b):raise ValueError('Concurrent daily binding')
 
 def handle(w,job):
+ from china_daily_bid_selection import handle as bid_selection_handle
+ bid_selection_result=bid_selection_handle(w,job)
+ if bid_selection_result is not None:return bid_selection_result
  from china_daily_selected import handle as selected_handle
  selected_result=selected_handle(w,job)
  if selected_result is not None:return selected_result
@@ -182,4 +185,6 @@ def execute(io,a,p):
 def process_and_deliver(io,a,p):
  # execute always journals and delivers its own result, including direct recovery calls.
  return execute(io,a,p)
+
+
 

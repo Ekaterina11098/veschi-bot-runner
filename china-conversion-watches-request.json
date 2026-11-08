@@ -1,1 +1,1 @@
-{"action":"verify","nonce":"bounded-sol-dialogue-activation-20261107","purpose":"Verify restored dialogue with new-question cutover; no old job replay"}
+{"action":"dialog_free","job_id":"263","nonce":"restore-no-paid-ad-tests-20261108"}

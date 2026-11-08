@@ -145,7 +145,7 @@ def proposal_lines(camp,item,r,period):
   'Свой выкуп '+str(r['paid'])+'/'+str(r['finished'])+'; МСК свободно '+str(r['stock'])+'; период '+period+'.',
   'Сценарий ДРР 5%: предварительный остаток '+money(r.get('expected_rub_per_order'))+' RUB/созданный заказ.',
   'Комиссия 20%, налог по модели 5%, FX 12 RUB/CNY, обработка 10 RUB; общие/обратные расходы неизвестны.',
-  'Бюджет '+str(camp['budget_cny'])+' CNY на РК; лимит/день '+str(camp['daily_limit_minor']/100)+'; без автопополнения.'
+  'Первое пополнение '+str(camp['budget_cny'])+' CNY на РК; без дневного лимита и автопополнения.'
  ]
 
 def proposal_table(camp,rows):
@@ -172,7 +172,7 @@ def render(p,rows,period,stock_at):
   header,table=proposal_table(camp,rows)
   title='Китай · новая РК · рекомендации · '+str(len(camp['skus']))+' товаров'
   notes=[
-   'РК «'+camp['name']+'». Бюджет '+str(camp['budget_cny'])+' CNY; лимит '+str(camp['daily_limit_minor']//100)+'/день; резерв на 3 дня '+str(camp['daily_limit_minor']*3//100)+' CNY.',
+   'РК «'+camp['name']+'». Первое пополнение '+str(camp['budget_cny'])+' CNY на РК. Дневной лимит не устанавливается.',
    'Свой выкуп: '+period+'. Цена/МСК: '+stock_at[:16]+' UTC. Минимум: память РК '+str(rows[camp['skus'][0]['nm_id']].get('minimum_reference_campaign_id','?'))+'.',
    'Расчёт по фактическому собственному выкупу, не плановым 40%. Прибыль предварительная; ДРР 5% — сценарий, неизвестные расходы не ноль.',
    'Оценка после первого полного дня МСК вслед за запуском. Без автопополнения. Запуск — отдельным подтверждением нового PNG.'
@@ -204,7 +204,7 @@ def process_requests(io,job_id=None):
    groups,quote_blockers=quote_groups(io,s,groups)
    if quote_blockers:raise ValueError('Итоговый подбор не отправлен: точные условия не подтверждены для '+str(quote_blockers))
    if not groups:raise ValueError('Нет подтверждённых ставок и совместимых РК для итогового подбора')
-   minimum=max(s['config'].get('minTopUp',0),s['config'].get('minDailyLimit',0))
+   minimum=s['config'].get('minTopUp',0)
    if s['config'].get('currency')!='CNY' or minimum<=0 or minimum%100:raise ValueError('Минимум бюджета CNY не подтверждён')
    budget=minimum//100
    if budget>100:raise ValueError('Минимальный бюджет вырос выше согласованных 100 ¥ — требуется отдельное согласование')
@@ -213,7 +213,7 @@ def process_requests(io,job_id=None):
    if revision:
     if not re.fullmatch(r'[a-z0-9-]{1,40}',revision):raise ValueError('Invalid proposal revision')
     pid+='-'+revision
-   for group,rows in groups.items():items.append(dict(id=group,kind='ad_create_campaign',group=group,name='Китай тест '+str(req['job_id'])+' '+group,skus=[{k:r[k] for k in ['nm_id','article','bid_minor']} for r in rows],payment_type='cpc',bid_type='manual',placements=['recommendations'],budget_cny=budget,daily_limit_minor=budget*100,carry_over_enabled=False,auto_topup=False))
+   for group,rows in groups.items():items.append(dict(id=group,kind='ad_create_campaign',group=group,name='Китай тест '+str(req['job_id'])+' '+group,skus=[{k:r[k] for k in ['nm_id','article','bid_minor']} for r in rows],payment_type='cpc',bid_type='manual',placements=['recommendations'],budget_cny=budget,daily_limits_policy='owner_prohibited',auto_topup=False))
    p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='ad_create_campaigns',group_policy='available_qualified_groups',requested_maximum=maximum,selected_count=sum(len(v)for v in groups.values()),candidate_evidence={str(r['nm_id']):r for rows in groups.values()for r in rows},final_review_key=final_review_key,final_checks_complete=final_review['status']=='complete',scope_counts=final_review['counts'],quote_blockers=quote_blockers,items=items,plan_sha256=digest(items),created_at=stamp.isoformat(),expires_at=(stamp+timedelta(hours=2)).isoformat(),report_message_ids=[],price_changes=False,unassessed=unassessed,source_observed_at=s['observed_at'])
    for row in p['candidate_evidence'].values():
     stock=next((v for v in s['stock'] if str(v.get('article','')).casefold()==row['article'].casefold()),{})

@@ -1,1 +1,1 @@
-{"job_id":266,"maximum_count":20,"owner_source":"вноси изменения и пусть делает","execution_authorized":false}
+{"job_id":266,"maximum_count":20,"allow_fewer":true,"owner_source":"исправляй, если их меньше, пусть представит меньше","execution_authorized":false,"revision":2}

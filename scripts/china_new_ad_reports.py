@@ -168,7 +168,7 @@ def process_requests(io,job_id=None):
    groups,unassessed=choose(s,maximum,nm_ids,manual_review=bool(req.get('source_question_job_id')))
    groups={k:v for k,v in groups.items()if v}
    from china_ad_candidate_review import deliver_review
-   if not groups:
+   if req.get('review_only') is True or not groups:
     review=deliver_review(io,req,s,maximum,nm_ids)
     io.put(key,dict(req,status='reviewed',candidate_review=review));continue
    try:groups,quote_blockers=quote_groups(io,s,groups)

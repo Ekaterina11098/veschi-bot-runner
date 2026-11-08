@@ -60,23 +60,19 @@ class Retests(unittest.TestCase):
  def test_small_sample_or_stale_period_does_not_approve_retest(self):
   e=improved();e['fresh_complete']=False;s=source();s['retest_evidence']={'1':e}
   self.assertFalse(r.assess(s)[0]['eligible'])
- def test_review_delivery_never_creates_plan_or_approval_and_deduplicates(self):
+ def test_intermediate_review_delivery_is_blocked_before_network_or_freeze(self):
   s=source()
   class IO:
-   bot='fixture'
    def __init__(self):self.mem={}
    def get(self,k):return self.mem.get(k)
-   def create(self,k,v):
-    if k in self.mem:return False
-    self.mem[k]=copy.deepcopy(v);return True
-   def put(self,k,v):self.mem[k]=copy.deepcopy(v)
-   def tg(self,*a):return {'id':8780468043}
-  io=IO();req=dict(job_id=268,reply_message_id=777)
-  response=Mock();response.json.return_value=dict(ok=True,result=dict(chat={'id':-1004342917488},message_id=900))
-  send=Mock(return_value=response)
-  with patch('china_table_png.render',return_value=[b'fixture']),patch.dict(sys.modules,{'requests':types.SimpleNamespace(post=send)}):
-   value=deliver_review(io,req,s);deliver_review(io,req,s)
-  self.assertEqual(send.call_count,1);self.assertEqual(value['total'],1)
-  self.assertTrue(all(k.startswith(ROOT) for k in io.mem))
-  self.assertFalse(value['execution_authorized'])
+   def create(self,k,v):self.mem[k]=v;return True
+   def put(self,k,v):self.mem[k]=v
+   def tg(self,*a):raise AssertionError('Intermediate Telegram call')
+  io=IO()
+  with patch('china_table_png.render')as render,patch.dict(sys.modules,{'requests':types.SimpleNamespace(post=Mock())}):
+   with self.assertRaisesRegex(RuntimeError,'intermediate candidate delivery disabled'):
+    deliver_review(io,dict(job_id=268,reply_message_id=777),s)
+   render.assert_not_called()
+  self.assertEqual(io.mem,{})
+
 if __name__=='__main__':unittest.main()

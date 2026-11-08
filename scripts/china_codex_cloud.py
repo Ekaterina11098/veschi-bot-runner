@@ -119,7 +119,7 @@ class Worker:
         else:self.db.once(key,value)
     def sdk(self):
         from china_no_paid import require_paid_api
-        require_paid_api()
+        require_paid_api(self.db.get(CLOUD+'policy'))
         if self.client is None:
             from openai import OpenAI
             self.client=OpenAI(max_retries=0,timeout=120)

@@ -1,4 +1,4 @@
-name: Complete Pavel270 checks after exact549 economics
+name: Final checked Pavel270 proposals and verified delivery
 on:
   push:
     branches: [main]

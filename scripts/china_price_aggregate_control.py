@@ -72,7 +72,18 @@ def build(worker):
                 profit=orders*contribution-ads
                 item[label]=dict(days=n,orders=orders,views=views,funnel_orders=fo,conversion=fo/views,orders_per_day=orders/n,advertising_per_day=ads/n,expected_profit=profit,expected_profit_per_day=profit/n,period_from=str(a),period_to=str(b))
             before,after=item['before'],item['after']
-            result=experiment_result(before['expected_profit_per_day'],after['expected_profit_per_day'],before['views'],before['funnel_orders'],after['views'],after['funnel_orders'],min(4,item['full_days']),q['sample_size'])
+            delta=after['expected_profit_per_day']-before['expected_profit_per_day']
+            early_possible=(item['full_days']>=1 and before['expected_profit_per_day']>0
+                and delta/before['expected_profit_per_day']<=-.2
+                and before['views']>=100 and after['views']>=100
+                and before['funnel_orders']+after['funnel_orders']>=30 and q['sample_size']>=10
+                and after['conversion']<before['conversion'])
+            if delta<0 and item['full_days']>=4:
+                result=dict(status='rollback_review',profit_delta_rub=delta,early_review_criteria_met=False,conversion_fisher_p=None)
+            elif delta<0 and early_possible and nm not in ('1473245494','1473245510'):
+                result=experiment_result(before['expected_profit_per_day'],after['expected_profit_per_day'],before['views'],before['funnel_orders'],after['views'],after['funnel_orders'],min(4,item['full_days']),q['sample_size'])
+            else:
+                result=dict(status='observe',profit_delta_rub=delta,early_review_criteria_met=False,conversion_fisher_p=None)
             # Owner: preserve price when orders hold, even if conversion falls.
             if after['orders_per_day']>=before['orders_per_day']:
                 result.update(status='hold_orders_maintained',result_action='Заказы держатся; цену сохраняем.')

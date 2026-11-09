@@ -209,12 +209,27 @@ class Executor:
   if any(s.get('steps',{}).get(x,{}).get('status')!='accepted'for x in('memberships','bids')):raise Stop('Legacy accepted advertising receipts missing')
   def save():self.db.update(LEGACY+':execution',s)
   try:
+   amendment=self.db.get(LEGACY+':funding_amendment')or{}
+   if amendment.get('status')=='approved':
+    approved={'cabinet':'token_1','currency':'KGS','actions':[],'topups':[{'cid':39605581,'amount_kgs':1200}],'other_changes':[]}
+    if amendment.get('manifest')!=approved or amendment.get('manifest_sha256')!=digest(approved):raise Stop('Exact funding amendment required')
+    step='deposit_39605581_1200_amendment1'
+    if s.get('steps',{}).get(step,{}).get('status')!='accepted':
+     if datetime.now(timezone.utc)>=datetime.fromisoformat(amendment['expires_at']):raise Stop('Funding amendment expired')
+     if s['steps'].get('deposit_39605581_500_repair1',{}).get('status')!='rejected':raise Stop('Rejected 500 retry receipt required before amendment')
+     source=s['steps']['deposit_39605581_500']['body']['type']
+     if source not in(0,1):raise Stop('Original funding source invalid')
+     receipt=self.call(s,save,'POST','/adv/v1/budget/deposit',{'sum':1200,'type':source,'return':True},params={'id':39605581},step=step)
+     if receipt.get('currency')!='KGS'or type(receipt.get('total'))not in(int,float):raise Stop('Accepted amended deposit requires reconciliation; never replay')
+    s['funding_amendment_sha256']=digest(approved)
+    if 'funding_repair_error'in s:s['funding_500_error']=s.pop('funding_repair_error')
+    s['funding_amendment_accepted_at']=s['steps'][step]['accepted_at'];save()
    if not s.get('funding_config_checked_at'):
     try:s['funding_config']=self.call(s,save,'GET','/api/advert/v1/config')
     except Stop:
      if s.get('last_http',{}).get('/api/advert/v1/config',{}).get('http_status')not in(401,403):raise
     s['funding_config_checked_at']=stamp();save()
-   if not s.get('funding_repair_error')and s.get('steps',{}).get('deposit_39605581_500_repair1',{}).get('status')!='accepted':
+   if not s.get('funding_amendment_accepted_at')and not s.get('funding_repair_error')and s.get('steps',{}).get('deposit_39605581_500_repair1',{}).get('status')!='accepted':
     if datetime.now(timezone.utc)>=datetime.fromisoformat(auth['expires_at']):raise Stop('Repair funding authorization expired')
     try:self.fund(s,save,{'cid':39605581,'amount_kgs':500},'deposit_39605581_500_repair1')
     except Stop as e:s['funding_repair_error']=str(e);save()
@@ -237,6 +252,13 @@ def notify():
  db=DB();dialog=Dialogue(db);dialog.preflight()
  rows=db.api('GET',{'cache_key':'like.'+ROOT+'approved_report:*','payload->>status':'in.(verified,attention)','select':'cache_key,payload','limit':20})
  legacy=db.get(LEGACY+':execution')or{}
+ if legacy.get('funding_amendment_accepted_at')and not legacy.get('funding_accepted_delivery'):
+  legacy['funding_accepted_delivery']={'status':'uncertain','attempted_at':stamp()};db.update(LEGACY+':execution',legacy)
+  try:
+   r=dialog.tg('sendMessage',{'chat_id':CHAT,'text':'По отдельному согласованию WB принял пополнение РК 39605581 на 1200 KGS вместо отклонённых 500 KGS. Семь рекламных изменений повторно не отправлялись. Контрольная сверка завершится автоматически после ограничения API.'})
+   if r.get('chat',{}).get('id')!=CHAT or r.get('from',{}).get('id')!=BOT or type(r.get('message_id'))is not int:raise Stop('Unverified Telegram receipt')
+   legacy['funding_accepted_delivery'].update(status='verified',message_id=r['message_id'],delivered_at=stamp());db.update(LEGACY+':execution',legacy)
+  except Exception:pass
  if legacy.get('funding_repair_error')and not legacy.get('funding_attention_delivery'):
   detail=legacy.get('last_http',{}).get('/adv/v1/budget/deposit',{}).get('response',{}).get('error','')
   if 'minimum deposit amount is 1200'in detail:

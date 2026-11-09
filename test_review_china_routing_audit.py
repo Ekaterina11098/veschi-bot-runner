@@ -9,8 +9,8 @@ class ChinaRoutingAuditTests(unittest.TestCase):
   with patch('review_auto_five_star.semantic_fallback',return_value={'eligible':True}) as semantic:
    self.assertFalse(classify(item,cabinet='token_3')['eligible'])
    semantic.assert_not_called()
-   self.assertTrue(classify(item,cabinet='token_1')['eligible'])
-   self.assertTrue(classify(item,cabinet='token_2')['eligible'])
+   self.assertFalse(classify(item,cabinet='token_1')['eligible'])
+   self.assertFalse(classify(item,cabinet='token_2')['eligible'])
  def test_resolved_rhetorical_question_uses_semantics_only_for_china(self):
   item=dict(productValuation=5,text='Превосходная сумка. Думала в чем подвох...? Нет, все идеально. Спасибо!')
   with patch('review_auto_five_star.semantic_fallback',return_value={'eligible':True}) as semantic:

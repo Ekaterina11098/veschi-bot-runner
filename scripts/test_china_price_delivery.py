@@ -26,6 +26,7 @@ class Delivery(unittest.TestCase):
         modules={'requests':types.SimpleNamespace(Session=lambda:None),
                  'china_cloud_cost_control':types.SimpleNamespace(Cache=Cache,stamp=lambda:'2026-11-09T16:00:00Z'),
                  'china_table_png':types.SimpleNamespace(render=lambda *a,**kw:[b'PNG']),
+                 'china_price_current_check':types.SimpleNamespace(check=lambda w,a:a),
                  'china_agent':types.ModuleType('china_agent'),
                  'china_agent.price_brief':types.SimpleNamespace(plain_payload=lambda *a:{})}
         with patch.dict(sys.modules,modules),patch.dict('os.environ',{'CHINA_TELEGRAM_BOT_TOKEN':'test'}):

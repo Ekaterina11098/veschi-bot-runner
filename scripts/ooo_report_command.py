@@ -47,7 +47,8 @@ def approve(db,message,root,chat,bot,now=None,membership=None):
  plan=report.get('manifest')or{}
  if report.get('status')!='delivered_verified' or report.get('chat_id')!=chat or report.get('manifest_sha256')!=digest(plan):return {'status':'unbound','answer':'Для этого сообщения нет проверенного списка действий. Изменения не запущены.'}
  if now>=datetime.fromisoformat(report['expires_at']):return {'status':'expired','answer':'Отчёт устарел. Сначала нужна свежая проверка, изменения не запущены.'}
- if plan.get('cabinet')!='token_1'or plan.get('currency')!='KGS'or not(plan.get('actions')or plan.get('topups')):raise PermissionError('Invalid report scope')
+ if plan.get('cabinet')!='token_1'or plan.get('currency')!='KGS':raise PermissionError('Invalid report scope')
+ if not(plan.get('actions')or plan.get('topups')):return {'status':'no_actions','answer':'В этом отчёте нет новых действий. Исполнять нечего.'}
  execution=db.get(report.get('execution_key',''))if report.get('execution_key')else None
  if execution:
   answer='Этот пакет уже выполнен и проверен в WB.'if execution.get('status')=='verified'else'У этого пакета уже есть журнал исполнения. Повторные изменения не запускаю; результат сообщит исполнитель.'

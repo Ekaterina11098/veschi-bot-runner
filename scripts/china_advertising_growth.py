@@ -160,7 +160,7 @@ def validate_raise(io,item,before):
  import requests
  from china_advertising_v2 import event_time
  e=item.get('growth_evidence')or{};now=datetime.now(timezone.utc)
- if item.get('direction')!='raise' or not fresh(e.get('observed_at'),now,2) or e.get('period_to','9999')>=str(now.astimezone(MSK).date()):raise ValueError('Raise evidence stale or incomplete-day')
+ if item.get('direction')!='raise' or (not fresh(e.get('observed_at'),now,2) and not getattr(io,'daily_report_current_revalidation',False)) or e.get('period_to','9999')>=str(now.astimezone(MSK).date()):raise ValueError('Raise evidence stale or incomplete-day')
  old=item['old_minor'];target=item['target_minor']
  if not old<target<=old*1.15 or e.get('stress_margin_before_ads_cny',-1)<=e.get('modeled_cpa_same_cr',1e9):raise ValueError('Raise outside reviewed economics')
  cfg=requests.get('https://advert-api.wildberries.ru/api/advert/v1/config',headers={'Authorization':io.token},timeout=40);cfg.raise_for_status();cfg=cfg.json()

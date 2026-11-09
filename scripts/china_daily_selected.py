@@ -28,7 +28,8 @@ def source(io,job):
   matches.append(p)
  if len(matches)!=1:raise ValueError('Current exact source plan missing')
  p=matches[0]
- if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']):raise ValueError('Source plan expired')
+ from china_daily_report_validity import require
+ require(io,p)
  if not 1<=sel['index']<=len(p['items']):raise ValueError('Selection outside list')
  item=p['items'][sel['index']-1]
  if sel['article_hint'] and item['article'].split('-')[0].lstrip('0')!=sel['article_hint'].lstrip('0'):raise ValueError('Number/article disagree')

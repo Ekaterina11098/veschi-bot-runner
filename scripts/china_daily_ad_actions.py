@@ -7,9 +7,7 @@ EXEC='china_agent:daily_ad_execution:v2:'
 def plan(io,day,f,index,slot=''):
  pid='daily-'+day+('-'+slot if slot else '')+'-'+f['family']+'-'+str(index);items=copy.deepcopy(f['actions'])
  p=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='daily_ad_actions_v2',family=f['family'],created_at=datetime.now(timezone.utc).isoformat(),expires_at=(datetime.now(timezone.utc)+timedelta(hours=20)).isoformat(),items=items,plan_sha256=digest(items),report_message_ids=[],price_changes=False,auto_topup=False,period_to=day)
- raises=[x['growth_evidence']['observed_at'] for x in items if x.get('direction')in('raise','add') and x.get('growth_evidence')]
- anchors=raises+[x['budget_evidence']['observed_at']for x in items if x.get('budget_evidence')]
- if anchors:p['expires_at']=min(datetime.fromisoformat(t)+timedelta(hours=2) for t in anchors).isoformat()
+ p.update(validity_mode='until_replaced',report_generation=pid.rsplit('-',1)[0],expires_at='9999-12-31T23:59:59+00:00')
  k=PLAN+pid;old=io.get(k)
  if old:
   if old['plan_sha256']!=p['plan_sha256']:raise ValueError('Daily page plan changed')
@@ -25,6 +23,8 @@ def bind(io,f,receipt):
  old=io.get(BIND+str(mid))
  if old and old!=b:raise ValueError('Daily message binding changed')
  if not old and not io.create(BIND+str(mid),b):raise ValueError('Concurrent daily binding')
+ from china_daily_report_validity import publish
+ publish(io,p)
 
 def handle(w,job):
  from china_daily_bid_selection import handle as bid_selection_handle
@@ -44,7 +44,8 @@ def handle(w,job):
   return (p['owner_budget_resolution'],[])
  if p.get('owner_completed_budget_receipts'):
   return ('Все пополнения этого PNG уже выполнены и проверены WB по поручению владельца. Повторно бюджеты не пополняю. Для нового пополнения нужны свежий расчёт и отдельное подтверждение.',[])
- if w.now>datetime.fromisoformat(p['expires_at']):return ('План устарел. Нужен свежий отчёт и подтверждение обновлённых действий.',[])
+ from china_daily_report_validity import valid
+ if not valid(w,p,w.now):return ('Этот отчёт заменён новым или отозван. Ответьте на действующий отчёт.',[])
  if p.get('invalidated_at'):return ('План этого PNG отозван после проверки: '+p.get('invalidation_reason','нужен свежий план')+'. Изменения не выполняю.',[])
  if p.get('visible_from') and datetime.fromisoformat(job['created_at'])<datetime.fromisoformat(p['visible_from']):return ('PNG обновлён после этого подтверждения. Ответьте на обновлённый отчёт ещё раз.',[])
  if not p['items']:return ('В этом PNG нет новых действий. Уже выполненное и наблюдение повторно не запускаю.',[])
@@ -57,6 +58,9 @@ def handle(w,job):
 
 def execute(io,a,p):
  io.validate_owner(a)
+ from china_daily_report_validity import require
+ require(io,p)
+ io.daily_report_current_revalidation=p.get('validity_mode')=='until_replaced'
  if p.get('invalidated_at'):raise ValueError('Daily PNG plan invalidated after audit')
  if p.get('visible_from') and (not a.get('created_at') or datetime.fromisoformat(a['created_at'])<datetime.fromisoformat(p['visible_from'])):raise ValueError('Approval predates corrected PNG')
  if p['execution_kind']!='daily_ad_actions_v2' or p['plan_sha256']!=digest(p['items']) or a['plan_sha256']!=p['plan_sha256']:raise ValueError('Daily execution scope changed')
@@ -91,7 +95,7 @@ def execute(io,a,p):
    if added['bids_kopecks'].get(item['placement'])!=item['target_minor']:
     # Journal the approved second mutation before submitting; never replay an uncertain bid.
     if state.get('bid_phase'):return False
-    if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']):return False
+    if not __import__('china_daily_report_validity').valid(io,p):return False
     state['bid_phase']='submitting';save()
     try:
      request=dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=nm,placement=item['placement'],bid_kopecks=item['target_minor'])])])
@@ -118,7 +122,7 @@ def execute(io,a,p):
    continue
   state=dict(id=item['id'],status='preflight');e['items'].append(state);save()
   try:
-   if datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']):raise ValueError('Plan expired')
+   require(io,p)
    cid=item['campaign_id']
    if item['kind']=='approve_budget_reserve':raise ValueError('Условное согласование суммы резерва отменено владельцем; нужен готовый расчёт пополнения и новая команда')
    before=campaign(cid);state['before']=before;save()

@@ -212,7 +212,7 @@ def validate_addition(io,item,before):
  from china_moysklad_read import read_stock
  from china_advertising_growth import fresh
  e=item.get('growth_evidence')or{};now=datetime.now(timezone.utc)
- if item.get('direction')!='add'or item.get('exact_addition_quote')is not True or not fresh(e.get('observed_at'),now,2)or e.get('period_to','9999')>=str(now.astimezone(ZoneInfo('Europe/Moscow')).date()):raise ValueError('Addition evidence stale or not exact')
+ if item.get('direction')!='add'or item.get('exact_addition_quote')is not True or (not fresh(e.get('observed_at'),now,2) and not getattr(io,'daily_report_current_revalidation',False))or e.get('period_to','9999')>=str(now.astimezone(ZoneInfo('Europe/Moscow')).date()):raise ValueError('Addition evidence stale or not exact')
  nm=item['nm_id'];cid=item['campaign_id']
  if before['id']!=cid or before['status']!=9 or before['currency']!='CNY'or before['bid_type']!='manual'or before['settings']['payment_type']!='cpc'or before['settings']['placements'].get(item['placement'])is not True or not before.get('restrictions',{}).get('can_change_nms')or len(before['nm_settings'])>=50:raise ValueError('Addition campaign changed')
  if {n['subject']['id']for n in before['nm_settings']}!={item['subject_id']}:raise ValueError('Addition category changed')

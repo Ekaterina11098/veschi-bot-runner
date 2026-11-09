@@ -17,7 +17,9 @@ def source(io,job):
  if p.get('invalidated_at') or p.get('status') in ('revoked','invalidated'):raise ValueError('Plan revoked')
  if digest(p.get('items',[]))!=p.get('plan_sha256') or b.get('plan_sha256')!=p['plan_sha256'] or m.get('reply_message_id')not in p.get('report_message_ids',[]):raise ValueError('Plan binding changed')
  at=datetime.fromisoformat(job['created_at'].replace('Z','+00:00'))
- if at<datetime.fromisoformat(p.get('visible_from')or p['created_at']) or datetime.now(timezone.utc)>datetime.fromisoformat(p['expires_at']):raise ValueError('Plan expired or command predates publication')
+ if at<datetime.fromisoformat(p.get('visible_from')or p['created_at']):raise ValueError('Plan expired or command predates publication')
+ from china_daily_report_validity import require
+ require(io,p)
  items=[copy.deepcopy(i)for i in p['items'] if i.get('kind')=='ad_set_bid' and type(i.get('old_minor'))is int and type(i.get('target_minor'))is int and i['old_minor']!=i['target_minor']]
  if not items:raise ValueError('No bid changes in this PNG')
  return p,items

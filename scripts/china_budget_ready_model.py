@@ -72,7 +72,7 @@ def validate_funding(io,item,before):
  evidence=item.get('budget_evidence')
  if not evidence:return # Older already-bound legacy plans retain their existing execution checks.
  now=datetime.now(timezone.utc)
- if evidence.get('status')!='positive'or not evidence.get('ready')or not 0<=(now-instant(evidence['observed_at'])).total_seconds()<=2*3600:raise ValueError('Funding review unavailable or expired')
+ if evidence.get('status')!='positive'or not evidence.get('ready')or (not 0<=(now-instant(evidence['observed_at'])).total_seconds()<=2*3600 and not getattr(io,'daily_report_current_revalidation',False)):raise ValueError('Funding review unavailable or expired')
  if evidence['period_to']>=str(now.astimezone(ZoneInfo('Europe/Moscow')).date()):raise ValueError('Incomplete-day funding evidence')
  actual={str(n['nm_id']):n['bids_kopecks']for n in before['nm_settings']}
  if actual!=evidence['expected_bids']:raise ValueError('Campaign bid composition changed; refresh funding review')

@@ -7,7 +7,7 @@ from stock_operation_store import Store,canonical,digest,Stopped
 from stock_shared_requests import SharedRequests
 from stock_execution_fence import cloud_writer
 from stock_current_order_reserve import group_context,reconcile_current
-from stock_unposted_source import ms_demands,ms_headers,ms_rows
+from stock_unposted_source import ms_demands,ms_headers,ms_rows,bind_ozon_groups
 ROOT='technical:owner-all-reserve-audit:2026-11-09'
 LEDGER='technical:stock-shared:v1:6bca9c999b2927d674a432e675d21223d1518826829b2e82a9339b397a672511'
 with runtime_db() as lock:
@@ -26,7 +26,14 @@ with runtime_db() as lock:
    if store2!=store_id or after!=manifest['demands'] or digest(sorted((r['id'],r.get('updated')) for r in orders))!=manifest['orders']:
     raise Stopped('MS documents changed during all-SKU audit')
    before=reconcile_current(physical,units,ledger['documents'],store_id,context)
-   after=reconcile_current(physical,units,docs,store_id,context)
+   # Read-only copies: resolve complete Ozon posting sets exactly as production.
+   bind_ozon_groups(ledger['order_catalog']+units,docs)
+   context=group_context(ledger['order_catalog'])
+   errors={}
+   for u in units:
+    if any(d.get('unmapped') and d.get('group')==u['group'] for d in docs):
+     errors[u['article']]='Unmapped linked MS debit composition; cannot release'
+   after=reconcile_current(physical,units,docs,store_id,context,errors)
    rows=[]
    for art in sorted({u['article'] for u in units}):
     old=before['pending'].get(art,0);new=after['pending'].get(art,0)

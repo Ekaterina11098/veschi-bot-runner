@@ -17,8 +17,8 @@ def build(worker):
     from china_price_period import period
     from china_agent.daily_report_worker import MSK
     state=worker.get('china_agent:demand_watch:v1') or {}
-    tracked=canonical_change_days(tracked_rows(state,worker.day),verified_price_history(worker))
     events=verified_price_history(worker)
+    tracked=canonical_change_days(tracked_rows(state,worker.day),events)
     pairs={str(nm):baseline_after_last_change(comparison_windows(d,worker.day),nm,(c.get('before_price') or {}).get('current_cny'),d,events) for nm,e,c,d in tracked}
     end=worker.day-timedelta(days=1);rate_start=end-timedelta(days=29)
     windows={(str(rate_start),str(end))}
@@ -26,7 +26,12 @@ def build(worker):
         if pair:windows.update((str(a),str(b)) for a,b in pair)
     # Aggregates replace per-SKU card tables/orders and dozens of daily requests.
     Preview.acquire(worker,windows)
-    read=lambda t,p:worker.db('GET',t,params=p)
+    read_cache={}
+    def read(t,p):
+        import json
+        key=(t,json.dumps(p,sort_keys=True))
+        if key not in read_cache:read_cache[key]=worker.db('GET',t,params=p)
+        return read_cache[key]
     datasets={};sources=[]
     for a,b in sorted(windows):
         rows,marker=period(worker,a,b)

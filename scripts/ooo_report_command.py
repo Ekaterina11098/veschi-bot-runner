@@ -2,7 +2,10 @@
 import re,json,hashlib
 from datetime import datetime,timezone
 def digest(value):return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-def is_command(text):return bool(re.fullmatch(r'(?i)\s*(?:агент[, :]+)?(?:сделай|делай)\s+(?:всё|все)[.!]?\s*',text or ''))
+def is_command(text):
+ if not isinstance(text,str):return False
+ text=re.sub(r'@VESCHI_OOO_bot\b','',text,flags=re.I).strip()
+ return bool(re.fullmatch(r'(?i)\s*(?:агент[, :]+)?(?:сделай|делай)\s+(?:всё|все)[.!]?\s*',text))
 
 def bind_delivery(db,root,publication_key,chat,bot):
  """Bind frozen report actions only to independently stored sent photo receipts."""

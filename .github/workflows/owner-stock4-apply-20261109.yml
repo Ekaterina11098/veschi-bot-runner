@@ -71,3 +71,5 @@ jobs:
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
 
+
+# Resume same correction after persisted collection retry15:23:32UTC; no write replay.

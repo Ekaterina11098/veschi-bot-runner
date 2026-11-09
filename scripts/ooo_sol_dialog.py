@@ -103,6 +103,13 @@ class Worker:
   if verify:return checked
   p=self.db.get(ROOT+'policy')or{}
   if not(p.get('enabled')is True and p.get('model')==MODEL and p.get('chat_id')==CHAT and p.get('bot_id')==BOT and p.get('wb_permission')is False and type(p.get('not_before_unix'))is int):return {'status':'disabled'}
+  from ooo_report_command import bind_delivery
+  publications=self.db.api('GET',{'cache_key':'like.'+ROOT+'publication:*','payload->>status':'eq.prepared','select':'cache_key,payload','limit':10})
+  for row in publications:
+   try:
+    bind_delivery(self.db,ROOT,row['cache_key'],CHAT,BOT)
+    publication=row['payload'];publication.update(status='bound',bound_at=stamp());self.db.update(row['cache_key'],publication)
+   except PermissionError:pass # Delivery still pending or unverified; never infer a receipt.
   cursor=self.db.get(ROOT+'cursor')or{};offset=cursor.get('offset',0)
   updates=self.tg('getUpdates',{'offset':offset,'limit':50,'timeout':0,'allowed_updates':['message','callback_query']})
   for u in updates:

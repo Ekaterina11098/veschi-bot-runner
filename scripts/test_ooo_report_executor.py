@@ -85,6 +85,12 @@ class Flow(unittest.TestCase):
   self.assertIsNone(self.db.get(ROOT+'report_binding:'+str(CHAT)+':30'))
   self.db.data['ooo_agent:test:budget']={'status':'sent','chat_id':CHAT,'message_id':31,'sha256':'def'}
   self.assertEqual(bind_delivery(self.db,ROOT,key,CHAT,BOT),2)
+ def test_legacy_repair_is_once_exact_amount_and_source(self):
+  captured=[]
+  def request(*a,**kw):captured.append(kw);return Response(200,{'total':600,'currency':'KGS'})
+  x=Executor(self.db,'test',request);s={'steps':{'deposit_39605581_500':{'status':'rejected','http_status':400,'body':{'sum':500,'type':1},'params':{'id':39605581}}}}
+  for _ in range(2):x.fund(s,lambda:None,{'cid':39605581,'amount_kgs':500},'deposit_39605581_500_repair1')
+  self.assertEqual(len(captured),1);self.assertEqual(captured[0]['json'],{'sum':500,'type':1,'return':True})
 
 if __name__=='__main__':unittest.main()
 

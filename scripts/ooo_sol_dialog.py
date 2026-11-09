@@ -45,7 +45,8 @@ def addressed(message):
 def eligible(update,policy):
  m=update.get('message')or{};sender=m.get('from')or{}
  text=m.get('text')or''
- direct=addressed(m)
+ from ooo_report_command import is_command
+ direct=addressed(m)or is_command(text)
  ordinary=(policy.get('open_group_dialogue')is True and isinstance(text,str)
    and 0<len(text.strip())<=4000 and not text.strip().startswith(('/','@'))
    and type(m.get('date'))is int and m['date']>=policy.get('open_text_not_before_unix',policy['not_before_unix']))
@@ -118,7 +119,11 @@ class Worker:
    # Preserve callbacks for explicit human review; this dialogue cannot execute them.
    if u.get('callback_query')and(u['callback_query'].get('message')or{}).get('chat',{}).get('id')==CHAT and not self.db.get(key):self.db.once(key,{'status':'callback_requires_separate_handler','update_id':u['update_id'],'callback':u['callback_query'],'received_at':stamp()})
    self.db.put(ROOT+'cursor',{'offset':u['update_id']+1,'updated_at':stamp()})
-  rows=self.db.api('GET',{'cache_key':'like.'+ROOT+'inbox:*','payload->>status':'eq.queued','select':'cache_key,payload','order':'updated_at.asc','limit':2})
+  rows=self.db.api('GET',{'cache_key':'like.'+ROOT+'inbox:*','payload->>status':'eq.queued','select':'cache_key,payload','order':'updated_at.asc','limit':50})
+  from ooo_report_command import is_command
+  commands=[r for r in rows if is_command(r['payload'].get('message',{}).get('text'))]
+  questions=[r for r in rows if not is_command(r['payload'].get('message',{}).get('text'))]
+  rows=commands[:10]+questions[:2]
   done=0;errors=[]
   for row in rows:
    try:

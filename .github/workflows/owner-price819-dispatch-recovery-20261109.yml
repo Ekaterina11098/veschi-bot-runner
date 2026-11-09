@@ -1,0 +1,65 @@
+name: Recover exact approved price execution819 before WB boundary
+on:
+  push:
+    paths: ['.github/workflows/owner-price819-dispatch-recovery-20261109.yml']
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: china-price819-dispatch-recovery
+  cancel-in-progress: false
+jobs:
+  recover:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Recover only unstarted checkout and dispatch existing exact executor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,time,json,requests
+          from datetime import datetime,timezone
+          repo='Ekaterina11098/veschi-bot-runner'
+          base='https://api.github.com/repos/'+repo
+          gh={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
+          key=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':key}
+          if not key.startswith('sb_secret_'):h['Authorization']='Bearer '+key
+          db=os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/'
+          def getdb(params):
+              r=requests.get(db+'telegram_api_cache',headers=h,params=params,timeout=30);r.raise_for_status();return r.json()
+          approvals=getdb({'cache_key':'like.china_agent:price_recommendation_approval:v2:*','payload->>report_message_id':'eq.818','payload->>input_message_id':'eq.819','select':'cache_key,payload'})
+          if len(approvals)!=1:raise RuntimeError('Exact approval819 unavailable')
+          approval=approvals[0];a=approval['payload']
+          if a.get('actor_user_id')!=5122667182 or a.get('update_id')!=532552874 or a.get('execution_authorized')is not True or len(a.get('selections',[]))!=5:raise RuntimeError('Approval scope changed')
+          ek='china_agent:price_execution:v1:'+approval['cache_key'].split('price_recommendation_approval:v2:',1)[1]
+          def execution():return getdb({'cache_key':'eq.'+ek,'select':'payload'})
+          if execution():raise RuntimeError('Existing execution; no cancel/replay')
+          old=42664360494
+          r=requests.get(base+'/actions/runs/'+str(old)+'/jobs',headers=gh,timeout=30);r.raise_for_status();jobs=r.json()['jobs']
+          if len(jobs)!=1:raise RuntimeError('Unexpected job count')
+          job=jobs[0];steps=job.get('steps') or []
+          if job['status']!='completed':
+              active=[s for s in steps if s['status']=='in_progress']
+              if len(active)!=1 or active[0]['name']!='Run actions/checkout@v4':raise RuntimeError('Not safe: executor progressed beyond checkout')
+              if any(s['number']>2 and s['status']!='pending' for s in steps):raise RuntimeError('Later steps already started')
+              r=requests.post(base+'/actions/runs/'+str(old)+'/cancel',headers=gh,timeout=30)
+              if r.status_code not in (202,409):raise RuntimeError('Cancellation not accepted')
+              for _ in range(30):
+                  r=requests.get(base+'/actions/runs/'+str(old),headers=gh,timeout=30);r.raise_for_status()
+                  if r.json()['status']=='completed':break
+                  time.sleep(2)
+              else:raise RuntimeError('Cancellation not confirmed')
+          elif job.get('conclusion')not in ('failure','cancelled','timed_out'):raise RuntimeError('Old run already completed; inspect instead')
+          if execution():raise RuntimeError('Execution appeared; no replay')
+          # This is the original protected workflow_dispatch path, same saved approval.
+          r=requests.post(base+'/actions/workflows/china-price-apply.yml/dispatches',headers=gh,json={'ref':'main','inputs':{'mode':'apply','approval_key':approval['cache_key']}},timeout=30)
+          if r.status_code!=204:raise RuntimeError('Dispatch not confirmed; inspect runs before retry')
+          print(json.dumps(dict(status='dispatched_original_exact_executor',old_run=old,approval_message=819,wb_writes=0)))
+          PY

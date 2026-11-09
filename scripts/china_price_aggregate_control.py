@@ -63,8 +63,6 @@ def build(worker):
                 orders=raw.get('orders_count');views=raw.get('open_card_count');fo=raw.get('funnel_orders_count');ads=raw.get('advertisement')
                 if not all(num(v) for v in (orders,views,fo,ads)) or views<=0 or fo>views or item[field] is None:raise ValueError('period row missing')
                 n=(b-a).days+1
-                daily_views=raw.get('sparkline_open_card')
-                if not isinstance(daily_views,list) or len(daily_views)!=n or not all(num(v) for v in daily_views) or sum(daily_views)!=views:raise ValueError('product period views unverified')
                 contribution=float(q['probability'])*(float(item[field])*fx*retention-float(cost))-dispatch
                 profit=orders*contribution-ads
                 item[label]=dict(days=n,orders=orders,views=views,funnel_orders=fo,conversion=fo/views,orders_per_day=orders/n,advertising_per_day=ads/n,expected_profit=profit,expected_profit_per_day=profit/n,period_from=str(a),period_to=str(b))

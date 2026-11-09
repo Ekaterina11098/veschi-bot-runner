@@ -4,6 +4,8 @@ from pathlib import Path
 def install(root):
  from china_price_pending import install as install_pending
  install_pending(root)
+ from china_price_period import install as install_period
+ install_period(root)
  path=Path(root)/'china_agent/daily_report_worker.py';text=path.read_text(encoding='utf-8')
  marker='# cloud_codex_final_price_review_v1'
  if marker in text:

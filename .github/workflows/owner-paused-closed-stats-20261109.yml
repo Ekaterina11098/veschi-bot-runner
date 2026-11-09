@@ -1,0 +1,49 @@
+name: Refresh closed-day attribution for two paused campaigns
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-paused-closed-stats-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  fund:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 10ca471ebdc30e8979abeb6286434c51fe218931
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Read completed-day attribution only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          from datetime import datetime,timezone
+          from china_loss_execute import IO
+          from china_advertising_v2 import http
+          io=IO();key='china_agent:owner_paused_review:2026-11-09:v1:closed_stats'
+          if io.get(key):raise SystemExit('Existing dated read; no replay')
+          assert io.create(key,dict(status='collecting',wb_writes=0,telegram_calls=0))
+          rows=http(io,'/adv/v3/fullstats?ids=41680341,41332083&beginDate=2026-11-02&endDate=2026-11-08')
+          io.put(key,dict(status='complete',rows=rows,observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0,telegram_calls=0))
+          print('Closed-day attribution refreshed for exact two campaigns; no writes')
+          
+          PY

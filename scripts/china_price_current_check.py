@@ -31,6 +31,8 @@ def check(worker,answer):
         if reason:blocked.append(dict(article=article,reason=reason));continue
         retained.append(action+' · '+article+' Продавец: '+change+'\nПокупатель: '+buyer)
     worker.audit['proposal_current_check']=dict(prices=prices,stock=stock,published_stock=wb,blocked=blocked,retained=len(retained))
-    if retained:return '\n\n'.join(retained)
+    if retained:
+        statuses=[block for block in answer.split('\n\n') if block.startswith(('Повышение:','Снижение:'))]
+        return '\n\n'.join(retained+statuses)
     return 'Повышение: нет готовых рекомендаций\n\nСнижение: нет готовых рекомендаций'
 

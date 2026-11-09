@@ -205,6 +205,7 @@ class Executor:
    a['status']='verified';s['verified_at']=stamp();save()
   except Deferred:a['status']='waiting_shared_quota';save()
   except Stop as e:a['status']='attention';s['safe_error']=str(e);save()
+  except Exception as e:a['status']='attention';s['safe_error']='Unexpected executor failure: '+type(e).__name__;save()
  def repair_legacy(self):
   auth=self.db.get(LEGACY+':repair_500')or{}
   if auth.get('status')!='approved':return
@@ -246,6 +247,7 @@ class Executor:
    save()
   except Deferred:s['status']='waiting_shared_quota';save()
   except Stop as e:s.update(status='repair_attention',safe_error=str(e));save()
+  except Exception as e:s.update(status='repair_attention',safe_error='Unexpected executor failure: '+type(e).__name__);save()
  def run(self):
   self.identity();self.repair_legacy()
   rows=self.db.api('GET',{'cache_key':'like.'+ROOT+'approved_report:*','payload->>status':'in.(approved_pending_execution,executing,waiting_shared_quota)','select':'cache_key,payload','order':'updated_at.asc','limit':2})

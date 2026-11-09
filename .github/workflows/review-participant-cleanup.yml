@@ -51,5 +51,5 @@ jobs:
                   def call(self,method,payload):
                       if method!='deleteMessage':raise RuntimeError('Cleanup permits deletion only')
                       return self.transport.call(method,payload)
-              print(json.dumps(cleanup_completed(app,DeleteOnly())))
+              print(json.dumps(cleanup_completed(app,DeleteOnly(),intent_id='e4a2dc7a8941eccea089a4444a882160f9fe6b48a1966bb519adbad02c25db06')))
           PY

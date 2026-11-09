@@ -146,4 +146,22 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(cleanup_completed(a,tg)['unconfirmed'],5)
         cleanup_completed(a,tg);self.assertEqual(tg.call.call_count,5)
         self.assertEqual(a.repo.get('intents','i')['status'],'confirmed')
+class MovedReplyCleanupTests(CleanupTests):
+    def test_exact_authenticated_reply_to_moved_card_is_cleaned(self):
+        a,tg,i=self.setup_case()
+        a.group=dict(enabled=True,destination_verified=True,chat_id='group')
+        c=a.repo.get('cards','c');c.update(chat_id='group',message_id=110)
+        i['chat_id']='group'
+        a.repo.put('cards','c',c);a.repo.put('intents','i',i)
+        a.repo.put('events','resurface-old:batch:c',dict(card_token='c',chat_id='group',message_id=10))
+        a.repo.put('events','edit:accepted',dict(token='c',actor='participant',chat_id='group',decision='revision_requested',instruction='answer'))
+        for mid,text,actor,reply in ((70,'answer','participant',10),(71,'different','participant',10),(72,'answer','stranger',10),(73,'answer','participant',999)):
+            a.repo.put('events','telegram-ingress:'+str(mid),{'update':{'message':{
+                'message_id':mid,'text':text,'from':{'id':actor},'chat':{'id':'group','type':'supergroup'},
+                'reply_to_message':{'message_id':reply,'from':{'id':'bot'}}}}})
+        a.repo.conn.commit()
+        cleanup_completed(a,tg)
+        deleted={x.args[1]['message_id'] for x in tg.call.call_args_list}
+        self.assertIn(70,deleted);self.assertTrue(deleted.isdisjoint({71,72,73}))
+        before=tg.call.call_count;cleanup_completed(a,tg);self.assertEqual(tg.call.call_count,before)
 if __name__=='__main__':unittest.main()

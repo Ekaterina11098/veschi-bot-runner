@@ -63,6 +63,20 @@ def _cleanup_chat(a,tg,preserve=None,intent_id=None,cabinet=None):
     # Owner explicitly requested removing their completed reply messages too.
     # Match authenticated owner replies in private or the verified content group to a tracked card AND the exact approved text.
     by_message={c.get('message_id'):(token,c) for token,c in cards.items() if a.card_chat(c)==a.chat}
+    # A history move keeps the old bot message as a durable UI alias.
+    # Recover exact replies to that message without broadening text/actor checks.
+    aliases=[]
+    for alias_key,alias in events.items():
+        if not alias_key.startswith('resurface-old:') or str(alias.get('chat_id'))!=a.chat:continue
+        alias_token=alias.get('card_token');alias_card=cards.get(alias_token)
+        mid=alias.get('message_id')
+        if alias_token not in tokens or not alias_card or a.card_chat(alias_card)!=a.chat:continue
+        if not isinstance(mid,int) or isinstance(mid,bool) or mid<=0:continue
+        if mid in by_message and by_message[mid][0]!=alias_token:continue
+        by_message[mid]=(alias_token,alias_card);aliases.append(str(mid))
+    if repo.pg and aliases:
+        extra=repo.execute("SELECT id,payload FROM {p}events WHERE starts_with(id,'telegram-ingress:') AND payload::jsonb->'update'->'message'->'chat'->>'id'=? AND payload::jsonb->'update'->'message'->'reply_to_message'->>'message_id'=ANY(?)",(a.chat,aliases)).fetchall()
+        events.update({k:json.loads(v) for k,v in extra})
     for key,e in events.items():
         if not key.startswith('telegram-ingress:'):continue
         message=(e.get('update') or {}).get('message') or {}

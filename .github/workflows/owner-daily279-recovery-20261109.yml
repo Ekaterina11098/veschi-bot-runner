@@ -1,0 +1,152 @@
+name: Owner four SKU stock reserve shipment read
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-daily279-recovery-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: f7823ca89ef9a0163cffcb022a354043502a12ef
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Read exact four SKU inventory and documents
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          """Recover actual owner command279 against the unchanged visible recommendations in PNG813."""
+          import copy,json,hashlib,requests,base64,io as bio
+          from datetime import datetime,timezone
+          from urllib.parse import urlparse
+          from china_loss_execute import IO
+          from china_loss_control import PLAN,APPROVAL,digest
+          from china_daily_ad_actions import plan,execute,EXEC,BIND
+          from china_advertising_v2 import http,refresh_budget_context,history
+          from china_budget_ready_model import attach as funding_review
+          ROOT='china_agent:owner_daily279_recovery:2026-11-09:v1'
+          DAY='2026-11-09';CHAT=-1004342917488;BOT=8780468043
+          
+          def stamp():return datetime.now(timezone.utc).isoformat()
+          def main():
+           io=IO()
+           if io.get(ROOT):raise SystemExit('Existing recovery; never replay')
+           job=io.db('business_agent_jobs?id=eq.279&select=id,update_id,sender_id,chat_id,request_text,created_at,tool_trace')[0]
+           marker=next(x for x in job['tool_trace']if x['name']=='china_saved_question')
+           assert job['sender_id']==5122667182 and job['chat_id']==CHAT and job['request_text']=='Сделай все'
+           assert marker['message_id']==814 and marker['reply_message_id']==813
+           visible=io.get('china_agent:owner_midday_recommendations:'+DAY+':v1')
+           assert visible['status']=='verified'and visible['receipt']['message_id']==813
+           assert datetime.fromisoformat(job['created_at']).timestamp()>visible['receipt']['edit_date']
+           proposal=io.get('china_agent:owner_all_drr_review:'+DAY+':v1:proposal')
+           assert len(proposal['actions'])==8 and proposal['budget_total_cny']==200
+           actions=copy.deepcopy(proposal['actions'])
+           expected={(40933588,1473243917,28),(41055480,1473245513,28),(41055480,1473242758,28),(41270309,1473243913,28),(41298169,1473243918,28),(41298169,1473243825,28)}
+           assert {(a['campaign_id'],a['nm_id'],a['target_minor'])for a in actions if a['kind']=='ad_set_bid'}==expected
+           assert {(a['campaign_id'],a['nm_id'])for a in actions if a['kind']=='ad_exclude_sku'}=={(40933588,1473245496),(40933588,1473243093)}
+           # Rendered strings must contain the exact values being rebound, not a newly selected plan.
+           notes={c['id']:' '.join(c.get('addition_review_notes',[]))for c in visible['bundle']['campaigns']}
+           for a in actions:
+            label=a['article'].split('-')[0];assert label+':'in notes[a['campaign_id']]
+            if a['kind']=='ad_set_bid':assert format(a['old_minor']/100,'.2f')+' → '+format(a['target_minor']/100,'.2f')in notes[a['campaign_id']]
+           for cid in [40945478,41270309]:assert '100 CNY'in notes[cid]
+           assert io.create(ROOT,dict(status='preflight',source_job_id=279,input_message_id=814,report_message_id=813,visible_revision='china_agent:owner_midday_recommendations:'+DAY+':v1',started_at=stamp(),wb_writes=0,telegram_calls=0))
+           original=requests.sessions.Session.request
+           def guarded(session,method,url,**kw):
+            u=urlparse(url);m=method.upper();body=kw.get('json')or{}
+            allowed=m=='GET'and u.scheme=='https'and u.hostname!='api.telegram.org'
+            if u.hostname==urlparse(io.url).hostname and u.path.startswith('/rest/v1/')and m in ['GET','POST','PATCH']:allowed=True
+            if u.hostname=='advert-api.wildberries.ru':
+             if m=='POST'and u.path in ['/api/advert/v2/budget','/api/advert/v1/bids/min']:allowed=True
+             if m=='PATCH'and u.path=='/api/advert/v1/bids':
+              allowed=all((b['advert_id'],n['nm_id'],n['bid_kopecks'])in expected for b in body['bids']for n in b['nm_bids'])
+             if m=='PATCH'and u.path=='/adv/v0/auction/nms':allowed=all(n['advert_id']==40933588 and n['nms']['add']==[] and set(n['nms']['delete'])<={1473245496,1473243093}for n in body['nms'])
+             if m=='POST'and u.path=='/adv/v1/budget/deposit':allowed=u.query in ['id=40945478','id=41270309']and body.get('sum')==100
+            if u.hostname=='marketplace-api.wildberries.ru'and m=='POST'and u.path=='/api/v3/stocks/2126188':allowed=True
+            if u.hostname=='api.telegram.org':allowed=m=='POST'and u.path in ['/bot'+io.bot+'/getMe','/bot'+io.bot+'/getChatMember']
+            if not allowed:raise ValueError('Outside exact owner279 recovery scope')
+            return original(session,method,url,**kw)
+           requests.sessions.Session.request=guarded
+           auth=dict(status='approved',job_id=279,update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=814,reply_message_id=813,created_at=job['created_at'],price_changes=False)
+           io.validate_owner(auth)
+           source=refresh_budget_context(io,io.get('china_agent:advertising_source:'+DAY+':v2'),DAY)
+           v=io.get('china_agent:advertising_full_growth:'+DAY+':v1:inputs:growth_upgrade')
+           assert v['status']=='complete'and (datetime.now(timezone.utc)-datetime.fromisoformat(v['observed_at'])).total_seconds()<3600
+           ids=[40933588,41055480,41270309,41298169,40945478]
+           cps=http(io,'/api/advert/v2/adverts?ids='+','.join(map(str,ids)))['adverts'];states={c['id']:c for c in cps};assert set(states)==set(ids)
+           for a in actions:
+            c=states[a['campaign_id']];n=next(n for n in c['nm_settings']if n['nm_id']==a['nm_id'])
+            assert c['status']==9 and n['bids_kopecks'][a['placement']]==a['old_minor'],'Recommendation state changed'
+            a.update(id=str(a['campaign_id'])+':'+str(a['nm_id']),manual_strategy_proposal=True)
+            e=v['economics']['rows'].get(str(a['nm_id']),{})
+            assert e.get('stock_free',0)>0 and e.get('own_cogs_rub',0)>0 and e.get('seller_price_cny')==a['evidence']['seller_price_cny'],'Current economy changed'
+           after=copy.deepcopy(states)
+           for a in actions:
+            c=after[a['campaign_id']]
+            if a['kind']=='ad_exclude_sku':c['nm_settings']=[n for n in c['nm_settings']if n['nm_id']!=a['nm_id']]
+            else:next(n for n in c['nm_settings']if n['nm_id']==a['nm_id'])['bids_kopecks'][a['placement']]=a['target_minor']
+           source=copy.deepcopy(source);source['economics']=v['economics'];source['full_growth_inputs']=dict(v,campaigns=list(after.values()));source['observed_at']=v['observed_at']
+           for batch in source['batches'].values():batch['campaigns']['adverts']=[after.get(c['id'],c)for c in batch['campaigns']['adverts']]
+           assessed=funding_review(dict(campaigns=[dict(id=cid)for cid in [40945478,41270309]],budget_days=['2026-11-06','2026-11-07','2026-11-08']),source,history(source['executions']))
+           cash={r['advertId']:r['total']for r in http(io,'/api/advert/v2/budget','POST',dict(advertIds=[40945478,41270309]))['adverts']}
+           for c in assessed['campaigns']:
+            cid=c['id'];e=c['campaign_budget_economics'];old=next(a for a in proposal['budget_recommendations']if a['campaign_id']==cid)
+            assert cash[cid]<=old['balance_before']+2,'Funding after report; no duplicate deposit'
+            actions.append(dict(id='funding:'+str(cid),kind='topup_campaign',campaign_id=cid,nm_ids=sorted(n['nm_id']for n in after[cid]['nm_settings']),amount_cny=100,balance_before=cash[cid],target_balance=cash[cid]+100,budget_evidence=e))
+           p=plan(io,DAY,dict(family='drr',actions=actions),0,slot='midday813-recovered279')
+           p.update(visible_from=datetime.fromtimestamp(visible['receipt']['edit_date'],timezone.utc).isoformat(),report_message_ids=[813],visible_png_sha256=visible['png_sha256'],recovered_from_empty_plan=True,original_visible_revision='china_agent:owner_midday_recommendations:'+DAY+':v1')
+           io.put(PLAN+p['plan_id'],p)
+           oldbind=io.get(BIND+'813');oldplan=io.get(PLAN+oldbind['plan_id'])
+           assert oldplan['items']==[],'Unexpected prior bound actions'
+           io.create(ROOT+':old_binding',dict(binding=oldbind,plan=oldplan))
+           oldplan.update(invalidated_at=stamp(),invalidation_reason='Empty binding did not represent the already-visible recommendations; recovered exact owner command279')
+           io.put(PLAN+oldplan['plan_id'],oldplan)
+           io.put(BIND+'813',dict(plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],chat_id=CHAT,family='drr'))
+           from china_daily_report_validity import publish
+           publish(io,p)
+           auth.update(status='recovery_owned',plan_id=p['plan_id'],plan_sha256=p['plan_sha256']);assert io.create(APPROVAL+'279',auth)
+           io.put(ROOT,dict(status='binding_repaired',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],approval_key=APPROVAL+'279',wb_writes=0,telegram_calls=0,preflight_at=stamp(),funding_evidence=[c['campaign_budget_economics']for c in assessed['campaigns']]))
+           # Keep this recovery result here; no Telegram edits/sends from the recovery worker.
+           import china_execution_notice
+           china_execution_notice.deliver_result=lambda *args:None
+           result=execute(io,auth,p)
+           io.put(APPROVAL+'279',dict(auth,status='completed'if all(r['status']=='verified'for r in result['items'])else'attention',execution_key=EXEC+p['plan_id'],result_delivery='codex_pending'))
+           registry=io.get('china_agent:verified_campaign_state:v1')or{}
+           for cid in ids:
+            done=[r for r in result['items']if r['status']=='verified'and r.get('before',{}).get('id')==cid]
+            if not done:continue
+            before=done[0]['before'];current=http(io,'/api/advert/v2/adverts?ids='+str(cid))['adverts'][0]
+            child=ROOT+':campaign:'+str(cid)
+            if all(r['status']=='verified'for r in result['items']if next(a for a in actions if a['id']==r['id'])['campaign_id']==cid):
+             receipt=dict(status='verified',before=before,after=current,verified_at=stamp(),execution_key=EXEC+p['plan_id'])
+             io.create(child,receipt);registry[str(cid)]=child
+           io.put('china_agent:verified_campaign_state:v1',registry)
+           summary=dict(status='verified'if all(r['status']=='verified'for r in result['items'])else'partial',plan_id=p['plan_id'],execution_key=EXEC+p['plan_id'],items=[{k:r.get(k)for k in ['id','status','reason','already_done']}for r in result['items']],wb_writes=result['wb_writes'],telegram_calls=0,completed_at=stamp())
+           io.put(ROOT,summary)
+           print(json.dumps(summary,ensure_ascii=False))
+          if __name__=='__main__':
+           try:main()
+           except Exception as ex:
+            io=IO();record=io.get(ROOT)or{}
+            record.update(status='attention'if record.get('status')=='binding_repaired'else'blocked',error=type(ex).__name__+': '+str(ex)[:220],failed_at=stamp())
+            if io.get(ROOT):io.put(ROOT,record)
+            raise
+          PY

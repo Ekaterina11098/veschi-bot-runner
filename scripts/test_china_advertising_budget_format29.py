@@ -101,7 +101,7 @@ class ReplacementTests(unittest.TestCase):
   with patch.object(r.requests,'post',self.transport(calls),create=True):r.apply(io)
   k=PLAN+io.get(BIND+'900')['plan_id'];p=io.get(k);p['validity_mode']='legacy_expiry';p['expires_at']=(io.now-timedelta(seconds=1)).isoformat();io.put(k,p)
   with patch('china_group_permissions.allowed',return_value=True):
-   reply,trace=handle(io,self.job(io));self.assertIn('устарел',reply);self.assertEqual(trace,[])
+   reply,trace=handle(io,self.job(io));self.assertIn('заменён новым или отозван',reply);self.assertEqual(trace,[])
  def test_tampered_hash_rejected(self):
   io=self.fixture();calls=[]
   with patch.object(r.requests,'post',self.transport(calls),create=True):r.apply(io)

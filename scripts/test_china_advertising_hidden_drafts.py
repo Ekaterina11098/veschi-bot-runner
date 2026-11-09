@@ -13,7 +13,9 @@ class HiddenDrafts(unittest.TestCase):
  def test_morning_draft_needs_no_budget_or_statistical_placeholder(self):
   source=dict(ids=[40892162],period_to='2026-10-26',observed_at='2026-10-27T04:00:00Z',catalogue=dict(rows=[]),executions=[],config={'minTopUp':10000},batches={'0':dict(campaigns=dict(adverts=[self.draft()]),stats=[],budgets=dict(adverts=[]))})
   original=copy.deepcopy(source)
-  self.assertEqual([],build(source)['campaigns'])
+  rows=build(source)['campaigns']
+  self.assertEqual(1,len(rows));self.assertTrue(rows[0]['never_started'])
+  self.assertIsNone(rows[0]['period']);self.assertEqual([],rows[0]['focus']);self.assertIsNone(rows[0]['budget_action'])
   self.assertEqual(original,source)
  def test_midday_hides_draft_and_keeps_active_and_paused(self):
   active=dict(id=1,status=9,timestamps=dict(started='2026-10-01T00:00:00+03:00'),settings=dict(name='Active',placements=dict(search=True)),nm_settings=[])

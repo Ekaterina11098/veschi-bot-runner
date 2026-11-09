@@ -1,4 +1,4 @@
-name: Owner verify full daily sales-growth scenario without execution
+name: Owner verify full daily sales-growth scenario without execution v2
 on:
   push:
     paths:

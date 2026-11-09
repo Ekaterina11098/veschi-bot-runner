@@ -62,17 +62,29 @@ def _cleanup_chat(a,tg,preserve=None,intent_id=None,cabinet=None):
             if edit.get('token') in tokens:add(e.get('message_id'))
     # Owner explicitly requested removing their completed reply messages too.
     # Match authenticated owner replies in private or the verified content group to a tracked card AND the exact approved text.
-    by_message={c.get('message_id'):c for c in cards.values() if a.card_chat(c)==a.chat}
+    by_message={c.get('message_id'):(token,c) for token,c in cards.items() if a.card_chat(c)==a.chat}
     for key,e in events.items():
         if not key.startswith('telegram-ingress:'):continue
         message=(e.get('update') or {}).get('message') or {}
-        if str((message.get('from') or {}).get('id'))!=a.owner:continue
+        actor=str((message.get('from') or {}).get('id'))
         chat=message.get('chat') or {}
         if str(chat.get('id'))!=a.chat or not a.allowed_chat_type(chat.get('type')):continue
         reply=message.get('reply_to_message') or {}
         if str((reply.get('from') or {}).get('id'))!=a.bot:continue
         original=by_message.get(reply.get('message_id'))
         if not original:continue
+        token,original=original
+        # Group permissions are checked when record_edit accepts the reply.
+        # The durable authenticated edit receipt binds actor, chat, card and text;
+        # workers do not carry the ingress handler's transient group_actor.
+        if actor!=a.owner:
+            if a.chat!=a.group_chat():continue
+            if not any(k.startswith('edit:') and edit.get('token')==token
+                       and str(edit.get('actor'))==actor
+                       and str(edit.get('chat_id'))==a.chat
+                       and edit.get('decision')=='revision_requested'
+                       and edit.get('instruction')==message.get('text','').strip()
+                       for k,edit in events.items()):continue
         intent=processed.get(original.get('ref'))
         if intent and isinstance(message.get('text'),str) and message['text'].strip()==intent['answer']:
             add(message.get('message_id'))

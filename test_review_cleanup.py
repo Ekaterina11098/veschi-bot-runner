@@ -83,6 +83,46 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(a.repo.get('intents','i'),before)
         count=tg.call.call_count;cleanup_completed(a,tg)
         self.assertEqual(tg.call.call_count,count)
+    def test_authorized_group_participant_reply_is_removed_once(self):
+        a,tg,i=self.setup_case()
+        a.group=dict(enabled=True,destination_verified=True,chat_id='group')
+        a.group_actor='participant'
+        c=a.repo.get('cards','c');c['chat_id']='group';i['chat_id']='group'
+        a.repo.put('cards','c',c);a.repo.put('intents','i',i)
+        for mid,actor,text,chat,reply in (
+            (80,'participant','answer','group',10),
+            (81,'stranger','answer','group',10),
+            (82,'participant','other draft','group',10),
+            (83,'participant','answer','foreign',10),
+            (84,'participant','answer','group',99)):
+            a.repo.put('events','telegram-ingress:'+str(mid),{'update':{'message':{
+                'message_id':mid,'text':text,'from':{'id':actor},
+                'chat':{'id':chat,'type':'supergroup'},
+                'reply_to_message':{'message_id':reply,'from':{'id':'bot'}}}}})
+        a.repo.conn.commit();cleanup_completed(a,tg)
+        self.assertNotIn(80,{x.args[1]['message_id'] for x in tg.call.call_args_list})
+        a.repo.put('events','edit:participant',dict(
+            token='c',actor='participant',chat_id='group',
+            decision='revision_requested',instruction='answer'))
+        a.repo.conn.commit()
+        before=copy.deepcopy(a.repo.get('intents','i'))
+        cleanup_completed(a,tg)
+        deleted={x.args[1]['message_id'] for x in tg.call.call_args_list}
+        self.assertIn(80,deleted)
+        self.assertTrue(deleted.isdisjoint({81,82,83,84}))
+        self.assertEqual(a.repo.get('intents','i'),before)
+        count=tg.call.call_count;cleanup_completed(a,tg)
+        self.assertEqual(tg.call.call_count,count)
+    def test_group_participant_cannot_authorize_private_cleanup(self):
+        a,tg,i=self.setup_case()
+        a.group=dict(enabled=True,destination_verified=True,chat_id='group')
+        a.group_actor='participant'
+        a.repo.put('events','telegram-ingress:private',{'update':{'message':{
+            'message_id':80,'text':'answer','from':{'id':'participant'},
+            'chat':{'id':'chat','type':'private'},
+            'reply_to_message':{'message_id':10,'from':{'id':'bot'}}}}})
+        a.repo.conn.commit();cleanup_completed(a,tg)
+        self.assertNotIn(80,{x.args[1]['message_id'] for x in tg.call.call_args_list})
     def test_unverified_group_not_swept(self):
         a,tg,i=self.setup_case()
         a.group=dict(enabled=True,destination_verified=False,chat_id='group')

@@ -1,0 +1,67 @@
+name: Owner restore recommendations in existing midday report
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-midday-recommendations-edit-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: china-midday-advertising-report
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 10ca471ebdc30e8979abeb6286434c51fe218931
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Deliver reviewed frozen midday PNG only; no WB access
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import base64,hashlib,json,requests,io as bio
+          from datetime import datetime,timezone
+          from china_price_apply import IO
+          io=IO();key='china_agent:owner_midday_recommendations:2026-11-09:v1'
+          p=io.get(key);assert p['status']=='prepared_review'
+          assert len(p['bundle']['campaigns'])==20 and all(c['today'] is not None for c in p['bundle']['campaigns'])
+          assert all(not c['attention'] for c in p['bundle']['campaigns'])
+          delivery_key='china_agent:advertising_midday_delivery:2026-11-09:v1'
+          d=io.get(delivery_key);assert d['status']=='delivered'
+          assert len(d['parts'])==1 and d['parts'][0]['receipt']['message_id']==813
+          assert d['parts'][0]['receipt']['chat']['id']==-1004342917488
+          url='https://api.telegram.org/bot'+io.bot+'/'
+          me=requests.post(url+'getMe',timeout=30).json()
+          assert me['ok'] and me['result']['id']==8780468043
+          raw=base64.b64decode(p['files'][0]['b64'],validate=True)
+          p.update(status='editing',png_sha256=hashlib.sha256(raw).hexdigest(),started_at=datetime.now(timezone.utc).isoformat())
+          io.put(key,p)
+          try:
+           media=dict(type='photo',media='attach://report',caption='Китай · дневной отчёт 9 ноября · срез 15:37 МСК. Рекомендации в правой колонке основаны на завершённых 6–8 ноября, а не сегодняшней ДРР: 6 снижений, 2 исключения и 2 пополнения по 100 CNY. Новых повышений и добавлений в проверенном плане нет. Это предложения для обсуждения; исполнение отложено до вашей отдельной команды.')
+           response=requests.post(url+'editMessageMedia',data=dict(chat_id=-1004342917488,message_id=813,media=json.dumps(media,ensure_ascii=False)),files=dict(report=('report.png',bio.BytesIO(raw),'image/png')),timeout=90)
+           j=response.json()
+           assert response.status_code==200 and j.get('ok') is True
+           r=j['result'];assert r['message_id']==813 and r['chat']['id']==-1004342917488 and r.get('photo')
+           p.update(status='verified',receipt=dict(message_id=r['message_id'],chat_id=r['chat']['id'],edit_date=r.get('edit_date'),photo_file_id=r['photo'][-1]['file_id']),completed_at=datetime.now(timezone.utc).isoformat())
+           io.put(key,p)
+          except Exception:
+           p['status']='uncertain';io.put(key,p);raise
+          for k in [delivery_key,'china_agent:advertising_midday_artifacts:2026-11-09:v1']:
+           value=io.get(k);value['visible_revision_key']=key;io.put(k,value)
+          print('Verified correction of existing message813; no new message; no WB writes')
+          
+          PY

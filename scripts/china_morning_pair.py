@@ -108,7 +108,14 @@ class PairWorker(CoverageWorker):
             if latest.get('period_to')!=expected: raise RuntimeError('Completed period mismatch')
             from china_agent.daily_expected_control import build,render_candidates
             self.control_preview=preview
-            self.price_control_review=build(self,candidate_review=True)
+            try:
+                self.price_control_review=build(self,candidate_review=True)
+            except (RuntimeError,ValueError) as exc:
+                # A missing control source must not suppress independently ready
+                # raises, or silently turn an unchecked decrease into "none".
+                self.audit['control_source_blocker']=str(exc)[:200]
+                self.price_control_review=dict(status='unavailable',report_date=str(self.day),products=[])
+                self.save('china_agent:daily_expected_candidates:'+str(self.day)+(':verify' if preview else ''),self.price_control_review)
             from china_agent.price_brief import render_plain as brief
             full=render_candidates(self)
             review=self.get('china_agent:daily_expected_candidates:'+str(self.day)+(':verify' if preview else ''))
@@ -147,6 +154,8 @@ def main():
             import requests
             requests.sessions.Session.request=w.original_http
 if __name__=='__main__':main()
+
+
 
 
 

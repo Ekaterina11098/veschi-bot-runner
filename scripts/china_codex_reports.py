@@ -120,6 +120,8 @@ def review_advertising(io,bundle,source,identity,observational=None,force=False,
 def price_parts(draft):
  lines=draft.splitlines();tables=[];plain=[];candidates={};index=0
  while index<len(lines):
+  if re.match(r'^(?:Повышение|Снижение) · .+ Продавец:',lines[index]) and index+1<len(lines) and lines[index+1].startswith('Покупатель:'):
+   key='row:'+str(index);candidates[key]='\n'.join(lines[index:index+2]);plain.append(key);index+=2;continue
   if '|'in lines[index]and index+1<len(lines)and re.match(r'^\s*\|?[\s:|-]+\|[\s:|-]*$',lines[index+1]):
    table=dict(header=lines[index:index+2],rows=[]);index+=2
    while index<len(lines)and '|'in lines[index]and lines[index].strip():
@@ -148,12 +150,14 @@ def review_price(worker,draft,trace,force=False,core=None):
   return v
  ident='price:'+str(worker.day)+':'+str(getattr(worker,'mode',worker.audit.get('mode')))+':'+str(getattr(worker,'section',''))
  result,receipt=core.ask(ident,'price',data,dict(kind='price_review',keep_rows=['exact row ids'],summary='Краткий человеческий вывод без чисел и новых цен'),validate,force)
- keep=set(result['keep_rows']);parts=[result['summary']]
+ keep=set(result['keep_rows']);parts=[] if rows else [draft]
  for t in tables:
   chosen=[rows[k]for k in t['rows']if k in keep]
   if chosen:parts.append('\n'.join(t['header']+chosen))
  for key in plain:
   if key in keep:parts.append(rows[key])
- answer='\n\n'.join(parts)
+ answer='\n\n'.join(parts) if parts else 'Повышение: нет готовых рекомендаций\n\nСнижение: нет готовых рекомендаций'
+ from china_price_current_check import check as check_current
+ if rows:answer=check_current(worker,answer)
  worker.audit['codex_analysis']=receipt
  return answer,list(trace)+[dict(name='china_codex_analysis',**receipt)]

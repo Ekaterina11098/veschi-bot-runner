@@ -6,9 +6,9 @@ from zoneinfo import ZoneInfo
 SOURCE='b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c'
 
 def select(event,requested,value,day):
-    automatic=event in ('schedule','workflow_dispatch')
-    action=('run' if event=='schedule' else requested or 'verify') if automatic else value.get('action')
-    allowed=(event in ('schedule','workflow_dispatch','push') and value.get('source_commit')==SOURCE
+    automatic=event in ('schedule','workflow_dispatch','workflow_call')
+    action=('run' if event in ('schedule','workflow_call') else requested or 'verify') if automatic else value.get('action')
+    allowed=(event in ('schedule','workflow_dispatch','workflow_call','push') and value.get('source_commit')==SOURCE
              and action in ('run','verify') and (automatic or (value.get('report_date')==day
              and value.get('mode')=='morning' and isinstance(value.get('nonce'),str) and len(value['nonce'])>=8)))
     return {'allowed':allowed,'action':action,'report_date':day,'mode':'morning'}

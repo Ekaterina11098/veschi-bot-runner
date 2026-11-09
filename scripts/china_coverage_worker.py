@@ -33,6 +33,12 @@ def overlay(report,coverage):
 class CoverageWorker(ScheduledWorker):
     def guard(self,session,method,url,*a,**kw):
         host=urlparse(url).hostname;path=urlparse(url).path;params=kw.get('params') or {}
+        if host=='api.moysklad.ru' and method.upper()=='GET' and path in ('/api/remap/1.2/entity/store','/api/remap/1.2/entity/product','/api/remap/1.2/report/stock/all'):
+            return self.original_http(session,method,url,*a,**kw)
+        if host=='marketplace-api.wildberries.ru' and path=='/api/v3/stocks/2126188' and method.upper()=='POST':
+            body=kw.get('json') or {}
+            if set(body)=={'chrtIds'} and isinstance(body['chrtIds'],list) and all(type(n)is int for n in body['chrtIds']):
+                return self.original_http(session,method,url,*a,**kw)
         if host=='api.telegram.org' and path.endswith('/sendMessage'):
             body=kw.get('json') or {}
             text=body.get('text','')
@@ -145,3 +151,5 @@ def main():
         requests.sessions.Session.request=w.original_http
 
 if __name__=='__main__':main()
+
+

@@ -2,9 +2,14 @@
 import argparse
 from pathlib import Path
 def install(root):
+ from china_price_pending import install as install_pending
+ install_pending(root)
  path=Path(root)/'china_agent/daily_report_worker.py';text=path.read_text(encoding='utf-8')
  marker='# cloud_codex_final_price_review_v1'
- if marker in text:return
+ if marker in text:
+  from china_price_delivery import install as install_delivery
+  install_delivery(root)
+  return
  preview="            answer, trace = self.prepare(preview=True)\n"
  live="                answer, trace = self.prepare()\n"
  if text.count(preview)!=1 or text.count(live)!=1:raise RuntimeError('Price worker analysis hook changed; review source')
@@ -30,5 +35,7 @@ def install(root):
  if text.count(rejected)!=1:raise RuntimeError('Price source validation hook changed')
  text=text.replace(rejected,"                    try:\n                        source, normalized = normalize(observation, cabinet)\n                    except ValueError as exc:\n                        self.audit['errors'].append(dict(stage='mpstats_validation',status='rejected',reason=str(exc)[:200],raw_snapshot_id=raw[0]['id'] if raw else None))\n                        return\n")
  path.write_text(text,encoding='utf-8')
+ from china_price_delivery import install as install_delivery
+ install_delivery(root)
 if __name__=='__main__':
  parser=argparse.ArgumentParser();parser.add_argument('--root',default='source');args=parser.parse_args();install(args.root);print('Pricing acquisition/delivery retained; cloud final-analysis hooks installed')

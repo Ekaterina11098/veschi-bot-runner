@@ -103,6 +103,13 @@ def recover(db, get, save, start, end, prices, now=None):
         result.update(status='complete', remaining={})
         save(key, result)
         return result
+    # MPStats removed type=products from card_orders. Never issue one known-invalid
+    # call per missing SKU. The existing exact-day WB fallback supplies order days;
+    # funnel and financial evidence remain MPStats and are never synthesized.
+    result.update(status='partial', remaining={nm:wanted[nm] for nm in pending},
+                  reason='per_product_card_orders_unsupported_use_WB_daily_fallback')
+    save(key,result)
+    return result
     pause = read('telegram_api_cache', dict(cache_key='eq.mpstats:cooldown', expires_at='gt.'+datetime.now(timezone.utc).isoformat(), select='cache_key', limit=1))
     if pause:
         result.update(status='pending', reason='shared_cooldown')
@@ -207,3 +214,5 @@ def main():
         raise RuntimeError('Order coverage recovery failed; private diagnostic saved') from None
 
 if __name__=='__main__':main()
+
+

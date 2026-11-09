@@ -79,6 +79,9 @@ def acquire_outcomes(worker, tracked, pairs, registry):
  return output
 
 def build(worker,candidate_review=False):
+ if candidate_review:
+  from china_agent.price_aggregate_control import build as aggregate_build
+  return aggregate_build(worker)
  from china_agent.morning_pair import tracked_rows
  from china_agent import demand
  from china_agent.control_owner_preview import Preview
@@ -305,14 +308,30 @@ def render_candidates(worker):
   if not entry.get('increase') and not entry.get('last_price_change') and all(v>=1 for v in values):
    proposal=demand.offer(price)
    if proposal:initial.append((targets[nm],nm,values,proposal))
+ # Include qualified repeat raises. Profit growth is not an eligibility gate
+ # (owner correction 5Nov); general conversion and four completed order days are.
+ assessed=(worker.audit.get('assessment') or {}).get('results',{})
+ held={'1473245494','1473245510'}
+ initial=[r for r in initial if r[1] not in held]
+ for price in rows:
+  nm=str(price['nmID']);r=assessed.get(nm,{})
+  if nm in held or nm not in targets or not r.get('has_previous_increase'):continue
+  values=[daily[str(d)][nm]['orders'] for d in wanted]
+  if (r.get('full_days',0)>=4 and all(v>=1 for v in values)
+      and r.get('conversion_held') is True
+      and r.get('period_from')==str(wanted[0]) and r.get('period_to')==str(wanted[-1])):
+   proposal=demand.offer(price)
+   if proposal:initial.append((targets[nm],nm,values,proposal))
  review=getattr(worker,'price_control_review',None) or build(worker,candidate_review=True)
  lines=['Китай • кандидаты на повышение и проверку снижения • '+str(worker.day),'Период: '+str(wanted[0])+'–'+str(wanted[-1])+'. Проверен каталог: '+str(len(targets))+' товаров.','ПЕРВОЕ ПОВЫШЕНИЕ +5%: '+str(len(initial))]
  for article,nm,values,p in sorted(initial):
   cancels=sum(daily[str(d)][nm]['cancelled'] for d in wanted)
   lines+=['',article+'\nЗаказы по дням: '+('/'.join(map(str,values)))+'; отмены: '+str(cancels)+'.\nЦена продавца после скидки: '+_num(p['current_cny'])+' → '+_num(p['target_cny'])+' ¥.\nСкидка продавца сохраняется — '+_num(p['discount'])+'%.\nРезультат и действие: предлагается первый эксперимент с повышением на 5%, затем контроль прогнозной прибыли, конверсии и выкупа. Все изменения согласовываем.']
- lines+=['','Повторное повышение — только по отдельному контролю ожидаемой прибыли и конверсии.','ПРОВЕРКА ВОЗМОЖНОГО СНИЖЕНИЯ: '+str(len(review['products']))]
- lines.extend(render_item(p) for p in review['products'])
+ lines+=['','Повторное повышение включено при сохранённой общей конверсии.','ПРОВЕРКА ВОЗМОЖНОГО СНИЖЕНИЯ: '+str(len(review['products']))]
+ lines.extend(render_item(p) for p in review['products'] if 'daily' in p.get('before',{}))
  lines.append(model_notes())
  return '\n\n'.join(lines)
+
+
 
 

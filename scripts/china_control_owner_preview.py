@@ -37,10 +37,13 @@ class Preview(PairWorker):
             fields=dict(cabinet=cabinet,run_id='china-control-preview-'+os.environ['GITHUB_RUN_ID'],period_from=args['date_from'],period_to=args['date_to'],detail='Exact price control periods; owner preview only')
             self.db('POST','analytics_snapshots',body=dict(fields,source='mpstats_lk_wb_products',status='complete' if obs['status']=='received' else 'error',payload=[obs]))
             if obs['status']=='received':
-                source,value=normalize(obs,cabinet)
+                try:source,value=normalize(obs,cabinet)
+                except ValueError as exc:
+                    self.audit.setdefault('rejected_control_sources',[]).append(dict(period_from=args['date_from'],period_to=args['date_to'],reason=str(exc)[:160]))
+                    return
                 self.db('POST','analytics_snapshots',body=dict(fields,source=source,status='complete',payload=[value]))
             if obs.get('retry_after'):self.save('mpstats:cooldown',dict(pending=True),max(1,obs['retry_after'])/86400)
-        def extra(call,checks,known):return execute_reads(call,checks,known,requests,{},persist,max_requests=len(requests))
+        def extra(call,checks,known):return execute_reads(call,checks,known,requests,{},persist,max_requests=min(8,len(requests)))
         discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=extra)
 
     def build(self):

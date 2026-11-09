@@ -287,3 +287,15 @@ jobs:
 
 
 
+
+  price-morning-fallback:
+    name: Recover due China price morning report
+    if: github.event_name == 'schedule'
+    uses: ./.github/workflows/china-price-morning.yml
+    secrets: inherit
+
+  price-intraday-fallback:
+    name: Recover due China price intraday report
+    if: github.event_name == 'schedule'
+    uses: ./.github/workflows/china-price-intraday.yml
+    secrets: inherit

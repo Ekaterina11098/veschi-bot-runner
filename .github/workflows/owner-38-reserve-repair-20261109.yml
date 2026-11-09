@@ -65,3 +65,5 @@ jobs:
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 90
 
+
+# Reconcile same ledger after concurrent19:00 MS document postings; no partial persistence.

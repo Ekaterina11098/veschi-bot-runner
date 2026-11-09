@@ -14,6 +14,36 @@ with runtime_db() as lock:
    s=Store(db,postgres=True);shared=SharedRequests(s)
    g.STOCK_REQUEST_GATE=shared;g.STOCK_SHARED_ORDERS=shared
    g._CACHE_GET=lambda k:None;g._CACHE_SET=lambda *a:None;g.check_run_budget=lambda:None
+   completed=s.sql('SELECT snapshot FROM stock_runs WHERE id=?',(ROOT,)).fetchone()
+   if completed and json.loads(completed[0]).get('complete'):
+    result=json.loads(completed[0])
+    if not result.get('loss_audit_complete'):
+     since=result['since'];store='3c67619d-f25d-11ee-0a80-0c6f000a027a'
+     filt='moment>='+since+';applicable=true;store='+g.MS_API+'/entity/store/'+store
+     losses=ms_rows(g,g.MS_API+'/entity/loss',filter=filt)
+     manifest=digest(sorted((v['id'],v.get('updated')) for v in losses))
+     products={href(p):p for p in g.ms_rows(g.MS_API+'/entity/assortment',filter='archived=false;archived=true')}
+     targets={u['article'] for u in result['targets']};ids={u['id'] for u in result['targets']}
+     output=[]
+     for loss in losses:
+      groups,posts=document_identities(loss,{})
+      parts=g.ms_rows(loss['positions']['meta']['href'])
+      relevant=[]
+      for part in parts:
+       product=products.get(href(part.get('assortment')),part.get('assortment',{}))
+       art=g.norm(product.get('article'))
+       if art in targets:relevant.append(dict(article=art,quantity=part.get('quantity')))
+      text=' '.join(str(loss.get(k) or '') for k in ('description','externalCode','name'))
+      direct=[ident for ident in ids if __import__('re').search(r'(?<!\\d)'+ident+r'(?!\\d)',text)]
+      output.append(dict(id=loss['id'],name=loss.get('name'),moment=loss.get('moment'),applicable=loss.get('applicable'),
+       store_id=uid(loss.get('store')),supplies=sorted(groups),referenced_order_ids=direct,relevant_positions=relevant))
+     after=ms_rows(g,g.MS_API+'/entity/loss',filter=filt)
+     if digest(sorted((v['id'],v.get('updated')) for v in after))!=manifest:raise Stopped('MS loss documents changed during supplement')
+     result.update(loss_audit_complete=True,loss_audit_at=time.time(),posted_msk_loss_documents=output)
+     with s.transaction():s.sql('UPDATE stock_runs SET snapshot=? WHERE id=?',(canonical(result),ROOT))
+     seal('owner55-loss-supplement',result)
+    print(json.dumps(dict(complete=True,loss_audit_complete=True,loss_documents=len(result.get('posted_msk_loss_documents',[])),business_writes=0)))
+    raise SystemExit(0)
    prior=json.loads(s.sql('SELECT snapshot FROM stock_runs WHERE id=?',('technical:owner-cancel57-audit:2026-11-09',)).fetchone()[0])
    targets=[u for u in prior['candidates'] if u['id'] not in ('6155723784','6209276833')]
    if len(targets)!=55:raise Stopped('Expected exact55orders')

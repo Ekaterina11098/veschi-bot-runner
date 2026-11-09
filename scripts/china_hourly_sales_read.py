@@ -272,6 +272,12 @@ def run():
     except Exception as ex:
         e['advertising'] = dict(status='unavailable', reason=safe_error(ex), observed_at=stamp())
     e.update(status='complete', completed_at=stamp())
+    try:
+        from china_budget_reserve import hourly_audit
+        e['budget_audit'] = hourly_audit(c, e, inv)
+    except Exception as ex:
+        e['budget_audit'] = dict(status='blocked', reason=safe_error(ex), complete=False,
+                                grants_action_permission=False, wb_writes=0)
     if not complete_slot(e):
         e['status']='partial'
     if not c.create(key, e):
@@ -284,4 +290,5 @@ def run():
 
 if __name__ == '__main__':
     run()
+
 

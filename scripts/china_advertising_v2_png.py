@@ -40,12 +40,15 @@ def recommendations(c):
 def budget_column(c):
  """Owner-approved display only; execution conditions remain in the structured plan."""
  if c.get('owner_budget_refused'):return 'Пока не пополнять'
+ if c.get('budget_audit_state')in('paused_zero','paused_review','budget_pause_review','owner_paused','draft_review','starter_review','data_blocked'):
+  return c['budget_short_note']
+ if c.get('budget_audit_state')=='funding_blocked':return 'Пополнение не готово.\n'+(c.get('budget_economics_reason')or'Нужна проверка экономики РК.')
  amount=c.get('budget_reserve_amount')
  if amount is None:return 'Сумма не рассчитана'
  if (c.get('budget_action')or{}).get('kind')=='topup_campaign'or c.get('budget_economics_status')=='positive':return ('Тест: пополнить на 'if (c.get('campaign_budget_economics')or{}).get('stress_after_ads_cny',0)<0 else'Пополнить на ')+str(int(amount))+' CNY.'
  return 'Пока не пополнять.\nПоложительная экономика РК не подтверждена.'
 def _render_legacy(bundle):
- bundle=dict(bundle,campaigns=sorted([c for c in bundle['campaigns'] if not c.get('never_started')],key=lambda c:not any(r.get('action') for r in c.get('attention',[]))))
+ bundle=dict(bundle,campaigns=sorted(bundle['campaigns'],key=lambda c:not any(r.get('action') for r in c.get('attention',[]))))
  W=2400;H=6500;xs=[44,355,650,870,1090,1700,2356];files=[]
  def canvas(title):
   im=Image.new('RGB',(W,H),BG);d=ImageDraw.Draw(im)
@@ -78,7 +81,7 @@ def _render_legacy(bundle):
   return im,d
  im,d=table();y=365;actions=[]
  for c in bundle['campaigns']:
-  if c.get('status')==7:continue # archives contribute to totals below, not recommendation rows
+  if c.get('status')==7 or c.get('never_started'):continue # retained for budget audit, not ad recommendations
   p=c.get('period');day=c.get('last');draft=c.get('never_started')
   cells=[str(c['id'])+'\n'+c['name'],'День: '+(money(day['spend'])+' ¥' if day else 'не запускалась' if draft else 'нет данных')+'\n3 дня: '+(money(p['spend'])+' ¥' if p else 'не запускалась' if draft else 'нет данных'),'Не применима' if draft else pct(p),'Не применима' if draft else pct(day),summary(c),'\n'.join(recommendations(c))]
   ls=[wrap(d,s,xs[i+1]-xs[i]-34,bold=(i==5 and bool(c.get('attention')))) for i,s in enumerate(cells)]
@@ -145,7 +148,7 @@ def _render_legacy(bundle):
   action=page_action(c,bundle)
   if action:actions.append(action)
  if not selected:
-  d.text((44,y),'У действующих РК нет расчётной нехватки по завершённым дням.',font=font(29),fill=INK);y+=55
+  d.text((44,y),'Проверены все РК: нет новых пополнений или неразобранных бюджетных рисков.',font=font(29),fill=INK);y+=55
  footer='Резерв на 3 дня = расход за 3 завершённых дня; нехватка = резерв − остаток. Сумма округлена вверх до 50 ¥, минимум WB '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. Пополнение — только после отдельной команды на готовую рекомендацию. Решения по РК — в рекламном PNG.'
  for line in wrap(d,footer,W-88,24):d.text((44,y+10),line,font=font(24),fill='#536b79');y+=32
  finish(im,y,'budgets',actions)
@@ -187,6 +190,7 @@ def render(bundle):
   parts=[f for f in files if f['family']==family]
   for index,f in enumerate(parts,1):f.update(kind=family+':'+str(index).zfill(3),page=index,total=len(parts))
  return files
+
 
 
 

@@ -5,9 +5,12 @@ def owner_policy(io,bundle):
  for c in out['campaigns']:
   if str(c['id']) in policy.get('do_not_fund',{}):
    c['owner_budget_refused']=True;c['budget_action']=None
+   c.update(budget_audit_state='owner_hold',budget_review_required=False,budget_short_note='Не пополнять: '+str(policy['do_not_fund'][str(c['id'])]))
+   if str(c['id'])in out.get('budget_audit',{}):out['budget_audit'][str(c['id'])].update(status='owner_hold',review_required=False,amount_cny=None,reason=c['budget_short_note'])
  return out
 def page_action(c,bundle):
  """A displayed reserve is a recommendation, never an implied amount approval."""
  if c.get('owner_budget_refused')or bundle.get('view_only'):return None
  action=c.get('budget_action')
  return copy.deepcopy(action)if action and action.get('kind')=='topup_campaign'else None
+

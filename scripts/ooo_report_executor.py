@@ -108,7 +108,7 @@ class Executor:
    elif kind in('reduce_bid','raise_bid','add_sku'):
     p=a['placement'];target=a['to_minor']
     if not c['settings']['placements'].get(p):raise Stop('Placement disabled')
-    minimum=270 if n and n.get('subject',{}).get('id')==294 else 325
+    minimum=270 if p=='recommendations'and n and 'зонт'in n.get('subject',{}).get('name','').casefold()else 325
     if target<minimum:raise Stop('Below cached category minimum')
     if kind=='add_sku'and n is None:
      if c['restrictions'].get('can_change_nms')is not True:raise Stop('Membership locked')
@@ -145,6 +145,8 @@ class Executor:
    receipt=self.call(s,save,'POST','/adv/v1/budget/deposit',{'sum':500,'type':rejected['body']['type'],'return':True},params={'id':cid},step=step)
    if receipt.get('currency')!='KGS'or type(receipt.get('total'))not in(int,float):raise Stop('Accepted deposit receipt requires reconciliation; never replay')
    return
+  constraint=self.db.get(ROOT+'funding_constraints')or{}
+  if constraint.get('currency')=='KGS'and amount<constraint.get('min_topup_kgs',0):raise Stop('Approved funding is below provider minimum; separate approval required')
   # Capture diagnostic evidence before any known-rejected retry. Never round approval up.
   if not s.get('funding_config_checked_at'):
    try:s['funding_config']=self.call(s,save,'GET','/api/advert/v1/config')
@@ -171,7 +173,7 @@ class Executor:
   def save():self.db.update(key,a)
   def fresh():
    latest=self.db.get(key)or{}
-   if latest.get('manifest_sha256')!=a['manifest_sha256']or latest.get('manifest')!=m:raise Stop('Authorization changed')
+   if latest.get('status')not in('executing','approved_pending_execution','waiting_shared_quota')or latest.get('manifest_sha256')!=a['manifest_sha256']or latest.get('manifest')!=m:raise Stop('Authorization changed')
    if datetime.now(timezone.utc)>=datetime.fromisoformat(a['expires_at']):raise Stop('Authorization expired before pending write')
   a['status']='executing';save()
   try:
@@ -235,6 +237,15 @@ def notify():
  db=DB();dialog=Dialogue(db);dialog.preflight()
  rows=db.api('GET',{'cache_key':'like.'+ROOT+'approved_report:*','payload->>status':'in.(verified,attention)','select':'cache_key,payload','limit':20})
  legacy=db.get(LEGACY+':execution')or{}
+ if legacy.get('funding_repair_error')and not legacy.get('funding_attention_delivery'):
+  detail=legacy.get('last_http',{}).get('/adv/v1/budget/deposit',{}).get('response',{}).get('error','')
+  if 'minimum deposit amount is 1200'in detail:
+   legacy['funding_attention_delivery']={'status':'uncertain','attempted_at':stamp()};db.update(LEGACY+':execution',legacy)
+   try:
+    r=dialog.tg('sendMessage',{'chat_id':CHAT,'text':'Пополнение РК 39605581 на 500 KGS отклонено: минимальная сумма WB — 1200 KGS. Деньги по отклонённому запросу не списаны. Увеличение суммы требует отдельного согласования. Семь рекламных изменений приняты WB; контрольная сверка продолжится автоматически после ограничения API, не ранее 11:40 МСК. Принятые изменения повторно не отправляются.'})
+    if r.get('chat',{}).get('id')!=CHAT or r.get('from',{}).get('id')!=BOT or type(r.get('message_id'))is not int:raise Stop('Unverified Telegram receipt')
+    legacy['funding_attention_delivery'].update(status='verified',message_id=r['message_id'],delivered_at=stamp());db.update(LEGACY+':execution',legacy)
+   except Exception:pass
  if legacy.get('status')in('verified','repair_attention'):rows.append({'cache_key':LEGACY+':execution','payload':legacy})
  for row in rows:
   a=row['payload'];s=a.get('execution',a)
@@ -244,7 +255,7 @@ def notify():
    detail=str(s.get('safe_error','требуется разбор отказа WB'))
    provider=s.get('last_http',{}).get('/adv/v1/budget/deposit',{}).get('response',{})
    if 'minimum'in str(provider).lower()or 'below provider minimum'in detail:
-    detail='согласованные 500 KGS меньше минимальной суммы WB. Увеличивать сумму без нового согласования не буду'
+    detail='согласованная сумма меньше минимальной суммы WB. Увеличивать её без нового согласования не буду'
    elif provider:detail='WB отклонил запрос. Ответ сохранён для разбора: '+json.dumps(provider,ensure_ascii=False)[:500]
    text='Рекламные изменения выполнены и проверены. Пополнение не выполнено: '+detail[:600]+'. Принятые изменения не повторяю.'
   else:text='Исполнение остановлено для проверки: '+str(s.get('safe_error','неполный ответ WB'))[:500]+'. Принятые или неопределённые запросы повторно не отправляю.'

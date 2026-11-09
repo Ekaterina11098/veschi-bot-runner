@@ -75,7 +75,7 @@ def build(worker):
             if result.get('status')=='rollback_review' and q['sample_size']>=10 and item['before_price']<item['after_price']:
                 from business_agents.data import Data
                 from china_agent.linked import compare,qualify
-                context=compare(Data('china',read),nm,str(pair[0][0]),str(pair[0][1]),str(pair[1][0]),str(pair[1][1]),datetime.now(MSK),(e.get('increase') or {}).get('baseline_group'))
+                context=compare(Data('china',read),nm,pair[0][0],pair[0][1],pair[1][0],pair[1][1],datetime.now(MSK),(e.get('increase') or {}).get('baseline_group'))
                 qualified=qualify(dict(action='lower'),context,baseline_known=bool((e.get('increase') or {}).get('baseline_group',{}).get('available')))
                 item['linked_context']=qualified['linked_context']
                 if qualified['action']=='lower':

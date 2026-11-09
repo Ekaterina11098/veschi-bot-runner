@@ -23,6 +23,11 @@ def check(worker,answer):
         elif len(p)!=1 or Decimal(str(p[0]['seller_price']))!=old:reason='price_changed'
         elif len(s)!=1 or not all(type(s[0].get(k)) in (int,float) for k in ('stock','reserve')) or s[0]['stock']-s[0]['reserve']<=0:reason='MSK_stock_unknown_or_zero'
         elif type(wb['amounts'].get(nm))is not int or wb['amounts'][nm]<=0:reason='WB_stock_unknown_or_zero'
+        if not reason and action=='Снижение':
+            review=getattr(worker,'price_control_review',None) or worker.get('china_agent:daily_expected_candidates:'+str(worker.day)) or {}
+            models=[r for r in review.get('products',[]) if str(r.get('nm_id'))==nm]
+            own_cost=s[0].get('price')
+            if len(models)!=1 or own_cost is None or models[0].get('own_cogs_rub') is None or abs(float(own_cost)/100-float(models[0]['own_cogs_rub']))>.02:reason='current_COGS_changed_or_unknown'
         if reason:blocked.append(dict(article=article,reason=reason));continue
         retained.append(action+' · '+article+' Продавец: '+change+'\nПокупатель: '+buyer)
     worker.audit['proposal_current_check']=dict(prices=prices,stock=stock,published_stock=wb,blocked=blocked,retained=len(retained))

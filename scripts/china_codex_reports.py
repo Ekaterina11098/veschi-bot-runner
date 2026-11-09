@@ -158,6 +158,10 @@ def review_price(worker,draft,trace,force=False,core=None):
   if key in keep:parts.append(rows[key])
  answer='\n\n'.join(parts) if parts else 'Повышение: нет готовых рекомендаций\n\nСнижение: нет готовых рекомендаций'
  from china_price_current_check import check as check_current
- if rows:answer=check_current(worker,answer)
+ if rows:
+  try:answer=check_current(worker,answer)
+  except (RuntimeError,ValueError) as exc:
+   worker.audit['current_price_check_blocker']=str(exc)[:200]
+   answer='Повышение: проверка не завершена\n\nСнижение: проверка не завершена'
  worker.audit['codex_analysis']=receipt
  return answer,list(trace)+[dict(name='china_codex_analysis',**receipt)]

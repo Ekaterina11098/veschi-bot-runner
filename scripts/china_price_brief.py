@@ -70,6 +70,8 @@ def lowering(review, day, catalogue=None, omitted=None):
         if Decimal(old.replace(',','.'))<=Decimal(new.replace(',','.')):
             raise RuntimeError('Rollback is not a decrease')
         rows.append((item['article'],old,new))
+    if not rows and any(p.get('status')=='insufficient_economics' for p in review['products']):
+        return None
     return sorted(set(rows))
 
 def catalogue_ids(catalogue):
@@ -203,5 +205,7 @@ def plain_payload(text,catalogue):
     entities.sort(key=lambda e:e['offset'])
     return dict(entities=entities,reply_markup=dict(inline_keyboard=[]),
                 link_preview_options=dict(is_disabled=True))
+
+
 
 

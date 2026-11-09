@@ -72,9 +72,15 @@ def build(worker):
                 result.update(status='hold_orders_maintained',result_action='Заказы держатся; цену сохраняем.')
             item['result']=result
             if result.get('status')=='rollback_review' and q['sample_size']>=10 and item['before_price']<item['after_price']:
-                item['economic_target']=choose_target(c['before_price'],c['after_price'],before,after,buyout_probability=q['probability'],retention=retention,cost=cost,dispatch=dispatch,fx=fx)
+                from business_agents.data import Data
+                from china_agent.linked import compare,qualify
+                context=compare(Data('china',read),nm,str(pair[0][0]),str(pair[0][1]),str(pair[1][0]),str(pair[1][1]),datetime.now(MSK),(e.get('increase') or {}).get('baseline_group'))
+                qualified=qualify(dict(action='lower'),context,baseline_known=bool((e.get('increase') or {}).get('baseline_group',{}).get('available')))
+                item['linked_context']=qualified['linked_context']
+                if qualified['action']=='lower':
+                    item['economic_target']=choose_target(c['before_price'],c['after_price'],before,after,buyout_probability=q['probability'],retention=retention,cost=cost,dispatch=dispatch,fx=fx)
             item.update(status='expected_model',unknown_reverse_and_shared_costs=True,
-                        economics_note='Own completed buyout, dated CBR, COGS/tax/commission and historical logistics. Unknown reverse/shared expenses are not zero; not settled profit.',model_source='china_agent:advertising_full_growth:'+str(worker.day)+':v1:inputs')
+                        own_cogs_rub=cost,economics_note='Own completed buyout, dated CBR, COGS/tax/commission and historical logistics. Unknown reverse/shared expenses are not zero; not settled profit.',model_source='china_agent:advertising_full_growth:'+str(worker.day)+':v1:inputs')
         except (KeyError,TypeError,ValueError,ZeroDivisionError) as exc:
             item.update(status='insufficient_economics',result=dict(status='incomplete'),missing=str(exc))
         output.append(item)

@@ -92,6 +92,9 @@ def wb_audit(result):
         physical,unresolved=g.load_ms_stocks_dict()
         result['live_moscow']=physical.get(ART)
         result['ms_read_status']=getattr(g,'MS_STOCK_STATUS',{})
+        from stock_wb_supply_history import paged
+        raw_old=paged(g,token,'/api/v3/orders',{'dateFrom':1792454400,'dateTo':1792540800})
+        result['original_oct20_rows']=[row for ident,row in raw_old.items() if ident in ('6081628200','6083049479')]
         result['original_units']=units;result['supply_proof']=[];result['supply_units']=[]
         def checkpoint():
             with store.transaction():store.sql('UPDATE stock_runs SET snapshot=? WHERE id=?',(canonical(result),ROOT))

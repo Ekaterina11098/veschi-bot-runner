@@ -47,6 +47,10 @@ def validate(m):
 def project(c):
  return {k:copy.deepcopy(c.get(k))for k in('id','status','currency','bid_type','settings','restrictions')}|{'nm_settings':sorted(copy.deepcopy(c['nm_settings']),key=lambda n:n['nm_id'])}
 
+def verify_budgets(value,ids):
+ rows=value.get('adverts',[])
+ if len(rows)!=len(ids)or {r.get('advertId')for r in rows}!=set(ids)or any(r.get('currency')!='KGS'or type(r.get('total'))not in(int,float)or r['total']<0 for r in rows):raise Stop('Funding readback coverage/currency invalid')
+
 class Executor:
  def __init__(self,db=None,token=None,request=None):
   self.db=db or DB();self.token=token or os.environ['WB_TOKEN_1'];self.request=request or requests.request
@@ -196,7 +200,8 @@ class Executor:
     step='deposit_'+str(t['cid'])+'_'+str(t['amount_kgs'])
     if s['steps'].get(step,{}).get('status')!='accepted':fresh()
     self.fund(s,save,t,step)
-   if m.get('topups'):s['funding_after']=self.call(s,save,'POST','/api/advert/v2/budget',{'advertIds':[t['cid']for t in m['topups']]});save()
+   if m.get('topups'):
+    funding_ids=[t['cid']for t in m['topups']];s['funding_after']=self.call(s,save,'POST','/api/advert/v2/budget',{'advertIds':funding_ids});verify_budgets(s['funding_after'],funding_ids);save()
    a['status']='verified';s['verified_at']=stamp();save()
   except Deferred:a['status']='waiting_shared_quota';save()
   except Stop as e:a['status']='attention';s['safe_error']=str(e);save()
@@ -236,7 +241,9 @@ class Executor:
    if not s.get('advertising_verified_at'):
     s['after']=self.configs(s,save,set(map(int,s['expected'])));s.setdefault('adds',{});s.setdefault('bids',s.get('prepared_bids',{}));self.verify(s,s['after']);s['advertising_verified_at']=stamp();save()
    if s.get('funding_repair_error'):raise Stop(s['funding_repair_error'])
-   s['funding_after']=self.call(s,save,'POST','/api/advert/v2/budget',{'advertIds':[39605581]});s.update(status='verified',verified_at=stamp());save()
+   s['funding_after']=self.call(s,save,'POST','/api/advert/v2/budget',{'advertIds':[39605581]});verify_budgets(s['funding_after'],[39605581]);s.update(status='verified',verified_at=stamp())
+   for key in('safe_error','resume_after','waiting_path'):s.pop(key,None)
+   save()
   except Deferred:s['status']='waiting_shared_quota';save()
   except Stop as e:s.update(status='repair_attention',safe_error=str(e));save()
  def run(self):

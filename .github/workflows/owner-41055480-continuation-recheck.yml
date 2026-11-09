@@ -1,0 +1,167 @@
+name: Recheck unfunded41055480 continuation once without replay
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-41055480-continuation-recheck.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  fund:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b6721b74f7fa29e96d6bab6d012608073b07339d
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Fresh functional state and reserve, exact one deposit, final report only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          """One owner-requested three-day continuation reserve, fixed campaign41055480."""
+          import os,json,copy,time,math,base64,hashlib,io as bio
+          from datetime import datetime,timezone
+          from zoneinfo import ZoneInfo
+          import requests
+          from PIL import Image,ImageDraw,ImageFont
+          from china_loss_execute import IO as BaseIO
+          from china_loss_control import CHAT,BOT,OWNER,PLAN,digest
+          from china_advertising_v2 import history
+          from china_budget_ready_model import assess_campaign
+          from china_morning_readiness import current_prices,published_stock
+          from china_moysklad_read import read_stock
+          AUTH='china_agent:owner_41055480_continuation:2026-11-09:v1';ROOT=AUTH+':attempt2';CID=41055480
+          ART='china_agent:advertising_artifacts:2026-11-09:v2';DEL='china_agent:advertising_delivery:2026-11-09:v1';BIND='china_agent:daily_ad_message:v2:801'
+          def stamp():return datetime.now(timezone.utc).isoformat()
+          class IO(BaseIO):
+           def put(self,k,v):
+            if self.get(k)is None:
+             if not self.create(k,v):raise RuntimeError('Concurrent state creation')
+            else:super().put(k,v)
+          io=IO()
+          if io.get(ROOT):print('Existing funding journal; no blind repeat');raise SystemExit(0)
+          root=dict(status='preflight',campaign_id=CID,kind='owner_oneoff_budget_topup',created_at=stamp(),wb_writes=0)
+          assert io.create(ROOT,root)
+          def save():io.put(ROOT,root)
+          def ad(path,method='GET',body=None):
+           time.sleep(2);r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':io.token},json=body,timeout=45)
+           if not r.ok:
+            root['last_http_failure']=dict(path=path,method=method,status=r.status_code)
+            try:root['last_http_failure']['response']=r.json()
+            except Exception:pass
+            save();raise RuntimeError('WB advertising HTTP '+str(r.status_code))
+           return r.json()if r.content else None
+          def campaign():
+           rows=ad('/api/advert/v2/adverts?ids='+str(CID))['adverts'];assert len(rows)==1 and rows[0]['id']==CID and rows[0]['currency']=='CNY';return rows[0]
+          def budget():
+           rows=ad('/api/advert/v2/budget','POST',dict(advertIds=[CID]))['adverts'];assert len(rows)==1 and rows[0]['advertId']==CID and rows[0]['currency']=='CNY';return rows[0]['total']
+          try:
+           grant=io.get(AUTH+':authorization');assert grant['status']=='owner_approved'and grant['owner_id']==OWNER and grant['campaign_id']==CID
+           if str(CID)in(io.get('china_agent:budget_owner_policy:v1')or{}).get('do_not_fund',{}):raise ValueError('Owner forbids funding this campaign')
+           io.validate_owner(dict(sender_id=OWNER,chat_id=CHAT,bot_id=BOT,job_id=278,reply_message_id=801))
+           before=campaign();balance=budget();config=ad('/api/advert/v1/config');assert config['currency']=='CNY';root.update(before=before,before_budget=balance,observed_at=stamp());save()
+           latest=io.get('china_agent:hourly_sales_api:v1:latest');last=io.get(latest['source_key']);lastcp=last['advertising']['campaigns'][str(CID)]
+           stopped_at_zero=before['status']==11 and balance==0 and lastcp['status']==9 and(datetime.now(timezone.utc)-datetime.fromisoformat(last['observed_at'])).total_seconds()<=80*60
+           if before['status']!=9 and not stopped_at_zero:raise ValueError('Campaign is not an active approved test; current pause not attributable to zero-budget transition')
+           if before['bid_type']!='manual'or before['settings']['payment_type']!='cpc':raise ValueError('Campaign type changed')
+           source=io.get('china_agent:advertising_source:2026-11-09:v2');assert source['cabinet']=='token_3'and source['period_to']=='2026-11-08'
+           raw=next(c for b in source['batches'].values()for c in b['stats']if c['advertId']==CID);days=['2026-11-06','2026-11-07','2026-11-08']
+           daily={d['date'][:10]:d for d in raw['days']};assert all(d in daily for d in days)
+           spend=round(sum(daily[d]['sum']for d in days),2);assert abs(spend-grant['reference_spend_cny'])<.01
+           members=[n['nm_id']for n in before['nm_settings']];prices=current_prices(io,members);published=published_stock(io,prices,members);stock=read_stock([r['article']for r in prices['rows']])
+           if not stock['coverage_complete']or published['missing_nm_ids']:raise ValueError('Current stock/price cohort incomplete')
+           stockrows={r['article'].casefold():r for r in stock['rows']};economics=copy.deepcopy(source['economics']);available=[];checks=[]
+           for p in prices['rows']:
+            nm=str(p['nm_id']);s=stockrows[p['article'].casefold()];free=s['stock']-s['reserve'];e=economics['rows'].get(nm,{})
+            checks.append(dict(nm_id=p['nm_id'],article=p['article'],seller_price_cny=p['seller_price'],stock_free=free,published_stock=published['amounts'][nm],cogs_rub=s['price']/100 if s.get('price')else None))
+            if not e or e.get('buyout')is None or e.get('own_cogs_rub')is None:continue
+            if free>0 and(not s.get('price')or s['price']<=0):raise ValueError('Current available member has no own COGS: '+p['article'])
+            if not s.get('price')or s['price']<=0:continue
+            old_price=e['seller_price_cny'];old_cost=e['own_cogs_rub'];q=e['buyout'];fx=e['fx_rub_per_cny']
+            e['expected_margin_before_ads_cny']+=q*((p['seller_price']-old_price)*(1-(e['commission_pct']+e.get('tax_pct',5))/100)-(s['price']/100-old_cost)/fx)
+            e.update(baseline_economics_observed_at=e['observed_at'],seller_price_cny=p['seller_price'],own_cogs_rub=s['price']/100,stock_free=free,published_stock=published['amounts'][nm],observed_at=stamp(),price_observed_at=stamp(),stock_observed_at=stamp(),published_stock_observed_at=stamp())
+            if free>0 and e['expected_margin_before_ads_cny']>0:available.append(p['nm_id'])
+           if not available:raise ValueError('No available members with positive preliminary own economics')
+           registry=io.get('china_agent:verified_campaign_state:v1')or{};receipt=io.get(registry.get(str(CID),''))or{};changes=history(source['executions']+[receipt]);modelstate=copy.deepcopy(before);modelstate['status']=9
+           model=assess_campaign(modelstate,raw,economics,source['full_growth_inputs']['own'],changes,days,stamp())
+           root.update(economics=model,current_inputs=checks,reference_days=days,reference_spend_cny=spend,reference_mean_daily_cny=spend/3);save()
+           if not model['ready']or model['status']!='positive'or model.get('stress_after_ads_cny',0)<=0:raise ValueError('Current conservative continuation model is not positive: '+model['reason'])
+           minimum=config['minTopUp']/100;amount=0 if balance>=spend else math.ceil(max(minimum,spend-balance)/50)*50
+           root.update(amount_cny=amount,target_balance=balance+amount,reserve_days=3,stage='current_preflight_passed');save()
+           if amount:
+            wallet=ad('/adv/v1/balance');assert wallet['currency']=='CNY';fund_source=0 if wallet.get('balance',0)>=amount else 1 if wallet.get('net',0)>=amount else None
+            if fund_source is None:raise ValueError('Insufficient available CNY funding source')
+            exact=campaign();exact_balance=budget()
+            root.update(predeposit_campaign=exact,predeposit_budget=exact_balance);save()
+            member_map=lambda cp:{n['nm_id']:n for n in cp['nm_settings']}
+            same=exact['settings']==before['settings']and member_map(exact)==member_map(before)and exact['currency']==before['currency']and exact['bid_type']==before['bid_type']
+            if not same or exact_balance>balance+2:raise ValueError('Functional campaign change or separate funding; no deposit')
+            if exact['status']!=9:
+             if exact['status']==11 and exact_balance==0 and lastcp['status']==9:stopped_at_zero=True
+             else:raise ValueError('Unexpected campaign status before deposit')
+          
+            root.update(status='submitting',request=dict(path='/adv/v1/budget/deposit?id='+str(CID),amount_cny=amount,source=fund_source),submitted_at=stamp());save()
+            response=ad('/adv/v1/budget/deposit?id='+str(CID),'POST',dict(sum=amount,type=fund_source));root.update(status='accepted',response=response,wb_writes=1);save()
+            after_balance=None
+            for attempt in range(6):
+             after_balance=budget()
+             if after_balance>=exact_balance+amount-2:break
+             time.sleep(5)
+            if after_balance is None or after_balance<exact_balance+amount-2:raise ValueError('Funding readback not confirmed; no blind retry')
+           else:after_balance=balance
+           after=campaign()
+           if stopped_at_zero and after['status']==11:
+            root.update(status='restoring_approved_test',before_restore=after);save();ad('/adv/v0/start?id='+str(CID));root['wb_writes']+=1;save();time.sleep(5);after=campaign()
+           if after['status']!=9 or after['settings']!=before['settings']or {n['nm_id']:n for n in after['nm_settings']}!={n['nm_id']:n for n in before['nm_settings']}:raise ValueError('Campaign final state changed or not running')
+           root.update(status='verified',after=after,after_budget=after_balance,verified_at=stamp(),restored_after_zero_budget=stopped_at_zero);save()
+           # Publish only the new recommendation; completed earlier topups are archived, not proposed again.
+           art=io.get(ART);delivery=io.get(DEL);binding=io.get(BIND);oldplan=io.get(PLAN+binding['plan_id'])
+           for name,value in [('artifacts',art),('delivery',delivery),('binding',binding),('plan',oldplan)]:assert io.create(ROOT+':before_report:'+name,value)
+           pid='daily-2026-11-09-continuation-41055480';item=dict(id='topup:41055480',kind='topup_campaign',campaign_id=CID,nm_ids=sorted(members),amount_cny=amount,balance_before=balance,target_balance=balance+amount,status_before=before['status'],budget_evidence=model,completed_days=days)
+           plan=dict(plan_id=pid,chat_id=CHAT,bot_id=BOT,execution_kind='daily_ad_actions_v2',family='budgets',created_at=stamp(),visible_from=stamp(),expires_at='9999-12-31T23:59:59+00:00',validity_mode='until_replaced',report_generation=pid,items=[item],plan_sha256=digest([item]),report_message_ids=[801],price_changes=False,auto_topup=False,period_to='2026-11-09',owner_completed_budget_receipts=[dict(execution_key=ROOT,campaign_id=CID,amount_cny=amount)])
+           assert io.create(PLAN+pid,plan)
+           font='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';normal=ImageFont.truetype(font,34);bold=ImageFont.truetype(font,42);small=ImageFont.truetype(font,29)
+           image=Image.new('RGB',(2400,660),'white');d=ImageDraw.Draw(image);d.text((55,35),'КИТАЙ · БЮДЖЕТЫ · 09.11.2026',font=bold,fill='#17384a');d.text((55,100),'Расход: 08.11 и 06–08.11 · CNY',font=small,fill='#536975')
+           d.rectangle((45,165,2355,225),fill='#17384a')
+           for x,label in [(65,'РК / остаток'),(790,'Расход / ДРР'),(1570,'Рекомендация')]:d.text((x,177),label,font=normal,fill='white')
+           d.rectangle((45,230,2355,590),fill='#eff5f7');lastday=daily[days[-1]];drr3=spend/sum(daily[x]['sum_price']for x in days)*100;drrday=lastday['sum']/lastday['sum_price']*100 if lastday['sum_price']else None
+           lines1=['41055480 · Сумки 2','Рекомендации','Остаток до: '+str(balance)+' CNY','Проверка: '+datetime.now(ZoneInfo('Europe/Moscow')).strftime('%d.%m %H:%M МСК')]
+           lines2=['Расход день: '+format(lastday['sum'],'.2f'),'Расход 3 дня: '+format(spend,'.2f'),'ДРР 3 дня: '+format(drr3,'.2f')+'%','ДРР день: '+(format(drrday,'.2f')+'%'if drrday is not None else'не определена')]
+           lines3=['Пополнить на '+str(amount)+' CNY','Запас на 3 дня']
+           for x,lines in [(65,lines1),(790,lines2),(1570,lines3)]:
+            for index,line in enumerate(lines):d.text((x,255+index*66),line,font=normal,fill='#16384a')
+           out=bio.BytesIO();image.save(out,format='PNG');rawpng=out.getvalue();encoded=base64.b64encode(rawpng).decode();sha=hashlib.sha256(rawpng).hexdigest();io.put(ROOT+':budget_artifact',dict(b64=encoded,sha256=sha,plan_id=pid))
+           oldplan.update(invalidated_at=stamp(),invalidation_reason='Previous recommendations completed; replaced by owner-requested continuation reserve',replaced_by_plan_id=pid);io.put(PLAN+oldplan['plan_id'],oldplan)
+           io.put(BIND,dict(plan_id=pid,plan_sha256=plan['plan_sha256'],chat_id=CHAT,family='budgets'))
+           caption='Китай · бюджеты · 09.11. Добавлена рекомендация по РК41055480: +'+str(amount)+' CNY. Пополнение выполнено и проверено WB; РК активна. Повторного пополнения по этому отчёту не требуется.'
+           publication=dict(status='editing',message_id=801,sha256=sha,created_at=stamp());assert io.create(ROOT+':report',publication)
+           response=requests.post('https://api.telegram.org/bot'+io.bot+'/editMessageMedia',data=dict(chat_id=CHAT,message_id=801,media=json.dumps(dict(type='photo',media='attach://photo',caption=caption),ensure_ascii=False)),files={'photo':('budget-continuation.png',rawpng,'image/png')},timeout=50).json()
+           if not response.get('ok'):raise ValueError('Telegram budget edit not confirmed')
+           r=response['result'];assert r['message_id']==801 and r['chat']['id']==CHAT and r['from']['id']==BOT
+           publication.update(status='edited',receipt=r,edited_at=stamp());io.put(ROOT+':report',publication)
+           f=next(x for x in art['files']if x['family']=='budgets');f.update(b64=encoded,plan_id=pid,plan_sha256=plan['plan_sha256'],action_count=1,owner_revision=ROOT)
+           part=next(x for x in delivery['parts']if x['kind']=='budgets:001');part.update(sha256=sha,receipt=r,edited_at=stamp(),owner_revision=ROOT)
+           io.put(ART,art);io.put(DEL,delivery);io.put('china_agent:daily_ad_current_report:v1:budgets',dict(report_generation=pid,plan_id=pid,published_at=stamp()))
+           registry=io.get('china_agent:verified_campaign_state:v1')or{};registry[str(CID)]=ROOT;io.put('china_agent:verified_campaign_state:v1',registry)
+           root.update(report_key=ROOT+':report',report_message_id=801,completed_at=stamp());save();print('Verified one continuation deposit, unchanged bids/composition, active campaign, edited existing budget report')
+          except Exception as ex:
+           root.update(status='uncertain'if root['status']in('submitting','accepted','restoring_approved_test')else root['status']if root['status']=='verified'else'attention_required',error=str(ex)if isinstance(ex,(ValueError,RuntimeError))else type(ex).__name__,failed_at=stamp());save();print('Owner funding needs exact private receipt review; no blind retry');raise SystemExit(1)
+          PY

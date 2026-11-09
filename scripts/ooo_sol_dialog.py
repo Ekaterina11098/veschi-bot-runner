@@ -82,6 +82,13 @@ class Worker:
   if (msg.get('chat')or{}).get('id')!=CHAT or type(msg.get('message_id'))is not int or msg['message_id']<=0 or msg.get('from',{}).get('is_bot'):raise PermissionError('Question identity outside current group')
   membership=self.tg('getChatMember',{'chat_id':CHAT,'user_id':sender})
   if membership.get('status')not in('member','administrator','creator')and not(membership.get('status')=='restricted'and membership.get('is_member')is True):raise PermissionError('Sender is not a current group member')
+  from ooo_report_command import approve
+  command=approve(self.db,msg,ROOT,CHAT,BOT,membership=membership)
+  if command is not None:
+   entry.update(status='send_uncertain',command_result=command);self.db.update(key,entry)
+   receipt=self.tg('sendMessage',{'chat_id':CHAT,'text':command['answer'],'reply_parameters':{'message_id':msg['message_id'],'allow_sending_without_reply':False}})
+   if(receipt.get('chat')or{}).get('id')!=CHAT or(receipt.get('from')or{}).get('id')!=BOT or type(receipt.get('message_id'))is not int:raise RuntimeError('Command receipt uncertain; no resend')
+   entry.update(status='delivered',message_id=receipt['message_id'],delivered_at=stamp());self.db.update(key,entry);return 'delivered'
   entry=dict(entry,status='model_submitting_uncertain');self.db.update(key,entry)
   answer=BoundedSol(self.db,ROOT).answer('telegram-message:'+str(CHAT)+':'+str(msg['message_id']),INSTRUCTIONS,self.context(msg))
   if not 0<len(answer)<=5000:raise ValueError('Reply exceeds delivery size')
@@ -124,3 +131,5 @@ if __name__=='__main__':
   if result['status']=='attention_required':raise SystemExit(1)
  except Exception as e:
   w.db.put(ROOT+'health',{'status':'blocked','error_type':type(e).__name__,'observed_at':stamp()});print(dump({'status':'blocked','error_type':type(e).__name__}));raise SystemExit(1)
+
+

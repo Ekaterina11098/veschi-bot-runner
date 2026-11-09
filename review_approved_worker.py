@@ -49,9 +49,14 @@ def main():
         os.environ['REVIEW_PUBLICATION_ENABLED']='1'
         report={'wb_writes':0,'checked':{},'errors':{},'legacy_queue_calls':0}
         out=Path(os.environ['RUNNER_TEMP'])/'stock-deploy-proof';out.mkdir(exist_ok=True)
-        backup=IncrementalSnapshot(repo)
+        backup=IncrementalSnapshot(repo,os.getenv('REVIEW_BACKUP_CACHE_PATH'),root,
+            os.environ.get('SUPABASE_URL','')+':'+str(worker_cabinet))
         def preserve():
             (out/'approved-publication-backup.aes.json').write_text(json.dumps(encrypt(backup.capture(),OWNER_PUBLIC.encode())))
+            # The owner-recoverable full backup is written before the optional
+            # encrypted performance cache. Cache failure must not block delivery.
+            try:backup.save_cache()
+            except Exception:report['backup_cache_write_failed']=True
             seal('approved-publication-receipts',report)
         canonical_guard=CanonicalGuard(app,bridge.project)
         def publication_guard(card):
@@ -161,6 +166,7 @@ if __name__=='__main__':
         from stock_deploy_support import seal,error
         seal('approved-publication-failure',{'error':error(exc),'private_log':hidden.getvalue()})
         print('Approved review worker failed; diagnostic protected.');raise SystemExit(1)
+
 
 
 

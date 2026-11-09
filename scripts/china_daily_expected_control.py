@@ -298,7 +298,6 @@ def render_candidates(worker):
   receipt=worker.get('china_agent:wb_order_gaps:day:'+str(day)) or {}
   if receipt.get('status')!='complete' or receipt.get('seller_identity_verified') is not True:raise RuntimeError('Candidate WB day incomplete')
   daily[str(day)]=counts(receipt['rows'],day,targets)
-  for v in daily[str(day)].values():v['orders']+=v['cancelled']
  initial=[]
  for price in rows:
   nm=str(price['nmID'])

@@ -100,7 +100,10 @@ def wb_audit(result):
         for group in sorted({u['group'] for u in units}):
             supply=group[3:]
             ids=g.api('GET',g.WB_MARKET+'/api/marketplace/v3/supplies/'+supply+'/order-ids',token,retry_read_network=True)['orderIds']
-            info=g.api('GET',g.WB_MARKET+'/api/v3/supplies/'+supply,token,retry_read_network=True)
+            try:info=g.api('GET',g.WB_MARKET+'/api/v3/supplies/'+supply,token,retry_read_network=True)
+            except Exception as exc:
+                if 'HTTP 404' not in str(exc):raise
+                info={'not_found':True,'http_status':404}
             result.setdefault('membership',[]).append(dict(supply=supply,ids=ids,info=info,removed=[u['id'] for u in units if u['group']==group and int(u['id']) not in ids]))
             checkpoint()
             members=[u for u in all_units if u['group']==group and int(u['id']) in ids]

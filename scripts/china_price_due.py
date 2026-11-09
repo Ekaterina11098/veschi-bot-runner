@@ -13,7 +13,13 @@ def main():
     now=datetime.now(ZoneInfo('Europe/Moscow'));allowed=True;reason='primary_schedule'
     if os.environ.get('EVENT_NAME')=='workflow_call':
         allowed=in_window(now,a.mode);reason='fallback_due_window' if allowed else 'outside_agreed_window'
-    if allowed:
+    preview=False
+    if os.environ.get('EVENT_NAME')=='push':
+        try:
+            with open('china-price-'+a.mode+'-request.json',encoding='utf8') as f:request=json.load(f)
+            preview=request.get('action')=='verify' and request.get('report_date')==str(now.date()) and request.get('mode')==a.mode
+        except (OSError,ValueError):pass
+    if allowed and not preview:
         update=-(9800000000 if a.mode=='morning' else 9600000000)-(now.date()-date(2020,1,1)).days
         q=urllib.parse.urlencode(dict(agent_id='eq.china',update_id='eq.'+str(update),select='id,status,tool_trace',limit=2))
         secret=os.environ['SUPABASE_SECRET_KEY']

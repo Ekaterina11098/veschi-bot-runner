@@ -10,8 +10,42 @@ class IncrementalSnapshot:
     and row xmin versions are computed by Postgres; deletions are reconciled.
     Publish the local cache only after all reads complete, so failures are retryable.
     """
-    def __init__(self,repo):
+    def __init__(self,repo,cache_path=None,cache_secret=None,cache_scope=None):
         self.repo=repo;self.cache={};self.signatures={}
+        self.cache_path=cache_path;self.cache_secret=cache_secret;self.cache_scope=cache_scope
+        self.cache_status='disabled' if not cache_path else 'cold'
+        if cache_path and cache_secret and cache_scope:
+            try:
+                from pathlib import Path
+                from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                raw=Path(cache_path).read_bytes()
+                state=json.loads(AESGCM(self._cache_key()).decrypt(raw[:12],raw[12:],cache_scope.encode()))
+                if state['format']!='incremental-cache-v1':raise ValueError('Cache format')
+                cache={t:{k:(v,row) for k,v,row in entries} for t,entries in state['tables'].items()}
+                if set(cache)!=set(TABLES+('source_cache','source_journal')):raise ValueError('Cache composition')
+                if any(len(cache[t])!=len(state['tables'][t]) for t in cache):raise ValueError('Duplicate cache identity')
+                if sha(state['tables'])!=state['digest']:raise ValueError('Cache digest')
+                self.cache=cache;self.cache_status='restored'
+                # Never trust a cached signature across database/process lifetimes.
+                # Re-read versions, including deletes; cached payload is only reused
+                # for matching content hashes (not potentially recycled xmin).
+            except Exception:
+                self.cache={};self.signatures={};self.cache_status='cold'
+
+    def _cache_key(self):
+        import hmac
+        return hmac.new(self.cache_secret,b'veschi:encrypted-backup-cache:v1',hashlib.sha256).digest()
+
+    def save_cache(self):
+        if not (self.cache_path and self.cache_secret and self.cache_scope):return
+        from pathlib import Path
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        tables={t:[[k,v,row] for k,(v,row) in entries.items()] for t,entries in self.cache.items()}
+        state={'format':'incremental-cache-v1','tables':tables,'digest':sha(tables)}
+        nonce=secrets.token_bytes(12)
+        encrypted=nonce+AESGCM(self._cache_key()).encrypt(nonce,json.dumps(state,ensure_ascii=False).encode(),self.cache_scope.encode())
+        target=Path(self.cache_path);target.parent.mkdir(parents=True,exist_ok=True)
+        temp=target.with_suffix('.tmp');temp.write_bytes(encrypted);os.chmod(temp,0o600);os.replace(temp,target)
 
     def capture(self):
         repo=self.repo
@@ -25,7 +59,7 @@ class IncrementalSnapshot:
                 base='review_approval.'+table
                 # Views do not expose xmin. Hash only their declared columns on
                 # the server; this also detects deletes and same-timestamp edits.
-                version="md5(payload::text||coalesce(updated_at::text,''))" if table=='source_cache' else "md5(jsonb_build_array(state,error)::text)" if table=='source_journal' else 'xmin::text'
+                version="md5(payload::text||coalesce(updated_at::text,''))" if table=='source_cache' else "md5(jsonb_build_array(state,error)::text)" if table=='source_journal' else 'md5(payload::text)'
                 signature=repo.conn.execute("SELECT md5(coalesce(string_agg("+key+"::text||':'||"+version+",',' ORDER BY "+key+"),'')) FROM "+base+where).fetchone()[0]
                 signatures[table]=signature
                 old=self.cache.get(table,{})
@@ -100,5 +134,6 @@ def restore_empty(repo,data):
         actual=[{'id':key,'payload':json.loads(payload)} for key,payload in repo.execute('SELECT id,payload FROM {p}'+table+' ORDER BY id').fetchall()]
         if sha(actual)!=data['manifest'][table]['sha256']:raise ValueError('Restore readback mismatch')
     return True
+
 
 

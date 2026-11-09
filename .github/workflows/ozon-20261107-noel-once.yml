@@ -1,0 +1,90 @@
+name: One-time Ozon 2026-11-07 Noel exact recovery
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ozon-20261107-noel-once.yml'
+permissions:
+  contents: read
+concurrency:
+  group: fbs-document-chain-production
+  cancel-in-progress: false
+jobs:
+  exact-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check Ozon source and MS duplicates then create only exact verified chain
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          import collections,copy,json,sys
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          from fbs_ozon_chain import CONFIG,PREFIX,acts,snapshot,OzonWorker,virtual_supply
+          POSTING="32526363-0420-3"
+          ARTICLE="119-noelbag-darkblack"
+          t=m.Transport()
+          db=m.Cache(t)
+          c=copy.deepcopy(db.get(CONFIG))
+          assert c and c.get("cabinet")=="ozon" and c.get("scope_confirmed") is True
+          assert c.get("status")=="active" and c.get("writes_enabled") is True
+          c["execution_policy"]={"forbid_negative_stock":True}
+          matches=[a for a in acts() if a.get("departure_date")=="2026-11-07"]
+          matches=[(a,snapshot(a)) for a in matches]
+          matches=[(a,s) for a,s in matches if POSTING in s["all_numbers"]]
+          if len(matches)!=1: raise m.Stop("Ozon posting not unique among 07.11 acts")
+          act,scope=matches[0]
+          if scope["included"]!=[POSTING] or scope["excluded"] or scope["counts"]!={ARTICLE:1} or not scope["ready"]:
+           raise m.Stop("Ozon live shipment status/article/quantity differs from PDF")
+          sid="OZON-ACT-"+str(act["id"])
+          key=PREFIX+sid
+          w=OzonWorker(t,db,c,act,scope)
+          supply=virtual_supply(act,scope)
+          positions,ids=w.positions(supply)
+          if len(positions)!=1 or positions[0]["quantity"]!=1 or ids!=[POSTING]:
+           raise m.Stop("MS product identity or source differs")
+          existing=db.get(key)
+          if existing and (existing.get("inflight") or (existing.get("documents") and existing.get("status")!="complete")):
+           raise m.Stop("Partial existing document chain requires reconciliation")
+          if existing and existing.get("status")=="complete":
+           if existing.get("order_ids")!=ids: raise m.Stop("Prior completed record differs")
+           w.validate_source(existing)
+           print(json.dumps({"status":"already_complete","act":act["id"],"documents":{k:v.get("name") for k,v in existing.get("documents",{}).items()}},ensure_ascii=False))
+           sys.exit(0)
+          if existing and "positions" in existing and existing["positions"]!=positions: raise m.Stop("Frozen product identity changed")
+          for typ in m.TYPES:
+           ext=c["document_prefix"]+":"+sid+":"+typ
+           docs=w.ms_rows("entity/"+typ,{"filter":"externalCode="+ext})
+           if docs: raise m.Stop("Existing MS document without completed journal requires reconciliation: "+typ)
+          for name in [w.order_name,w.order_name+" "+str(act["id"])]:
+           orders=w.ms_rows("entity/customerorder",{"filter":"name="+name})
+           if any(POSTING in (d.get("description") or "") for d in orders):
+            raise m.Stop("Manual order already has posting")
+          state=existing or {"act":act,"supply":supply,"picking_scope":scope,"positions":positions,"order_ids":ids,"status":"prepared"}
+          demand=copy.deepcopy(c["templates"]["demand"])
+          demand["positions"]=positions
+          w.require_available_stock(demand,state)
+          w._execution_permit={"kind":"manual","supply_ids":{sid}}
+          db.put(key,state)
+          w.process(state)
+          if state.get("status")!="complete":raise m.Stop("Not complete")
+          receipts={}
+          for typ in m.TYPES:
+           info=state["documents"][typ]
+           doc=t.request(m.MS,"entity/"+typ+"/"+info["id"])
+           if not doc.get("applicable") or doc.get("sum")!=0:raise m.Stop("Document not posted at readback")
+           rows=w.ms_rows("entity/"+typ+"/"+info["id"]+"/positions")
+           if len(rows)!=1 or rows[0].get("quantity")!=1 or rows[0].get("price")!=0:raise m.Stop("Position mismatch")
+           receipts[typ]={"name":doc["name"],"id":doc["id"]}
+          print(json.dumps({"status":"complete","posting":POSTING,"act":act["id"],"article":ARTICLE,"quantity":1,"documents":receipts},ensure_ascii=False))

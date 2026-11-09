@@ -1,11 +1,6 @@
 name: Reserve-aware four-product China correction
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-stock4-apply-20261109.yml']
   workflow_dispatch:
-  schedule:
-    - cron: '*/10 15-20 9 11 *'
 permissions:
   contents: read
 concurrency:

@@ -1,0 +1,62 @@
+name: Owner requested paused campaign reserve review 9Nov
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-paused-campaign-review-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  review:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 10ca471ebdc30e8979abeb6286434c51fe218931
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Read exact two campaigns and current own inputs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import copy,json
+          from datetime import datetime,timezone
+          from china_loss_execute import IO
+          from china_advertising_v2 import http
+          from china_morning_readiness import current_prices,published_stock
+          from china_moysklad_read import read_stock
+          io=IO();key='china_agent:owner_paused_review:2026-11-09:v1:inputs'
+          if io.get(key):raise SystemExit('Saved inputs already exist; no repeated reads')
+          s=io.get('china_agent:advertising_source:2026-11-09:v2')
+          out=dict(status='collecting',cabinet='token_3',wb_writes=0,telegram_calls=0,grants_action_permission=False,observed_at=datetime.now(timezone.utc).isoformat())
+          assert io.create(key,out)
+          try:
+           out['campaigns']=http(io,'/api/advert/v2/adverts?ids=41680341,41332083')['adverts']
+           out['budgets']=http(io,'/api/advert/v2/budget','POST',dict(advertIds=[41680341,41332083]))['adverts']
+           out['config']=http(io,'/api/advert/v1/config')
+           nms=sorted({n['nm_id']for c in out['campaigns']for n in c['nm_settings']})
+           out['prices']=current_prices(io,nms);out['published']=published_stock(io,out['prices'],nms)
+           out['stock']=read_stock([r['article']for r in out['prices']['rows']])
+           out['economics']=s['economics'];out['own']=s['full_growth_inputs']['own']
+           out['reference_stats']=[c for b in s['batches'].values()for c in b['stats']if c['advertId']in[41680341,41332083]]
+           out.update(status='complete',completed_at=datetime.now(timezone.utc).isoformat());io.put(key,out)
+           print('Saved bounded read-only inputs for two campaigns; no WB writes or Telegram calls')
+          except Exception as ex:
+           out.update(status='blocked',error=type(ex).__name__);io.put(key,out);raise
+          
+          PY

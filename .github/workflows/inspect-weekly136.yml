@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   inspect:
+    if: ${{ false }} # Cancelled by owner; no automatic resumption.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

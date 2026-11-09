@@ -1,5 +1,6 @@
 """Whole-cabinet daily growth evidence. Read-only; resumes stages, never sends or changes WB."""
 import copy,json,math
+from china_growth_placements import addition_key,placement_candidates
 from datetime import date,datetime,timedelta,timezone
 from zoneinfo import ZoneInfo
 ROOT='china_agent:advertising_full_growth:'
@@ -87,24 +88,16 @@ def collect(io,s,day):
    if wanted and str(cid)not in v['minimums']:
     try:v['minimums'][str(cid)]=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=wanted,payment_type='cpc',placement_types=[zone]));save()
     except Exception as ex:v['quote_errors'][str(cid)]=str(ex);save()
-  # Scan every non-member; removed products require a separate owner reinstatement review.
-  members={n['nm_id']for cp in v['campaigns']if cp['status']in[9,11]for n in cp['nm_settings']}
-  removed={x['nm']for x in history(s.get('executions',[]))if x['kind']=='excluded'}
-  own={int(r['nm_id']):r for r in v['own']['rows']}
-  v['addition_candidates']=[]
-  for nm in ids:
-   if nm in members or nm in removed:continue
-   e=v['economics']['rows'].get(str(nm),{});o=own.get(nm,{})
-   if e.get('expected_margin_before_ads_cny',-1)<=0 or e.get('stock_free',0)<=0 or (e.get('published_stock')is None or e['published_stock']<=0) or e.get('sample_size',0)<5 or e.get('buyout_fallback'):continue
-   if o.get('is_payed',0)<3 or not o.get('open_card_count')or o.get('funnel_orders_count',0)/o['open_card_count']<.005:continue
-   targets=[cp for cp in v['campaigns']if cp['status']==9 and cp['bid_type']=='manual'and cp['settings']['payment_type']=='cpc'and cp['settings']['placements'].get('recommendations')and{n['subject']['id']for n in cp['nm_settings']}=={o.get('subject_id')}and cp.get('restrictions',{}).get('can_change_nms')and len(cp['nm_settings'])<50]
-   if not targets:continue
-   cid=min(cp['id']for cp in targets);v['addition_candidates'].append(dict(nm_id=nm,campaign_id=cid))
-   if str(nm)not in v['addition_quotes']:
-    try:v['addition_quotes'][str(nm)]=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=['recommendation']));save()
+  # Screen every SKU for an absent placement, including products advertising elsewhere.
+  v['excluded_nm_ids']=sorted(excluded)
+  v['addition_candidates']=placement_candidates(dict(s,period_to=str(end)),v)
+  for r in v['addition_candidates']:
+   nm=r['nm_id'];cid=r['campaign_id'];zone=r['placement'];typ='search'if zone=='search'else'recommendation';qkey=addition_key(r)
+   if qkey not in v['addition_quotes']:
+    try:v['addition_quotes'][qkey]=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=[typ]));save()
     except Exception as ex:
-     if 'HTTP 400'in str(ex):v['addition_quotes'][str(nm)]=dict(unavailable=str(ex),observed_at=stamp());save()
-     else:v['quote_errors']['add:'+str(nm)]=str(ex);save()
+     if 'HTTP 400'in str(ex):v['addition_quotes'][qkey]=dict(unavailable=str(ex),observed_at=stamp());save()
+     else:v['quote_errors']['add:'+qkey]=str(ex);save()
   # A transient quote failure is retried by the existing next preparation, never relabelled no candidates.
   if v['quote_errors']:raise ValueError('Exact growth quotes unavailable')
   v.update(status='complete',observed_at=stamp(),catalogue_count=len(v.get('catalogue',s['catalogue'])['rows']),screened_nm_ids=ids,excluded_nm_ids=sorted(excluded),wb_writes=0,telegram_calls=0,model_calls=0,grants_action_permission=False);save()
@@ -123,9 +116,10 @@ def collect(io,s,day):
  out['addition_scan']=dict(status='complete',period_from=str(first),period_to=str(end),observed_at=v['own']['observed_at'],candidate_ids=[r['nm_id']for r in v['addition_candidates']],catalogue_count=v['catalogue_count'])
  out['addition_bid_quotes']={}
  for r in v['addition_candidates']:
-  q=v['addition_quotes'].get(str(r['nm_id']),{})
-  vals=[b['value']for row in q.get('bids',[])if row['nm_id']==r['nm_id']for b in row['bids']if b['type']=='recommendation'and b['currency']=='CNY']
-  if len(vals)==1:out['addition_bid_quotes'][str(r['nm_id'])]=dict(campaign_id=r['campaign_id'],target_minor=vals[0],bid_verified=True,observed_at=v['observed_at'])
+  qkey=addition_key(r);typ='search'if r['placement']=='search'else'recommendation'
+  q=v['addition_quotes'].get(qkey,{})
+  vals=[b['value']for row in q.get('bids',[])if row['nm_id']==r['nm_id']for b in row['bids']if b['type']==typ and b['currency']=='CNY']
+  if len(vals)==1:out['addition_bid_quotes'][qkey]=dict(campaign_id=r['campaign_id'],placement=r['placement'],target_minor=vals[0],bid_verified=True,observed_at=v['observed_at'])
  return out
 def proposed_actions(s):
  """Every current placement is evaluated; no top8/top12 truncation and no forced count."""
@@ -189,9 +183,15 @@ def addition_actions(s,raises):
   for cp in batch['stats']:reserve[cp['advertId']]=sum(d['sum']for d in cp['days']if str(end-timedelta(days=2))<=d['date'][:10]<=str(end))
  for a in raises:
   e=a['growth_evidence'];reserve[a['campaign_id']]+=e['metrics']['clicks']/len(e['decision_days'])*3*(a['target_minor']-a['old_minor'])/100
+ seen={a['nm_id']for a in raises};added_counts={}
  for r in v.get('addition_candidates',[]):
   nm=r['nm_id'];cid=r['campaign_id'];e=v['economics']['rows'].get(str(nm),{});o=own.get(nm,{})
-  quote=(s.get('addition_bid_quotes')or{}).get(str(nm),{})
+  if nm in seen:continue
+  cp=next((c for c in v['campaigns']if c['id']==cid),None)
+  if not cp or len(cp['nm_settings'])+added_counts.get(cid,0)>=50:continue
+  placement=r.get('placement','recommendations')
+  quote=(s.get('addition_bid_quotes')or{}).get(addition_key(r),(s.get('addition_bid_quotes')or{}).get(str(nm),{}))
+  if quote.get('campaign_id')!=cid or quote.get('placement',placement)!=placement:continue
   target=quote.get('target_minor');step=v['config']['cpcStep']
   if quote.get('bid_verified')is not True or type(target)is not int or target<=0 or target%step or target>v['config']['cpcMaxBid']:continue
   if e.get('commission_policy_fallback')or e.get('buyout_fallback')or e.get('sample_size',0)<5 or e.get('published_stock',0)<3:continue
@@ -202,7 +202,9 @@ def addition_actions(s,raises):
   if balances.get(cid,-1)<reserve.get(cid,1e99)+reserve_extra:continue
   reserve[cid]+=reserve_extra
   evidence=dict(e,cabinet='token_3',currency='CNY',article=prices[nm]['article'],observed_at=v['observed_at'],price_cny=e['seller_price_cny'],minimum_minor=target,period_to=s['period_to'],period_from=v['own']['period_from'],subject_id=o['subject_id'],ad_cpa_unknown=True,preliminary=True,unknown_costs=True,manual_strategy_proposal=True,source_key=ROOT+str(date.fromisoformat(s['period_to'])+timedelta(days=1))+':v1:inputs',test_review_after_first_completed_day=True,ad_traffic_forecast_clicks_per_day=30,campaign_reserve_required_cny=reserve[cid],forecast_not_a_spend_cap=True)
-  result.append(dict(id=str(cid)+':add:'+str(nm),kind='ad_add_sku',direction='add',campaign_id=cid,nm_id=nm,article=prices[nm]['article'],placement='recommendations',target_minor=target,subject_id=o['subject_id'],manual_experiment=True,exact_addition_quote=True,growth_evidence=evidence))
+  result.append(dict(id=str(cid)+':add:'+str(nm),kind='ad_add_sku',direction='add',campaign_id=cid,nm_id=nm,article=prices[nm]['article'],placement=placement,target_minor=target,subject_id=o['subject_id'],manual_experiment=True,exact_addition_quote=True,growth_evidence=evidence))
+  seen.add(nm)
+  added_counts[cid]=added_counts.get(cid,0)+1
  return result
 def validate_addition(io,item,before):
  """Execution preflight only; this function makes no marketplace writes."""
@@ -222,8 +224,9 @@ def validate_addition(io,item,before):
  if st['price']<=0 or e['expected_margin_before_ads_cny']-delta<=0:raise ValueError('Addition current economics no longer positive')
  cfg=http(io,'/api/advert/v1/config')
  if cfg['currency']!='CNY'or item['target_minor']%cfg['cpcStep']or item['target_minor']>cfg['cpcMaxBid']:raise ValueError('Addition bid step changed')
- q=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=['recommendation']))
- vals=[b['value']for row in q.get('bids',[])if row['nm_id']==nm for b in row['bids']if b['currency']=='CNY'and b['type']=='recommendation']
+ typ='search'if item['placement']=='search'else'recommendation'
+ q=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=[typ]))
+ vals=[b['value']for row in q.get('bids',[])if row['nm_id']==nm for b in row['bids']if b['currency']=='CNY'and b['type']==typ]
  if len(vals)!=1 or vals[0]>item['target_minor']:raise ValueError('Exact addition minimum changed')
  balance=http(io,'/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts']
  if len(balance)!=1 or balance[0]['currency']!='CNY'or balance[0]['total']<e['campaign_reserve_required_cny']:raise ValueError('Addition three-day reserve unavailable')
@@ -231,12 +234,15 @@ def validate_addition(io,item,before):
 def enrich(io,s,bundle):
  from china_advertising_growth import merge
  actions,unready=proposed_actions(s)
+ for a in actions:a['growth_evidence']['source_key']=s['full_growth_review']['input_key']
  result=merge(bundle,actions)
  additions=addition_actions(s,actions)
+ for a in additions:a['growth_evidence']['source_key']=s['full_growth_review']['input_key']
  for a in additions:
   cp=next(c for c in result['campaigns']if c['id']==a['campaign_id'])
-  row=dict(nm=a['nm_id'],article=a['article'],action=a,decision='Тест: добавить, ставка '+str(a['target_minor']/100)+' CNY.',reason='Рекламная стоимость заказа неизвестна; предварительная собственная экономика положительна.',economics=a['growth_evidence'],period=None,daily=[],period_drr=None,growth=True)
+  row=dict(nm=a['nm_id'],article=a['article'],action=a,decision='Тест: добавить в '+('поиск'if a['placement']=='search'else'рекомендации')+', ставка '+str(a['target_minor']/100)+' CNY.',reason='Рекламная стоимость заказа неизвестна; предварительная собственная экономика положительна.',economics=a['growth_evidence'],period=None,daily=[],period_drr=None,growth=True)
   cp.setdefault('focus',[]).append(row);cp.setdefault('attention',[]).append(copy.deepcopy(row))
  result['growth_review']=dict(status='complete',observed_at=s['full_growth_inputs']['observed_at'],period_to=s['period_to'],scope=s['full_growth_review'])
- result['full_cabinet_growth_review']=dict(s['full_growth_review'],raise_candidates=len(actions),addition_candidates=len(additions),unready=unready,automatic_actions=False)
+ result['full_cabinet_growth_review']=dict(s['full_growth_review'],raise_candidates=len(actions),addition_candidates=len(additions),unready=unready,automatic_actions=False,funding_is_growth=False,new_placement_scope=True)
  return result
+

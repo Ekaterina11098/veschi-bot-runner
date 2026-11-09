@@ -20,7 +20,7 @@ def fixture():
  item=dict(id='41055480:98',kind='ad_exclude_sku',campaign_id=41055480,nm_id=98,article='98-Emma',old_minor=28)
  before=dict(id=41055480,status=9,settings=dict(name='Сумки 2'),nm_settings=[dict(nm_id=98,bids_kopecks=dict(search=0,recommendations=28)),dict(nm_id=585,bids_kopecks=dict(search=0,recommendations=38))])
  after=copy.deepcopy(before);after['nm_settings']=after['nm_settings'][1:]
- p=dict(plan_id='p',items=[item],plan_sha256=digest([item]),execution_kind='daily_ad_actions_v2')
+ p=dict(plan_id='p',items=[item],plan_sha256=digest([item]),execution_kind='daily_ad_actions_v2',expires_at='9999-12-31T00:00:00+00:00')
  a=dict(job_id=150,input_message_id=385,plan_sha256=p['plan_sha256'])
  e=dict(status='done',items=[dict(id=item['id'],status='verified',before=before,after=after)],wb_writes=1)
  return IO(),a,p,e
@@ -50,4 +50,5 @@ class Notices(unittest.TestCase):
  def test_blocked_is_explicit(self):
   io,a,p,e=fixture();e['items'][0].update(status='blocked',reason='Bid changed');deliver_result(io,a,p,e);self.assertIn('не выполнено: Bid changed',io.sent[0][1]['text'])
 if __name__=='__main__':unittest.main()
+
 

@@ -25,12 +25,18 @@ def merge_completed(bundle,review,source_ref):
    if not row.get('action'):continue
    days=(row.get('comparison')or{}).get('to_days')or review['days']
    if not days or days[-1]>=out['day']:raise ValueError('Partial day cannot become an action basis')
-   m=(row.get('comparison')or{}).get('after')or row['period']
-   c['attention'].append(dict(article=row['article'],decision=row['decision'],action=row['action'],spend=m['spend'],clicks=m['clicks'],closed_day_evidence=dict(period_from=days[0],period_to=days[-1],verified=True,source_ref=source_ref,postclick_reviewed=True,metrics=m)))
+   evidence=(row['action'].get('growth_evidence')or{})
+   days=evidence.get('decision_days')or days
+   m=(row.get('comparison')or{}).get('after')or row.get('period')
+   if row['action']['kind']=='ad_add_sku':
+    days=[evidence['period_from'],evidence['period_to']]
+   if days[-1]>=out['day']:raise ValueError('Partial growth day cannot become an action basis')
+   c['attention'].append(dict(article=row['article'],decision=row['decision'],action=row['action'],spend=(m or{}).get('spend'),clicks=(m or{}).get('clicks'),closed_day_evidence=dict(period_from=days[0],period_to=days[-1],verified=True,source_ref=source_ref,postclick_reviewed=True,metrics=m,ad_cpa_unknown=evidence.get('ad_cpa_unknown',False))))
   c['completed_actions']=list(dict.fromkeys(done))
  out['recommendation_directions']=copy.deepcopy(review.get('recommendation_directions',{}))
  out['growth_review']=copy.deepcopy(review.get('growth_review',{}))
  if review.get('codex_analysis'):out['codex_analysis']=copy.deepcopy(review['codex_analysis'])
+ if review.get('sales_growth_review'):out['sales_growth_review']=copy.deepcopy(review['sales_growth_review'])
  for c in out['campaigns']:
   c['codex_research_recommendations']=copy.deepcopy((closed.get(c['id'])or{}).get('codex_research_recommendations',[]))
  for c in out['campaigns']:
@@ -83,7 +89,17 @@ def attach(io,bundle,day):
   saved_stats=completed_campaign_stats(io,active,saved_stats,source['period_from'],end)
   batch['stats']=[copy.deepcopy(saved_stats[cid]) for cid in ids]
  source['observed_at']=datetime.now(timezone.utc).isoformat();source['budget_balance_observed_at_iso']=current.get('completed_at',current['observed_at'])
- rough=build(source);source=enrich_economics(io,source,rough,day)
+ rough=build(source)
+ from china_advertising_full_growth import enabled as full_enabled,collect as collect_full
+ class MiddayFullIO:
+  # Reuse completed own history; refresh intraday price/stock/bids in a separate resumable journal.
+  def key(self,key):return key+':midday' if key.startswith('china_agent:advertising_full_growth:')else key
+  def get(self,key):return io.get(self.key(key))
+  def create(self,key,value):return io.create(self.key(key),value)
+  def put(self,key,value):return io.put(self.key(key),value)
+  def __getattr__(self,name):return getattr(io,name)
+ source=collect_full(MiddayFullIO(),source,day) if full_enabled(io) else enrich_economics(io,source,rough,day)
+ if source.get('full_growth_review'):source['full_growth_review']['input_key']+=':midday'
  if source.get('morning_fresh_inputs',{}).get('errors'):raise ValueError('Fresh completed-day recommendation inputs incomplete')
  minima={}
  for c in rough['campaigns']:
@@ -116,10 +132,18 @@ def attach(io,bundle,day):
   def get(self,key):return io.get(key+':midday' if key.startswith('china_agent:daily_growth:')else key)
   def create(self,key,value):return io.create(key+':midday' if key.startswith('china_agent:daily_growth:')else key,value)
   def __getattr__(self,name):return getattr(io,name)
- review=attach_directions(apply(growth_enrich(MiddayGrowthIO(),source,enhance(build(source,minima),source)),source,minima),source)
+ review=apply(enhance(build(source,minima),source),source,minima)
+ if source.get('full_growth_inputs'):
+  from china_advertising_full_growth import enrich as full_review
+  review=full_review(MiddayFullIO(),source,review)
+ else:review=growth_enrich(MiddayGrowthIO(),source,review)
+ review=attach_directions(review,source)
  from china_codex_reports import review_advertising
  review=review_advertising(io,review,source,'advertising:'+day+':midday',bundle)
+ from china_sales_growth_review import attach as sales_review
+ review=sales_review(review)
  if not review.get('economic_review_complete'):raise ValueError('Incomplete economic review; do not freeze empty recommendations')
  key='china_agent:advertising_midday_completed:'+day+':v1';save(io,key,dict(source=source,review=review,status='complete',observed_at=source['observed_at'],wb_writes=0))
  return merge_completed(bundle,review,key)
+
 

@@ -54,7 +54,8 @@ class ReplacementTests(unittest.TestCase):
  def test_approval_before_updated_image_cannot_execute(self):
   io=Fake();io.validate_owner=lambda _:None
   with self.assertRaisesRegex(ValueError,'predates'):
-   execute(io,dict(created_at='2026-10-27T05:00:00Z'),dict(visible_from='2026-10-27T06:00:00Z'))
+   execute(io,dict(created_at='2026-10-27T05:00:00Z'),dict(visible_from='2026-10-27T06:00:00Z',expires_at='9999-12-31T00:00:00+00:00'))
 
 if __name__=='__main__':unittest.main()
+
 

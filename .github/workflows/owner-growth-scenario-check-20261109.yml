@@ -1,0 +1,102 @@
+name: Owner verify full daily sales-growth scenario without execution
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-growth-scenario-check-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  daily:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0 openai==3.42.1 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Check advertising arithmetic and duplicate safeguards
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
+      - name: Read current China day and deliver green midday report
+        working-directory: source
+        env:
+          OPENAI_API_KEY: "" # Owner: no paid model API
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          PYTHONPATH=../scripts:. python - <<'PY'
+          import copy,json,os,requests
+          from datetime import datetime,timezone
+          from urllib.parse import urlparse
+          from china_price_apply import IO
+          from china_advertising_v2 import collect,refresh_budget_context
+          from china_advertising_full_growth import collect as full_collect,proposed_actions,addition_actions
+          io=IO();day='2026-11-09';root='china_agent:owner_growth_scenario:2026-11-09:v1'
+          if io.get(root):raise SystemExit('Existing review; no repeat collection')
+          original=requests.sessions.Session.request
+          def guarded(session,method,url,**kw):
+           u=urlparse(url);m=method.upper()
+           allowed=m=='GET' and u.scheme=='https' and u.hostname!='api.telegram.org'
+           if u.hostname==urlparse(io.url).hostname and u.path=='/rest/v1/telegram_api_cache'and m in ['GET','POST','PATCH']:allowed=True
+           if u.hostname=='advert-api.wildberries.ru'and m=='POST'and u.path in ['/api/advert/v2/budget','/api/advert/v1/bids/min']:allowed=True
+           if u.hostname=='marketplace-api.wildberries.ru'and m=='POST'and u.path=='/api/v3/stocks/2126188':allowed=True
+           if not allowed:raise ValueError('Read-only preview rejected operation')
+           return original(session,method,url,**kw)
+          requests.sessions.Session.request=guarded
+          source=refresh_budget_context(io,collect(io,day),day)
+          suffix=':growth_upgrade'
+          base='china_agent:advertising_full_growth:'+day+':v1:inputs'
+          old=io.get(base)or{}
+          class ReadIO:
+           def key(self,k):return k+suffix if k.startswith('china_agent:advertising_full_growth:')else k
+           def get(self,k):return io.get(self.key(k))
+           def create(self,k,v):return io.create(self.key(k),v)
+           def put(self,k,v):return io.put(self.key(k),v)
+           def __getattr__(self,n):return getattr(io,n)
+          w=ReadIO()
+          if not w.get(base):
+           seed=dict(status='collecting',created_at=datetime.now(timezone.utc).isoformat(),cabinet='token_3')
+           own=old.get('own',{})
+           if own.get('period_to')==source['period_to']:seed['own']=copy.deepcopy(own)
+           w.create(base,seed)
+          s=full_collect(w,source,day)
+          s['full_growth_review']['input_key']=base+suffix
+          raises,unready=proposed_actions(s);adds=addition_actions(s,raises)
+          for a in raises+adds:a['growth_evidence']['source_key']=base+suffix
+          summary=dict(status='complete',observed_at=datetime.now(timezone.utc).isoformat(),period_to=s['period_to'],scope=s['full_growth_review'],raises=raises,additions=adds,unready=unready,scanned_placements=len(s['full_growth_inputs']['addition_candidates']),execution_authorized=False,wb_writes=0,telegram_calls=0,funding_is_growth=False)
+          assert io.create(root,summary)
+          print(json.dumps(dict(status=summary['status'],raises=len(raises),additions=len(adds),scanned_placements=summary['scanned_placements'],wb_writes=0,telegram_calls=0)))
+          
+          PY

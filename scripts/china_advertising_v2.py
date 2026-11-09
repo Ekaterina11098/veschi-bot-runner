@@ -557,8 +557,11 @@ def prepare(io,day):
  result=owner_policy(io,attach(result,s))
  from china_codex_reports import review_advertising
  result=review_advertising(io,result,s,'advertising:'+day+':morning')
+ from china_sales_growth_review import attach as sales_review
+ result=sales_review(result)
  result['mandatory_campaign_format']=(io.get(FORMAT)or{}).get('mandatory') is True
  return result
+
 
 
 

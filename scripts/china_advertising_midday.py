@@ -71,7 +71,7 @@ def prepare_midday(io,day,source=None):
  for batch in source['batches'].values():
   raw={r['advertId']:r for r in batch['stats']}
   for c in batch['campaigns'].get('adverts',[]):
-   if never_started_draft(c):continue
+   if never_started_draft(c) or c['status']in[7,8,-1]:continue
    draft=False
    rec=raw.get(c['id']);d=next((x for x in (rec or {}).get('days',[]) if x['date'][:10]==day),None)
    metric=daily_metrics(d) if d else dict(ZERO) if rec else None
@@ -226,5 +226,6 @@ def run():
  r=deliver(io,day,files,telegram_sender(io),binder=lambda f,r:bind(io,f,r),delivery_key=key,expected_families={'drr'})
  print(json.dumps(dict(status=r['status'],day=day,wb_writes=0)))
 if __name__=='__main__':run()
+
 
 

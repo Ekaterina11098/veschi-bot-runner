@@ -11,7 +11,7 @@ class HiddenDrafts(unittest.TestCase):
    self.assertFalse(never_started_draft(c))
  def draft(self):return dict(id=40892162,status=4,timestamps=dict(started=None))
  def test_morning_draft_needs_no_budget_or_statistical_placeholder(self):
-  source=dict(ids=[40892162],period_to='2026-10-26',observed_at='2026-10-27T04:00:00Z',catalogue=dict(rows=[]),executions=[],config={},batches={'0':dict(campaigns=dict(adverts=[self.draft()]),stats=[],budgets=dict(adverts=[]))})
+  source=dict(ids=[40892162],period_to='2026-10-26',observed_at='2026-10-27T04:00:00Z',catalogue=dict(rows=[]),executions=[],config={'minTopUp':10000},batches={'0':dict(campaigns=dict(adverts=[self.draft()]),stats=[],budgets=dict(adverts=[]))})
   original=copy.deepcopy(source)
   self.assertEqual([],build(source)['campaigns'])
   self.assertEqual(original,source)
@@ -23,3 +23,4 @@ class HiddenDrafts(unittest.TestCase):
    bundle=prepare_midday(IO(),'2026-10-27')
   self.assertEqual([1,2],[c['id'] for c in bundle['campaigns']])
 if __name__=='__main__':unittest.main()
+

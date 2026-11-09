@@ -117,7 +117,7 @@ class InvalidatedPlanTests(unittest.TestCase):
   from china_daily_ad_actions import execute
   from test_china_advertising_v2 import Fake
   cache=Fake();cache.validate_owner=lambda _:None
-  with self.assertRaisesRegex(ValueError,'invalidated'):
+  with self.assertRaisesRegex(ValueError,'revoked|invalidated'):
    execute(cache,{},dict(invalidated_at='2026-10-27T05:00:00Z'))
 
 class FrozenDeliveryTests(unittest.TestCase):
@@ -159,7 +159,7 @@ class BudgetClarityTests(unittest.TestCase):
   with patch.object(ImageDraw.ImageDraw,'text',capture):files=render(bundle)
   self.assertTrue(any('нехватка' in s.lower() for s in calls))
   visible=' '.join(' '.join(calls).split())
-  self.assertNotIn('свежая собственная экономика',visible)
+  self.assertIn('свежая собственная экономика',visible)
   self.assertIn('Пока не пополнять',visible)
   self.assertNotIn('после исполнения рекомендаций РК',visible)
   self.assertEqual(files[-1]['actions'],[]) # Owner4Nov: visible recommendations never create amount approvals
@@ -168,4 +168,5 @@ class BudgetClarityTests(unittest.TestCase):
   policy=type('Policy',(),{'get':lambda self,key:{'morning_attention_png':False}})()
   with patch('china_price_apply.IO',return_value=policy):
    self.assertEqual(china_agent_reports.daily_loss(),'disabled_by_owner')
+
 

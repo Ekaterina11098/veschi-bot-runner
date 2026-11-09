@@ -28,8 +28,13 @@ class CampaignBudgetTests(unittest.TestCase):
   self.assertTrue(self.evaluate(*data)['preliminary'])
  def test_changed_day_excluded_and_waits_for_first_full_day(self):
   data=list(fixture());data[-1]=[dict(cid=7,nm=1,kind='bid',at='2026-11-03T12:00:00+00:00')]
-  self.assertEqual(self.evaluate(*data)['status'],'waiting')
+  result=self.evaluate(*data)
+  self.assertEqual(result['evaluation_status'],'waiting')
+  self.assertFalse(result['post_change_result_available'])
+  self.assertEqual(result['funding_basis'],'continuation_historical_traffic_current_economics')
+  self.assertTrue(result['ready']) # provisional funding is not proof of post-change growth
  def test_unreconciled_campaign_and_sku_attribution_not_ready(self):
   data=list(fixture());data[1]['days'][0]['orders']=5
   self.assertFalse(self.evaluate(*data)['ready'])
 if __name__=='__main__':unittest.main()
+

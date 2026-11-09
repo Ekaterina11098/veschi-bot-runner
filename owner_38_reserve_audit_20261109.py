@@ -89,12 +89,27 @@ def wb_audit(result):
         token=g.cabinet_tokens()[2]
         status=g.api('POST',g.WB_MARKET+'/api/v3/orders/status',token,json={'orders':[int(u['id']) for u in units]})
         result['current_statuses']=status
-        docs=[dict(group=u['group']) for u in units]
-        # Complete exact supply ID sets, including older orders missing from discovery.
-        complete,proof=complete_wb_supply_history(g,units,docs)
-        result['supply_proof']=proof
-        result['supply_units']=[u for u in complete if u['article']==ART]
-        result['original_units']=units
+        result['original_units']=units;result['supply_proof']=[];result['supply_units']=[]
+        def checkpoint():
+            with store.transaction():store.sql('UPDATE stock_runs SET snapshot=? WHERE id=?',(canonical(result),ROOT))
+        checkpoint()
+        all_units=source['unposted_orders']['units']
+        for group in sorted({u['group'] for u in units}):
+            supply=group[3:]
+            ids=g.api('GET',g.WB_MARKET+'/api/marketplace/v3/supplies/'+supply+'/order-ids',token,retry_read_network=True)['orderIds']
+            info=g.api('GET',g.WB_MARKET+'/api/v3/supplies/'+supply,token,retry_read_network=True)
+            result.setdefault('membership',[]).append(dict(supply=supply,ids=ids,info=info,removed=[u['id'] for u in units if u['group']==group and int(u['id']) not in ids]))
+            checkpoint()
+            members=[u for u in all_units if u['group']==group and int(u['id']) in ids]
+            if not ids:continue
+            if not members:
+                result['errors'][supply]='No retained anchor for nonempty supply';checkpoint();continue
+            try:
+                complete,proof=complete_wb_supply_history(g,members,[dict(group=group)])
+                result['supply_proof']+=proof
+                result['supply_units'] += [u for u in complete if u['article']==ART]
+            except Exception as exc:result['errors'][supply]=str(exc)
+            checkpoint()
 if __name__=='__main__':main()
 
 

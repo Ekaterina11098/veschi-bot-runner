@@ -109,6 +109,26 @@ class Flow(unittest.TestCase):
    def tg(s,method,body):sent.append(body);raise TimeoutError()
   with patch('ooo_report_executor.DB',return_value=self.db),patch('ooo_report_executor.Dialogue',TG):notify();notify()
   self.assertEqual(len(sent),1);self.assertEqual(self.db.get(LEGACY+':execution')['completion_delivery']['status'],'uncertain')
+ def test_amendment_1200_continues_readback_without_redeposit(self):
+  m={'cabinet':'token_1','currency':'KGS','actions':[],'topups':[{'cid':39605581,'amount_kgs':1200}],'other_changes':[]}
+  self.db.data[LEGACY+':repair_500']={'status':'approved','manifest_sha256':'legacy','expires_at':self.exp}
+  self.db.data[LEGACY+':funding_amendment']={'status':'approved','manifest':m,'manifest_sha256':digest(m),'expires_at':self.exp}
+  self.db.data[LEGACY+':execution']={'status':'waiting_shared_quota','manifest_sha256':'legacy','funding_repair_error':'minimum1200','funding_config_checked_at':'checked','expected':{'39605581':self.c},'steps':{'memberships':{'status':'accepted'},'bids':{'status':'accepted'},'deposit_39605581_500':{'status':'rejected','body':{'type':1}},'deposit_39605581_500_repair1':{'status':'rejected'}}}
+  calls=[];budgets=[0]
+  def request(method,url,**kw):
+   calls.append((method,url,kw))
+   if url.endswith('/deposit'):return Response(200,{'total':1300,'currency':'KGS'})
+   if url.endswith('/adverts'):return Response(200,{'adverts':[self.c]})
+   if url.endswith('/budget'):
+    budgets[0]+=1
+    if budgets[0]==1:return Response(429,{}, {'Retry-After':'1'})
+    return Response(200,{'adverts':[{'advertId':39605581,'total':1300,'currency':'KGS'}]})
+   raise AssertionError(url)
+  x=Executor(self.db,'test',request);x.repair_legacy()
+  self.assertEqual(self.db.get(LEGACY+':execution')['status'],'waiting_shared_quota')
+  self.db.data={k:v for k,v in self.db.data.items()if not k.startswith('wb-pause:')};x.repair_legacy()
+  self.assertEqual(self.db.get(LEGACY+':execution')['status'],'verified')
+  deposits=[kw for _,url,kw in calls if url.endswith('/deposit')];self.assertEqual(len(deposits),1);self.assertEqual(deposits[0]['json']['sum'],1200)
 
 if __name__=='__main__':unittest.main()
 

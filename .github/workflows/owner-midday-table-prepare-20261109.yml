@@ -1,0 +1,61 @@
+name: Owner prepare agreed table without closed campaigns
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-midday-table-prepare-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: china-midday-advertising-report
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 10ca471ebdc30e8979abeb6286434c51fe218931
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Deliver reviewed frozen midday PNG only; no WB access
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import base64,copy
+          from datetime import datetime
+          from china_price_apply import IO
+          from china_advertising_midday import render_midday,covered_totals
+          io=IO();day='2026-11-09'
+          key='china_agent:owner_midday_table_correction:2026-11-09:v1'
+          if io.get(key):raise SystemExit('Existing correction; no regeneration')
+          old=io.get('china_agent:advertising_midday_artifacts:'+day+':v1')
+          source=io.get(old['recovery_source'])
+          campaigns=source['advertising']['campaigns']
+          b=copy.deepcopy(old['bundle'])
+          removed=[r['id'] for r in b['campaigns'] if campaigns[str(r['id'])]['status'] in [7,8,-1]]
+          b['campaigns']=[r for r in b['campaigns'] if r['id'] not in removed]
+          assert len(b['campaigns'])==20 and all(r['today'] is not None for r in b['campaigns'])
+          assert all(not r['attention'] for r in b['campaigns'])
+          b['recommendation_directions']={k:dict(status='deferred_by_owner',count=0)for k in ['raise','add','reduce','exclude']}
+          files=[]
+          for f in render_midday(b):
+           assert not f['actions']
+           files.append({k:v for k,v in f.items()if k!='bytes'}|dict(b64=base64.b64encode(f['bytes']).decode()))
+          assert len(files)==1
+          value=dict(status='prepared_review',bundle=b,files=files,removed_closed_ids=removed,coverage=covered_totals(b['campaigns']),source_key=old['recovery_source'],target_message_id=813,wb_writes=0,telegram_calls=0,owner_decisions_unchanged=True)
+          assert io.create(key,value)
+          print('Prepared 20 covered campaigns; closed excluded; no external sends')
+          
+          PY

@@ -35,7 +35,7 @@ class SemanticPositiveTests(unittest.TestCase):
   with patch('review_semantic_positive.request_assessment',return_value=self.response()) as post:
    semantic.classify_fields('Фраза','','')
    semantic.classify_fields('Фраза','','')
-   semantic.classify_fields('Фраза','','Порвалась')
+   semantic.classify_fields('Фраза','','Другая фраза')
    self.assertEqual(post.call_count,2)
  def test_disabled_or_missing_key_never_calls_api(self):
   with patch.dict(os.environ,{'REVIEW_SEMANTIC_AUTO_FIVE_STAR':'0'}),patch('review_semantic_positive.request_assessment') as post:
@@ -56,3 +56,5 @@ class SemanticPositiveTests(unittest.TestCase):
    with patch('review_semantic_positive.request_assessment',return_value=self.response()) as post:
     self.assertFalse(semantic.classify_fields(text,'','')['eligible'])
     post.assert_not_called()
+
+from test_review_complaint_guard import ComplaintGuardTests

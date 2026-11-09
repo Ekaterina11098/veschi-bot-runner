@@ -102,6 +102,8 @@ def classify(item,kind='feedbacks',cabinet=None):
  fields=[field(item,k) for k in ('text','pros','cons')]
  if any(v is None for v in fields):return {'eligible':False,'reason':'unsupported_source'}
  text,pros,cons=fields
+ from review_semantic_positive import explicit_concern
+ if explicit_concern(text,pros,cons):return {'eligible':False,'reason':'explicit_concern'}
  if cabinet=='token_3' and re.search(r'сомнева(?:юсь|емся|ется|ются)|есть\s+сомнения|не\s+уверен[аы]?', ' '.join(fields).lower()):return {'eligible':False,'reason':'china_explicit_uncertainty'}
  # Buyers sometimes put praise in cons. Qualify its text by the same closed
  # vocabulary; never treat the field name alone as evidence of a complaint.

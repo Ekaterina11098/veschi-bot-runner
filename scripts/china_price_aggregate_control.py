@@ -14,6 +14,7 @@ def build(worker):
     from china_agent.expected_order_profit import buyout_from_product
     from china_agent.price_experiment_result import experiment_result
     from analytics.mpstats_primary import products
+    from china_price_period import period
     from china_agent.daily_report_worker import MSK
     state=worker.get('china_agent:demand_watch:v1') or {}
     tracked=canonical_change_days(tracked_rows(state,worker.day),verified_price_history(worker))
@@ -28,9 +29,11 @@ def build(worker):
     read=lambda t,p:worker.db('GET',t,params=p)
     datasets={};sources=[]
     for a,b in sorted(windows):
-        rows,marker=products(read,'token_3',a,b,datetime.now(MSK))
-        if not marker:raise RuntimeError('Price control exact-period source missing: '+a+':'+b)
-        datasets[a,b]={str(r['nm_id']):r for r in rows};sources.append(marker['id'])
+        rows,marker=period(worker,a,b)
+        grouped={}
+        for row in rows:grouped.setdefault(str(row['nm_id']),[]).append(row)
+        datasets[a,b]={nm:values[0] for nm,values in grouped.items() if len(values)==1}
+        if marker:sources.append(marker['id'])
     rates=datasets[str(rate_start),str(end)]
     costs={r['article'].casefold():r for r in read('analytics_costs',dict(select='article,cost,observed_at,source',limit=5000)) or [] if r.get('article')}
     inputs=worker.get('china_agent:advertising_full_growth:'+str(worker.day)+':v1:inputs') or {}

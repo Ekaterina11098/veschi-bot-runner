@@ -23,7 +23,8 @@ class Preview(PairWorker):
         read=lambda t,p:self.db('GET',t,params=p)
         requests=[]
         for start,end in sorted(windows):
-            rows,marker=products(read,'token_3',start,end,datetime.now(timezone.utc))
+            from china_price_period import period
+            rows,marker=period(self,start,end)
             if marker:continue
             requests.append(dict(cabinet='token_3',tool='lk_wb_products',key='china-control:'+start+':'+end,
                 arguments=dict(date_from=start,date_to=end,start_row=0,end_row=1500),priority=90))
@@ -43,7 +44,7 @@ class Preview(PairWorker):
                     return
                 self.db('POST','analytics_snapshots',body=dict(fields,source=source,status='complete',payload=[value]))
             if obs.get('retry_after'):self.save('mpstats:cooldown',dict(pending=True),max(1,obs['retry_after'])/86400)
-        def extra(call,checks,known):return execute_reads(call,checks,known,requests,{},persist,max_requests=min(8,len(requests)))
+        def extra(call,checks,known):return execute_reads(call,checks,known,requests,{},persist,max_requests=min(12,len(requests)))
         discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=extra)
 
     def build(self):

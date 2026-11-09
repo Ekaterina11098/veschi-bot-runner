@@ -34,7 +34,7 @@ with runtime_db() as lock:
        art=g.norm(product.get('article'))
        if art in targets:relevant.append(dict(article=art,quantity=part.get('quantity')))
       text=' '.join(str(loss.get(k) or '') for k in ('description','externalCode','name'))
-      direct=[ident for ident in ids if __import__('re').search(r'(?<!\\d)'+ident+r'(?!\\d)',text)]
+      direct=[ident for ident in ids if __import__('re').search(r'(?<!\d)'+ident+r'(?!\d)',text)]
       output.append(dict(id=loss['id'],name=loss.get('name'),moment=loss.get('moment'),applicable=loss.get('applicable'),
        store_id=uid(loss.get('store')),supplies=sorted(groups),referenced_order_ids=direct,relevant_positions=relevant))
      after=ms_rows(g,g.MS_API+'/entity/loss',filter=filt)

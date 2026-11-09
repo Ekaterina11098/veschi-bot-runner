@@ -39,7 +39,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: bot-business-agent
+  group: china-price-reports
   cancel-in-progress: false
 jobs:
   report:
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 18
     concurrency:
-      group: bot-mpstats-data
+      group: china-price-report-data
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4

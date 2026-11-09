@@ -47,3 +47,5 @@ jobs:
           retention-days: 30
 
 # Read-only retry with supported MS filter.
+
+# Audit removed membership independently; never clear reserve automatically.

@@ -15,12 +15,20 @@ def overlay(report,coverage):
     result=copy.deepcopy(report)
     start=date.fromisoformat(report['date_from']);end=date.fromisoformat(report['date_to'])
     for nm,item in coverage.get('products',{}).items():
-        if (nm in result.get('products',{}) or item.get('status')!='complete'
+        if (item.get('status')!='complete'
                 or item.get('period_from')!=str(start) or item.get('period_to')!=str(end)):
             continue
         values=item.get('orders_each_day')
         if (not isinstance(values,list) or len(values)!=(end-start).days+1
                 or any(type(v) is not int or v<0 for v in values) or sum(values)!=item.get('orders')):
+            continue
+        existing=result.get('products',{}).get(nm)
+        if existing:
+            # A present aggregate is not verified daily history. Replace only
+            # the order criterion with the exact-day receipt; preserve finance.
+            result['products'][nm]=dict(existing,orders=item['orders'],cancelled_orders=item.get('cancelled_orders'),
+                    order_days=[str(start+timedelta(days=i)) for i,v in enumerate(values) for _ in range(v)],
+                    order_history_source=item['source'],order_coverage_only=True)
             continue
         result.setdefault('products',{})[nm]=dict(article=item['article'],nm_id=nm,orders=item['orders'],
                 cancelled_orders=item.get('cancelled_orders'),order_days=[str(start+timedelta(days=i)) for i,v in enumerate(values) for _ in range(v)],
@@ -28,6 +36,9 @@ def overlay(report,coverage):
                 sale_days=None,source=item['source'],order_coverage_only=True,financial_data_complete=False)
     result['order_supplement']=dict(status=coverage['status'],products=len(coverage.get('products',{})),
             catalogue=coverage['catalogue_count'],remaining=coverage.get('remaining',{}),financial_totals_unchanged=True)
+    if coverage['status']=='complete' and not coverage.get('remaining'):
+        result['available']=True
+        result['order_coverage_complete']=True
     return result
 
 class CoverageWorker(ScheduledWorker):

@@ -1,0 +1,38 @@
+name: Ozon FBS daily 19:00 Moscow independent
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "run or verify"
+        type: choice
+        options: [run, verify]
+        default: run
+permissions:
+  contents: read
+concurrency:
+  group: fbs-document-chain-production
+  cancel-in-progress: false
+jobs:
+  ozon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify Ozon daily guard without marketplace writes
+        run: |
+          python -m py_compile scripts/ozon_daily_1900.py scripts/fbs_ozon_chain.py
+          python -m unittest discover -s scripts -p 'test_fbs_ozon*.py' -v
+      - name: Run one Ozon daily batch at 19 Moscow
+        if: ${{ inputs.mode == 'run' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          FBS_EXECUTION_KIND: daily
+        run: python scripts/ozon_daily_1900.py

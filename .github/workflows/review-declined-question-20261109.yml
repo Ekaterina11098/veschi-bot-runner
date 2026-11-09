@@ -1,0 +1,73 @@
+name: Remove explicitly declined question from content
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/review-declined-question-20261109.yml']
+permissions:
+  contents: read
+concurrency:
+  group: review-declined-question-20261109
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /test_review_cleanup.py
+            /review-approval-preparation/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'psycopg[binary]==3.2.10'
+      - run: python -m unittest test_review_cleanup.py
+      - name: Remove only the owner-declined question
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os,sys,hmac,hashlib,base64,json
+          sys.path.insert(0,'review-approval-preparation')
+          import psycopg
+          from review_telegram_approval import Approval,Repository
+          from review_telegram_runtime import TelegramTransport
+          from review_approval_cleanup import cleanup_completed
+          root=os.environ['SUPABASE_SECRET_KEY'].encode()
+          password=hmac.new(root,b'veschi:review-approval-login:20261015:v1',hashlib.sha256).hexdigest()
+          with psycopg.connect(host='aws-0-eu-central-1.pooler.supabase.com',port=5432,dbname='postgres',user='review_approval_login_20261015.abxgjoqlddhtcmjcjwxw',password=password,sslmode='require',autocommit=True,connect_timeout=15,options='-c statement_timeout=30000') as conn:
+              row=conn.execute("SELECT payload FROM review_approval.source_cache WHERE cache_key='reviews:telegram-approval:config:v1'").fetchone()
+              cfg=row[0] if row else {}
+              if not cfg.get('enabled') or not cfg.get('destination_verified'):raise SystemExit('Approval destination not enabled and verified')
+              secret=base64.b64encode(hmac.new(root,b'veschi:review-approval-ingress:20261015:v1',hashlib.sha256).digest()).decode()
+              app=Approval(Repository(conn,postgres=True),secret,cfg['owner_id'],cfg['chat_id'],cfg['bot_id'],enabled=True)
+              class DeleteOnly:
+                  def __init__(self):self.transport=TelegramTransport(os.environ['TELEGRAM_BOT_TOKEN'])
+                  def call(self,method,payload):
+                      if method!='deleteMessage':raise RuntimeError('Cleanup permits deletion only')
+                      return self.transport.call(method,payload)
+              repo=app.repo
+              token='49f2c4766252d46e1edd8c166eb11a9d'
+              card=repo.get('cards',token)
+              if not card or (card.get('cabinet'),card.get('kind'),card.get('item_id'),card.get('status'),card.get('message_id'))!=('token_1','questions','-QOErKEBByWDs8n6Xyfu','held',891):raise RuntimeError('Declined question binding changed')
+              if app.card_chat(card)!='-1003932246120':raise RuntimeError('Wrong chat')
+              receipt='telegram-cleanup:-1003932246120:891'
+              with repo.transaction():
+                  old=repo.get('events',receipt,lock=True)
+                  if old:
+                      print(json.dumps(dict(status=old['status'],repeat=False)));raise SystemExit(0)
+                  repo.put('events',receipt,dict(status='deleting',message_id=891,chat_id=app.card_chat(card),card_token=token,reason='owner_declined_question'))
+              try:
+                  response=DeleteOnly().call('deleteMessage',dict(chat_id=app.card_chat(card),message_id=891))
+                  if response is not True:raise RuntimeError('Deletion unconfirmed')
+              except Exception:
+                  with repo.transaction():repo.put('events',receipt,dict(status='uncertain',message_id=891,chat_id=app.card_chat(card),card_token=token))
+                  raise
+              with repo.transaction():repo.put('events',receipt,dict(status='confirmed',message_id=891,chat_id=app.card_chat(card),card_token=token,reason='owner_declined_question',checked_at=__import__('time').time()))
+              print(json.dumps(dict(status='confirmed',message_id=891)))
+          PY

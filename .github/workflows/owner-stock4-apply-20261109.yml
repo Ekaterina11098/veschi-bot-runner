@@ -1,0 +1,98 @@
+name: Owner approved four SKU stock publication
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-stock4-apply-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 10ca471ebdc30e8979abeb6286434c51fe218931
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Publish exact owner approved stock and verify
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          """Fixed four-SKU owner stock publication. One PUT, no mutation replay."""
+          import os,json,base64,time
+          from datetime import datetime,timezone
+          import requests
+          from china_loss_execute import IO
+          from china_moysklad_read import read_stock
+          from china_morning_readiness import current_prices,published_stock
+          ROOT='china_agent:owner_stock4_apply:2026-11-09:v1'
+          AUTH=ROOT+':authorization'
+          WH=2126188
+          SCOPE={1560345288:('37-FurManizhka-dbrown',43),1473244348:('602-JessicaBag-green',4),1473243916:('64-NoelBag-zchocolate',18),1473245494:('143-ReginaBag-black',11)}
+          def stamp():return datetime.now(timezone.utc).isoformat()
+          def execute(io,items,before,write,read,sleep=time.sleep):
+           if io.get(ROOT):return io.get(ROOT)
+           e=dict(status='prepared',warehouse_id=WH,items=items,before=before,wb_writes=0,telegram_calls=0,source_authorization=AUTH,prepared_at=stamp())
+           if not io.create(ROOT,e):return io.get(ROOT)
+           for row in items:
+            assert io.create(ROOT+':item:'+str(row['nm_id']),dict(status='prepared',before=before[str(row['nm_id'])],target=row,warehouse_id=WH))
+           e.update(status='writing',wb_writes=1,write_started_at=stamp());io.put(ROOT,e)
+           try:code=write({'stocks':[dict(chrtId=x['chrt_id'],amount=x['amount'])for x in items]});e['write_http_status']=code
+           except Exception as ex:e['write_error']=type(ex).__name__;e['status']='uncertain'
+           # Even a lost response gets only readback. Never repeat PUT.
+           for attempt in range(4):
+            try:
+             after=read();e['after']=after;e['readback_at']=stamp()
+             if all(after.get(str(x['nm_id']))==x['amount']for x in items):
+              e['status']='verified';break
+            except Exception as ex:e['readback_error']=type(ex).__name__
+            if attempt<3:sleep(4)
+           if e['status']!='verified':e['status']='uncertain'
+           for row in items:
+            nm=str(row['nm_id']);io.put(ROOT+':item:'+nm,dict(status='verified'if e.get('after',{}).get(nm)==row['amount']else'uncertain',before=before[nm],target=row,after=e.get('after',{}).get(nm),warehouse_id=WH,observed_at=e.get('readback_at')))
+           e['completed_at']=stamp();io.put(ROOT,e);return e
+          def main():
+           assert os.environ['GITHUB_REPOSITORY']=='Ekaterina11098/veschi-bot-runner'and os.environ['GITHUB_REF']=='refs/heads/main'
+           io=IO()
+           if io.get(ROOT):return
+           a=io.get(AUTH);assert a and a['execution_authorized']is True and a['warehouse_id']==WH and a['scope']=={str(n):v[1]for n,v in SCOPE.items()}
+           claims=json.loads(base64.urlsafe_b64decode(io.token.split('.')[1]+'='*(-len(io.token.split('.')[1])%4)))
+           assert claims.get('t')is False and claims.get('exp',0)>time.time() and not(int(claims.get('s',0))&(1<<30))
+           identities=io.db('analytics_snapshots?cabinet=eq.token_3&source=eq.seller_identity&status=eq.complete&select=payload&limit=100')
+           assert {r['payload'].get('sid')for r in identities}=={claims.get('sid')}and claims.get('sid')
+           def request(method,path,body=None):
+            assert method=='GET'and path=='/api/v3/warehouses' or method in('POST','PUT')and path=='/api/v3/stocks/'+str(WH)
+            r=requests.request(method,'https://marketplace-api.wildberries.ru'+path,headers={'Authorization':io.token},json=body,timeout=45,allow_redirects=False)
+            if not r.ok:raise RuntimeError('WB HTTP '+str(r.status_code))
+            return r
+           ws=request('GET','/api/v3/warehouses').json();warehouse=[w for w in ws if w.get('id')==WH];assert len(warehouse)==1 and not warehouse[0].get('isDeleting',False)
+           prices=current_prices(io,list(SCOPE));assert len(prices['rows'])==4
+           st=read_stock([x[0]for x in SCOPE.values()]);assert st['coverage_complete']and st['warehouse_id']=='3c67619d-f25d-11ee-0a80-0c6f000a027a'
+           stock={r['article'].casefold():r for r in st['rows']};items=[]
+           for p in prices['rows']:
+            article,amount=SCOPE[p['nm_id']];assert p['article'].casefold()==article.casefold()and len(p['size_ids'])==1
+            row=stock[article.casefold()];assert row['stock']-row['reserve']==amount and type(amount)is int and amount>=0
+            items.append(dict(nm_id=p['nm_id'],article=article,chrt_id=p['size_ids'][0],amount=amount))
+           def read():
+            p=published_stock(io,prices,list(SCOPE));assert not p['missing_nm_ids'];return p['amounts']
+           before=read();assert set(before)=={str(n)for n in SCOPE}and all(v==0 for v in before.values())
+           assert io.create(ROOT+':preflight',dict(status='complete',stock=st,prices=prices,before=before,warehouse=warehouse[0],identity_verified=True,observed_at=stamp(),wb_writes=0))
+           e=execute(io,items,before,lambda body:request('PUT','/api/v3/stocks/'+str(WH),body).status_code,read)
+           print('Stock publication state: '+e['status']+'; inspect private canonical receipts')
+          if __name__=='__main__':main()
+          PY

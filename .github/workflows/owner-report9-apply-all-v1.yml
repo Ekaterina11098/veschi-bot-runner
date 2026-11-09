@@ -1,0 +1,156 @@
+name: Owner confirmed report actions 09Nov
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-report9-apply-all-v1.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 1fc94106bc8e208169b1bd32a670b474e2e08d82
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Exact private owner grant, current preflight, verified writes and Telegram result
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          """One explicit Codex owner command; fixed existing reports, no queue scan."""
+          import os,json,copy,time,base64,hashlib,io as bio,textwrap
+          from datetime import datetime,timezone
+          import requests
+          from china_loss_execute import IO as BaseIO
+          from china_loss_control import PLAN,CHAT,BOT,OWNER,digest
+          from china_daily_ad_actions import execute,EXEC
+          from china_daily_report_validity import require
+          ROOT='china_agent:owner_report_apply:2026-11-09:v1'
+          class IO(BaseIO):
+           def put(self,k,v):
+            if self.get(k) is None:
+             if not self.create(k,v):raise RuntimeError('Concurrent state creation')
+            else:super().put(k,v)
+           def validate_owner(self,a):
+            grant=self.get(ROOT+':authorization')or{}
+            if grant.get('status')!='owner_approved' or grant.get('author_id')!=OWNER or a.get('owner_command_key')!=ROOT+':authorization':raise ValueError('Explicit Codex owner grant missing')
+            if grant['plan_hashes'].get(a['family'])!=a['plan_sha256']:raise ValueError('Owner exact plan scope changed')
+            super().validate_owner(a)
+          def stamp():return datetime.now(timezone.utc).isoformat()
+          io=IO()
+          if io.get(ROOT):
+           print('Existing owner run; inspect journal, never blindly repeat');raise SystemExit(0)
+          root=dict(status='preflight',started_at=stamp(),plans={},wb_writes=0,source='Explicit owner Codex command09Nov; separate Telegram result requested')
+          assert io.create(ROOT,root)
+          def save():io.put(ROOT,root)
+          def funding_preflight(io,item,before):
+           """Same exact approved amount; complete missing inputs with dated current reads."""
+           from china_morning_readiness import current_prices,published_stock
+           from china_moysklad_read import read_stock
+           e=copy.deepcopy(item.get('budget_evidence')or{})
+           if not e or e.get('coverage',0)<.9 or e.get('modeled_after_ads_cny',0)<=0 or e.get('stress_after_ads_cny',0)<=0:raise ValueError('Funding conservative economics not positive')
+           actual={str(n['nm_id']):n['bids_kopecks']for n in before['nm_settings']}
+           if actual!=e.get('expected_bids'):raise ValueError('Campaign bids changed since approved report')
+           prices=current_prices(io,list(map(int,actual)));pub=published_stock(io,prices,list(map(int,actual)))
+           stock=read_stock([r['article']for r in prices['rows']]);rows={r['article'].casefold():r for r in stock['rows']}
+           if not stock['coverage_complete']or pub['missing_nm_ids']:raise ValueError('Current funding input coverage incomplete')
+           delta=0;filled=[];checks=[]
+           for r in prices['rows']:
+            nm=str(r['nm_id']);old=e['member_inputs'][nm];st=rows[r['article'].casefold()];free=st['stock']-st['reserve'];published=pub['amounts'][nm]
+            if old.get('price')is None or old.get('cost')is None or old.get('stock_free')is None:
+             if not st.get('price')or st['price']<=0:raise ValueError('Missing current own COGS')
+             old.update(price=r['seller_price'],cost=st['price']/100,stock_free=free,published_stock=published);filled.append(nm)
+            if r['seller_price']!=old['price']:raise ValueError('Funding seller price changed for '+r['article'])
+            # Owner08Nov: MSK free stock is availability source; published WB zero is retained, not an automatic veto.
+            if free<=0:
+             if e['attributed_orders_by_nm'].get(nm,0)>0:raise ValueError('No free MSK stock for attributed member '+r['article'])
+             checks.append(dict(nm_id=nm,stock_free=free,published_stock=published,unavailable=True));continue
+            if not st.get('price')or st['price']<=0:raise ValueError('Funding current COGS missing')
+            q=old.get('buyout');fx=float(old['fx'])
+            if q is None and st['price']/100>old['cost']:raise ValueError('Higher COGS with unknown own buyout')
+            if q is not None:delta+=e['attributed_orders_by_nm'].get(nm,0)*q*(st['price']/100-old['cost'])/fx
+            checks.append(dict(nm_id=nm,stock_free=free,published_stock=published,price=r['seller_price'],cost=st['price']/100))
+           if min(e['modeled_after_ads_cny'],e['stress_after_ads_cny'])-delta<=0:raise ValueError('Current COGS no longer supports conservative funding economics')
+           proof=dict(status='verified',observed_at=stamp(),campaign_id=item['campaign_id'],amount_cny=item['amount_cny'],filled_member_inputs=filled,checks=checks,conservative_after_ads_cny=e['stress_after_ads_cny']-delta,wb_writes=0)
+           io.put(ROOT+':funding_preflight:'+str(item['campaign_id']),proof)
+          def addition_proven(item,s):
+           if s.get('status')!='verified':return False
+           b=s.get('before',{});a=s.get('after',{});old={x['nm_id']:x for x in b.get('nm_settings',[])};new={x['nm_id']:x for x in a.get('nm_settings',[])};nm=item['nm_id']
+           return b.get('id')==a.get('id')==item['campaign_id'] and b.get('settings')==a.get('settings')and b.get('status')==a.get('status')and set(new)==set(old)|{nm}and all(new[k]==v for k,v in old.items())and new[nm]['subject']['id']==item['subject_id']and new[nm]['bids_kopecks'].get(item['placement'])==item['target_minor']
+          def send_result(p,e):
+           from china_execution_notice import proven
+           from PIL import Image,ImageDraw,ImageFont
+           byid={x['id']:x for x in p['items']};records=[];verified=[];blocked=[];uncertain=[]
+           for s in e['items']:
+            item=byid[s['id']];ok=addition_proven(item,s)if item['kind']=='ad_add_sku'else proven(item,s)
+            if ok:verified.append(item)
+            elif s.get('status')=='blocked':blocked.append(item)
+            else:uncertain.append(item)
+            label=item.get('article','РК '+str(item['campaign_id']))
+            action=('Пополнить +'+str(item['amount_cny'])+' CNY')if item['kind']=='topup_campaign'else 'Добавить '+str(item['target_minor']/100)+' CNY'if item['kind']=='ad_add_sku'else 'Исключить'if item['kind']=='ad_exclude_sku'else str(item['old_minor']/100)+' → '+str(item['target_minor']/100)+' CNY'
+            result='Проверено WB'+(' · уже выполнено, без повторной записи'if s.get('already_done')else '')if ok else 'Не выполнено: '+s.get('reason','проверка не пройдена')if s.get('status')=='blocked'else 'Требуется проверка результата; повторной записи нет'
+            records.append((label,str(item['campaign_id']),action,result))
+           family=p['family'];caption='Результат выполнения '+('бюджетов'if family=='budgets'else 'рекламных рекомендаций')+' 09.11: проверено WB '+str(len(verified))+' из '+str(len(p['items']))+'.'
+           if family=='budgets':caption+=' Подтверждённые пополнения: '+str(sum(x['amount_cny']for x in verified if x['kind']=='topup_campaign'))+' CNY.'
+           if blocked:caption+=' Не выполнено: '+str(len(blocked))+', причины в таблице.'
+           if uncertain:caption+=' Неподтверждённый результат: '+str(len(uncertain))+'. Повторно не запускал.'
+           font='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';normal=ImageFont.truetype(font,22);bold=ImageFont.truetype(font,25)
+           wrapped=[(textwrap.wrap(a,29),b,c,textwrap.wrap(d,58))for a,b,c,d in records];heights=[max(len(a),len(d),1)*30+28 for a,b,c,d in wrapped];im=Image.new('RGB',(1900,150+sum(heights)), 'white');dr=ImageDraw.Draw(im);dr.text((25,20),caption[:115],font=bold,fill='#122e44');y=100
+           for (a,b,c,d),h in zip(wrapped,heights):
+            dr.rectangle((20,y,1880,y+h-4),fill='#eff5f7');dr.text((30,y+10),'\n'.join(a),font=normal,fill='black');dr.text((450,y+10),b,font=normal,fill='black');dr.text((650,y+10),c,font=normal,fill='black');dr.text((1030,y+10),'\n'.join(d),font=normal,fill='#166534'if d[0].startswith('Проверено')else '#a31a1a');y+=h
+           out=bio.BytesIO();im.save(out,format='PNG');raw=out.getvalue();key=ROOT+':delivery:'+family
+           record=dict(status='sending',caption=caption,sha256=hashlib.sha256(raw).hexdigest(),verified_count=len(verified),blocked_count=len(blocked),uncertain_count=len(uncertain),verified_amount_cny=sum(x.get('amount_cny',0)for x in verified),created_at=stamp(),chat_id=CHAT,bot_id=BOT)
+           if not io.create(key,record):return
+           io.put(ROOT+':result_artifact:'+family,dict(b64=base64.b64encode(raw).decode(),records=records,sha256=record['sha256']))
+           try:
+            response=requests.post('https://api.telegram.org/bot'+io.bot+'/sendPhoto',data={'chat_id':CHAT,'caption':caption,'reply_parameters':json.dumps(dict(message_id=p['report_message_ids'][0],allow_sending_without_reply=True))},files={'photo':('execution-result.png',raw,'image/png')},timeout=50).json()
+            if not response.get('ok'):raise RuntimeError('Telegram result rejected')
+            r=response['result'];assert r['chat']['id']==CHAT and r['from']['id']==BOT and r.get('message_id')
+            record.update(status='sent',message_id=r['message_id'],receipt=r,sent_at=stamp());io.put(key,record)
+           except Exception:
+            record['status']='uncertain';io.put(key,record);raise RuntimeError('Telegram result uncertain; no blind retry')from None
+           return record
+          try:
+           grant=io.get(ROOT+':authorization');assert grant['status']=='owner_approved'and grant['expected_actions']==34
+           plans=[io.get(PLAN+pid)for pid in grant['plan_ids']]
+           assert sum(len(p['items'])for p in plans)==34 and sum(i.get('amount_cny',0)for p in plans for i in p['items'])==4800
+           for p in plans:
+            require(io,p);assert digest(p['items'])==p['plan_sha256']==grant['plan_hashes'][p['family']]
+            if io.get(EXEC+p['plan_id']):raise ValueError('Existing execution; readback required, no replay')
+            assert not any(i.get('nm_id')in(1473245494,1473245510)or i['kind']not in('topup_campaign','ad_set_bid','ad_add_sku','ad_exclude_sku')for i in p['items'])
+            a=dict(sender_id=OWNER,chat_id=CHAT,bot_id=BOT,job_id=278 if p['family']=='budgets'else 277,input_message_id=None,reply_message_id=p['report_message_ids'][0],created_at=grant['created_at'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],family=p['family'],owner_command_key=ROOT+':authorization')
+            io.validate_owner(a);io.put(ROOT+':approval:'+p['family'],a)
+           import china_budget_ready_model
+           china_budget_ready_model.validate_funding=funding_preflight
+           root['status']='executing';save()
+           for p in plans:
+            root['current_family']=p['family'];save();a=io.get(ROOT+':approval:'+p['family']);e=execute(io,a,p)
+            record=send_result(p,e);root['plans'][p['family']]=dict(execution_key=EXEC+p['plan_id'],status=e['status'],delivery_key=ROOT+':delivery:'+p['family'],message_id=record.get('message_id')if record else None,items=[{k:s.get(k)for k in('id','status','reason','already_done')}for s in e['items']]);root['wb_writes']+=e['wb_writes'];save()
+           registry=io.get('china_agent:verified_campaign_state:v1')or{}
+           grouped={}
+           for p in plans:
+            e=io.get(EXEC+p['plan_id']);items={x['id']:x for x in p['items']}
+            for s in e['items']:
+             if s['status']=='verified':grouped.setdefault(items[s['id']]['campaign_id'],[]).append(s)
+           for cid,states in grouped.items():
+            key=ROOT+':campaign:'+str(cid);receipt=dict(status='verified',before=states[0]['before'],after=states[-1]['after'],verified_at=stamp(),source_execution=ROOT,items=states);io.put(key,receipt);registry[str(cid)]=key
+           io.put('china_agent:verified_campaign_state:v1',registry)
+           root.update(status='completed',completed_at=stamp());save();assert io.get(ROOT)['status']=='completed'
+           print('Owner execution finished; exact results and Telegram receipts in private journal')
+          except Exception as ex:
+           root.update(status='attention_required',error_type=type(ex).__name__,error=str(ex) if isinstance(ex,(ValueError,RuntimeError))else type(ex).__name__,failed_at=stamp());save();print('Owner execution stopped; inspect private journal, do not blindly repeat');raise SystemExit(1)
+          PY

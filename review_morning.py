@@ -49,13 +49,13 @@ def refresh_completed(state,now=time.time):
 def collection_plan(kind='feedbacks',china_two_hour=False,now=None,manual=False):
     local=(now or datetime.now(timezone.utc)).astimezone(ZoneInfo('Europe/Moscow'))
     if china_two_hour:
-        if kind!='feedbacks':raise ValueError('China periodic collection supports reviews only')
+        if kind not in ('feedbacks','questions'):raise ValueError('Unsupported China collection kind')
         day=local.date().isoformat()
-        return dict(day=day,cabinets=('token_3',),control='reviews-china-two-hour:'+day,
+        return dict(day=day,cabinets=('token_3',),control=('questions-china-two-hour:' if kind=='questions' else 'reviews-china-two-hour:')+day,
                     cycle_slot=day+':'+str(local.hour//2*2).zfill(2),china_two_hour=True)
     day=target_day(now,manual)
     if not day:return None
-    return dict(day=day,cabinets=('token_1','token_2') if kind=='feedbacks' else CABINETS,
+    return dict(day=day,cabinets=('token_1','token_2'),
                 control=('questions-morning:' if kind=='questions' else 'reviews-morning:')+day,
                 china_two_hour=False)
 
@@ -70,8 +70,7 @@ def resume_collection(state,plan,kind='feedbacks'):
             state['cycle_slot']=plan['cycle_slot']
         return True
     if state.get('status')=='complete' and (kind!='feedbacks' or not refresh_completed(state)):return False
-    if kind=='feedbacks':
-        state.setdefault('scopes',{})['token_3']=dict(status='complete',items=[],collection_owner='reviews-china-two-hour',delegated=True)
+    state.setdefault('scopes',{})['token_3']=dict(status='complete',items=[],collection_owner=('questions-china-two-hour' if kind=='questions' else 'reviews-china-two-hour'),delegated=True)
     return True
 
 def persist_source_snapshot(store,key,payload,reuse_identical=False):
@@ -163,7 +162,7 @@ def main(kind='feedbacks',china_two_hour=False):
                             prior=state['items'].get(key,{})
                             if prior.get('status') in ('confirmed','skipped','manual_present','uncertain','error','auto_queued'):continue
                             remaining=True
-                            candidate=prior or {'version':('china-two-hour-' if china_two_hour else 'morning-')+day+'-'+sha([cabinet,item_id])[:12],'status':'preflight'}
+                            candidate=prior or {'version':(('china-questions-two-hour-' if kind=='questions' else 'china-two-hour-') if china_two_hour else 'morning-')+day+'-'+sha([cabinet,item_id])[:12],'status':'preflight'}
                             state['items'][key]=candidate
                             def prepare_one():
                                 if not eligible(item,cabinet,source,repo,store.read,kind):
@@ -214,7 +213,7 @@ def main(kind='feedbacks',china_two_hour=False):
                         names={'token_1':'ООО','token_2':'ИП','token_3':'Китай'}
                         text=('❓ Утренние вопросы · ' if kind=='questions' else '📩 Утренние отзывы · ')+day+'\n'
                         text+='\n'.join(names[c]+': без ответа в WB — '+str(len(state['scopes'][c]['items'])) for c in cabinets)
-                        if kind=='feedbacks':text+='\nКитай: отдельная проверка отзывов каждые 2 часа.'
+                        text+='\nКитай: отдельная проверка '+('вопросов' if kind=='questions' else 'отзывов')+' каждые 2 часа.'
                         text+='\nАвтоматически поставлено в отправку: '+str(state.get('auto_queued',0))+'\nНовых карточек отправлено: '+str(state['telegram_confirmed'])+'. Уже присланные и отложенные повторно не отправлялись.\nhttps://veschi-ai.streamlit.app/review_manager'
                         summary={'status':'sending','created_at':time.time()}
                         with repo.transaction():repo.put('events',summary_key,summary)

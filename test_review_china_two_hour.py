@@ -37,9 +37,10 @@ class ChinaTwoHourTests(unittest.TestCase):
   self.assertTrue(resume_collection(state,p))
   self.assertTrue(state['scopes']['token_3']['delegated'])
   self.assertEqual(state['scopes']['token_3']['status'],'complete')
-  self.assertEqual(collection_plan('questions',False,now)['cabinets'],('token_1','token_2','token_3'))
+  self.assertEqual(collection_plan('questions',False,now)['cabinets'],('token_1','token_2'))
   self.assertIsNone(collection_plan('feedbacks',False,datetime(2026,11,4,12,tzinfo=timezone.utc)))
-  with self.assertRaises(ValueError):collection_plan('questions',True,now)
+  self.assertEqual(collection_plan('questions',True,now)['control'],'questions-china-two-hour:2026-11-04')
+  self.assertEqual(collection_plan('questions',True,now)['cabinets'],('token_3',))
  def test_busy_or_partial_retries_same_native_collector_then_stops_complete(self):
   collect=Mock(side_effect=[{'status':'busy'},{'status':'collecting'},{'status':'complete'}])
   sleep=Mock()
@@ -77,3 +78,30 @@ class ChinaTwoHourTests(unittest.TestCase):
 
 
 
+
+class ChinaQuestionCycleTests(unittest.TestCase):
+ def test_question_slot_is_independent_and_idempotent(self):
+  now=datetime(2026,11,9,13,17,tzinfo=timezone.utc)
+  q=collection_plan('questions',True,now);r=collection_plan('feedbacks',True,now)
+  self.assertNotEqual(q['control'],r['control'])
+  self.assertEqual(q['cycle_slot'],r['cycle_slot'])
+  state=dict(status='complete',cycle_slot=q['cycle_slot'],items={'token_3:old':{'status':'confirmed'}})
+  self.assertFalse(resume_collection(state,q,'questions'))
+  q2=collection_plan('questions',True,datetime(2026,11,9,15,17,tzinfo=timezone.utc))
+  self.assertTrue(resume_collection(state,q2,'questions'))
+  self.assertIn('token_3:old',state['items'])
+ def test_combined_runner_does_not_repoll_finished_reviews(self):
+  from review_china_two_hour import run_all
+  calls=[]
+  def collect(**kw):
+   calls.append(kw['kind'])
+   return {'status':'collecting' if calls==['feedbacks','questions'] else 'complete'}
+  out=run_all(collect,sleep=lambda _:None,clock=lambda:0)
+  self.assertEqual(out['status'],'complete')
+  self.assertEqual(calls,['feedbacks','questions','questions'])
+ def test_morning_questions_delegate_only_china(self):
+  p=collection_plan('questions',False,datetime(2026,11,9,5,tzinfo=timezone.utc))
+  self.assertEqual(p['cabinets'],('token_1','token_2'))
+  state=dict(status='collecting',scopes={})
+  resume_collection(state,p,'questions')
+  self.assertEqual(state['scopes']['token_3']['collection_owner'],'questions-china-two-hour')

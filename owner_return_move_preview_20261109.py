@@ -35,11 +35,11 @@ def main():
     msk=[s for s in stores if s['name']=='МСК']
     assert len(msk)==1
     target=href(msk[0])
-    docs=rows('/entity/move',filter='moment>=2026-11-02 00:00:00;targetStore='+target,expand='positions.assortment')
+    docs=rows('/entity/move',filter='moment>=2026-11-02 00:00:00',expand='positions.assortment')
     totals={}
     for d in docs:
         source=names.get(href(d.get('sourceStore')),'')
-        if not d.get('applicable') or not ('фбо' in source.casefold() or 'fbo' in source.casefold()):continue
+        if href(d.get('targetStore'))!=target or not d.get('applicable') or not ('фбо' in source.casefold() or 'fbo' in source.casefold()):continue
         ps=d.get('positions',{});parts=ps.get('rows',[])
         if len(parts)!=ps.get('meta',{}).get('size'):parts=rows(href(ps),expand='assortment')
         pos=[]

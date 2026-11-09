@@ -33,8 +33,8 @@ jobs:
             r=requests.post(self.url,headers=self.headers,params={'on_conflict':'cache_key'},json={'cache_key':k,'payload':v,'updated_at':stamp(),'expires_at':'2027-11-09T00:00:00Z'},timeout=45);r.raise_for_status()
            def create(self,k,v):
             h=dict(self.headers,Prefer='resolution=ignore-duplicates,return=representation');r=requests.post(self.url,headers=h,params={'on_conflict':'cache_key'},json={'cache_key':k,'payload':v,'updated_at':stamp(),'expires_at':'2027-11-09T00:00:00Z'},timeout=45);r.raise_for_status();return len(r.json())==1
-          PREVIOUS='ip_agent:documents_restore:2026-11-09:v1:execution:recovery1'
-          ROOT=PREVIOUS+':retryafter'
+          PREVIOUS='ip_agent:documents_restore:2026-11-09:v1:execution:recovery1:retryafter'
+          ROOT=PREVIOUS+':audit_identity'
           APPROVAL='ip_agent:documents_restore:2026-11-09:v1:approval'
           DOC_FIELDS=('id','type','number','productNumber','tradeName','applicant','startDate','endDate','isEndless')
           def norm(s):return re.sub(r'\s+',' ',str(s or '')).strip().upper()
@@ -102,12 +102,15 @@ jobs:
            if not c.create(ROOT,state):return
            attempted=False
            try:
-            seller=req('GET','/api/v1/seller-info',host='common-api.wildberries.ru')
-            if seller.get('sid')!=plan['seller_sid']:raise RuntimeError('Seller identity mismatch')
+            audit=c.get(plan['audit_ref'])
+            if not audit or audit.get('status')!='complete' or (datetime.now(timezone.utc)-datetime.fromisoformat(audit['completed_at'])).total_seconds()>1800:raise RuntimeError('Fresh identity-verified audit required')
+            saved=c.get(plan['audit_ref']+':summary')
+            audit_skus={int(x['nm']):x['sku']for x in saved['items']}
             before=read_all();targets={int(x) for x in plan['nm_ids']};bodies=[];skip=[]
             if len(targets)!=19:raise RuntimeError('Exact19 scope required')
             for nm in sorted(targets):
              if nm not in before:raise RuntimeError('Approved card missing')
+             if before[nm].get('vendorCode')!=audit_skus.get(nm):raise RuntimeError('Audited card identity mismatch')
              body=build(before[nm],plan['document'])
              if body is None:skip.append(nm)
              else:bodies.append(body)

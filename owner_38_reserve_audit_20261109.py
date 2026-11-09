@@ -89,6 +89,9 @@ def wb_audit(result):
         token=g.cabinet_tokens()[2]
         status=g.api('POST',g.WB_MARKET+'/api/v3/orders/status',token,json={'orders':[int(u['id']) for u in units]})
         result['current_statuses']=status
+        physical,unresolved=g.load_ms_stocks_dict()
+        result['live_moscow']=physical.get(ART)
+        result['ms_read_status']=getattr(g,'MS_STOCK_STATUS',{})
         result['original_units']=units;result['supply_proof']=[];result['supply_units']=[]
         def checkpoint():
             with store.transaction():store.sql('UPDATE stock_runs SET snapshot=? WHERE id=?',(canonical(result),ROOT))

@@ -5,7 +5,7 @@ except ModuleNotFoundError:
  sys.modules['requests']=types.SimpleNamespace(RequestException=ConnectionError,request=lambda *a,**k:(_ for _ in()).throw(AssertionError('Live network forbidden in offline test')))
 from datetime import datetime,timezone,timedelta
 from ooo_report_executor import Executor,Deferred,Stop,validate,ROOT,CHAT,BOT,LEGACY
-from ooo_report_command import approve,digest
+from ooo_report_command import approve,digest,bind_delivery
 
 class DB:
  def __init__(self):self.data={}
@@ -78,6 +78,13 @@ class Flow(unittest.TestCase):
   m=copy.deepcopy(self.m);m['actions']=[];m['topups']=[{'cid':39605581,'amount_kgs':500}];validate(m)
   m['topups'][0]['cid']=41517533
   with self.assertRaises(Stop):validate(m)
+ def test_binding_waits_for_all_photo_receipts(self):
+  key=ROOT+'publication:test';self.db.data[key]={'status':'prepared','chat_id':CHAT,'manifest':self.m,'manifest_sha256':digest(self.m),'plan_id':'tomorrow','expires_at':self.exp,'receipt_keys':['ooo_agent:test:ad','ooo_agent:test:budget'],'artifact_sha256':['abc','def']}
+  self.db.data['ooo_agent:test:ad']={'status':'sent','chat_id':CHAT,'message_id':30,'sha256':'abc'}
+  with self.assertRaises(PermissionError):bind_delivery(self.db,ROOT,key,CHAT,BOT)
+  self.assertIsNone(self.db.get(ROOT+'report_binding:'+str(CHAT)+':30'))
+  self.db.data['ooo_agent:test:budget']={'status':'sent','chat_id':CHAT,'message_id':31,'sha256':'def'}
+  self.assertEqual(bind_delivery(self.db,ROOT,key,CHAT,BOT),2)
 
 if __name__=='__main__':unittest.main()
 

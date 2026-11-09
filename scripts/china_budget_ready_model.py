@@ -12,7 +12,15 @@ def assess_campaign(state,raw,economics,own,changes,days,observed):
  if state.get('timestamps',{}).get('started'):dates.append(instant(state['timestamps']['started']).astimezone(ZoneInfo('Europe/Moscow')).date())
  first=max(dates,default=end-timedelta(days=7))+timedelta(days=1)
  wanted=[d for d in days if date.fromisoformat(d)>=first]
- if not wanted:return dict(result,status='waiting',reason='Первый полный день после изменения РК ещё не завершён.')
+ if not wanted:
+  # Waiting for an outcome day must not starve an already approved active test.
+  # Funding uses completed historical traffic/current economics, not a causal post-change verdict.
+  launched=instant(state['timestamps']['started']).astimezone(ZoneInfo('Europe/Moscow')).date()if state.get('timestamps',{}).get('started')else None
+  reference=[d for d in days if not launched or date.fromisoformat(d)>launched]
+  if len(reference)!=3:return dict(result,status='unknown',evaluation_status='waiting',reason='Нет трёх завершённых дней исторического расхода для расчёта продолжения теста; нужен отдельный ограниченный стартовый бюджет.')
+  wanted=reference
+  result.update(funding_basis='continuation_historical_traffic_current_economics',evaluation_status='waiting',first_full_post_change_day=first.isoformat(),post_change_result_available=False)
+
  daily={d['date'][:10]:d for d in raw['days']}
  if not all(d in daily for d in wanted):return dict(result,reason='Не хватает полного дня статистики РК.')
  totals={k:sum(daily[d][f]for d in wanted)for k,f in [('spend','sum'),('orders','orders'),('amount','sum_price'),('clicks','clicks')]}
@@ -43,6 +51,9 @@ def assess_campaign(state,raw,economics,own,changes,days,observed):
  # Own history is a provisional buyout prior, never a closed post-change financial cohort.
  if coverage<.9 or covered<3:return dict(result,reason='Собственная модель покрывает недостаточно рекламных атрибуций.')
  if contribution<=totals['spend']:return dict(result,status='review',reason='Предварительная модель РК не поддерживает дополнительный расход; это не доказанный убыток.')
+ if result.get('evaluation_status')=='waiting':
+  if stressed-totals['spend']-(totals['orders']-covered)*2*max_log<=0:return dict(result,status='review',reason='Нет положительной стресс-модели для ограниченного продолжения теста.')
+  return dict(result,status='positive',ready=True,reason='Ограниченное продолжение согласованного теста: исторический расход завершённых дней и текущая предварительная экономика. Полного дня после изменения ещё нет; прибыль и причинный эффект не доказаны.')
  return dict(result,status='positive',ready=True,reason='Предварительная собственная модель РК положительна. Малая выборка, пересечения атрибуций и неизвестные расходы сохраняются; только ограниченное пополнение после команды.')
 def attach(bundle,source,changes):
  import copy

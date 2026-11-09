@@ -1,0 +1,59 @@
+name: Owner exact blocked photo transport check
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-blocked-photos-recovery-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 10ca471ebdc30e8979abeb6286434c51fe218931
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Read exact four SKU inventory and documents
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import base64,io as bio,requests,traceback
+          from datetime import datetime,timezone
+          from PIL import Image,ImageDraw
+          from china_loss_execute import IO
+          io=IO();key='china_agent:owner_blocked_cards:2026-11-09:v1:photos_recovery'
+          if io.get(key):raise SystemExit('Existing read')
+          assert io.create(key,dict(status='collecting',wb_writes=0))
+          out=dict(status='collecting',images=[],errors=[],wb_writes=0,telegram_calls=0)
+          try:
+           p=io.get('china_agent:owner_blocked_cards:2026-11-09:v1:read')
+           for c in p['cards']:
+            for field in ['big','c516x688']:
+             url=c['photos'][0][field]
+             try:
+              r=requests.get(url,timeout=15)
+              if not r.ok:out['errors'].append(dict(nm=c['nmID'],field=field,http=r.status_code));continue
+              im=Image.open(bio.BytesIO(r.content)).convert('RGB');im.thumbnail((1000,1400));buf=bio.BytesIO();im.save(buf,format='JPEG',quality=90)
+              out['images'].append(dict(nm_id=c['nmID'],index=1,image_b64=base64.b64encode(buf.getvalue()).decode()));break
+             except Exception as ex:out['errors'].append(dict(nm=c['nmID'],field=field,error=type(ex).__name__))
+            io.put(key,out)
+           out.update(status='complete',observed_at=datetime.now(timezone.utc).isoformat());io.put(key,out)
+          except Exception as ex:
+           out.update(status='blocked',error=type(ex).__name__+':'+str(ex)[:300]);io.put(key,out);raise
+          PY

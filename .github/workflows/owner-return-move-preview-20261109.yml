@@ -1,8 +1,5 @@
 name: Owner read-only MS article143 document audit4Nov
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-return-move-preview-20261109.yml']
   workflow_dispatch:
 permissions:
   contents: read

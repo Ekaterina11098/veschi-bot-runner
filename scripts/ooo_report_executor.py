@@ -138,6 +138,13 @@ class Executor:
   old=s.get('steps',{}).get(step)
   if old and old['status']=='accepted':return
   amount=t['amount_kgs'];cid=t['cid']
+  if step=='deposit_39605581_500_repair1':
+   rejected=s.get('steps',{}).get('deposit_39605581_500',{})
+   if cid!=39605581 or amount!=500 or rejected.get('status')!='rejected'or rejected.get('http_status')!=400 or rejected.get('body',{}).get('sum')!=500 or rejected.get('body',{}).get('type')not in(0,1)or rejected.get('params')!={'id':cid}:raise Stop('Known rejected exact funding receipt required')
+   # One explicitly authorized diagnostic retry, same amount and source. No wallet switch.
+   receipt=self.call(s,save,'POST','/adv/v1/budget/deposit',{'sum':500,'type':rejected['body']['type'],'return':True},params={'id':cid},step=step)
+   if receipt.get('currency')!='KGS'or type(receipt.get('total'))not in(int,float):raise Stop('Accepted deposit receipt requires reconciliation; never replay')
+   return
   # Capture diagnostic evidence before any known-rejected retry. Never round approval up.
   if not s.get('funding_config_checked_at'):
    try:s['funding_config']=self.call(s,save,'GET','/api/advert/v1/config')

@@ -198,6 +198,11 @@ class Executor:
   if any(s.get('steps',{}).get(x,{}).get('status')!='accepted'for x in('memberships','bids')):raise Stop('Legacy accepted advertising receipts missing')
   def save():self.db.update(LEGACY+':execution',s)
   try:
+   if not s.get('funding_config_checked_at'):
+    try:s['funding_config']=self.call(s,save,'GET','/api/advert/v1/config')
+    except Stop:
+     if s.get('last_http',{}).get('/api/advert/v1/config',{}).get('http_status')not in(401,403):raise
+    s['funding_config_checked_at']=stamp();save()
    if not s.get('advertising_verified_at'):
     s['after']=self.configs(s,save,set(map(int,s['expected'])));s.setdefault('adds',{});s.setdefault('bids',s.get('prepared_bids',{}));self.verify(s,s['after']);s['advertising_verified_at']=stamp();save()
    if datetime.now(timezone.utc)>=datetime.fromisoformat(auth['expires_at']):raise Stop('Repair funding authorization expired')
@@ -223,7 +228,13 @@ def notify():
   a=row['payload'];s=a.get('execution',a)
   if a.get('completion_delivery'):continue
   if a.get('status')=='verified':text='Пакет отчёта выполнен и проверен в WB. Принятые действия повторно не отправлялись.'
-  elif s.get('advertising_verified_at'):text='Рекламные изменения выполнены и проверены. Пополнение не выполнено: '+str(s.get('safe_error','требуется разбор отказа WB'))[:500]+'. Принятые изменения не повторяю.'
+  elif s.get('advertising_verified_at'):
+   detail=str(s.get('safe_error','требуется разбор отказа WB'))
+   provider=s.get('last_http',{}).get('/adv/v1/budget/deposit',{}).get('response',{})
+   if 'minimum'in str(provider).lower()or 'below provider minimum'in detail:
+    detail='согласованные 500 KGS меньше минимальной суммы WB. Увеличивать сумму без нового согласования не буду'
+   elif provider:detail='WB отклонил запрос. Ответ сохранён для разбора: '+json.dumps(provider,ensure_ascii=False)[:500]
+   text='Рекламные изменения выполнены и проверены. Пополнение не выполнено: '+detail[:600]+'. Принятые изменения не повторяю.'
   else:text='Исполнение остановлено для проверки: '+str(s.get('safe_error','неполный ответ WB'))[:500]+'. Принятые или неопределённые запросы повторно не отправляю.'
   a['completion_delivery']={'status':'uncertain','attempted_at':stamp()};db.update(row['cache_key'],a)
   try:

@@ -102,30 +102,8 @@ class PairWorker(CoverageWorker):
 
     def prepare(self,preview=False):
         if self.section=='candidates':
-            answer,trace=super().prepare(preview)
-            expected=(self.day-timedelta(days=1)).isoformat()
-            latest=self.audit.get('assessment') or {}
-            if latest.get('period_to')!=expected: raise RuntimeError('Completed period mismatch')
-            from china_agent.daily_expected_control import build,render_candidates
-            self.control_preview=preview
-            try:
-                self.price_control_review=build(self,candidate_review=True)
-            except (RuntimeError,ValueError) as exc:
-                # A missing control source must not suppress independently ready
-                # raises, or silently turn an unchecked decrease into "none".
-                self.audit['control_source_blocker']=str(exc)[:200]
-                self.price_control_review=dict(status='unavailable',report_date=str(self.day),products=[])
-                self.save('china_agent:daily_expected_candidates:'+str(self.day)+(':verify' if preview else ''),self.price_control_review)
-            from china_agent.price_brief import render_plain as brief
-            full=render_candidates(self)
-            review=self.get('china_agent:daily_expected_candidates:'+str(self.day)+(':verify' if preview else ''))
-            from china_agent.buyer_price_forecast import load
-            buyer=load(self)
-            trace.append(dict(name='china_buyer_price_forecast',**buyer))
-            omitted=[]
-            answer=brief(full,'morning',review,self.day,self.get('china_agent:prices:v1'),buyer,omitted=omitted)
-            if omitted:trace.append(dict(name='china_price_proposal_exclusions',products=omitted))
-            return answer,trace
+            from china_price_selection import choose
+            return choose(self,preview)
         from china_agent.daily_expected_control import build,render
         self.control_preview=preview
         value=build(self)

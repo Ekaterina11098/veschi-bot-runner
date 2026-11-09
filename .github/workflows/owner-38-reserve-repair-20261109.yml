@@ -1,9 +1,6 @@
 name: Owner current reserve reconciliation9Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-38-reserve-repair-20261109.yml']
 permissions:
   contents: read
 concurrency:

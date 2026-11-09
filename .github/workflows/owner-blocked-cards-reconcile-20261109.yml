@@ -1,0 +1,77 @@
+name: Owner three corrected galleries readback
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-blocked-cards-reconcile-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 10ca471ebdc30e8979abeb6286434c51fe218931
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Verify three galleries and current block status without writes
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import requests,io as bio,time
+          from datetime import datetime,timezone
+          from PIL import Image,ImageStat,ImageChops
+          from china_loss_execute import IO
+          io=IO();key='china_agent:owner_blocked_cards:2026-11-09:v1:result'
+          if io.get(key):raise SystemExit('Existing result')
+          assert io.create(key,dict(status='collecting',wb_writes=0,telegram_calls=0))
+          p=io.get('china_agent:owner_blocked_cards:2026-11-09:v1:read')
+          out=dict(status='collecting',cards=[],errors=[],wb_writes=0,telegram_calls=0)
+          def image(url):
+           r=requests.get(url+'?readback='+str(int(time.time())),timeout=30);assert r.ok
+           return Image.open(bio.BytesIO(r.content)).convert('RGB').resize((64,64))
+          for old in p['cards']:
+           nm=old['nmID'];found=[]
+           for attempt in range(4):
+            data=io.request('/content/v2/get/cards/list',{'settings':{'cursor':{'limit':100},'filter':{'textSearch':old['vendorCode'],'withPhoto':-1}}})
+            found=[c for c in data.get('cards',[])if c.get('nmID')==nm]
+            if len(found)==1:break
+            time.sleep(8)
+           if len(found)!=1:out['errors'].append(dict(nm=nm,error='Card readback missing'));continue
+           c=found[0];row=dict(nm_id=nm,article=c['vendorCode'],photo_count=len(c['photos']),video_before=old.get('video'),video_after=c.get('video'),card=c)
+           if nm==1473243821:
+            checks=[]
+            for target,source in [(9,3),(11,7)]:
+             a=image(c['photos'][target-1]['big']);b=image(c['photos'][source-1]['big']);diff=sum(ImageStat.Stat(ImageChops.difference(a,b)).mean)/3
+             checks.append(dict(target=target,source=source,mean_pixel_difference=diff))
+            row['checks']=checks;row['media_verified']=all(x['mean_pixel_difference']<10 for x in checks)and c.get('video')==old.get('video')and len(c['photos'])==12
+            if row['media_verified']:
+             child='china_agent:owner_blocked_cards:2026-11-09:v1:fix:attempt3:card:'+str(nm)
+             e=io.get(child);e.update(status='media_verified',after=c,readback_at=datetime.now(timezone.utc).isoformat(),checks=checks);io.put(child,e)
+           else:
+            e=io.get('china_agent:owner_blocked_cards:2026-11-09:v1:fix:remaining2:card:'+str(nm))or{}
+            row['media_verified']=e.get('status')=='media_verified'and len(c['photos'])=={1473243826:11,1473246040:10}[nm]
+           out['cards'].append(row);io.put(key,out)
+          r=requests.get('https://seller-analytics-api.wildberries.ru/api/v1/analytics/banned-products/blocked',params=dict(sort='nmId',order='asc'),headers={'Authorization':io.token},timeout=45)
+          out['blocked_http_status']=r.status_code
+          if r.ok:out['blocked_report']=r.json();out['blocked_observed_at']=datetime.now(timezone.utc).isoformat()
+          out['status']='media_verified_block_status_pending'if len(out['cards'])==3 and all(c['media_verified']for c in out['cards'])else'partial'
+          if r.ok and not any(x.get('nmId')in[1473243821,1473243826,1473246040]for x in r.json().get('report',[])):out['status']='unblocked_verified'
+          out['observed_at']=datetime.now(timezone.utc).isoformat();io.put(key,out)
+          print('Private reconciliation saved; no marketplace writes')
+          PY

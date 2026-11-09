@@ -38,7 +38,7 @@ jobs:
           for attempt in range(45):
            proof=db.get(root+"source_proof:v1") or {}
            if proof.get("status")=="downloaded" and proof.get("pagination_exhausted") is True:break
-           if proof.get("status") in ("no_data","no_matching_report","source_error","completion_not_confirmed"):raise m.Stop("Source not available or complete: "+proof["status"])
+           if proof.get("status") in ("no_data","no_matching_report","source_error"):raise m.Stop("Source not available or complete: "+proof["status"])
            time.sleep(20)
           else:raise m.Stop("Source completeness still pending")
           source=[]

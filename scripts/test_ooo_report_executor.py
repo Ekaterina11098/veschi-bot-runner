@@ -1,10 +1,11 @@
 import unittest,copy
+from unittest.mock import patch
 try:import requests
 except ModuleNotFoundError:
  import sys,types
  sys.modules['requests']=types.SimpleNamespace(RequestException=ConnectionError,request=lambda *a,**k:(_ for _ in()).throw(AssertionError('Live network forbidden in offline test')))
 from datetime import datetime,timezone,timedelta
-from ooo_report_executor import Executor,Deferred,Stop,validate,ROOT,CHAT,BOT,LEGACY
+from ooo_report_executor import Executor,Deferred,Stop,validate,ROOT,CHAT,BOT,LEGACY,notify
 from ooo_report_command import approve,digest,bind_delivery
 
 class DB:
@@ -15,6 +16,7 @@ class DB:
  def once(self,k,v):
   if k in self.data:raise Stop('duplicate')
   self.update(k,v)
+ def api(self,*args):return []
 class Response:
  def __init__(self,status,data,headers=None):self.status_code=status;self.data=data;self.headers=headers or {};self.text=''
  def json(self):return copy.deepcopy(self.data)
@@ -91,6 +93,22 @@ class Flow(unittest.TestCase):
   x=Executor(self.db,'test',request);s={'steps':{'deposit_39605581_500':{'status':'rejected','http_status':400,'body':{'sum':500,'type':1},'params':{'id':39605581}}}}
   for _ in range(2):x.fund(s,lambda:None,{'cid':39605581,'amount_kgs':500},'deposit_39605581_500_repair1')
   self.assertEqual(len(captured),1);self.assertEqual(captured[0]['json'],{'sum':500,'type':1,'return':True})
+ def test_completion_delivered_once_without_wb(self):
+  self.db.data[LEGACY+':execution']={'status':'verified'};sent=[]
+  class TG:
+   def __init__(s,db):pass
+   def preflight(s):return {}
+   def tg(s,method,body):sent.append(body);return {'chat':{'id':CHAT},'from':{'id':BOT},'message_id':71}
+  with patch('ooo_report_executor.DB',return_value=self.db),patch('ooo_report_executor.Dialogue',TG):notify();notify()
+  self.assertEqual(len(sent),1);self.assertEqual(self.db.get(LEGACY+':execution')['completion_delivery']['message_id'],71)
+ def test_unknown_completion_is_not_resent(self):
+  self.db.data[LEGACY+':execution']={'status':'verified'};sent=[]
+  class TG:
+   def __init__(s,db):pass
+   def preflight(s):return {}
+   def tg(s,method,body):sent.append(body);raise TimeoutError()
+  with patch('ooo_report_executor.DB',return_value=self.db),patch('ooo_report_executor.Dialogue',TG):notify();notify()
+  self.assertEqual(len(sent),1);self.assertEqual(self.db.get(LEGACY+':execution')['completion_delivery']['status'],'uncertain')
 
 if __name__=='__main__':unittest.main()
 

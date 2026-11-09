@@ -1,9 +1,6 @@
 name: Owner all-SKU reserve debit audit9Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-all-reserve-audit-20261109.yml']
 permissions:
   contents: read
 concurrency:

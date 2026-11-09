@@ -1,0 +1,84 @@
+name: Owner prepare read-only cached midday recovery
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-midday-cache-prepare-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: china-midday-advertising-report
+  cancel-in-progress: false
+jobs:
+  daily:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0 openai==3.42.1 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Check advertising arithmetic and duplicate safeguards
+        run: PYTHONPATH=scripts python -m unittest test_china_advertising_delivery test_china_advertising_midday test_china_advertising_midday_completed test_china_advertising_midday_completed_evidence test_china_advertising_midday_new_campaign test_china_advertising_midday_state
+      - name: Read current China day and deliver green midday report
+        working-directory: source
+        env:
+          OPENAI_API_KEY: "" # Owner: no paid model API
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          PYTHONPATH=../scripts:. python - <<'PY'
+          import base64
+          from datetime import datetime
+          from china_price_apply import IO
+          from china_advertising_v2 import daily_metrics,MSK
+          from china_advertising_midday import render_midday
+          io=IO();day=datetime.now(MSK).date().isoformat();key='china_agent:owner_midday_recovery:'+day+':v1:prepared'
+          if io.get(key):raise SystemExit('Existing prepared report')
+          delivery=io.get('china_agent:advertising_midday_delivery:'+day+':v1')or{}
+          if delivery.get('status')in['delivered','sending','uncertain']:raise SystemExit('Existing delivery; no duplicate')
+          pointer=io.get('china_agent:hourly_sales_api:v1:latest');source=io.get(pointer['source_key'])
+          assert source['cabinet']=='token_3'and source['slot_msk'][:10]==day
+          ad=source['advertising'];rows=[]
+          stats={x['advertId']:x for x in ad['stats']}
+          for cid,c in ad['campaigns'].items():
+           rec=stats.get(int(cid));d=next((x for x in(rec or{}).get('days',[])if x.get('date','')[:10]==day),None)
+           rows.append(dict(id=int(cid),name=c['settings']['name'],draft=False,today=daily_metrics(d)if d else None,attention=[]))
+          assert len(rows)>=20
+          b=dict(day=day,observed_at=ad['observed_at'],campaigns=rows,presentation='midday_green_current_day_v1',recommendation_directions={k:dict(status='unavailable',reason='Owner deferred decisions until review of daytime report; no automatic execution')for k in['raise','add','reduce','exclude']})
+          files=[]
+          for f in render_midday(b):
+           assert f['actions']==[]
+           files.append({k:v for k,v in f.items()if k!='bytes'}|dict(b64=base64.b64encode(f['bytes']).decode()))
+          assert io.create(key,dict(status='prepared_review',day=day,bundle=b,files=files,source_key=pointer['source_key'],wb_writes=0,telegram_calls=0,scope='Recovery of existing authorized report; no recommendations executed'))
+          print('Private current-day PNG prepared; no external sends')
+          PY

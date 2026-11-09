@@ -1,0 +1,148 @@
+name: Inspect requested China weekly MS scope 2001199385
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/inspect-china-weekly-2001199385.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+          filter: blob:none
+      - name: Read exact products and complete store stock
+        shell: python
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,json,collections,concurrent.futures
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          class ReadOnly(m.Transport):
+           def request(self,base,path,method="GET",body=None,params=None):
+            if base==m.MS and method!="GET":raise m.Stop("MS writes prohibited")
+            return super().request(base,path,method,body,params)
+          t=ReadOnly();db=m.Cache(t);w=m.Worker(t,db,{})
+          root="weekly_report_review:china:20261102:"
+          import time,datetime
+          from decimal import Decimal
+          source=None
+          for attempt in range(45):
+           proof=db.get(root+"source_proof:v1") or {}
+           if proof.get("status")=="downloaded" and proof.get("pagination_exhausted") is True:break
+           if proof.get("status") in ("no_data","no_matching_report","source_error","completion_not_confirmed"):raise m.Stop("Source not available or complete: "+proof["status"])
+           time.sleep(20)
+          else:raise m.Stop("Source completeness still pending")
+          source=[]
+          for chunk in proof["chunks"]:source+=db.get(chunk["key"])
+          assert len(source)==proof["rows"] and len({str(r["rrdId"]) for r in source})==len(source)
+          assert len(proof["reports"])==1
+          report=proof["reports"][0];reportid=str(report["reportId"])
+          assert reportid=="2001199385" and report["dateFrom"][:10]=="2026-11-02" and report["dateTo"][:10]=="2026-11-08" and report["currency"]=="CNY"
+          tr={"销售":"Продажа","退货":"Возврат","配送":"Логистика","扣款":"Удержание"}
+          def translate(v):return tr.get(v,v or "")
+          groups=collections.defaultdict(lambda:{"s":[],"r":[]});operations=collections.Counter();net=Decimal(0)
+          ordered=sorted(enumerate(source),key=lambda x:(Decimal(str(x[1].get("forPay") or 0)),x[0]))
+          for i,r in ordered:
+           j=translate(r.get("docTypeName")).strip().casefold();k=translate(r.get("sellerOperName")).strip().casefold()
+           operations[(j,k)]+=1
+           if j=="продажа":net+=Decimal(str(r.get("forPay") or 0))
+           elif j=="возврат":net-=Decimal(str(r.get("forPay") or 0))
+           typ="s" if j=="продажа" and k in ("продажа","добровольная компенсация при возврате") else "r" if j=="возврат" and k=="возврат" else None
+           if typ:
+            assert r["quantity"]==1,("Unexpected row quantity",str(r["rrdId"]),r["quantity"])
+            a=r["vendorCode"].strip().casefold();assert a
+            groups[a][typ].append(i)
+          sales={};returns={};red=[];orange=[];unpaired=[]
+          for a,g in groups.items():
+           paired=min(len(g["s"]),len(g["r"]))
+           red+=g["s"][:paired]+g["r"][:paired]
+           if len(g["s"])>paired:
+            sales[a]=len(g["s"])-paired;unpaired+=g["s"][paired:]
+           if len(g["r"])>paired:
+            returns[a]=len(g["r"])-paired;orange+=g["r"][paired:]
+          assert abs(net-Decimal(report["forPaySum"]))<=Decimal(".01"),"Financial source control differs"
+          plan={"sales":sales,"returns":returns,"totalRows":len(source),"totalSales":sum(len(g["s"]) for g in groups.values()),"totalReturns":sum(len(g["r"]) for g in groups.values()),"redPairs":len(red)//2,"salesUnits":sum(sales.values()),"salesArticles":len(sales),"comment":"Китай ВБ 021126-081126","report_id":reportid,"ids":{"red":[str(source[i]["rrdId"]) for i in red],"orange":[str(source[i]["rrdId"]) for i in orange],"unpaired_sales":[str(source[i]["rrdId"]) for i in unpaired]},"operations":[{"J":j,"K":k,"rows":n} for (j,k),n in operations.items()],"financial_control_CNY":str(net),"source_complete":True}
+          db.put(root+"plan:v1",plan)
+          today=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date()
+          fxurl="https://www.cbr.ru/scripts/XML_daily.asp?date_req="+today.strftime("%d/%m/%Y")
+          sales=plan["sales"]
+          config=db.get("fbs_document_chain:china:config:v1");template=config["templates"]["salesreturn"]
+          out={"at":m.now(),"sales":sales,"status":"reading","products":{},"stock":{}}
+          for k in ("organization","agent","store"):out[k]=t.request(m.MS,m.href(template[k])[len(m.MS):])
+          out["rate"]=template["rate"];out["currency"]=t.request(m.MS,m.href(template["rate"]["currency"])[len(m.MS):])
+          out["duplicate_orders"]=w.ms_rows("entity/customerorder",{"filter":"name="+reportid})
+          flt="store="+m.href(out["store"])
+          for typ in ("customerorder","demand"):
+           ds=w.ms_rows("entity/"+typ,{"filter":flt+";moment>=2026-09-01 00:00:00","order":"moment,desc"})
+           out[typ+"_history"]=[{k:d.get(k) for k in ("id","name","moment","description","applicable","sum","organization","agent","store","rate","vatEnabled","vatIncluded","customerOrder")} for d in ds[:20]]
+          db.put(root+"ms_preflight:v1",out)
+          def product(a):
+           rt=ReadOnly();rw=m.Worker(rt,None,{})
+           return a,rw.ms_rows("entity/product",{"filter":"article="+a+";archived=false"})
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+           for a,ps in pool.map(product,set(sales)|set(plan["returns"])):out["products"][a]=ps
+          db.put(root+"ms_preflight:v1",out)
+          def norm(x):return m.href(x).split("?")[0]
+          try:
+           bulk=w.ms_rows("report/stock/all",{"filter":flt+";stockMode=all;quantityMode=all"})
+           byid={norm(r):r for r in bulk};out["stock_source"]="complete store stock report"
+           for a,ps in out["products"].items():out["stock"][a]=[byid[norm(ps[0])]] if len(ps)==1 and norm(ps[0]) in byid else []
+          except m.Stop:
+           out["stock_source"]="individual stock fallback"
+           for a,ps in out["products"].items():
+            if len(ps)==1:out["stock"][a]=w.ms_rows("report/stock/all",{"filter":flt+";product="+norm(ps[0])+";stockMode=all;quantityMode=all"})
+          out["states"]=t.request(m.MS,"entity/customerorder/metadata").get("states",[])
+          import decimal,urllib.request,xml.etree.ElementTree as ET
+          from decimal import Decimal,ROUND_FLOOR
+          xml=urllib.request.urlopen(fxurl,timeout=90).read()
+          tree=ET.fromstring(xml);cny=[x for x in tree.findall("Valute") if x.findtext("CharCode")=="CNY"];assert len(cny)==1
+          fx={"requested_date":today.isoformat(),"effective_date":tree.attrib["Date"],"currency":"CNY","nominal":cny[0].findtext("Nominal"),"rub":cny[0].findtext("Value").replace(",","."),"source":fxurl}
+          out["fx"]=fx;out["return_costs"]={};out["basis"]={}
+          for a in plan["returns"]:
+           ss=out["stock"].get(a,[])
+           if len(ss)==1 and ss[0].get("price",0)>0:out["return_costs"][a]={"unit_kopecks":str(ss[0]["price"]),"source":"current FBO stock","at":m.now()}
+          def ps(kind,ident,stock=False):
+           if not stock:return w.ms_rows("entity/"+kind+"/"+ident+"/positions",{"expand":"assortment"})
+           result=[];offset=0
+           while True:
+            page=t.request(m.MS,"entity/"+kind+"/"+ident+"/positions",params={"expand":"assortment","fields":"stock","limit":50,"offset":offset});batch=page["rows"];result+=batch;offset+=len(batch)
+            if offset==page["meta"]["size"]:return result
+            assert batch
+          flt="store="+norm(out["store"])+";organization="+norm(out["organization"])+";agent="+norm(out["agent"])
+          for d in w.ms_rows("entity/demand",{"filter":flt+";moment>=2026-01-01 00:00:00","order":"moment,desc"}):
+           if not d.get("applicable"):continue
+           order=d.get("customerOrder",{})
+           if not norm(order).startswith(m.MS):continue
+           order=t.request(m.MS,norm(order)[len(m.MS):])
+           if "Китай ВБ" not in order.get("description","") or order.get("name")==reportid:continue
+           positions=ps("demand",d["id"]);cap=collections.Counter()
+           for p in positions:
+            a=(p["assortment"].get("article") or "").strip().casefold()
+            if a in plan["returns"] and a not in out["basis"]:cap[a]+=p["quantity"]
+           if not cap:continue
+           detail=t.request(m.MS,"entity/demand/"+d["id"]);used=collections.Counter()
+           for ref in detail.get("returns",[]):
+            r=t.request(m.MS,norm(ref)[len(m.MS):])
+            for p in ps("salesreturn",r["id"]):used[(p["assortment"].get("article") or "").strip().casefold()]+=p["quantity"]
+           for a,q in cap.items():
+            if q-used[a]>=plan["returns"][a]:out["basis"][a]={"id":d["id"],"name":d["name"],"moment":d["moment"],"capacity":q,"returned":used[a]}
+           for p in ps("demand",d["id"],True):
+            a=(p["assortment"].get("article") or "").strip().casefold();cost=p.get("stock",{}).get("cost") or 0
+            if a in cap and a not in out["return_costs"] and cost>0:out["return_costs"][a]={"unit_kopecks":str(Decimal(str(cost))/Decimal(str(p["quantity"]))),"source":"historical demand "+d["name"],"moment":d["moment"]}
+           db.put(root+"ms_preflight:v1",out)
+           if set(out["basis"])==set(plan["returns"]) and set(out["return_costs"])==set(plan["returns"]):break
+          out["CK"]={}
+          for a,cost in out["return_costs"].items():
+           rub=Decimal(cost["unit_kopecks"])/100;assert rub>0
+           out["CK"][a]=int((rub*Decimal(fx["nominal"])/Decimal(fx["rub"])).to_integral_value(rounding=ROUND_FLOOR))
+          out["status"]="read_verified";out["completed_at"]=m.now();db.put(root+"ms_preflight:v1",out)
+          print("Read-only requested weekly scope and stock stored privately.")

@@ -44,3 +44,5 @@ jobs:
           name: owner-encrypted-article143-ms-audit
           path: ${{ runner.temp }}/stock-deploy-proof
           retention-days: 30
+
+# Read-only retry with supported MS filter.

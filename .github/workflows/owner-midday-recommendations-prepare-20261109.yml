@@ -1,0 +1,67 @@
+name: Owner restore completed-day recommendations in agreed table
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-midday-recommendations-prepare-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: china-midday-advertising-report
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 10ca471ebdc30e8979abeb6286434c51fe218931
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Deliver reviewed frozen midday PNG only; no WB access
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import base64,copy
+          from china_price_apply import IO
+          from china_advertising_midday import render_midday,covered_totals
+          io=IO();key='china_agent:owner_midday_recommendations:2026-11-09:v1'
+          if io.get(key):raise SystemExit('Existing revision')
+          previous=io.get('china_agent:owner_midday_table_correction:2026-11-09:v1')
+          assert previous['status']=='verified'
+          b=copy.deepcopy(previous['bundle']);source=io.get(previous['source_key'])
+          proposal=io.get('china_agent:owner_all_drr_review:2026-11-09:v1:proposal')
+          assert proposal['status']=='deferred_by_owner' and not proposal['execution_authorized']
+          rows={r['id']:r for r in b['campaigns']}
+          for a in proposal['actions']:
+           c=source['advertising']['campaigns'][str(a['campaign_id'])]
+           n=next(n for n in c['nm_settings'] if n['nm_id']==a['nm_id'])
+           assert n['bids_kopecks'][a['placement']]==a['old_minor']
+           label=a['article'].split('-')[0]
+           text=label+': '+('снизить '+format(a['old_minor']/100,'.2f')+' → '+format(a['target_minor']/100,'.2f')+' CNY.' if a['kind']=='ad_set_bid' else 'исключить из рекомендаций этой РК.')
+           rows[a['campaign_id']].setdefault('addition_review_notes',[]).append(text)
+          rows[40945478].setdefault('addition_review_notes',[]).append('Пополнить на 100 CNY для продолжения теста; перед исполнением проверить остаток.')
+          rows[41270309].setdefault('addition_review_notes',[]).append('После снижения 61: пополнить на 100 CNY для резерва; перед исполнением проверить остаток.')
+          b['recommendation_directions']={k:dict(status='review_proposals',count=v) for k,v in dict(raise_=0,add=0,reduce=6,exclude=2).items() if k!='raise_'}
+          b['recommendation_directions']['raise']=dict(status='review_proposals',count=0)
+          b['recommendation_basis']='2026-11-06 through 2026-11-08 completed days; current-day metrics observational; owner approval still required'
+          files=[]
+          for f in render_midday(b):
+           assert not f['actions']
+           files.append({k:v for k,v in f.items() if k!='bytes'}|dict(b64=base64.b64encode(f['bytes']).decode()))
+          assert len(files)==1 and not covered_totals(b['campaigns'])['missing']
+          assert io.create(key,dict(status='prepared_review',bundle=b,files=files,source_key=previous['source_key'],proposal_key='china_agent:owner_all_drr_review:2026-11-09:v1:proposal',target_message_id=813,execution_authorized=False,wb_writes=0,telegram_calls=0))
+          print('Recommendations prepared for review only; no WB changes')
+          
+          PY

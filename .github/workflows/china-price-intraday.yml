@@ -137,6 +137,8 @@ jobs:
           python ../scripts/test_china_price_delivery.py
           python ../scripts/test_price_repair_install.py
           python ../scripts/test_price_review_blocks.py
+          python ../scripts/test_price_period.py
+          python ../scripts/test_price_selection.py
           cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
           cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
           cp ../scripts/china_price_brief.py china_agent/price_brief.py

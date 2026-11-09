@@ -117,7 +117,7 @@ class Flow(unittest.TestCase):
   calls=[];budgets=[0]
   def request(method,url,**kw):
    calls.append((method,url,kw))
-   if url.endswith('/deposit'):return Response(200,{'total':1300,'currency':'KGS'})
+   if url.endswith('/deposit'):return Response(200,{'total':1300})
    if url.endswith('/adverts'):return Response(200,{'adverts':[self.c]})
    if url.endswith('/budget'):
     budgets[0]+=1
@@ -129,6 +129,20 @@ class Flow(unittest.TestCase):
   self.db.data={k:v for k,v in self.db.data.items()if not k.startswith('wb-pause:')};x.repair_legacy()
   self.assertEqual(self.db.get(LEGACY+':execution')['status'],'verified')
   deposits=[kw for _,url,kw in calls if url.endswith('/deposit')];self.assertEqual(len(deposits),1);self.assertEqual(deposits[0]['json']['sum'],1200)
+ def test_real_legacy_receipt_recovery_is_read_only(self):
+  m={'cabinet':'token_1','currency':'KGS','actions':[],'topups':[{'cid':39605581,'amount_kgs':1200}],'other_changes':[]}
+  self.db.data[LEGACY+':repair_500']={'status':'approved','manifest_sha256':'legacy','expires_at':self.exp}
+  self.db.data[LEGACY+':funding_amendment']={'status':'approved','manifest':m,'manifest_sha256':digest(m),'expires_at':self.exp}
+  self.db.data[LEGACY+':execution']={'status':'repair_attention','safe_error':'Accepted amended deposit requires reconciliation; never replay','completion_delivery':{'status':'verified','message_id':99},'manifest_sha256':'legacy','funding_repair_error':'minimum1200','funding_config_checked_at':'checked','expected':{'39605581':self.c},'steps':{'memberships':{'status':'accepted'},'bids':{'status':'accepted'},'deposit_39605581_500':{'status':'rejected','body':{'type':1}},'deposit_39605581_500_repair1':{'status':'rejected'},'deposit_39605581_1200_amendment1':{'status':'accepted','response':{'total':1354},'accepted_at':'2026-11-09T08:13:26Z'}}}
+  calls=[]
+  def request(method,url,**kw):
+   calls.append(url)
+   if url.endswith('/adverts'):return Response(200,{'adverts':[self.c]})
+   if url.endswith('/budget'):return Response(200,{'adverts':[{'advertId':39605581,'total':1354,'currency':'KGS'}]})
+   raise AssertionError('Recovery attempted a marketplace write')
+  x=Executor(self.db,'test',request);x.repair_legacy();s=self.db.get(LEGACY+':execution')
+  self.assertEqual(s['status'],'verified');self.assertEqual(s['prior_attention_delivery']['message_id'],99);self.assertNotIn('completion_delivery',s);self.assertTrue(s['funding_verified_at'])
+  self.assertFalse(any('/deposit'in u or '/bids'in u for u in calls))
 
 if __name__=='__main__':unittest.main()
 

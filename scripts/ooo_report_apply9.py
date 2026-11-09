@@ -13,7 +13,10 @@ def run():
  scope()
  prior=db.get(ROOT+':execution')
  recovering=bool(prior and prior.get('status')=='attention'and prior.get('safe_error')=='Exact cache update readback mismatch'and prior.get('steps')=={}and prior.get('before')and time.time()-datetime.datetime.fromisoformat(prior['baseline_observed_at']).timestamp()<3600)
- if prior and not recovering:print('Existing receipt retained; no replay');return
+ if prior and not recovering:
+  if prior.get('status')=='attention'and prior.get('safe_error')=='WB HTTP 400 /adv/v1/budget/deposit'and prior.get('steps',{}).get('deposit_39605581_500',{}).get('status')=='rejected':
+   verify_rejected_deposit(db,prior,token_override=os.environ['WB_TOKEN_1']);return
+  print('Existing receipt retained; no replay');return
  token=os.environ['WB_TOKEN_1'];cl=json.loads(base64.urlsafe_b64decode(token.split('.')[1]+'==='));ident=db.api('GET','analytics_snapshots',{'cabinet':'eq.token_1','source':'eq.seller_identity','status':'eq.complete','select':'payload','limit':100})
  if cl.get('exp',0)<time.time()or cl.get('t')is not False or int(cl.get('s',0))&(1<<30)or not cl.get('sid')or{r['payload'].get('sid')for r in ident}!={cl['sid']}:raise PermissionError('OOO seller mismatch')
  state={'status':'starting','run_id':os.environ['GITHUB_RUN_ID'],'started_at':stamp(),'manifest':m,'manifest_sha256':digest(m),'steps':{},'model_calls':0,'telegram_calls':0}
@@ -117,6 +120,18 @@ def run():
   state.update(status='verified',verified_at=stamp());state.pop('resume_after',None);state.pop('waiting_path',None);save();print('Exact approved manifest verified; no deposits/prices/TG')
  except Exception as e:
   state.update(status='attention',safe_error=str(e)if isinstance(e,(RuntimeError,PermissionError))else type(e).__name__,observed_at=stamp());save();print('Stopped; private receipt saved; no blind replay')
+
+def verify_rejected_deposit(db,state,token_override):
+ token=token_override;path='/api/advert/v2/adverts';key='wb-pause:'+hashlib.sha256((token+'advert-api.wildberries.ru'+path).encode()).hexdigest()
+ until=float((db.get(key)or{}).get('until',0));state.update(status='accepted_waiting_readback_deposit_rejected',resume_after=datetime.datetime.fromtimestamp(until,datetime.timezone.utc).isoformat());db.update(ROOT+':execution',state)
+ while time.time()<until:time.sleep(min(30,max(.2,until-time.time())))
+ ids=sorted(map(int,state['expected']));r=requests.get('https://advert-api.wildberries.ru'+path,headers={'Authorization':token},params={'ids':','.join(map(str,ids))},timeout=(10,90),allow_redirects=False)
+ if r.status_code!=200:state.update(status='attention',safe_error='Read-only verification pending HTTP'+str(r.status_code));db.update(ROOT+':execution',state);return
+ after={str(c['id']):c for c in r.json()['adverts']};state['after']=after
+ if set(after)!=set(state['expected'])or any(projection(after[cid])!=projection(e)for cid,e in state['expected'].items()):state.update(status='attention',safe_error='Actual configuration differs from accepted expected state')
+ else:state.update(status='advertising_verified_deposit_rejected',advertising_verified_at=stamp(),deposit_status='rejected_400_not_retried')
+ db.update(ROOT+':execution',state);print('Read-only verification saved; no marketplace writes')
+
 if __name__=='__main__':
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner'or os.environ.get('GITHUB_REF')!='refs/heads/main':raise PermissionError('Expected repository main')
  run()

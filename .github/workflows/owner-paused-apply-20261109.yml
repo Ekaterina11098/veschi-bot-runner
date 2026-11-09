@@ -1,0 +1,160 @@
+name: Apply owner approved500 and600CNY and resume exact two campaigns
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-paused-apply-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  fund:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 10ca471ebdc30e8979abeb6286434c51fe218931
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Exact two deposits and resumes with WB before-after verification
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          """Fixed owner-approved scope:500/600CNY and resume; no other campaign writes."""
+          import os,json,time
+          from datetime import datetime,timezone
+          ROOT='china_agent:owner_paused_apply:2026-11-09:v1'
+          SCOPE=[(41332083,500),(41680341,600)]
+          def stamp():return datetime.now(timezone.utc).isoformat()
+          def same(a,b):
+           return a['id']==b['id'] and a['currency']==b['currency']=='CNY' and a['settings']==b['settings'] and a['bid_type']==b['bid_type'] and {n['nm_id']:n for n in a['nm_settings']}=={n['nm_id']:n for n in b['nm_settings']}
+          
+          def execute(io,ad,fresh):
+           if io.get(ROOT):return 'existing_journal_no_replay'
+           grant=io.get(ROOT+':authorization')or{}
+           assert grant.get('status')=='owner_approved'and grant.get('owner_id')==5122667182 and grant.get('source_channel')=='codex'
+           assert grant['scope']==[dict(campaign_id=cid,amount_cny=amount,resume=True)for cid,amount in SCOPE]
+           assert 41680341 in grant['manual_risk_accepted_for']
+           proposal=io.get(grant['proposal_key']);assert proposal['status']=='proposed_requires_owner_command'
+           assert io.create(ROOT,dict(status='preflight',scope=grant['scope'],started_at=stamp(),wb_writes=0))
+           root=io.get(ROOT);children=[]
+           try:
+            policy=io.get('china_agent:budget_owner_policy:v1')or{}
+            assert not any(str(cid)in policy.get('do_not_fund',{})for cid,_ in SCOPE)
+            checks=fresh(proposal);root['fresh_inputs']=checks;io.put(ROOT,root)
+            expected={c['id']:c for c in proposal['fresh_checks']['composition']}
+            before={c['id']:c for c in ad('/api/advert/v2/adverts?ids=41332083,41680341')['adverts']}
+            budgets={r['advertId']:r for r in ad('/api/advert/v2/budget','POST',dict(advertIds=[41332083,41680341]))['adverts']}
+            config=ad('/api/advert/v1/config');assert config['currency']=='CNY'
+            assert all(amount>=config['minTopUp']/100 for _,amount in SCOPE)
+            for cid,amount in SCOPE:
+             assert same(before[cid],expected[cid])and before[cid]['status']==11,'Current campaign changed or already active'
+             assert budgets[cid]['currency']=='CNY'and budgets[cid]['total']==0,'Already funded; refuse duplicate'
+            wallet=ad('/adv/v1/balance');assert wallet['currency']=='CNY'
+            source=0 if wallet.get('balance',0)>=1100 else 1 if wallet.get('net',0)>=1100 else None
+            assert source is not None,'Insufficient funding wallet'
+            for cid,amount in SCOPE:
+             key=ROOT+':campaign:'+str(cid)
+             c=dict(status='preflight',campaign_id=cid,amount_cny=amount,before=before[cid],before_budget=0,wb_writes=0,authorization_key=ROOT+':authorization',parent=ROOT)
+             assert io.create(key,c);children.append(key)
+             exact=ad('/api/advert/v2/adverts?ids='+str(cid))['adverts'][0]
+             cash=ad('/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts'][0]
+             assert same(exact,before[cid])and exact['status']==11 and cash['currency']=='CNY'and cash['total']==0,'Separate change before deposit'
+             c.update(status='submitting',request=dict(path='/adv/v1/budget/deposit?id='+str(cid),sum=amount,type=source),submitted_at=stamp());io.put(key,c)
+             response=ad('/adv/v1/budget/deposit?id='+str(cid),'POST',dict(sum=amount,type=source));c.update(status='accepted',response=response,wb_writes=1);io.put(key,c)
+             bal=None
+             for attempt in range(5):
+              row=ad('/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts'][0]
+              assert row['currency']=='CNY'
+              bal=row['total']
+              if bal>=amount:break
+             assert bal>=amount,'Deposit readback uncertain; no repeat'
+             c.update(status='funding_verified',funding_verified_at=stamp(),funding_after_budget=bal);io.put(key,c)
+             state=ad('/api/advert/v2/adverts?ids='+str(cid))['adverts'][0]
+             assert same(state,before[cid])and state['status']in(9,11),'Unexpected state before resume'
+             if state['status']==11:
+              c.update(status='starting',resume_request='/adv/v0/start?id='+str(cid),resume_submitted_at=stamp());io.put(key,c)
+              response=ad('/adv/v0/start?id='+str(cid));c.update(status='start_accepted',start_response=response,wb_writes=2);io.put(key,c)
+             for attempt in range(5):
+              state=ad('/api/advert/v2/adverts?ids='+str(cid))['adverts'][0]
+              if state['status']==9:break
+             assert state['status']==9 and same(state,before[cid]),'Resume readback uncertain; no repeated start'
+             final=ad('/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts'][0]
+             assert final['currency']=='CNY'and final['total']>=amount-5,'Final funding balance changed unexpectedly'
+             c.update(status='verified',after=state,after_budget=final['total'],verified_at=stamp(),resume_verified=True);io.put(key,c)
+             registry=io.get('china_agent:verified_campaign_state:v1')or{};registry[str(cid)]=key;io.put('china_agent:verified_campaign_state:v1',registry)
+             root.update(wb_writes=sum((io.get(k)or{}).get('wb_writes',0)for k in children),campaigns={str(x):io.get(ROOT+':campaign:'+str(x))for x,_ in SCOPE if io.get(ROOT+':campaign:'+str(x))});io.put(ROOT,root)
+            root.update(status='verified',verified_at=stamp(),funded_cny=1100,children=children);io.put(ROOT,root)
+            return 'verified'
+           except Exception as ex:
+            for key in children:
+             c=io.get(key)
+             if c['status']not in('verified',):
+              c.update(previous_status=c['status'],status='uncertain'if c['status']in('submitting','accepted','starting','start_accepted')else'attention_required',error=str(ex)if isinstance(ex,AssertionError)else type(ex).__name__);io.put(key,c)
+            root.update(status='uncertain'if any((io.get(k)or{}).get('status')=='uncertain'for k in children)else'partial_verified'if any((io.get(k)or{}).get('status')=='verified'for k in children)else'attention_required',error=str(ex)if isinstance(ex,AssertionError)else type(ex).__name__,children=children,failed_at=stamp());io.put(ROOT,root)
+            raise
+          
+          def main():
+           import requests
+           from china_loss_execute import IO
+           from china_morning_readiness import current_prices,published_stock
+           from china_moysklad_read import read_stock
+           assert os.environ.get('GITHUB_REPOSITORY')=='Ekaterina11098/veschi-bot-runner'and os.environ.get('GITHUB_REF')=='refs/heads/main'
+           io=IO()
+           def ad(path,method='GET',body=None):
+            allowed=(method=='GET'and(path.startswith('/api/advert/v2/adverts?ids=')or path in('/api/advert/v1/config','/adv/v1/balance')or path in['/adv/v0/start?id='+str(cid)for cid,_ in SCOPE]))or(method=='POST'and(path=='/api/advert/v2/budget'or path in['/adv/v1/budget/deposit?id='+str(cid)for cid,_ in SCOPE]))
+            assert allowed,'Endpoint outside fixed owner scope'
+            time.sleep(2);r=requests.request(method,'https://advert-api.wildberries.ru'+path,headers={'Authorization':io.token},json=body,timeout=45)
+            if not r.ok:raise RuntimeError('WB HTTP '+str(r.status_code))
+            return r.json()if r.content else{}
+           def fresh(p):
+            import base64
+            claims=json.loads(base64.urlsafe_b64decode(io.token.split('.')[1]+'='*(-len(io.token.split('.')[1])%4)))
+            identities=io.db('analytics_snapshots?cabinet=eq.token_3&source=eq.seller_identity&status=eq.complete&select=payload&limit=100')
+            sellers={r['payload'].get('sid')for r in identities}
+            assert len(sellers)==1 and claims.get('sid')in sellers and claims.get('exp',0)>time.time(),'Cabinet identity changed'
+            cfg=io.db('business_agent_config?agent_id=eq.china&select=active,chat_id,bot_id,owner_user_id')
+            assert cfg==[dict(active=True,chat_id=-1004342917488,bot_id=8780468043,owner_user_id=5122667182)]
+            nms=sorted({n['nm_id']for c in p['fresh_checks']['composition']for n in c['nm_settings']})
+            prices=current_prices(io,nms);published=published_stock(io,prices,nms);stock=read_stock([r['article']for r in prices['rows']])
+            assert stock['coverage_complete']and not published['missing_nm_ids']
+            olds={r['nm_id']:r for r in p['fresh_checks']['prices']};costs={r['article']:r['cogs_rub']for r in p['fresh_checks']['stock']};st={r['article']:r for r in stock['rows']}
+            for pr in prices['rows']:
+             a=st[pr['article']];assert pr['currency']=='CNY'and pr['seller_price']==olds[pr['nm_id']]['seller_price'],'Seller price changed'
+             assert a['stock']-a['reserve']>0 and published['amounts'][str(pr['nm_id'])]>0 and 0<a['price']/100<=costs[pr['article']]*1.01,'Stock/COGS changed materially'
+            return dict(observed_at=stamp(),prices=prices,published=published,stock=stock)
+           result=execute(io,ad,fresh)
+           if result=='verified':
+            # Final confirmation only, once; no intermediate Telegram messages.
+            key=ROOT+':delivery'
+            if not io.get(key):
+             a=io.get(ROOT+':campaign:41332083');b=io.get(ROOT+':campaign:41680341')
+             text='Выполнено и проверено WB:\nРК 41332083: +500 CNY, активна; остаток '+str(a['after_budget'])+' CNY.\nРК 41680341: +600 CNY, активна; остаток '+str(b['after_budget'])+' CNY.\nВсего пополнено 1100 CNY. Ставки и состав сохранены. 41680341 — ограниченный тест, эффективность ещё не доказана.'
+             assert io.create(key,dict(status='sending',text=text,created_at=stamp()))
+             try:
+              receipt=io.tg('sendMessage',dict(chat_id=-1004342917488,text=text))
+              assert receipt['chat']['id']==-1004342917488 and receipt['from']['id']==8780468043 and receipt['message_id']
+              io.put(key,dict(status='sent',receipt=receipt,sent_at=stamp(),text=text))
+             except Exception as ex:io.put(key,dict(status='uncertain',error=type(ex).__name__,text=text));raise
+           print(result)
+          
+          if __name__=='__main__':main()
+          
+          
+          PY

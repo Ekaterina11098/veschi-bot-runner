@@ -1,9 +1,6 @@
 name: Owner proven debit reserve repair9Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-debit2-reserve-repair-20261109.yml']
 permissions:
   contents: read
 concurrency:

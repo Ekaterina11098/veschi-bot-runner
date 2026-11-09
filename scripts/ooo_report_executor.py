@@ -139,13 +139,15 @@ class Executor:
   if old and old['status']=='accepted':return
   amount=t['amount_kgs'];cid=t['cid']
   # Capture diagnostic evidence before any known-rejected retry. Never round approval up.
-  try:config=self.call(s,save,'GET','/api/advert/v1/config');s['funding_config']=config;save()
-  except Stop:
-   if s.get('last_http',{}).get('/api/advert/v1/config',{}).get('http_status')not in(401,403):raise
+  if not s.get('funding_config_checked_at'):
+   try:s['funding_config']=self.call(s,save,'GET','/api/advert/v1/config')
+   except Stop:
+    if s.get('last_http',{}).get('/api/advert/v1/config',{}).get('http_status')not in(401,403):raise
+   s['funding_config_checked_at']=stamp();save()
   cfg=s.get('funding_config',{})
   if cfg and cfg.get('currency')!='KGS':raise Stop('Funding configuration currency differs')
   if cfg.get('minTopUp',0)>amount*100:raise Stop('Approved funding is below provider minimum; separate approval required')
-  b=self.call(s,save,'POST','/api/advert/v2/budget',{'advertIds':[cid]})['adverts']
+  b=([s['funding_before']]if step=='deposit_39605581_500_repair1'and s.get('funding_before',{}).get('advertId')==cid else self.call(s,save,'POST','/api/advert/v2/budget',{'advertIds':[cid]})['adverts'])
   wallet=self.call(s,save,'GET','/adv/v1/balance')
   if len(b)!=1 or b[0].get('advertId')!=cid or b[0].get('currency')!='KGS'or wallet.get('currency')!='KGS':raise Stop('Funding currency/readback mismatch')
   source=0 if wallet.get('balance',0)>=amount else 1 if wallet.get('net',0)>=amount else None
@@ -203,10 +205,13 @@ class Executor:
     except Stop:
      if s.get('last_http',{}).get('/api/advert/v1/config',{}).get('http_status')not in(401,403):raise
     s['funding_config_checked_at']=stamp();save()
+   if not s.get('funding_repair_error')and s.get('steps',{}).get('deposit_39605581_500_repair1',{}).get('status')!='accepted':
+    if datetime.now(timezone.utc)>=datetime.fromisoformat(auth['expires_at']):raise Stop('Repair funding authorization expired')
+    try:self.fund(s,save,{'cid':39605581,'amount_kgs':500},'deposit_39605581_500_repair1')
+    except Stop as e:s['funding_repair_error']=str(e);save()
    if not s.get('advertising_verified_at'):
     s['after']=self.configs(s,save,set(map(int,s['expected'])));s.setdefault('adds',{});s.setdefault('bids',s.get('prepared_bids',{}));self.verify(s,s['after']);s['advertising_verified_at']=stamp();save()
-   if datetime.now(timezone.utc)>=datetime.fromisoformat(auth['expires_at']):raise Stop('Repair funding authorization expired')
-   self.fund(s,save,{'cid':39605581,'amount_kgs':500},'deposit_39605581_500_repair1')
+   if s.get('funding_repair_error'):raise Stop(s['funding_repair_error'])
    s['funding_after']=self.call(s,save,'POST','/api/advert/v2/budget',{'advertIds':[39605581]});s.update(status='verified',verified_at=stamp());save()
   except Deferred:s['status']='waiting_shared_quota';save()
   except Stop as e:s.update(status='repair_attention',safe_error=str(e));save()

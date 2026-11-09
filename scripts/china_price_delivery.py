@@ -14,11 +14,21 @@ def deliver(w):
     import requests
     from china_cloud_cost_control import Cache,stamp
     from china_table_png import render
-    c=Cache();answer=w.job['answer'];offers=rows(answer)
-    scope=hashlib.sha256(answer.encode()).hexdigest()
+    c=Cache();answer=w.job['answer']
     mode=getattr(w,'mode','morning');day=str(w.day)
     root='china_agent:price_delivery:v2:'+day+':'+mode
     prepared=c.get(root+':prepared')
+    if not prepared:
+        from china_price_current_check import check
+        try:checked=check(w,answer)
+        except (RuntimeError,ValueError,KeyError) as exc:
+            w.audit['current_price_check_blocker']=str(exc)[:200]
+            checked='Повышение: проверка не завершена\n\nСнижение: проверка не завершена'
+        if checked!=answer:
+            saved=w.patch(dict(answer=checked))
+            if len(saved)!=1:raise RuntimeError('Price preflight freeze lost lease')
+            w.job=dict(w.job,answer=checked);answer=checked
+    offers=rows(answer);scope=hashlib.sha256(answer.encode()).hexdigest()
     if prepared and prepared['answer_sha256']!=scope:raise RuntimeError('Frozen price report changed')
     parts=[]
     if len(offers)>5:

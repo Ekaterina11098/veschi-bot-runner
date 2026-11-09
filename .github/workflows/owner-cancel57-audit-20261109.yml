@@ -1,9 +1,6 @@
 name: Owner57cancellation proof audit9Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-cancel57-audit-20261109.yml']
 permissions:
   contents: read
 concurrency:

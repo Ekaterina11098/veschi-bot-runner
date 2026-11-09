@@ -1,0 +1,59 @@
+name: Owner blocked cards exact API diagnosis
+on:
+  push:
+    paths:
+      - '.github/workflows/owner-blocked-cards-read-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bot-mpstats-data
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 10ca471ebdc30e8979abeb6286434c51fe218931
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Read blocked reasons and exact cards
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import os,base64,json,time,requests
+          from datetime import datetime,timezone
+          from china_loss_execute import IO
+          io=IO();key='china_agent:owner_blocked_cards:2026-11-09:v1:read'
+          if io.get(key):raise SystemExit('Existing read; no replay')
+          assert io.create(key,dict(status='collecting',wb_writes=0,telegram_calls=0))
+          try:
+           claims=json.loads(base64.urlsafe_b64decode(io.token.split('.')[1]+'='*(-len(io.token.split('.')[1])%4)))
+           ids=io.db('analytics_snapshots?cabinet=eq.token_3&source=eq.seller_identity&status=eq.complete&select=payload&limit=100')
+           assert {r['payload'].get('sid')for r in ids}=={claims.get('sid')}and claims.get('sid')
+           r=requests.get('https://seller-analytics-api.wildberries.ru/api/v1/analytics/banned-products/blocked',params=dict(sort='nmId',order='asc'),headers={'Authorization':io.token},timeout=45)
+           assert r.ok,'Blocked report HTTP '+str(r.status_code)
+           data=r.json();assert isinstance(data.get('report'),list)
+           out=dict(status='collecting',report=data['report'],report_observed_at=datetime.now(timezone.utc).isoformat(),cards=[],card_errors={},cabinet='token_3',wb_writes=0,telegram_calls=0)
+           io.put(key,out)
+           assert len(data['report'])<=20,'Unexpected blocked scope'
+           for row in data['report']:
+            nm=row['nmId']
+            try:out['cards'].append(io.card(nm))
+            except Exception as ex:out['card_errors'][str(nm)]=type(ex).__name__+':'+str(ex)[:150]
+           out.update(status='complete'if not out['card_errors']else'partial',observed_at=datetime.now(timezone.utc).isoformat());io.put(key,out)
+          except Exception as ex:
+           io.put(key,dict(status='blocked',error=type(ex).__name__+':'+str(ex)[:180],wb_writes=0,telegram_calls=0));raise
+          PY

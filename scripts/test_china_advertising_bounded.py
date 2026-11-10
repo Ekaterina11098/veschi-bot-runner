@@ -1,4 +1,4 @@
-import ast,copy,json,unittest
+import ast,copy,json,os,unittest
 from pathlib import Path
 def compact(value):
  source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
@@ -18,13 +18,13 @@ class BoundedMidday(unittest.TestCase):
   self.assertIn('No new research actions',compact(self.sample())['context_scope'])
  def test_large_candidate_set_is_partitioned_without_loss(self):
   source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
-  nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef)and n.name in ('compact','ask')]
+  nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef)and n.name in ('compact','ask','replace_times')]
   calls=[]
   def one(core,identity,p,validate,rules,*args):
    calls.append(p)
    self.assertLess(len(json.dumps(p)),29000)
    return validate(dict(kind='advertising_review',decisions=[dict(id=k,note='Keep')for k in p['data']['allowed_actions']],directions={d:dict(status='checked',note='Group only')for d in ('raise','add','reduce','exclude')},research=[])),{}
-  scope=dict(copy=copy,ask_one=one)
+  scope=dict(copy=copy,os=os,ask_one=one)
   exec(compile(ast.Module(body=nodes,type_ignores=[]),'bounded','exec'),scope)
   p=self.sample();p['data']['allowed_actions']={str(i):dict(nm_id=i+1,campaign_id=2,evidence='x'*2000)for i in range(35)}
   result,_=scope['ask'](None,'test',p,lambda v:v,'rules','root',lambda v:'hash',None,None,json.dumps,'test')
@@ -32,12 +32,12 @@ class BoundedMidday(unittest.TestCase):
   self.assertEqual(set(p['data']['allowed_actions']),{r['id']for r in result['decisions']})
  def test_full_catalogue_reviewed_even_without_candidates(self):
   source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
-  nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef)and n.name in ('compact','ask')]
+  nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef)and n.name in ('compact','ask','replace_times')]
   seen=set()
   def one(core,identity,p,validate,rules,*args):
    seen.update(str(x['nm_id'])for x in p['data']['completed_source']['products'].values())
    return dict(kind='advertising_review',decisions=[],directions={d:dict(status='checked',note='Checked')for d in ('raise','add','reduce','exclude')},research=[]),{}
-  scope=dict(copy=copy,ask_one=one);exec(compile(ast.Module(body=nodes,type_ignores=[]),'bounded','exec'),scope)
+  scope=dict(copy=copy,os=os,ask_one=one);exec(compile(ast.Module(body=nodes,type_ignores=[]),'bounded','exec'),scope)
   p=self.sample();p['data']['allowed_actions']={}
   _,receipt=scope['ask'](None,'test',p,lambda v:v,'rules','root',lambda v:'hash',None,None,json.dumps,'test')
   self.assertEqual({'1','3'},seen)

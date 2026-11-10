@@ -146,7 +146,10 @@ def review_price(worker,draft,trace,force=False,core=None):
   instruction='Сформулируй собственный краткий вывод; выбери исходные строки с достаточными основаниями. Не меняй их числа/товары/цены. Если продажа держится — цену сохранить. Отдельно оцени наличие дневных заказов, отчётной экономики завершённого периода и окончательно закрытой прибыли когорты. Не называй отсутствующими переданные financial_rows. Для повышения +5% применяй согласованные дневные заказы и сохранённую общую конверсию: рост прибыли и окончательно закрытая прибыль когорты не являются условиями допуска. Для снижения нужны собственная предварительная экономика и проверка причин падения; неизвестные расходы не ноль. Отсутствие части источников не означает отсутствие кандидатов во всём каталоге. Не дополняй сегодня сравнением полного вчера. Summary без чисел/новых цен, конкретные проверенные данные только в выбранных исходных строках.')
  def validate(v):
   if v.get('kind')!='price_review' or not isinstance(v.get('keep_rows'),list)or len(set(v['keep_rows']))!=len(v['keep_rows'])or any(x not in rows for x in v['keep_rows']):raise ValueError('Price rows changed/outside evidence')
-  if not isinstance(v.get('summary'),str)or not 0<len(v['summary'])<=650 or re.search(r'\d|[¥₽→]',v['summary']):raise ValueError('Price summary must not invent actionable numbers')
+  if not isinstance(v.get('summary'),str)or not v['summary'].strip() or re.search(r'\d|[¥₽→]',v['summary']):raise ValueError('Price summary must not invent actionable numbers')
+  if len(v['summary'])>650:
+   # Preserve full provider completion privately; length is presentation, not an action failure.
+   v['summary']=v['summary'][:647].rsplit(' ',1)[0]+'…'
   return v
  ident='price:'+str(worker.day)+':'+str(getattr(worker,'mode',worker.audit.get('mode')))+':'+str(getattr(worker,'section',''))
  result,receipt=core.ask(ident,'price',data,dict(kind='price_review',keep_rows=['exact row ids'],summary='Краткий человеческий вывод без чисел и новых цен'),validate,force)

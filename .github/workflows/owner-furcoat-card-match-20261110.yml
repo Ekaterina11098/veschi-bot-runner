@@ -1,9 +1,6 @@
 name: Owner read-only furcoat card matching10Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-furcoat-card-match-20261110.yml']
 permissions:
   contents: read
 concurrency:

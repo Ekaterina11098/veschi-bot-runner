@@ -1,0 +1,103 @@
+name: Validate free-form Pavel high DRR pipeline without writes or sends
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-pavel-free-review-20261110.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-dialog-queue
+  cancel-in-progress: false
+jobs:
+  exact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    concurrency:
+      group: china-dialog-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
+      - name: Install pinned read transport
+        run: pip install requests==2.32.5 Pillow==12.3.0 openai==3.42.1 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
+      - run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+      - name: Exact approved plans only; no historical queue drain
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: validation-no-telegram-access
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CHINA_ANALYSIS_BACKEND: managed_codex
+          PYTHONPATH: scripts:source
+        run: |
+          python -u - <<'PY'
+          import json,unittest,sys,requests,datetime
+          from urllib.parse import urlparse
+          from unittest.mock import patch
+          suite=unittest.TestSuite()
+          for pattern in ('test_china_codex_ad_review.py','test_china_codex_cloud.py','test_bounded_sol_dialog.py'):
+              suite.addTests(unittest.defaultTestLoader.discover('scripts',pattern=pattern))
+          result=unittest.TextTestRunner(verbosity=1).run(suite)
+          if not result.wasSuccessful():raise SystemExit(1)
+          from china_codex_cloud import DB,Worker,CLOUD,CHAT,INSTRUCTIONS,envelope
+          from bounded_sol_dialog import BoundedSol,compact_message
+          from china_codex_ad_review import prepare
+          from china_loss_execute import IO
+          from test_china_codex_ad_review import Store
+          db=DB();job=db.api('GET','business_agent_jobs',{'id':'eq.283','chat_id':'eq.'+str(CHAT),'select':'id,sender_id,chat_id,request_text,tool_trace'})[0]
+          text=job['request_text'].removeprefix('/codex ')
+          context=Worker(db).context(dict(job_id=283,request_text=text,sender_id=job['sender_id']))
+          identity='pavel283-free-review-validation-v1'
+          msg=compact_message(dict(runtime_scope=dict(today_msk='2026-11-10',sender_id=job['sender_id'],chat_id=CHAT,validation_only=True,wb_action_permission=False),dated_work_context=context,untrusted_telegram_question=text))
+          model=BoundedSol(db,'china_agent:owner_pavel_free_review:2026-11-10:v1:')
+          decision=envelope(model.answer(identity,INSTRUCTIONS,msg))
+          assert decision['kind']=='review_advertising','Maintenance must become typed review, not plain read or new test'
+          real_request=requests.sessions.Session.request;reads=[]
+          def guarded(session,method,url,**kw):
+              u=urlparse(url);method=method.upper()
+              if u.hostname=='api.telegram.org':raise AssertionError('Telegram forbidden')
+              if u.hostname and u.hostname.endswith('wildberries.ru'):
+                  if method!='GET'and not(method=='POST'and u.path in ('/api/advert/v1/bids/min','/api/advert/v2/budget','/api/v3/stocks/2126188')):raise AssertionError('WB mutation forbidden')
+                  reads.append(dict(method=method,path=u.path))
+              return real_request(session,method,url,**kw)
+          memory=Store()
+          with patch('requests.sessions.Session.request',guarded):
+              outcome=prepare(memory,job,decision,io=IO())
+          executed={(40933588,1473243089),(40945478,1535337769),(41298169,1473243910),(41325622,1535337770),(41680341,1473245495),(41680341,1473244358)}
+          assert not any((a['campaign_id'],a['nm_id'])in executed for a in outcome['actions']),'Completed/current-day actions repeated'
+          value=dict(status='verified',original_job_id=283,question=text,model_decision=decision,review=outcome,read_requests=reads,regression_tests=result.testsRun,execution_transport='native daily_ad_actions tested with simulated WB',real_wb_writes=0,telegram_sends=0,live_plan_published=False,observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+          db.once('china_agent:owner_pavel_free_review:2026-11-10:v1:validation-v1',value)
+          print(json.dumps(dict(status='verified',tests=result.testsRun,actions=len(outcome['actions']),wb_reads=len(reads),wb_writes=0,telegram_sends=0)))
+          PY

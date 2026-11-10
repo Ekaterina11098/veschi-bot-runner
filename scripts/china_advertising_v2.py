@@ -99,7 +99,7 @@ def collect(io,day,current=False):
  if current and s:
   try:
    age=(datetime.now(timezone.utc)-event_time(s.get('observed_at'))).total_seconds()
-   fresh=0<=age<=1800 and s.get('period_from')==day and s.get('period_to')==day
+   fresh=0<=age<=120 and s.get('period_from')==day and s.get('period_to')==day
   except (ValueError,TypeError,AttributeError):fresh=False
   if not fresh:
    # Preserve the source that produced an earlier report; never relabel it as current.

@@ -1,5 +1,5 @@
 """15:00 MSK current-day-only report; read-only collection, explicit page approvals."""
-import os,json,base64,io as bio
+import os,json,base64,hashlib,io as bio
 from datetime import datetime,timezone,timedelta,date
 from PIL import Image,ImageDraw
 from china_advertising_v2 import collect,build,http,price_map,history,daily_metrics,sums,ratio,MSK,never_started_draft,event_time
@@ -62,7 +62,8 @@ def current_report_context(io,source,day):
   if key not in seen:records.append(dict(cache_key=key,payload=receipt));seen.add(key)
  from china_budget_context import read_context
  manual=read_context(io.get,datetime.now(timezone.utc))
- return records,dict(verified_registry=pointers,manual_funding=manual,wb_writes=0)
+ events=sorted(json.dumps(x,sort_keys=True,ensure_ascii=False)for x in history(records))
+ return records,dict(verified_registry=pointers,history_sha256=hashlib.sha256(json.dumps(events,ensure_ascii=False).encode()).hexdigest(),manual_funding=manual,wb_writes=0)
 
 def prepare_midday(io,day,source=None):
  source=collect(io,day,current=True) if source is None else source
@@ -234,6 +235,7 @@ def run():
   checked_review=review.get('codex_analysis',{}).get('transport')=='responses_bounded_advertising_v3_full_scope'or (no_model_enabled(io)and review.get('midday_review',{}).get('backend')=='owner_selected_full_checks_no_model')
   reusable=done.get('status')=='complete'and review.get('economic_review_complete')is True and checked_review and same_campaign_state and (exact_recovery or (datetime.now(timezone.utc)-datetime.fromisoformat(done['observed_at'].replace('Z','+00:00'))).total_seconds()<1200)
   prepared=prepare_midday(io,day,current)
+  reusable=reusable and prepared.get('review_context',{}).get('history_sha256')==done.get('input_review_context',{}).get('history_sha256')
   b=only_completed_day_actions(merge_completed(prepared,review,completed_key)if reusable else attach(io,prepared,day));files=[]
   for i,f in enumerate(render_midday(b)):
    p=plan(io,day,f,i,slot='midday-full-v3')

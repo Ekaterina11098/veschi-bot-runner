@@ -380,7 +380,7 @@ def include_archived(io,source,day):
  return s
 
 def build(s,minima=None):
- minima=minima or {};end=date.fromisoformat(s['period_to']);days=[str(end-timedelta(days=i)) for i in [2,1,0]];labels=price_map(s['catalogue']);changes=history(s['executions']);cs=[];budgets={};raw=[]
+ minima=minima or {};end=date.fromisoformat(s['period_to']);days=[str(end-timedelta(days=i)) for i in [2,1,0]];labels=price_map(s['catalogue']);changes=history(s['executions'])+list(s.get('verified_composition_changes',[]));cs=[];budgets={};raw=[]
  for b in s['batches'].values():cs+=b['campaigns'].get('adverts',[]);raw+=b['stats'];budgets.update({x['advertId']:x for x in b['budgets'].get('adverts',[]) if x is not None})
  if {c['id'] for c in cs}!=set(s['ids']) or len(cs)!=len(s['ids']):raise ValueError('Campaign readback incomplete')
  for rec in s.get('experience',[]):

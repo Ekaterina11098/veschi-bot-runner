@@ -16,6 +16,7 @@ def save_analytic_cache(io,key,value):
   io.put(key,value)
  if io.get(key)!=value:
   raise RuntimeError('Analytical cache readback mismatch')
+def finite_number(value):return type(value)in(int,float)and math.isfinite(value)
 def stamp():return datetime.now(timezone.utc).isoformat()
 def enabled(io):return (io.get('china_agent:advertising_format:v2')or{}).get('full_cabinet_growth_review_required')is True
 def collect(io,s,day):
@@ -70,6 +71,30 @@ def collect(io,s,day):
   if 'stock'not in v:
    v['stock']=read_stock(list(dict.fromkeys(r['article']for r in v['prices']['rows'])));save()
   if 'fx'not in v:v['fx']=rate(Work(),date.fromisoformat(day));save()
+  # Owner action holds are not exclusions from factual/economic verification.
+  if 'held_evidence'not in v:
+   known={r['nm_id']for r in v['prices']['rows']}
+   held=[nm for nm in sorted(excluded)if nm not in known]
+   if held:
+    rows=[]
+    for nm in held:
+     goods=io.wb('/api/v2/list/goods/filter?limit=1000&offset=0&filterNmID='+str(nm)).get('listGoods')
+     matches=[g for g in (goods or[])if g.get('nmID')==nm]
+     if len(matches)!=1:raise ValueError('Held SKU exact current price missing')
+     g=matches[0];vals={z.get('discountedPrice')for z in g.get('sizes',[])}
+     price=next(iter(vals),None)
+     if g.get('currencyIsoCode4217')!='CNY'or len(vals)!=1 or not finite_number(price)or price<=0:raise ValueError('Held SKU exact CNY price invalid')
+     rows.append(dict(nm_id=nm,article=g['vendorCode'],currency='CNY',seller_price=price,size_ids=[z['sizeID']for z in g['sizes']]))
+    hp=dict(rows=rows,missing={},observed_at=stamp())
+    hs=read_stock([r['article']for r in rows]);hb=published_stock(io,hp,held)
+    he=model_rows(dict(products=v['own'],prices=hp,stock=hs,fx=dict(rub_per_cny=v['fx']['rub_per_cny'])),io.get('china_agent:new_ad_economics_policy:v1'),io.get('china_agent:expected_profit_delivery_model:v1'))
+    if he.get('missing')or set(he['rows'])!={str(nm)for nm in held}:raise ValueError('Held SKU full economic verification incomplete')
+    for nm,e in he['rows'].items():e.update(published_stock=hb['amounts'].get(nm),published_stock_observed_at=hb['observed_at'],fx_rub_per_cny=float(v['fx']['rub_per_cny']),fx_date=day)
+    v['held_evidence']=dict(prices=hp,stock=hs,published_stock=hb,economics=he,action_permission=False)
+    v['prices']['rows']+=rows
+    if 'economics'in v:v['economics']['rows'].update(he['rows'])
+   else:v['held_evidence']=dict(status='already_covered',action_permission=False)
+   save()
   if 'economics'not in v:
    v['economics']=model_rows(dict(products=v['own'],prices=v['prices'],stock=v['stock'],fx=dict(rub_per_cny=v['fx']['rub_per_cny'])),io.get('china_agent:new_ad_economics_policy:v1'),io.get('china_agent:expected_profit_delivery_model:v1'))
    for nm,e in v['economics']['rows'].items():e.update(published_stock=v['published_stock']['amounts'].get(nm),published_stock_observed_at=v['published_stock']['observed_at'],fx_rub_per_cny=float(v['fx']['rub_per_cny']),fx_date=day)

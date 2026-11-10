@@ -96,7 +96,18 @@ def attach(io,bundle,day):
   saved_stats=completed_campaign_stats(io,active,saved_stats,source['period_from'],end)
   batch['stats']=[copy.deepcopy(saved_stats[cid]) for cid in ids if cid in saved_stats]
  source['config']=copy.deepcopy(current['config'])
+ source['executions']=copy.deepcopy(current.get('executions',source.get('executions',[])))
  records,context=__import__('china_advertising_midday').current_report_context(io,source,day)
+ source['verified_composition_changes']=[]
+ indexed={r.get('cache_key'):r.get('payload',{})for r in records}
+ for cid,key in context.get('verified_registry',{}).items():
+  receipt=indexed.get(key,{})
+  before=receipt.get('before')or{};after=receipt.get('after')or{}
+  at=receipt.get('verified_at')or receipt.get('completed_at')
+  if receipt.get('status')!='verified'or not at or str(after.get('id'))!=str(cid):continue
+  old={n['nm_id']for n in before.get('nm_settings',[])};new={n['nm_id']for n in after.get('nm_settings',[])}
+  if before and old!=new:
+   source['verified_composition_changes'] += [dict(cid=int(cid),nm=nm,kind='relaunch',at=at,text='Изменён состав РК',source_ref=key)for nm in new]
  source['executions']=records
  source['observed_at']=datetime.now(timezone.utc).isoformat();source['budget_balance_observed_at_iso']=current.get('completed_at',current['observed_at'])
  rough=build(source)

@@ -26,7 +26,7 @@ def compact_source(s):
  economics=s.get('economics',{})
  current=(s.get('full_growth_inputs')or{}).get('campaigns')or[c for b in s.get('batches',{}).values()for c in b.get('campaigns',{}).get('adverts',[])]
  return dict(period_from=s.get('period_from'),period_to=s.get('period_to'),observed_at=s.get('observed_at'),day_quality=s.get('day_quality'),products=compact_products,product_daily_columns=columns,
-  current_campaigns=[dict(id=c['id'],status=c['status'],currency=c['currency'],bid_type=c['bid_type'],settings=c['settings'],nm_settings=[dict(nm_id=n['nm_id'],subject_id=n['subject']['id'],bids_kopecks=n['bids_kopecks'])for n in c['nm_settings']])for c in current],
+  owner_held_nm_ids=(s.get('full_growth_inputs')or{}).get('excluded_nm_ids',[]),current_campaigns=[dict(id=c['id'],status=c['status'],currency=c['currency'],bid_type=c['bid_type'],settings=c['settings'],nm_settings=[dict(nm_id=n['nm_id'],subject_id=n['subject']['id'],bids_kopecks=n['bids_kopecks'])for n in c['nm_settings']])for c in current],
   catalogue=dict(rows=[dict(nmID=r['nmID'],vendorCode=r['vendorCode'])for r in s.get('catalogue',{}).get('rows',[])]),
   economics=dict(status=economics.get('status'),rows={nm:{k:e[k]for k in fields if k in e}for nm,e in economics.get('rows',{}).items()},missing=economics.get('missing',{})),
   addition_scan=s.get('addition_scan'),growth_inputs_scope=s.get('full_growth_review')or s.get('growth_scope'),

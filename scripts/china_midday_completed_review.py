@@ -37,6 +37,7 @@ def merge_completed(bundle,review,source_ref):
  out['recommendation_directions']=copy.deepcopy(review.get('recommendation_directions',{}))
  out['growth_review']=copy.deepcopy(review.get('growth_review',{}))
  if review.get('codex_analysis'):out['codex_analysis']=copy.deepcopy(review['codex_analysis'])
+ if review.get('midday_review'):out['midday_review']=copy.deepcopy(review['midday_review'])
  if review.get('sales_growth_review'):out['sales_growth_review']=copy.deepcopy(review['sales_growth_review'])
  for c in out['campaigns']:
   c['codex_research_recommendations']=copy.deepcopy((closed.get(c['id'])or{}).get('codex_research_recommendations',[]))
@@ -72,7 +73,7 @@ def completed_campaign_stats(io,campaigns,saved_stats,period_from,period_to):
   for r in extra:
    if not isinstance(r,dict)or type(r.get('advertId'))is not int or r['advertId']not in missing or not isinstance(r.get('days'),list):raise ValueError('Completed-day campaign history malformed')
    result[r['advertId']]=copy.deepcopy(r)
- if any(c['id']not in result for c in campaigns):raise ValueError('Completed-day campaign history incomplete')
+ if any(c['id']not in result for c in campaigns if c.get('status')!=7):raise ValueError('Completed-day active campaign history incomplete')
  return result
 
 def validate_recommendation_readiness(review):
@@ -93,7 +94,10 @@ def attach(io,bundle,day):
   ids=[c['id']for c in batch['campaigns']['adverts'] if not never_started_draft(c)]
   active=[c for c in batch['campaigns']['adverts']if c['id']in ids]
   saved_stats=completed_campaign_stats(io,active,saved_stats,source['period_from'],end)
-  batch['stats']=[copy.deepcopy(saved_stats[cid]) for cid in ids]
+  batch['stats']=[copy.deepcopy(saved_stats[cid]) for cid in ids if cid in saved_stats]
+ source['config']=copy.deepcopy(current['config'])
+ records,context=__import__('china_advertising_midday').current_report_context(io,source,day)
+ source['executions']=records
  source['observed_at']=datetime.now(timezone.utc).isoformat();source['budget_balance_observed_at_iso']=current.get('completed_at',current['observed_at'])
  rough=build(source)
  from china_advertising_full_growth import enabled as full_enabled,collect as collect_full
@@ -144,12 +148,20 @@ def attach(io,bundle,day):
   review=full_review(MiddayFullIO(),source,review)
  else:review=growth_enrich(MiddayGrowthIO(),source,review)
  review=attach_directions(review,source)
- from china_codex_reports import review_advertising
- review=review_advertising(io,review,source,'advertising:'+day+':midday',bundle)
+ from china_midday_rules_review import enabled as no_model_enabled,review as no_model_review
+ if no_model_enabled(io):review=no_model_review(review,source)
+ else:
+  from china_codex_reports import review_advertising
+  review=review_advertising(io,review,source,'advertising:'+day+':midday',bundle)
  from china_sales_growth_review import attach as sales_review
  review=sales_review(review)
  review=validate_recommendation_readiness(review)
- key='china_agent:advertising_midday_completed:'+day+':v1';save(io,key,dict(source=source,review=review,input_review_context=bundle.get('review_context',{}),status='complete',observed_at=source['observed_at'],wb_writes=0))
+ key='china_agent:advertising_midday_completed:'+day+':v1'
+ from china_codex_reports import compact_source
+ evidence=compact_source(source);evidence_key=key+':evidence'
+ save(io,evidence_key,evidence)
+ states={str(c['id']):{k:c.get(k)for k in ('status','currency','bid_type','settings','nm_settings')}for batch in source['batches'].values()for c in batch['campaigns']['adverts']}
+ save(io,key,dict(source_ref=evidence_key,campaign_states=states,review=review,input_review_context=bundle.get('review_context',{}),status='complete',observed_at=source['observed_at'],model_calls=0 if no_model_enabled(io)else None,wb_writes=0))
  return merge_completed(bundle,review,key)
 
 

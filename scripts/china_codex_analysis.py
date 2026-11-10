@@ -51,6 +51,9 @@ class Core:
   if kind=='price' and (self.db.get('china_agent:codex_cloud:v1:policy')or{}).get('transport')=='responses_bounded_v1':
    from china_price_bounded_review import ask
    return ask(self,identity,payload,validate,RULES,ROOT,digest,stamp,parse,message,MODEL)
+  if kind=='advertising' and identity.endswith(':midday') and (self.db.get('china_agent:codex_cloud:v1:policy')or{}).get('transport')=='responses_bounded_v1':
+   from china_advertising_bounded_review import ask
+   return ask(self,identity,payload,validate,RULES,ROOT,digest,stamp,parse,message,MODEL)
   fingerprint=digest(payload);key=ROOT+digest([identity,fingerprint]);state=self.db.get(key)
   if state:
    if state.get('source_sha256')!=fingerprint:raise ValueError('Analysis source changed')

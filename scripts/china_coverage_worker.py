@@ -115,7 +115,20 @@ class CoverageWorker(ScheduledWorker):
         finally:demand.sales_report=base;demand.candidates=old_candidates
 
     def completed_products(self):
-        rows,marker=super().completed_products()
+        # Validate the current totals-only MPStats contract before invoking
+        # the legacy normalizer that requires absent per-product sparklines.
+        from china_price_period import period
+        end=self.day-timedelta(days=1);start=end-timedelta(days=3)
+        rows,marker=period(self,str(start),str(end))
+        if not marker:
+            try:
+                rows,marker=super().completed_products()
+            except ValueError as exc:
+                if str(exc)!='Product period or view totals not verified':raise
+                # The bounded read saved its raw receipt before normalization.
+                rows,marker=period(self,str(start),str(end))
+                if not marker:raise
+        if not marker:raise RuntimeError('Completed product period unavailable')
         coverage=self.coverage();have={str(r['nm_id']) for r in rows}
         self._price_completed_rows=copy.deepcopy(rows)
         self._price_completed_marker=copy.deepcopy(marker)

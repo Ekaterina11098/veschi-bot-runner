@@ -52,7 +52,7 @@ jobs:
       - name: Read current China day and publish exact owner-approved report or fully prepare next green report
         working-directory: source
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: "" # Owner: no model API for this report; Telegram dialogue is separate.
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

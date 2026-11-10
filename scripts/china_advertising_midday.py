@@ -71,10 +71,11 @@ def prepare_midday(io,day,source=None):
  for batch in source['batches'].values():
   raw={r['advertId']:r for r in batch['stats']}
   for c in batch['campaigns'].get('adverts',[]):
-   if never_started_draft(c) or c['status']in[7,8,-1]:continue
+   if never_started_draft(c):continue
    draft=False
    rec=raw.get(c['id']);d=next((x for x in (rec or {}).get('days',[]) if x['date'][:10]==day),None)
    metric=daily_metrics(d) if d else dict(ZERO) if rec else None
+   if c['status']in[7,8,-1]and (metric is None or not any(metric.values())):continue
    skus={}
    for app in (d or {}).get('apps',[]):
     for n in app.get('nms',[]):
@@ -209,14 +210,20 @@ def run():
  if delivery_status=='delivered':print('already_delivered');return
  art='china_agent:advertising_midday_artifacts:'+day+':v1';saved=io.get(art)
  if not saved:
-  from china_midday_completed_review import attach,include_closed
+  from china_midday_completed_review import attach,include_closed,merge_completed
   current=include_closed(io,collect(io,day,current=True),day)
-  b=only_completed_day_actions(attach(io,prepare_midday(io,day,current),day));files=[]
+  completed_key='china_agent:advertising_midday_completed:'+day+':v1'
+  done=io.get(completed_key)or{}
+  review=done.get('review')or{}
+  reusable=done.get('status')=='complete'and review.get('economic_review_complete')is True and review.get('codex_analysis',{}).get('transport')=='responses_bounded_advertising_v3_full_scope'and (datetime.now(timezone.utc)-datetime.fromisoformat(done['observed_at'].replace('Z','+00:00'))).total_seconds()<600
+  prepared=prepare_midday(io,day,current)
+  b=only_completed_day_actions(merge_completed(prepared,review,completed_key)if reusable else attach(io,prepared,day));files=[]
   for i,f in enumerate(render_midday(b)):
-   p=plan(io,day,f,i,slot='midday')
+   p=plan(io,day,f,i,slot='midday-full-v3')
    files.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))
-  saved=dict(day=day,status='frozen',bundle=b,files=files)
+  saved=dict(day=day,status='frozen',bundle=b,files=files,validation_revision='full_scope_closed_costs_v3')
   if not io.create(art,saved):saved=io.get(art)
+ if saved.get('validation_revision')!='full_scope_closed_costs_v3':raise ValueError('Superseded report validation revision')
  if saved.get('day')!=day or saved.get('status')!='frozen':raise ValueError('Midday artifact scope mismatch')
  if saved.get('bundle',{}).get('economic_review_complete')is not True:raise ValueError('Full economic validation required before Telegram')
  if saved['bundle'].get('codex_analysis',{}).get('transport')!='responses_bounded_advertising_v3_full_scope':raise ValueError('Complete catalogue analysis required before Telegram')

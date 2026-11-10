@@ -36,7 +36,7 @@ jobs:
             href=x["meta"]["href"]
             for st in stores:
              if st["name"] in ["МСК","Гонконг ВБ ФБО"]:
-              report=get(ms+"/report/stock/all?"+urllib.parse.urlencode({"filter":"product="+href+";store="+st["meta"]["href"],"stockMode":"all"}),token)
+              report=get(ms+"/report/stock/all?"+urllib.parse.urlencode({"filter":"product="+href+";store="+st["meta"]["href"]+";stockMode=all;quantityMode=all"}),token)
               print("MS_STOCK="+json.dumps({"store":st["name"],"rows":[{k:r.get(k) for k in ["name","article","stock","reserve","inTransit","quantity"]} for r in report.get("rows",[])]},ensure_ascii=False))
           except Exception as e:print("MS_ERROR="+str(e))
           try:

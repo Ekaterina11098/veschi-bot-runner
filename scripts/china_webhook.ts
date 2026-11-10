@@ -1,3 +1,4 @@
+import {handlePriceButtons} from './china_price_buttons.mjs';
 import {acceptCodex} from './codex-inbox.mjs';
 // Separate bots and queues; shared knowledge does not grant shared permissions.
 const AGENT = "china"; // Deployment substitutes "china" for its separate function.
@@ -252,6 +253,8 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     }
     const callback=update.callback_query;
     if(callback){
+      const priceButton=await handlePriceButtons(config,callback,update.update_id,{database,telegram,digest,same,launchPrice,handlePriceApproval,reportProposals,deferMembership:true});
+      if(priceButton)return priceButton;
       if(callback.data!=='agent:ask'||callback.message?.chat?.id!==config.chat_id||callback.message?.from?.id!==config.bot_id||callback.from?.is_bot)return new Response('OK');
       return Response.json({method:'answerCallbackQuery',callback_query_id:callback.id,text:'Напишите вопрос обычным сообщением в группе.'});
     }

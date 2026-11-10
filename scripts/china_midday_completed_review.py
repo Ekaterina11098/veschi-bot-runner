@@ -47,6 +47,7 @@ def merge_completed(bundle,review,source_ref):
   if campaign and row.get('bid_verified')is True:
    campaign['addition_review_notes'].append(row['article']+': кандидат на добавление; требуется отдельный точный план.')
 
+ out['economic_review_complete']=review.get('economic_review_complete')is True
  out['recommendation_basis']='completed_days_with_fresh_economics_and_current_state'
  return out
 def completed_campaign_stats(io,campaigns,saved_stats,period_from,period_to):

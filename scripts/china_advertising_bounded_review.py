@@ -56,6 +56,8 @@ def ask_one(core,identity,payload,validate,rules,root,digest,stamp,parse,message
  if state:
   raw=client.recover(token)
  else:
+  budget=core.db.get('china_agent:advertising_midday_model_budget:v1')or{}
+  if budget.get('enabled')is not True or budget.get('max_new_calls',0)<=0:raise RuntimeError('New paid midday analysis calls are disabled; use completed exact-input receipts only')
   state=dict(status='starting',identity=identity,kind='advertising',source_sha256=fingerprint,created_at=stamp(),model=model,wb_action_permission=False,transport='responses_bounded_advertising_v1')
   core.db.once(key,state)
   try:

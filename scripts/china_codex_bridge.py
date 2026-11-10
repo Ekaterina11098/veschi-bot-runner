@@ -10,13 +10,21 @@ def stamp():return datetime.now(timezone.utc).isoformat()
 def prepare_analytics(w,job,inbox):
  req=w.get(ROOT+'data_request:'+str(job['id'])) or {}
  if not req or req.get('status')!='requested':return
- if req.get('job_id')!=job['id'] or req.get('thread_id')!=THREAD or req.get('chat_id')!=CHAT or req.get('kind')not in ('preliminary_profit','read'):raise ValueError('Unapproved bridge read scope')
+ if req.get('job_id')!=job['id'] or req.get('thread_id')!=THREAD or req.get('chat_id')!=CHAT or req.get('kind')not in ('preliminary_profit','read','review_advertising'):raise ValueError('Unapproved bridge read scope')
  from datetime import date
  day=date.fromisoformat(req.get('day_msk') or req.get('date_to'))
  from zoneinfo import ZoneInfo
  today=datetime.now(ZoneInfo('Europe/Moscow')).date()
  if req.get('kind')=='preliminary_profit' and not 0<=(today-day).days<=14:raise ValueError('Bridge forecast date outside scope')
  try:
+  if req.get('kind')=='review_advertising':
+   from china_codex_ad_review import prepare
+   result=prepare(w,job,{'kind':'review_advertising','campaign_ids':req.get('campaign_ids',[])})
+   value=dict(status='calculated',kind='review_advertising',job_id=job['id'],thread_id=THREAD,chat_id=CHAT,result=result,read_round=req.get('read_round'),created_at=stamp(),wb_writes=0,telegram_sends=0)
+   w.save(ROOT+'analytics:'+str(job['id']),value)
+   w.save(ROOT+'data_request:'+str(job['id']),req|dict(status='complete',completed_at=stamp()))
+   w.save(ROOT+'inbox:'+str(job['id']),inbox|dict(status='queued',analytics_key=ROOT+'analytics:'+str(job['id'])))
+   return
   if req.get('kind')=='read':
    from china_codex_read_broker import collect as collect_read
    result=collect_read(w,job,req)
@@ -123,6 +131,8 @@ def handle(w,job,cfg):
   w.save(ROOT+'outbox:'+str(job['id']),out|dict(status='delivered',message_id=message_ids[0],message_ids=message_ids,delivered_at=stamp(),receipt_key='china_agent:conversion_watch_delivery:v1:codex_bridge:'+str(job['id'])+':0',parts_count=len(parts)))
   w.save(key,inbox|dict(status='delivered',message_id=message_ids[0],message_ids=message_ids,delivered_at=stamp()))
   timing('delivered',delivery_total_ms=round((time.perf_counter()-delivery_started)*1000,3),confirmed_message_ids=message_ids)
+  from china_codex_ad_review import bind as bind_review_plan
+  bind_review_plan(w,job['id'],message_ids,out['answer'])
   from china_ad_proposal_consent import bind as bind_proposal_question
   bind_proposal_question(w,job['id'],message_ids,out['answer'])
   patch(dict(status='done',answer=out['answer'],lease_until=None,error=None,completed_at=stamp()));return 'codex_bridge_delivered'

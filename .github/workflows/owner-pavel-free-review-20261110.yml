@@ -96,9 +96,48 @@ jobs:
           memory=Store()
           with patch('requests.sessions.Session.request',guarded):
               outcome=prepare(memory,job,decision,io=IO())
+          # Historical real cost actions, simulated confirmation/native execution only.
+          import copy,re
+          import china_codex_ad_review as module
+          from china_loss_control import PLAN,APPROVAL
+          from china_daily_ad_actions import handle,execute
+          liveio=IO();original=liveio.get(PLAN+'daily-2026-11-10-drr-0')
+          historic=[a for a in original['items']if a['kind']=='ad_exclude_sku'or a['kind']=='ad_set_bid'and a['target_minor']<a['old_minor']]
+          execution=liveio.get('china_agent:daily_ad_execution:v2:daily-2026-11-10-drr-0')
+          campaigns={x['before']['id']:copy.deepcopy(x['before'])for x in execution['items']if x['id']in {a['id']for a in historic}}
+          replay=Store();fixture=dict(status='reviewed',actions=copy.deepcopy(historic),rows=[],days=['2026-11-07','2026-11-08','2026-11-09'])
+          with patch.object(module,'review',return_value=fixture):draft=prepare(replay,job,decision,io=object())
+          module.bind(replay,283,[600],draft['answer'])
+          confirmation=dict(id=9002,update_id=5,sender_id=job['sender_id'],chat_id=CHAT,request_text='Сделай все',created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),tool_trace=[dict(name='china_saved_question',bot_id=8780468043,message_id=601,reply_message_id=600)])
+          with patch('china_group_permissions.allowed',return_value=True):handle(replay,confirmation)
+          mutations=[]
+          class Response:
+              ok=True;content=b'{}'
+              def __init__(self,data):self.data=data
+              def json(self):return copy.deepcopy(self.data)
+          def simulated(method,url,**kw):
+              body=kw.get('json')or{}
+              if '/api/advert/v2/adverts?'in url:return Response(dict(adverts=[campaigns[int(url.split('ids=')[1])]]))
+              if url.endswith('/api/advert/v1/bids/min'):
+                  a=next(a for a in historic if a['campaign_id']==body['advert_id']and a['nm_id']in body['nm_ids'])
+                  return Response(dict(bids=[dict(nm_id=a['nm_id'],bids=[dict(type='search'if a['placement']=='search'else'recommendation',currency='CNY',value=a['target_minor'])])]))
+              if method=='PATCH'and url.endswith('/api/advert/v1/bids'):
+                  for b in body['bids']:
+                      for n in b['nm_bids']:
+                          row=next(r for r in campaigns[b['advert_id']]['nm_settings']if r['nm_id']==n['nm_id']);row['bids_kopecks'][n['placement']]=n['bid_kopecks']
+                  mutations.append(body);return Response({})
+              if method=='PATCH'and url.endswith('/adv/v0/auction/nms'):
+                  for b in body['nms']:campaigns[b['advert_id']]['nm_settings']=[n for n in campaigns[b['advert_id']]['nm_settings']if n['nm_id']not in b['nms']['delete']]
+                  mutations.append(body);return Response({})
+              raise AssertionError('Unexpected simulated request')
+          with patch('requests.request',side_effect=simulated),patch('time.sleep'),patch('china_execution_notice.deliver_result'):
+              first=execute(replay,replay.get(APPROVAL+'9002'),replay.get(PLAN+draft['plan_id']))
+              second=execute(replay,replay.get(APPROVAL+'9002'),replay.get(PLAN+draft['plan_id']))
+          assert len(mutations)==len(historic)==3
+          assert all(x['status']=='verified'for x in first['items'])and all(x['status']=='verified'for x in second['items'])
           executed={(40933588,1473243089),(40945478,1535337769),(41298169,1473243910),(41325622,1535337770),(41680341,1473245495),(41680341,1473244358)}
           assert not any((a['campaign_id'],a['nm_id'])in executed for a in outcome['actions']),'Completed/current-day actions repeated'
-          value=dict(status='verified',original_job_id=283,question=text,model_decision=decision,review=outcome,read_requests=reads,regression_tests=result.testsRun,execution_transport='native daily_ad_actions tested with simulated WB',real_wb_writes=0,telegram_sends=0,live_plan_published=False,observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
-          db.once('china_agent:owner_pavel_free_review:2026-11-10:v1:validation-v1',value)
+          value=dict(status='verified',original_job_id=283,question=text,model_decision=decision,review=outcome,read_requests=reads,regression_tests=result.testsRun,execution_transport='native daily_ad_actions tested with simulated WB',historical_real_cost_actions=len(historic),simulated_writes=len(mutations),replay_additional_writes=0,real_wb_writes=0,telegram_sends=0,live_plan_published=False,observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+          db.once('china_agent:owner_pavel_free_review:2026-11-10:v1:validation-v2',value)
           print(json.dumps(dict(status='verified',tests=result.testsRun,actions=len(outcome['actions']),wb_reads=len(reads),wb_writes=0,telegram_sends=0)))
           PY

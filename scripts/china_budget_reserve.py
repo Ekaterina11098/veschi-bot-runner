@@ -33,7 +33,7 @@ def attach_completed_evidence(bundle,source,changes):
  known={c['id'] for c in out['campaigns']}
  for cid,state in campaigns.items():
   if cid not in known:
-   out['campaigns'].append(dict(id=cid,name=state.get('settings',{}).get('name',str(cid)),status=state['status'],never_started=state.get('status')==4,period=None,last=None,balance=None,focus=[]))
+   out['campaigns'].append(dict(id=cid,name=state.get('settings',{}).get('name',str(cid)),status=state['status'],never_started=state.get('status')==4,period=None,last=None,balance=None,focus=[],missing_stats=True,zone='поиск' if state.get('settings',{}).get('placements',{}).get('search') else 'рекомендации',payment=state.get('settings',{}).get('payment_type','unknown'),drr=None,forecast=None,coverage=None,new_composition=True,created=state.get('timestamps',{}).get('created','')[:10],budget_recommendation='РК не запущена; бюджет и запуск требуют отдельного согласования.',budget_action=None,budget_inventory_only=True))
  stats={c['advertId']:c for b in source['batches'].values() for c in b['stats']}
  econ=source.get('economics') or {}
  for c in out['campaigns']:

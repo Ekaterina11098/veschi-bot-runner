@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 635f50267507badfbc6895f55f21d58f9c0c9c6a
+          ref: 7e359b3ef16a231031b1c6a97e4f78de19f0a990
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source
@@ -69,4 +69,4 @@ jobs:
           retention-days: 90
 
 
-# Resume same correction after persisted collection retry15:23:32UTC; no write replay.
+# Resume same owner9 root with actual fresh physical MS reread after current orders; 265 offline checks passed.

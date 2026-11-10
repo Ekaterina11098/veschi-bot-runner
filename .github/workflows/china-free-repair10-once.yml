@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     concurrency:
-      group: china-dialog-data
+      group: china-free-diagnostics10
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4

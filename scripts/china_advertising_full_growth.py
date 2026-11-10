@@ -97,6 +97,9 @@ def collect(io,s,day):
    save()
   if 'economics'not in v:
    v['economics']=model_rows(dict(products=v['own'],prices=v['prices'],stock=v['stock'],fx=dict(rub_per_cny=v['fx']['rub_per_cny'])),io.get('china_agent:new_ad_economics_policy:v1'),io.get('china_agent:expected_profit_delivery_model:v1'))
+   held_model=(v.get('held_evidence')or{}).get('economics')or{}
+   v['economics']['rows'].update(held_model.get('rows',{}))
+   for nm in held_model.get('rows',{}):v['economics']['missing'].pop(nm,None)
    for nm,e in v['economics']['rows'].items():e.update(published_stock=v['published_stock']['amounts'].get(nm),published_stock_observed_at=v['published_stock']['observed_at'],fx_rub_per_cny=float(v['fx']['rub_per_cny']),fx_date=day)
    save()
   if 'campaigns'not in v:

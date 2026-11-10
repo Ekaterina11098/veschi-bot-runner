@@ -8,7 +8,14 @@ CHAT=-1004342917488
 BOT=8780468043
 
 def require_paid_api(policy=None):
-    raise PermissionError('Owner10Nov: paid AI is disabled; no request was sent')
+    # Fail closed for legacy/background callers; only the scoped cloud dialogue can opt in.
+    p=policy or {}
+    if (p.get('enabled') is True and p.get('paid_api_allowed') is True
+        and p.get('chat_id')==CHAT and p.get('bot_id')==BOT
+        and p.get('model')=='gpt-6.1-sol' and p.get('transport')=='responses_bounded_v1'
+        and p.get('wb_action_permission') is False):
+        return
+    raise PermissionError('Scoped paid dialogue is not enabled; no request was sent')
 
 def enabled(w):
     p=w.get(POLICY) or {}

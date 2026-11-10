@@ -1,9 +1,6 @@
 name: Owner remaining two melange China targets10Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-furcoat-melange-20261110.yml']
 permissions:
   contents: read
 concurrency:

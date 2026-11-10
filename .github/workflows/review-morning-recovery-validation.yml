@@ -1,0 +1,31 @@
+name: Validate morning draft recovery
+on:
+  push:
+    paths: ['openai_client.py', 'test_generation_recovery.py']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout: |
+            /openai_client.py
+            /test_generation_recovery.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 18649db15489c3dc77edc22bec5a4ddc5ed6a410
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout: /validator.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: PYTHONPATH=private-source python -m unittest test_generation_recovery.py

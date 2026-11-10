@@ -65,35 +65,49 @@ def generate_draft(feedback):
     else:
         opening = "Добрый день!"
 
+    validation_errors = []
+
     def create(style):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content + "\n\nНачни ответ СТРОГО с «" + opening + "». "
-                 "Это обязательное приветствие, даже если имя уже есть в отзыве. " + style},
+                 "Это обязательное приветствие, даже если имя уже есть в отзыве. " + style +
+                 ("\nИсправь замечания предыдущей проверки: " + "; ".join(validation_errors) if validation_errors else "")},
             ],
             temperature=0.9,
         )
         answer = (response.choices[0].message.content or "").strip()
+        # Restore only display whitespace in the mandatory greeting. Keep the
+        # original customer name and body; all safety validation still runs.
+        pattern = r"^" + r"\s+".join(re.escape(x) for x in opening.split()) + r"\s*"
+        match = re.match(pattern, answer, re.IGNORECASE)
+        if match:
+            answer = opening + " " + answer[match.end():].lstrip()
         return answer
 
     try:
         first = ""
         for _ in range(3):
             first = create("Вариант 1: короткий, сдержанный ответ. Сразу отреагируй на главную мысль отзыва. Выдай только готовый ответ.")
-            if validate_answer(first, feedback)["approved"]:
+            validation = validate_answer(first, feedback)
+            validation_errors = validation["errors"]
+            if validation["approved"]:
                 break
         else:
             raise RuntimeError("ИИ не смог подготовить допустимый первый ответ. Попробуйте ещё раз")
 
+        validation_errors = []
         for _ in range(3):
             second = create(
                 "Вариант 2: более тёплый ответ, иной порядок мыслей и заметно другие формулировки. "
                 "Не копируй текст варианта 1, который приведён ниже; сохрани те же факты и правила бренда. "
                 "Выдай только готовый ответ.\nВариант 1:\n" + first
             )
-            if validate_answer(second, feedback)["approved"] and _sufficiently_different(first, second):
+            validation = validate_answer(second, feedback)
+            validation_errors = validation["errors"]
+            if validation["approved"] and _sufficiently_different(first, second):
                 return {"variant1": first, "variant2": second,
                         "benchmarks_used": examples.count("Одобренная редакция"),
                         "benchmark_warning": benchmark_warning}

@@ -130,7 +130,7 @@ class Worker:
         else:self.db.once(key,value)
     def sdk(self):
         from china_no_paid import require_paid_api
-        require_paid_api(self.db.get(CLOUD+'policy'))
+        require_paid_api()
         if self.client is None:
             from openai import OpenAI
             self.client=OpenAI(max_retries=0,timeout=120)
@@ -221,7 +221,7 @@ class Worker:
         if sid=='responses-stateless':
             from china_no_paid import require_paid_api
             from bounded_sol_dialog import BoundedSol
-            require_paid_api(self.db.get(CLOUD+'policy'))
+            require_paid_api()
             return BoundedSol(self.db,CLOUD).answer(submission,INSTRUCTIONS,message)
         text=[];completed=False
         if len(message.encode('utf-8'))>3800000:raise ValueError('Cloud message exceeds bounded request scope')
@@ -360,6 +360,9 @@ class Worker:
         self.db.once(completion_key,completion)
         return self.finish(claimed,key,completion,journal)
     def run(self):
+        free=self.db.get('china_agent:no_paid_ai:v1') or {}
+        if free.get('owner_no_paid_lock') is True and free.get('chat_id')==CHAT and free.get('bot_id')==BOT:
+            return {'status':'disabled_owner_no_paid','observed_at':stamp()}
         p=self.db.get(ROOT+'policy') or {};cloud=self.db.get(CLOUD+'policy') or {}
         if not valid_scope(p) or cloud.get('enabled') is not True:return {'status':'disabled'}
         query={'cache_key':'like.'+ROOT+'inbox:*','payload->>status':'in.(queued,collecting,cloud_processing)','order':'payload->>created_at.asc,cache_key.asc','limit':1,'select':'cache_key,payload'}

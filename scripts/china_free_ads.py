@@ -77,6 +77,9 @@ def prepare(w,job,ids,source_question_job_id=None,maximum_count=None,seed_nm_ids
     return ('Подготовлю предложение примерно до '+str(maximum_count)+' товаров, если расчёты подтвердят кандидатов. ' if maximum_count else 'Подготовлю после расчётов конкретный план. ')+'Сам подберу РК, размещение, ставки и бюджет, проверю экономику и наличие. Пришлю на отдельное подтверждение; это только подготовка, без запуска и пополнений.'
 
 def handle(w,job):
+    # Maintenance requests must never become acquisition/test preparation.
+    from china_free_diagnostics import intent
+    if intent(job.get('request_text','')) is not None:return None
     from china_new_ads import handle as existing,REQUEST,BIND
     from china_ad_proposal_consent import handle as consent,ask
     consent_reply=consent(w,job)

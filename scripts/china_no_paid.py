@@ -8,15 +8,11 @@ CHAT=-1004342917488
 BOT=8780468043
 
 def require_paid_api(policy=None):
-    if not (isinstance(policy,dict) and policy.get('enabled') is True
-            and policy.get('paid_api_allowed') is True and policy.get('chat_id')==CHAT
-            and policy.get('bot_id')==BOT and policy.get('model')=='gpt-6.1-sol'):
-        raise PermissionError('Paid model API requires current scoped owner permission; no request was sent')
-    return True
+    raise PermissionError('Owner10Nov: paid AI is disabled; no request was sent')
 
 def enabled(w):
     p=w.get(POLICY) or {}
-    return p.get('enabled') is True and p.get('chat_id')==CHAT and p.get('bot_id')==BOT and p.get('paid_api_allowed') is False
+    return p.get('chat_id')==CHAT and p.get('bot_id')==BOT and (p.get('owner_no_paid_lock') is True or p.get('enabled') is True and p.get('paid_api_allowed') is False)
 
 HELP=('Платные обращения к ИИ отключены. Доступны расчёты и отчёты без модели:\n'
       '• «Конверсия сегодня по сравнению с неделей»;\n'
@@ -34,6 +30,9 @@ def answer(w,job,history=()):
     scoped=dict(job,request_text=text)
     if re.fullmatch(r'где\s+прежний\s+агент[?.!]*',text,re.I):
         return 'Отдельного «прежнего агента» нет — я неверно выразился. Пишите этому же боту без /codex. Команды к актуальному PNG передаются на исполнение с проверкой WB. Для нового запуска сначала нужны точные товары, ставки и бюджет; прошлое предложение ещё не подтверждает запуск.'
+    from china_free_diagnostics import handle as diagnostics
+    diagnostic=diagnostics(w,scoped,history)
+    if diagnostic is not None:return diagnostic
     from china_free_ads import handle as advertising
     advertising_reply=advertising(w,scoped)
     if advertising_reply is not None:return advertising_reply

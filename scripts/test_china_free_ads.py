@@ -20,9 +20,9 @@ def job(text='Добавь на них рекламу'):
  return dict(id=263,chat_id=-1004342917488,sender_id=307200273,request_text=text,tool_trace=[dict(name='china_saved_question',bot_id=8780468043,message_id=754,reply_message_id=737,codex_bridge=True,bridge_request_text=text)])
 
 class FreeAds(unittest.TestCase):
- def test_paid_api_requires_enabled_current_scoped_policy(self):
+ def test_owner10nov_blocks_paid_api_even_with_scoped_policy(self):
   p=dict(enabled=True,paid_api_allowed=True,chat_id=-1004342917488,bot_id=8780468043,model='gpt-6.1-sol',wb_action_permission=False)
-  self.assertTrue(n.require_paid_api(p))
+  with self.assertRaises(PermissionError):n.require_paid_api(p)
   for invalid in [None,{},dict(p,enabled=False),dict(p,paid_api_allowed=False),dict(p,chat_id=1),dict(p,bot_id=1),dict(p,model='other')]:
    with self.assertRaises(PermissionError):n.require_paid_api(invalid)
  def test_reference_resolves_delivered_target_list_only(self):

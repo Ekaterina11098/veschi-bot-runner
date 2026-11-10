@@ -762,7 +762,9 @@ def saved_network_guard():
             rule_read=ad_rule_read(method,url,kwargs.get('json'))
             from china_analytic_dialog import allowed_read as analytic_read
             analytical=analytic_read(method,url,kwargs.get('json'))
-            if not (database or model or telegram or search or advertising or rule_read or analytical):raise PermissionError('Saved question network scope')
+            from china_free_diagnostics import allowed_read as diagnostic_read
+            diagnostic=diagnostic_read(method,url,kwargs.get('json'))
+            if not (database or model or telegram or search or advertising or rule_read or analytical or diagnostic):raise PermissionError('Saved question network scope')
             return original(session,method,url,*args,**kwargs)
         requests.sessions.Session.request=bounded
         try:yield

@@ -1,0 +1,33 @@
+name: Check current manishka size fields
+on:
+  push:
+    paths: ['.github/workflows/manishka-size-audit-20261110.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+          sparse-checkout: scripts/fbs_document_chain.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - shell: python
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys
+          sys.path.insert(0,'scripts')
+          from fbs_document_chain import Transport,Cache,Worker,now
+          t=Transport();db=Cache(t);w=Worker(t,db,{})
+          rows=[p for p in w.ms_rows('entity/product',{'filter':'archived=false'}) if 'манишк' in p.get('name','').lower()]
+          db.put('label_utility:manishka:size:20261110:v1',{'at':now(),'items':[{'name':p['name'],'article':p.get('article'),'size':next((a.get('value') for a in p.get('attributes',[]) if a['name']=='Размер'),None)} for p in rows]})
+          print('Read-only size check completed:',len(rows))

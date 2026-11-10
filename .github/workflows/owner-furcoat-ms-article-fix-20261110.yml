@@ -1,9 +1,6 @@
 name: Owner exact MS furcoat article cleanup10Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-furcoat-ms-article-fix-20261110.yml']
 permissions:
   contents: read
 concurrency:

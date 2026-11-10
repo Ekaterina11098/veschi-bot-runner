@@ -17,6 +17,7 @@ def merge_completed(bundle,review,source_ref):
  for c in out['campaigns']:
   c['attention']=[];r=closed.get(c['id'])
   if not r:continue
+  if r.get('recommendation_review_note'):c['recommendation_review_note']=r['recommendation_review_note']
   done=[]
   for row in r.get('focus',[]):
    if row.get('already_excluded') or row.get('pending_first_day'):
@@ -142,7 +143,16 @@ def attach(io,bundle,day):
  review=review_advertising(io,review,source,'advertising:'+day+':midday',bundle)
  from china_sales_growth_review import attach as sales_review
  review=sales_review(review)
- if not review.get('economic_review_complete'):raise ValueError('Incomplete economic review; do not freeze empty recommendations')
+ if not review.get('economic_review_complete'):
+  # Missing evidence blocks that recommendation, not the scheduled factual report.
+  blockers=review.get('economic_review_blockers',[])
+  if not blockers:raise ValueError('Economic review incomplete without explicit blockers')
+  for campaign in review['campaigns']:
+   affected={r['article']for r in blockers if r['campaign_id']==campaign['id']}
+   for row in campaign.get('focus',[])+campaign.get('attention',[]):
+    if row.get('article')in affected and row.get('action'):raise ValueError('Unready economic action survived')
+   if affected:campaign['recommendation_review_note']='Нет готовых действий: проверка данных не завершена.'
+  for section in review.get('recommendation_directions',{}).values():section['status']='unavailable'
  key='china_agent:advertising_midday_completed:'+day+':v1';save(io,key,dict(source=source,review=review,status='complete',observed_at=source['observed_at'],wb_writes=0))
  return merge_completed(bundle,review,key)
 

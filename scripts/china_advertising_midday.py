@@ -138,7 +138,7 @@ def recommendations(c):
  rows=[completed_recommendation(r)for r in c['attention']]
  rows+=c.get('addition_review_notes',[])
  # Unready research stays in the private analysis journal.
- return rows or [c.get('recommendation_review_note')or'Нет новых действий.']
+ return rows or [c.get('owner_review_note')or c.get('recommendation_review_note')or'Нет новых действий.']
 def covered_totals(campaigns):
  known=[c['today'] for c in campaigns if c.get('today') is not None]
  missing=[c['id'] for c in campaigns if c.get('today') is None and not c.get('draft')]
@@ -162,6 +162,7 @@ def render_midday(b):
   d.text((44,28),'Китай · промежуточный отчёт · 15:00',font=font(48,True),fill='white')
   d.text((44,100),'Текущий день: '+b['day']+' · с 00:00 МСК · цель ДРР 5%',font=font(29,True),fill='white')
   obs=datetime.fromisoformat(b['observed_at'].replace('Z','+00:00')).astimezone(MSK).strftime('%d.%m.%Y %H:%M МСК')
+  if b.get('observation_from'):obs=datetime.fromisoformat(b['observation_from']).astimezone(MSK).strftime('%d.%m.%Y %H:%M')+'–'+datetime.fromisoformat(b['observed_at']).astimezone(MSK).strftime('%H:%M МСК')
   d.text((44,150),'Фактический срез: '+obs,font=font(24),fill='white')
   sections=b.get('recommendation_directions',{})
   labels={'raise':'Повысить','add':'Добавить','reduce':'Снизить','exclude':'Исключить'}
@@ -208,6 +209,8 @@ def run():
  delivery_status=(io.get(key) or {}).get('status')
  if delivery_status=='skipped_by_owner':print('skipped_by_owner');return
  if delivery_status=='delivered':print('already_delivered');return
+ from china_midday_owner_snapshot import publish as publish_owner_snapshot
+ if publish_owner_snapshot(io,day)is not None:return
  if datetime.now(MSK).hour<15:
   from china_midday_completed_review import attach,include_closed
   current=include_closed(io,collect(io,day,current=True),day)

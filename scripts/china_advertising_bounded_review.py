@@ -21,7 +21,7 @@ def compact(payload):
  s['products']={k:v for k,v in products.items()if str(v.get('nm_id'))in nms}
  eco=s.get('economics')or{};eco['rows']={k:v for k,v in eco.get('rows',{}).items()if k in nms};s['economics']=eco
  eco['missing']={k:v for k,v in eco.get('missing',{}).items()if str(k)in nms}
- s['changes']=[x for x in s.get('changes',[])if str(x.get('nm'))in nms or str(x.get('campaign_id'))in cids]
+ s['changes']=[x for x in s.get('changes',[])if str(x.get('nm'))in nms or (str(x.get('campaign_id'))in cids and (not d.get('relevant_changes_only')or x.get('nm')is None))]
  report=d.get('report')or{}
  report['campaigns']=[dict(c,focus=[r for r in c.get('focus',[])if r.get('action_id')in actions])for c in report.get('campaigns',[])if str(c.get('id'))in cids]
  d['report']=report
@@ -70,6 +70,8 @@ def ask_one(core,identity,payload,validate,rules,root,digest,stamp,parse,message
 def ask(core,identity,payload,validate,rules,root,digest,stamp,parse,message,model):
  """Review every candidate in bounded groups; retain exact actions and evidence."""
  actions=payload['data'].get('allowed_actions',{})
+ day=(str(identity).split(':')+[''])[1]
+ control=core.db.get('china_agent:advertising_midday_resume:'+day+':v1')or{} if core is not None else {}
  source=payload['data']['completed_source']
  nms=sorted({str(r['nmID'])for r in source.get('catalogue',{}).get('rows',[])}|{str(r['nm_id'])for r in source.get('products',{}).values()}|{str(a['nm_id'])for a in actions.values()if a.get('nm_id')})
  groups=[];current=[]
@@ -77,6 +79,7 @@ def ask(core,identity,payload,validate,rules,root,digest,stamp,parse,message,mod
   items=items if items is not None else {k:a for k,a in actions.items()if str(a.get('nm_id'))in ids}
   p=copy.deepcopy(payload);p['data']['allowed_actions']=items
   p['data']['review_scope_nm_ids']=ids
+  if not control.get('enabled'):p['data']['relevant_changes_only']=True
   return compact(p)
  for nm in nms:
   trial=current+[nm]
@@ -86,8 +89,6 @@ def ask(core,identity,payload,validate,rules,root,digest,stamp,parse,message,mod
  if current:groups.append(current)
  funding={k:a for k,a in actions.items()if not a.get('nm_id')}
  if funding or not groups:groups.append([])
- day=(str(identity).split(':')+[''])[1]
- control=core.db.get('china_agent:advertising_midday_resume:'+day+':v1')or{} if core is not None else {}
  replacements={}
  if control.get('enabled'):
   live=core.db.get(control['source_key']);frozen=control['full_input']
@@ -114,8 +115,8 @@ def ask(core,identity,payload,validate,rules,root,digest,stamp,parse,message,mod
    return ask_one(core,identity+':group:'+str(index),p,check,rules,root,digest,stamp,parse,message,model)
   with ThreadPoolExecutor(max_workers=3)as pool:list(pool.map(fill,[(i,x)for i,x in enumerate(groups)if i>=control.get('prefill_from_group',9999)]))
   raise PrefillComplete('Remaining bounded analysis groups completed; no report delivery')
- values=[];receipts=[]
- for index,ids in enumerate(groups):
+ def process(pair):
+  index,ids=pair
   group,p=prepared(index,ids)
   def check(v):
    v=validate(v)
@@ -123,9 +124,14 @@ def ask(core,identity,payload,validate,rules,root,digest,stamp,parse,message,mod
    if v.get('research'):raise ValueError('Bounded review cannot invent research actions')
    return v
   value,receipt=ask_one(core,identity+':group:'+str(index),p,check,rules,root,digest,stamp,parse,message,model)
-  values.append(value);receipts.append(receipt)
+  return value,dict(receipt,scope_nm_ids=ids)
+ if core is not None and not control.get('enabled'):
+  with ThreadPoolExecutor(max_workers=3)as pool:results=list(pool.map(process,enumerate(groups)))
+ else:results=[process(pair)for pair in enumerate(groups)]
+ values=[v for v,r in results];receipts=[r for v,r in results]
+ coverage_values=[v for (v,r),ids in zip(results,groups)if ids]or values
  result=dict(kind='advertising_review',decisions=[r for v in values for r in v['decisions']],research=[],summary='; '.join(v.get('summary','')for v in values),directions={})
  for direction in ('raise','add','reduce','exclude'):
-  rows=[v['directions'][direction]for v in values]
+  rows=[v['directions'][direction]for v in coverage_values]
   result['directions'][direction]=dict(status='unavailable'if any(r['status']=='unavailable'for r in rows)else'checked',note=('Candidate groups only; unready catalogue evidence remains private. '+'; '.join(r['note']for r in rows))[:3000])
  return validate(result),dict(identity=identity,transport='responses_bounded_advertising_v3_full_scope',source_sha256=digest(payload),groups=receipts,reviewed_nm_ids=nms,model=model)

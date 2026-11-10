@@ -48,6 +48,9 @@ class Core:
   if p.get('enabled')is not True or (p.get('status')!='active' and not(force and p.get('status')=='shadow')):raise RuntimeError('Cloud analysis not activated')
   payload=dict(analysis_contract_version=3,identity=identity,kind=kind,data=data,contract=contract,work_notes=self.notes(),wb_action_permission=False)
   if len(json.dumps(payload,ensure_ascii=False,default=str))>1300000:raise ValueError('Analysis scope too large; compact by product/day')
+  if kind=='price' and (self.db.get('china_agent:codex_cloud:v1:policy')or{}).get('transport')=='responses_bounded_v1':
+   from china_price_bounded_review import ask
+   return ask(self,identity,payload,validate,RULES,ROOT,digest,stamp,parse,message,MODEL)
   fingerprint=digest(payload);key=ROOT+digest([identity,fingerprint]);state=self.db.get(key)
   if state:
    if state.get('source_sha256')!=fingerprint:raise ValueError('Analysis source changed')

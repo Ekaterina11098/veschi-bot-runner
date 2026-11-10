@@ -1,0 +1,53 @@
+name: Audit China coat labels
+on:
+  push:
+    paths: ['.github/workflows/coat-label-audit-20261110.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+          sparse-checkout: scripts/fbs_document_chain.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - shell: python
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import sys,os,json,urllib.request,gzip,time
+          sys.path.insert(0,'scripts')
+          from fbs_document_chain import Transport,Cache,Worker,MS,now,Stop
+          t=Transport();db=Cache(t);w=Worker(t,db,{})
+          cards=[];cursor={'limit':100}
+          while True:
+              body={'settings':{'cursor':cursor,'filter':{'withPhoto':-1}}}
+              req=urllib.request.Request('https://content-api.wildberries.ru/content/v2/get/cards/list',data=json.dumps(body).encode(),headers={'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json','Accept-Encoding':'gzip'})
+              with urllib.request.urlopen(req,timeout=45) as r:
+                  raw=r.read()
+                  if r.headers.get('Content-Encoding')=='gzip':raw=gzip.decompress(raw)
+                  page=json.loads(raw)
+              cards+=page.get('cards',[])
+              c=page['cursor']
+              if c.get('total',0)<100:break
+              cursor={'limit':100,'updatedAt':c['updatedAt'],'nmID':c['nmID']};time.sleep(.7)
+          coats=[p for p in cards if 'шуб' in (p.get('subjectName','')+' '+p.get('title','')).lower()]
+          products=w.ms_rows('entity/product',{'filter':'archived=false'})
+          variants=w.ms_rows('entity/variant',{'filter':'archived=false'})
+          stock=w.ms_rows('report/stock/all')
+          definitions=t.request(MS,'entity/product/metadata/attributes')['rows']
+          result={'at':now(),'wb_coats':coats,'ms_coats':[p for p in products if 'шуб' in p.get('name','').lower()],
+                  'variants':variants,'stock_coats':[s for s in stock if 'шуб' in s.get('name','').lower()],
+                  'definitions':definitions,'all_barcode_owners':[{'id':p['id'],'article':p.get('article'),'barcodes':p.get('barcodes',[])} for p in products+variants]}
+          db.put('label_utility:coats:20261110:preflight:v1',result)
+          print('Coat label audit saved privately. WB coat cards:',len(coats),'MS coat cards:',len(result['ms_coats']))
+

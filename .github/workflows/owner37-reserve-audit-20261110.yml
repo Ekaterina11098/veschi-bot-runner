@@ -1,9 +1,6 @@
 name: Owner read-only37 actual reserve check10Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner37-reserve-audit-20261110.yml']
 permissions:
   contents: read
 concurrency:

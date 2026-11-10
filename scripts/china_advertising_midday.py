@@ -208,6 +208,12 @@ def run():
  delivery_status=(io.get(key) or {}).get('status')
  if delivery_status=='skipped_by_owner':print('skipped_by_owner');return
  if delivery_status=='delivered':print('already_delivered');return
+ if datetime.now(MSK).hour<15:
+  from china_midday_completed_review import attach,include_closed
+  current=include_closed(io,collect(io,day,current=True),day)
+  prepared=attach(io,prepare_midday(io,day,current),day)
+  if prepared.get('economic_review_complete')is not True:raise ValueError('Preparation requires full verification')
+  print(json.dumps(dict(status='fully_prepared_no_delivery',day=day,wb_writes=0,telegram_calls=0)));return
  art='china_agent:advertising_midday_artifacts:'+day+':v1';saved=io.get(art)
  if not saved:
   from china_midday_completed_review import attach,include_closed,merge_completed
@@ -218,7 +224,10 @@ def run():
   resume=io.get('china_agent:advertising_midday_resume:'+day+':v1')or{}
   def facts(v):return {k:x for k,x in (v or{}).items()if k!='observed_at'}
   exact_recovery=resume.get('enabled')and facts(done.get('source',{}).get('full_growth_inputs'))==facts(resume.get('full_input'))and facts(io.get(resume['source_key']))==facts(resume.get('full_input'))
-  reusable=done.get('status')=='complete'and review.get('economic_review_complete')is True and review.get('codex_analysis',{}).get('transport')=='responses_bounded_advertising_v3_full_scope'and (exact_recovery or (datetime.now(timezone.utc)-datetime.fromisoformat(done['observed_at'].replace('Z','+00:00'))).total_seconds()<600)
+  def states(source):
+   return {str(c['id']):{k:c.get(k)for k in ('status','currency','bid_type','settings','nm_settings')}for batch in source.get('batches',{}).values()for c in batch.get('campaigns',{}).get('adverts',[])}
+  same_campaign_state=states(current)==states(done.get('source',{}))
+  reusable=done.get('status')=='complete'and review.get('economic_review_complete')is True and review.get('codex_analysis',{}).get('transport')=='responses_bounded_advertising_v3_full_scope'and same_campaign_state and (exact_recovery or (datetime.now(timezone.utc)-datetime.fromisoformat(done['observed_at'].replace('Z','+00:00'))).total_seconds()<1200)
   prepared=prepare_midday(io,day,current)
   b=only_completed_day_actions(merge_completed(prepared,review,completed_key)if reusable else attach(io,prepared,day));files=[]
   for i,f in enumerate(render_midday(b)):

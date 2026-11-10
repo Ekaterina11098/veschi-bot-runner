@@ -1,0 +1,66 @@
+name: Owner exact DRR completion PNG 10Nov
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-drr-done-png-20261110.yml']
+permissions:
+  contents: read
+concurrency:
+  group: owner-drr-done-png-20261110
+  cancel-in-progress: false
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Deliver exact privately approved PNG once; no WB access
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os,json,base64,hashlib,urllib.request,urllib.error,datetime,uuid
+          root="china_agent:owner_drr_done_png:2026-11-10:v1"
+          url=os.environ["SUPABASE_URL"].rstrip("/")
+          key=os.environ["SUPABASE_SECRET_KEY"]
+          token=os.environ["CHINA_TELEGRAM_BOT_TOKEN"]
+          headers={"apikey":key,"Authorization":"Bearer "+key,"Content-Type":"application/json"}
+          def db(method,path,body=None,prefer=None):
+           h=dict(headers)
+           if prefer:h["Prefer"]=prefer
+           r=urllib.request.urlopen(urllib.request.Request(url+"/rest/v1/"+path,data=json.dumps(body).encode() if body is not None else None,headers=h,method=method),timeout=45)
+           data=r.read()
+           return json.loads(data) if data else None
+          def stamp():return datetime.datetime.now(datetime.timezone.utc).isoformat()
+          a=db("GET","telegram_api_cache?cache_key=eq."+root+":artifact&select=payload")[0]["payload"]
+          old=db("GET","telegram_api_cache?cache_key=eq."+root+":delivery&select=payload")
+          if old:
+           assert old[0]["payload"].get("status")=="sent" and old[0]["payload"].get("message_id"),"Existing receipt is not confirmed; no replay"
+           print(json.dumps({"status":"already_sent","message_id":old[0]["payload"]["message_id"]}));raise SystemExit()
+          assert a["status"]=="approved" and a["chat_id"]==-1004342917488 and a["bot_id"]==8780468043
+          blob=base64.b64decode(a["b64"],validate=True)
+          assert hashlib.sha256(blob).hexdigest()=="7539bd3c51e804508504f4f8cad8586645ef3306c0553c6c0a42f6d66e5567e7"==a["sha256"]
+          me=json.load(urllib.request.urlopen("https://api.telegram.org/bot"+token+"/getMe",timeout=30))
+          assert me["ok"] and me["result"]["id"]==8780468043
+          p={k:a[k] for k in ("chat_id","bot_id","sha256","caption")}
+          p.update(status="sending",started_at=stamp(),wb_writes=0,source="explicit_owner_codex_20261110")
+          db("POST","telegram_api_cache",{"cache_key":root+":delivery","payload":p,"updated_at":stamp(),"expires_at":"2036-11-10T00:00:00Z"},"return=representation")
+          def save():db("PATCH","telegram_api_cache?cache_key=eq."+root+":delivery",{"payload":p,"updated_at":stamp()},"return=minimal")
+          boundary="OwnerPNG"+uuid.uuid4().hex
+          parts=[]
+          for name,value in {"chat_id":str(a["chat_id"]),"caption":a["caption"]}.items():
+           parts.append(("--"+boundary+'\r\nContent-Disposition: form-data; name="'+name+'"\r\n\r\n'+value+"\r\n").encode())
+          parts.append(("--"+boundary+'\r\nContent-Disposition: form-data; name="photo"; filename="done-drr.png"\r\nContent-Type: image/png\r\n\r\n').encode()+blob+b"\r\n")
+          parts.append(("--"+boundary+"--\r\n").encode())
+          try:
+           req=urllib.request.Request("https://api.telegram.org/bot"+token+"/sendPhoto",data=b"".join(parts),headers={"Content-Type":"multipart/form-data; boundary="+boundary},method="POST")
+           result=json.load(urllib.request.urlopen(req,timeout=60))
+           assert result["ok"] and result["result"]["chat"]["id"]==a["chat_id"] and isinstance(result["result"]["message_id"],int)
+           p.update(status="sent",message_id=result["result"]["message_id"],receipt=result["result"],sent_at=stamp());save()
+           print(json.dumps({"status":"sent","message_id":p["message_id"]}))
+          except Exception:
+           p.update(status="uncertain",error="Delivery or receipt persistence uncertain");save()
+           raise RuntimeError("Delivery uncertain; do not replay") from None
+          
+          PY

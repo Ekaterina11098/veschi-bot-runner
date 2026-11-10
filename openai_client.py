@@ -81,7 +81,7 @@ def generate_draft(feedback):
         answer = (response.choices[0].message.content or "").strip()
         # Restore only display whitespace in the mandatory greeting. Keep the
         # original customer name and body; all safety validation still runs.
-        pattern = r"^" + r"\s+".join(re.escape(x) for x in opening.split()) + r"\s*"
+        pattern = r"^" + r"\s+".join(re.escape(x) for x in opening[:-1].split()) + r"[.!]\s*"
         match = re.match(pattern, answer, re.IGNORECASE)
         if match:
             answer = opening + " " + answer[match.end():].lstrip()
@@ -107,7 +107,10 @@ def generate_draft(feedback):
             )
             validation = validate_answer(second, feedback)
             validation_errors = validation["errors"]
-            if validation["approved"] and _sufficiently_different(first, second):
+            different = _sufficiently_different(first, second)
+            if validation["approved"] and not different:
+                validation_errors = ["Второй ответ слишком похож на первый: измени формулировки и порядок мыслей, сохрани факты."]
+            if validation["approved"] and different:
                 return {"variant1": first, "variant2": second,
                         "benchmarks_used": examples.count("Одобренная редакция"),
                         "benchmark_warning": benchmark_warning}

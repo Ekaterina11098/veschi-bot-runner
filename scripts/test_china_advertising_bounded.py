@@ -6,6 +6,14 @@ def compact(value):
  scope={'copy':copy};exec(compile(ast.Module(body=[fn],type_ignores=[]),'compact','exec'),scope)
  return scope['compact'](value)
 class BoundedMidday(unittest.TestCase):
+ def test_only_omitted_constant_discriminator_is_repaired(self):
+  source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
+  fn=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef)and n.name=='contract_object')
+  scope={};exec(compile(ast.Module(body=[fn],type_ignores=[]),'contract','exec'),scope)
+  v=dict(decisions=[],directions={},research=[],summary='')
+  self.assertEqual(dict(v,kind='advertising_review'),scope['contract_object'](v))
+  wrong=dict(v,kind='answer');self.assertEqual(wrong,scope['contract_object'](wrong))
+  incomplete={'summary':''};self.assertEqual(incomplete,scope['contract_object'](incomplete))
  def sample(self):
   return dict(data=dict(allowed_actions={'one':dict(nm_id=1,campaign_id=2,target_minor=28)},candidate_evidence={'one':dict(metrics=None)},completed_source=dict(products={'2:1':dict(nm_id=1,daily={'closed':None}),'2:3':dict(nm_id=3)},economics=dict(rows={'1':dict(stock_free=0),'3':{}}),catalogue=dict(rows=[dict(nmID=1)]),current_campaigns=[dict(id=2,nm_settings=[dict(nm_id=1)])]),intraday_observation=dict(day='2026-11-10',campaigns=['duplicate'])),work_notes=[])
  def test_exact_actions_and_evidence(self):

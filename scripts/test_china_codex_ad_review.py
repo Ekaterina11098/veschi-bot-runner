@@ -25,6 +25,16 @@ class ReviewTests(unittest.TestCase):
    return review.prepare(self.w,self.job,dict(kind='review_advertising',campaign_ids=[42]),io=object())
  def confirmation(self,mid=600):
   return dict(id=9002,update_id=5,sender_id=307200273,chat_id=CHAT,request_text='Сделай все',created_at=datetime.now(timezone.utc).isoformat(),tool_trace=[dict(name='china_saved_question',bot_id=BOT,message_id=601,reply_message_id=mid)])
+ def test_worker_collects_then_uses_exact_plan_without_second_model(self):
+  import china_codex_cloud as c
+  from test_china_codex_cloud import inbox,FakeDB,FakeWorker
+  i=inbox();db=FakeDB(i);worker=FakeWorker(db,dict(kind='review_advertising',campaign_ids=[42]))
+  self.assertEqual(worker.process(c.ROOT+'inbox:231',i),'collecting')
+  self.assertIsNone(db.get(c.ROOT+'outbox:231'));self.assertEqual(db.get(c.ROOT+'data_request:231')['kind'],'review_advertising')
+  db.values[c.ROOT+'analytics:231']=dict(status='calculated',kind='review_advertising',read_round=1,result=dict(status='reviewed',answer='Точный проверенный план'))
+  current=db.get(c.ROOT+'inbox:231')
+  self.assertEqual(worker.process(c.ROOT+'inbox:231',current),'ready')
+  self.assertEqual(worker.calls,1);self.assertEqual(db.get(c.ROOT+'outbox:231')['answer'],'Точный проверенный план')
  def test_no_model_supplied_actions(self):
   with self.assertRaises(ValueError):review.request(dict(kind='review_advertising',campaign_ids=[42],items=[self.item]))
  def test_prepare_is_not_consent(self):

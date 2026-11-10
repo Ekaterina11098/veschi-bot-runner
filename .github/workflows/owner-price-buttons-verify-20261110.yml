@@ -1,0 +1,62 @@
+name: Verify price-only report buttons without live sends or price writes
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-price-buttons-verify-20261110.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-dialog-queue
+  cancel-in-progress: false
+jobs:
+  exact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    concurrency:
+      group: china-dialog-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
+      - name: Install pinned read transport
+        run: pip install requests==2.32.5 Pillow==12.3.0 openai==3.42.1 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
+      - run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+      - name: Price buttons, delivery and execution regressions without credentials
+        env:
+          PYTHONPATH: scripts:source
+        run: |
+          node scripts/test_china_price_buttons.mjs
+          node scripts/test_china_price_approvals.mjs
+          node scripts/test_china_webhook.mjs
+          python -m unittest discover -s scripts -p test_china_price_buttons.py
+          python -m unittest discover -s scripts -p test_china_price_delivery.py
+          python -m unittest discover -s scripts -p test_china_price_apply.py

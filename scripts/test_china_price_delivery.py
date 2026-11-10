@@ -17,6 +17,8 @@ class Delivery(unittest.TestCase):
             def put(self,k,v):db[k]=v
         def http(session,method,url,**kw):
             action=url.rsplit('/',1)[-1];calls.append(action)
+            if not hasattr(w,'transport_bodies'):w.transport_bodies=[]
+            w.transport_bodies.append((action,kw.get('data',{})))
             if action=='getMe':v={'id':8780468043}
             else:
                 if fail:raise TimeoutError()
@@ -47,6 +49,18 @@ class Delivery(unittest.TestCase):
         w=self.worker(6);db={}
         with self.assertRaisesRegex(RuntimeError,'uncertain'):self.run_delivery(w,db,True)
         with self.assertRaisesRegex(RuntimeError,'no replay'):self.run_delivery(w,db)
+    def test_keyboard_is_frozen_and_sent_with_report(self):
+        import json
+        w=self.worker(1);db,_=self.run_delivery(w)
+        body=next(b for method,b in w.transport_bodies if method=='sendMessage')
+        modes=[r[0]['callback_data'].rsplit(':',1)[1] for r in json.loads(body['reply_markup'])['inline_keyboard']]
+        self.assertEqual(modes,['all','up'])
+        self.assertTrue(any(k.startswith('china_agent:price_buttons:v1:')for k in db))
+    def test_empty_report_has_no_execution_keyboard(self):
+        w=self.worker(0);db,_=self.run_delivery(w)
+        body=next(b for method,b in w.transport_bodies if method=='sendMessage')
+        self.assertNotIn('reply_markup',body)
+        self.assertFalse(any(k.startswith('china_agent:price_buttons:v1:')for k in db))
     def test_two_line_rows_preserve_buyer(self):
         w=self.worker(1)
         self.assertEqual(rows(w.job['answer'])[0],['Повышение','0-Bag-black','100 → 105 ¥','1000 → 1050 ₽'])

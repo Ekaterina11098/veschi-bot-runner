@@ -1,3 +1,5 @@
+import {handlePriceButtons} from './china_price_buttons.mjs';
+import {acceptCodex} from './codex-inbox.mjs';
 import {stripTypeScriptTypes} from 'node:module';
 import vm from 'node:vm';import fs from 'node:fs';import assert from 'node:assert/strict';import {webcrypto} from 'node:crypto';
 const secret='test-secret';const digest=Buffer.from(await webcrypto.subtle.digest('SHA-256',Buffer.from(secret))).toString('hex');
@@ -5,7 +7,7 @@ let cfg={agent_id:'china',chat_id:-123,owner_user_id:5,bot_id:9,bot_username:'ch
 let adsBound=false;
 let handler,jobs=[],dispatches=[],line=null;const acknowledgements=new Map();
 const env={SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'test',CHINA_TELEGRAM_BOT_TOKEN:'test',GITHUB_WORKFLOW_DISPATCH_TOKEN:'test'};
-const ctx={Response,Request,AbortSignal,TextEncoder,crypto:webcrypto,console,Deno:{env:{get:k=>env[k]},serve:f=>handler=f},fetch:async(url,opt)=>{
+const ctx={handlePriceButtons,acceptCodex,Response,Request,AbortSignal,TextEncoder,crypto:webcrypto,console,Deno:{env:{get:k=>env[k]},serve:f=>handler=f},fetch:async(url,opt)=>{
  const u=new URL(url),p=u.searchParams,b=opt.body?JSON.parse(opt.body):null;
  let result=[];
  if(u.hostname==='api.github.com'){dispatches.push(b);return new Response(null,{status:204});}
@@ -33,7 +35,7 @@ const ctx={Response,Request,AbortSignal,TextEncoder,crypto:webcrypto,console,Den
  }else if(table!=='advertising_telegram_chat')throw Error('Unexpected table '+table);
  return Response.json(result);
 }};
-vm.createContext(ctx);vm.runInContext(stripTypeScriptTypes(fs.readFileSync('scripts/china_webhook.ts','utf8').replace("}catch{return new Response('Queue unavailable',{status:503});}","}catch(e){ console.log('TEST ERROR',e.message);return new Response('Queue unavailable',{status:503});}")),ctx);
+vm.createContext(ctx);vm.runInContext(stripTypeScriptTypes(fs.readFileSync('scripts/china_webhook.ts','utf8').replace(/^import .*;\r?\n/gm,'').replace("}catch{return new Response('Queue unavailable',{status:503});}","}catch(e){ console.log('TEST ERROR',e.message);return new Response('Queue unavailable',{status:503});}")),ctx);
 const call=(update,s=secret)=>handler(new Request('https://edge.test',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':s},body:JSON.stringify(update)}));
 const msg=(id,sender=6,chat=-123)=>({update_id:id,message:{message_id:id,chat:{id:chat,type:'supergroup'},from:{id:sender},text:'Покажи сохранённые данные Китая'}});
 assert.equal((await call(msg(1),'wrong')).status,401);assert.equal(jobs.length,0);

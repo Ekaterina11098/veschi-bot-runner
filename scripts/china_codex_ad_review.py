@@ -16,7 +16,10 @@ def review(io,day,campaign_ids=(),refresh=True):
  source_key='china_agent:advertising_source:'+day+':v2'
  s=copy.deepcopy(io.get(source_key)or{})
  end=(datetime.fromisoformat(day).date()-timedelta(days=1)).isoformat()
- if s.get('cabinet')!='token_3' or s.get('status')!='complete' or s.get('period_to')!=end:raise ValueError('Нет полного источника рекламы по '+end+'; требуется сбор завершённого дня')
+ if (s.get('cabinet')!='token_3' or s.get('status')!='complete' or s.get('period_to')!=end) and refresh:
+  from china_advertising_v2 import collect
+  s=copy.deepcopy(collect(io,day))
+ if s.get('cabinet')!='token_3' or s.get('status')!='complete' or s.get('period_to')!=end:raise ValueError('Нет полного источника рекламы по '+end+' после попытки сбора; не нулевые данные')
  states={c['id']:c for b in s['batches'].values()for c in b['campaigns'].get('adverts',[])}
  ids=list(campaign_ids)or sorted(cid for cid,c in states.items()if c.get('status')==9)
  if not ids or len(ids)>50 or any(cid not in states for cid in ids):raise ValueError('Campaign scope missing or exceeds50')
@@ -48,6 +51,11 @@ def review(io,day,campaign_ids=(),refresh=True):
   from china_morning_readiness import enrich_economics
   s=enrich_economics(io,s,rough,day)
   if s.get('morning_fresh_inputs',{}).get('errors'):raise ValueError('Не получены данные: '+','.join(s['morning_fresh_inputs']['errors']))
+  from china_morning_readiness import current_prices,published_stock
+  pub=published_stock(io,current_prices(io,selected),selected)
+  if pub['missing_nm_ids']:raise ValueError('Published WB stock coverage incomplete')
+  for nm,e in s.get('economics',{}).get('rows',{}).items():
+   e.update(published_stock=pub['amounts'].get(str(nm)),published_stock_observed_at=pub['observed_at'])
  minima={}
  for c in rough['campaigns']:
   wanted=[r['nm']for r in c.get('focus',[])if r['nm']in {n['nm_id']for n in states[c['id']]['nm_settings']}and not r.get('pending_first_day')]
@@ -71,6 +79,8 @@ def review(io,day,campaign_ids=(),refresh=True):
     step=s['config'].get('cpcStep')
     if action['kind']=='ad_set_bid'and(type(step)is not int or step<=0 or action['target_minor']%step):raise ValueError('Bid step not verified')
     if action['nm_id']in (1473245494,1473245510):continue
+    withdrawn=(io.get('china_agent:analysis_backend:v1')or{}).get('owner_withdrawn_actions',[])
+    if any(all(action.get(k)==x.get(k)for k in ('kind','campaign_id','nm_id'))for x in withdrawn):continue
     actions.append(dict(action,review_evidence=dict(period_to=s['period_to'],source_key=source_key,economics=r.get('economics'),minimum=minima.get(str(c['id'])+':'+str(r['nm'])))))
  blockers=bundle.get('economic_review_blockers',[])
  if blockers:raise ValueError('Неполная экономика: '+','.join(str(r['article'])for r in blockers))

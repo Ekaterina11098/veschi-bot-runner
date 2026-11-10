@@ -39,7 +39,10 @@ def ask(core,identity,payload,validate,rules,root,digest,stamp,parse,message,mod
   except Exception as ex:
    state.update(status='attention_required',error_type=type(ex).__name__,error=str(ex)[:250],failed_at=stamp())
    core.db.update(key,state);raise
- core.db.once(key+':completion',dict(text=raw,observed_at=stamp()))
+ completion=core.db.get(key+':completion')
+ if completion:
+  if completion.get('text')!=raw:raise ValueError('Immutable completion changed')
+ else:core.db.once(key+':completion',dict(text=raw,observed_at=stamp()))
  try:value=validate(parse(raw))
  except Exception:
   state.update(status='invalid_output',finished_at=stamp());core.db.update(key,state);raise

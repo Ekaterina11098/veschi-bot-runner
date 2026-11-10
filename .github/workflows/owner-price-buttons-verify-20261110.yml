@@ -1,4 +1,4 @@
-name: Verify integrated price-only report buttons without live sends or price writes
+name: Verify final integrated price-only report buttons without live sends or price writes
 on:
   push:
     branches: [main]

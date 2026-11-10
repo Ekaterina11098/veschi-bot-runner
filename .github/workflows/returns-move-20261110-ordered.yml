@@ -1,0 +1,29 @@
+name: Authorized ordered return move 20261110
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/returns-move-20261110-ordered.yml']
+permissions:
+  contents: read
+concurrency:
+  group: bot-stock
+  cancel-in-progress: false
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 4561eb786194da41b8853cfcbad1b4a090dd4a14
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify stock and post ordered zero-price move
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python scripts/returns_move_20261110_ordered.py

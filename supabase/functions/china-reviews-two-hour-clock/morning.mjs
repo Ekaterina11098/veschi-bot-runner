@@ -8,10 +8,17 @@ export function morningDecision(now,states,runs,claims){
  const complete=s=>s?.status==='complete'&&s.summary?.status==='confirmed'&&
  ['token_1','token_2','token_3'].every(c=>s.scopes?.[c]?.status==='complete');
  if(complete(states.reviews)&&complete(states.questions))return {status:'complete',day};
- if(runs.some(r=>ACTIVE.includes(r.status)))return {status:'active',day};
+ const active=runs.find(r=>ACTIVE.includes(r.status));
+ if(active)return {status:'active',day,active_run_id:active.id};
  const last=claims.at(-1);
  let suffix='initial';
  if(last){
+  if(last.status==='observed_active'){
+   const observed=runs.find(r=>r.id===last.observed_run_id);
+   if(!observed||observed.status!=='completed')return {status:'awaiting_run',day};
+   if(now-Date.parse(observed.updated_at)<5*60000)return {status:'cooldown',day};
+   return {status:'dispatch',day,claim:day+':after-observed:'+observed.id};
+  }
   if(last.status!=='dispatched')return {status:'uncertain',day};
   const matched=runs.filter(r=>r.path.endsWith('/'+CONTROLLER)&&r.event==='workflow_dispatch'&&Date.parse(r.created_at)>=Date.parse(last.created_at)-1000);
   if(!matched.length)return {status:'awaiting_run',day};
@@ -50,7 +57,7 @@ export async function checkMorning(sql,auth,base,now,verify=false){
  // The second decision includes our claim; read it only to inspect active/completed state.
  const fresh=await read();
  if(fresh.status==='active'||fresh.status==='complete'){
-  await sql`update public.telegram_api_cache set payload=${sql.json({...payload,status:'dispatched'})},updated_at=now() where cache_key=${key}`;
+  await sql`update public.telegram_api_cache set payload=${sql.json({...payload,status:'observed_active',observed_run_id:fresh.active_run_id})},updated_at=now() where cache_key=${key}`;
   await save(fresh);return fresh;
  }
  let status=0;

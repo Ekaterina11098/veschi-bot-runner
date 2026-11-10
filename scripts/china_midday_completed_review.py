@@ -149,7 +149,7 @@ def attach(io,bundle,day):
  from china_sales_growth_review import attach as sales_review
  review=sales_review(review)
  review=validate_recommendation_readiness(review)
- key='china_agent:advertising_midday_completed:'+day+':v1';save(io,key,dict(source=source,review=review,status='complete',observed_at=source['observed_at'],wb_writes=0))
+ key='china_agent:advertising_midday_completed:'+day+':v1';save(io,key,dict(source=source,review=review,input_review_context=bundle.get('review_context',{}),status='complete',observed_at=source['observed_at'],wb_writes=0))
  return merge_completed(bundle,review,key)
 
 

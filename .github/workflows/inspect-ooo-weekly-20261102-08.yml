@@ -148,3 +148,5 @@ jobs:
           
           out["status"]="prepared";out["completed_at"]=m.now();save()
           print("Read-only preflight finished; private results saved.")
+
+# Recheck complete source and live accounting 2026-11-11.

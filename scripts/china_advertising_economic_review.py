@@ -52,10 +52,6 @@ def apply(bundle,source,minima):
    if r['nm'] not in settings:
     r['action']=None;r['already_excluded']=True;continue
    if r.get('pending_first_day'):continue
-   if r['nm'] in set((source.get('full_growth_inputs')or{}).get('excluded_nm_ids',[])):
-    r['action']=None;r['owner_hold']=True;r['decision']='Не менять: запрет владельца.'
-    r.pop('data_blocker',None)
-    continue
    p=(r.get('comparison') or {}).get('after') or r['period'];spend=p['spend'];orders=p['orders'];amount=p['amount']
    risk=spend>0 and (orders==0 or amount<=0 or spend/amount>.05)
    existing=r.get('action')or{}

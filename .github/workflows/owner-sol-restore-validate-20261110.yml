@@ -35,6 +35,7 @@ jobs:
           class CachedDB(DB):
            def __init__(self):self.memo={}
            def get(self,k):
+            if k.startswith("china_agent:owner_sol_restore:"):return super().get(k)
             if k not in self.memo:self.memo[k]=super().get(k)
             return self.memo[k]
           db=CachedDB()
@@ -50,7 +51,7 @@ jobs:
            resolution=db.get("china_agent:owner_dialog_resolution:v1:job:"+str(jid))
            if resolution:ctx["owner_verified_resolution"]=resolution
            msg=compact_message(dict(runtime_scope=dict(today_msk="2026-11-10",sender_id=job["sender_id"],chat_id=CHAT,wb_action_permission=False,validation_only=True),dated_work_context=ctx,untrusted_telegram_question=text))
-           identity="owner-sol-restore10-validation-v1-"+str(jid)
+           identity="owner-sol-restore10-validation-v2-"+str(jid)
            model=BoundedSol(db,"china_agent:owner_sol_restore:2026-11-10:v1:")
            answer=model.answer(identity,INSTRUCTIONS,msg)
            e=envelope(answer)
@@ -59,7 +60,7 @@ jobs:
             assert e["kind"]=="answer" and "144"in e["answer"] and "578"in e["answer"],"Verified removals not explained"
            outcomes.append(dict(original_job_id=jid,kind=e["kind"],answer=e.get("answer"),read_request=e if e["kind"]=="read"else None,model_receipt_key=model.key(identity),validation_only=True))
           value=dict(status="verified",cases=outcomes,observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),wb_reads=0,wb_writes=0,telegram_sends=0,model_calls=2)
-          key="china_agent:owner_sol_restore:2026-11-10:v1:validation"
+          key="china_agent:owner_sol_restore:2026-11-10:v1:validation-v2"
           db.once(key,value)
           print(json.dumps(dict(status="verified",cases=len(outcomes),wb_writes=0,telegram_sends=0)))
           

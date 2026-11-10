@@ -1,0 +1,102 @@
+name: Owner exclude only 144 and 578 from 41680341; no Telegram
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-trim41680341-20261110.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-confirmed-wb-advertising-writes
+  cancel-in-progress: false
+jobs:
+  exact-owner-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify cabinet and exact composition; journal one approved exclusion PATCH
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          python3 - <<'PY'
+          import os,json,base64,time,datetime,urllib.request,urllib.error
+          ROOT="china_agent:owner_41680341_trim:2026-11-10:v1"
+          CID=41680341
+          REMOVE={1473245495,1473244358}
+          KEEP={1473243908,1473244355}
+          URL=os.environ["SUPABASE_URL"].rstrip("/")
+          SECRET=os.environ["SUPABASE_SECRET_KEY"]
+          TOKEN=os.environ["WB_TOKEN_3"]
+          def stamp():return datetime.datetime.now(datetime.timezone.utc).isoformat()
+          def db(method,path,body=None,prefer=None):
+           h={"apikey":SECRET,"Authorization":"Bearer "+SECRET,"Content-Type":"application/json"}
+           if prefer:h["Prefer"]=prefer
+           with urllib.request.urlopen(urllib.request.Request(URL+"/rest/v1/"+path,data=json.dumps(body).encode() if body is not None else None,headers=h,method=method),timeout=45) as r:
+            raw=r.read()
+            return json.loads(raw) if raw else None
+          def get(k):
+           rows=db("GET","telegram_api_cache?cache_key=eq."+k+"&select=payload")
+           return rows[0]["payload"] if rows else None
+          def create(k,p):return db("POST","telegram_api_cache",dict(cache_key=k,payload=p,updated_at=stamp(),expires_at="2036-11-10T00:00:00Z"),"return=representation")
+          def save(p):db("PATCH","telegram_api_cache?cache_key=eq."+ROOT+":execution",dict(payload=p,updated_at=stamp()),"return=minimal")
+          def wb(path,method="GET",body=None):
+           assert path in ("/api/advert/v2/adverts?ids="+str(CID),"/adv/v0/auction/nms")
+           if method!="GET":assert method=="PATCH" and path=="/adv/v0/auction/nms" and body==dict(nms=[dict(advert_id=CID,nms=dict(add=[],delete=sorted(REMOVE&present)))])
+           try:
+            with urllib.request.urlopen(urllib.request.Request("https://advert-api.wildberries.ru"+path,data=json.dumps(body).encode() if body is not None else None,headers={"Authorization":TOKEN,"Content-Type":"application/json"},method=method),timeout=50) as r:
+             raw=r.read()
+             return json.loads(raw) if raw else {}
+           except urllib.error.HTTPError as ex:raise RuntimeError("WB HTTP "+str(ex.code)) from None
+          def campaign():
+           a=wb("/api/advert/v2/adverts?ids="+str(CID)).get("adverts",[])
+           assert len(a)==1 and a[0]["id"]==CID and a[0]["currency"]=="CNY","Exact CNY campaign unavailable"
+           return a[0]
+          a=get(ROOT+":authorization")
+          assert a and a["status"]=="owner_approved" and a["author_id"]==5122667182 and a["campaign_id"]==CID
+          assert set(a["remove_nm_ids"])==REMOVE and set(a["keep_nm_ids"])==KEEP and a["expected_bid_minor"]==28 and a["expected_status"]==9
+          assert a["telegram_sends_allowed"] is False and a["price_changes_allowed"] is False and a["funding_allowed"] is False
+          assert datetime.datetime.now(datetime.timezone.utc)<datetime.datetime.fromisoformat(a["expires_at"])
+          old=get(ROOT+":execution")
+          if old:
+           print(json.dumps({"status":old["status"],"existing":True,"no_replay":True}));raise SystemExit()
+          claims=json.loads(base64.urlsafe_b64decode(TOKEN.split(".")[1]+"==="))
+          assert claims.get("t") is False and claims.get("exp",0)>time.time() and not int(claims.get("s",0))&(1<<30)
+          identities=db("GET","analytics_snapshots?cabinet=eq.token_3&source=eq.seller_identity&status=eq.complete&select=payload&limit=100")
+          sids={r["payload"].get("sid") for r in identities}
+          assert len(sids)==1 and claims.get("sid") in sids,"Cabinet identity mismatch"
+          p=dict(status="preflight",campaign_id=CID,authorization_key=ROOT+":authorization",started_at=stamp(),telegram_sends=0,wb_writes=0)
+          create(ROOT+":execution",p)
+          try:
+           before=campaign();p["before"]=before;save(p)
+           present={n["nm_id"] for n in before["nm_settings"]}
+           assert KEEP<=present and present<=KEEP|REMOVE,"Campaign membership changed"
+           assert before["status"]==9 and before["bid_type"]=="manual" and before["settings"]["payment_type"]=="cpc" and before["settings"]["placements"]==dict(search=False,recommendations=True)
+           assert all(n["bids_kopecks"]==dict(search=0,recommendations=28) for n in before["nm_settings"]),"Campaign bids changed"
+           assert before.get("restrictions",{}).get("can_change_nms") is True
+           if not present&REMOVE:
+            p.update(status="verified",already_done=True,after=before,verified_at=stamp());save(p)
+            print(json.dumps(dict(status="verified",already_done=True,wb_writes=0)));raise SystemExit()
+           body=dict(nms=[dict(advert_id=CID,nms=dict(add=[],delete=sorted(REMOVE&present)))])
+           p.update(status="submitting",request=dict(path="/adv/v0/auction/nms",method="PATCH",body=body),submitted_at=stamp());save(p)
+           try:response=wb("/adv/v0/auction/nms","PATCH",body)
+           except Exception:
+            p.update(status="uncertain",error="PATCH outcome uncertain; never replay");save(p);raise
+           p.update(status="accepted",response=response,wb_writes=1);save(p)
+           expected=sorted([n for n in before["nm_settings"] if n["nm_id"] in KEEP],key=lambda x:x["nm_id"])
+           for i in range(12):
+            time.sleep(5)
+            after=campaign();p["after"]=after
+            if after["status"]==before["status"] and after["settings"]==before["settings"] and sorted(after["nm_settings"],key=lambda x:x["nm_id"])==expected:
+             p.update(status="verified",verified_at=stamp(),completed_at=stamp());save(p)
+             print(json.dumps(dict(status="verified",campaign_id=CID,removed=sorted(REMOVE),kept=sorted(KEEP),bid_minor=28,wb_writes=1,telegram_sends=0)));break
+            save(p)
+           else:p.update(status="uncertain",error="Readback mismatch; no replay");save(p);raise RuntimeError("Readback mismatch")
+          except Exception as ex:
+           if p["status"] not in ("submitting","accepted","uncertain"):p["status"]="blocked"
+           elif p["status"] in ("submitting","accepted"):p["status"]="uncertain"
+           p["error"]=str(ex) if isinstance(ex,(AssertionError,RuntimeError)) else type(ex).__name__
+           save(p)
+           raise RuntimeError(p["error"]) from None
+          
+          PY

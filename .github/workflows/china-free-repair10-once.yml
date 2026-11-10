@@ -14,7 +14,12 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - uses: actions/checkout@v4
@@ -24,6 +29,15 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: source
           persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /*.py
       - run: pip install requests==2.32.5 Pillow==12.3.0 openai==3.42.1
       - name: Offline checks
         run: |

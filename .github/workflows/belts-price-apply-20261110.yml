@@ -1,0 +1,45 @@
+name: Apply approved China belt prices
+on:
+  push:
+    paths: ['.github/workflows/belts-price-apply-20261110.yml']
+permissions:
+  contents: read
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    concurrency:
+      group: bot-economics
+      cancel-in-progress: false
+    steps:
+      - name: Apply exact approved prices
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        shell: python
+        run: |
+          import os,json,urllib.request,datetime,time
+          base="https://discounts-prices-api.wildberries.cn"
+          targets={1560230894:("34-2belts115-ginger",256),1560230895:("40-2belts115-brown",256),1560230896:("58-4belts115-ginger",276),1560230897:("63-4belts115-brown",276),1560230898:("68-4belts115-black",310)}
+          def call(path,payload=None):
+           req=urllib.request.Request(base+path,data=None if payload is None else json.dumps(payload).encode(),headers={"Authorization":os.environ["WB_TOKEN_3"],"Content-Type":"application/json"})
+           with urllib.request.urlopen(req,timeout=45) as r:return json.load(r)
+          def read():
+           rows=call("/api/v2/list/goods/filter?limit=1000&offset=0")["data"]["listGoods"]
+           return {x["nmID"]:x for x in rows if x["nmID"] in targets}
+          rows=read()
+          assert len(rows)==5,"Incomplete preflight"
+          for nm,(vendor,price) in targets.items():
+           x=rows[nm]
+           assert x["vendorCode"]==vendor and x["currencyIsoCode4217"]=="CNY" and x["discount"]==50 and not x["editableSizePrice"],"Identity/currency/discount changed"
+           assert all(z["price"]==315 and z["discountedPrice"]==157.5 for z in x["sizes"]),"Current price changed"
+          print("BEFORE="+json.dumps(list(rows.values()),ensure_ascii=False))
+          time.sleep(2)
+          result=call("/api/v2/upload/task",{"data":[{"nmID":nm,"price":p,"discount":50} for nm,(v,p) in targets.items()]})
+          print("UPLOAD="+json.dumps(result,ensure_ascii=False))
+          for attempt in range(8):
+           time.sleep(10)
+           rows=read()
+           ok=len(rows)==5 and all(x["discount"]==50 and all(z["price"]==targets[nm][1] and z["discountedPrice"]==targets[nm][1]/2 for z in x["sizes"]) for nm,x in rows.items())
+           if ok:
+            print("VERIFIED="+json.dumps({"checked_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"goods":list(rows.values())},ensure_ascii=False));break
+          else:raise RuntimeError("Upload submitted; current prices not confirmed. Do not resubmit blindly.")

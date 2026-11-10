@@ -98,7 +98,8 @@ def validate_funding(io,item,before):
   if (old['stock_free']is not None and old['stock_free']<=0 or old['published_stock']==0)and evidence['attributed_orders_by_nm'].get(nm,0)==0:
    if current_free>0 and current_pub>0:raise ValueError('Previously unavailable product changed; fresh model required')
    continue
-  if current_free<=0 or current_pub<=0 or not st.get('price')or st['price']<=0 or not finite(old['cost']):raise ValueError('Funding current stock/COGS unavailable')
+  published_required=(io.get('china_agent:analysis_backend:v1')or{}).get('require_published_stock',True)is not False
+  if current_free<=0 or (published_required and current_pub<=0) or not st.get('price')or st['price']<=0 or not finite(old['cost']):raise ValueError('Funding current stock/COGS unavailable: '+r['article']+' (nm '+nm+', MSK free '+str(current_free)+', WB '+str(current_pub)+')')
   q=old['buyout'];fx=old['fx']
   if not finite(q)and st['price']/100>old['cost']:raise ValueError('Changed COGS with unknown own buyout; refresh review')
   if finite(q)and finite(fx)and fx>0:delta+=evidence['attributed_orders_by_nm'].get(nm,0)*q*(st['price']/100-old['cost'])/fx

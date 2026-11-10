@@ -26,7 +26,7 @@ class BoundedMidday(unittest.TestCase):
    return validate(dict(kind='advertising_review',decisions=[dict(id=k,note='Keep')for k in p['data']['allowed_actions']],directions={d:dict(status='checked',note='Group only')for d in ('raise','add','reduce','exclude')},research=[])),{}
   scope=dict(copy=copy,ask_one=one)
   exec(compile(ast.Module(body=nodes,type_ignores=[]),'bounded','exec'),scope)
-  p=self.sample();p['data']['allowed_actions']={str(i):dict(nm_id=1,campaign_id=2,evidence='x'*2000)for i in range(35)}
+  p=self.sample();p['data']['allowed_actions']={str(i):dict(nm_id=i+1,campaign_id=2,evidence='x'*2000)for i in range(35)}
   result,_=scope['ask'](None,'test',p,lambda v:v,'rules','root',lambda v:'hash',None,None,json.dumps,'test')
   self.assertGreater(len(calls),1)
   self.assertEqual(set(p['data']['allowed_actions']),{r['id']for r in result['decisions']})

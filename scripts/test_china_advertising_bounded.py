@@ -1,4 +1,4 @@
-import ast,copy,unittest
+import ast,copy,json,unittest
 from pathlib import Path
 def compact(value):
  source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
@@ -16,4 +16,18 @@ class BoundedMidday(unittest.TestCase):
   p=self.sample();compact(p);self.assertEqual(2,len(p['data']['completed_source']['products']))
  def test_scope_disclosed(self):
   self.assertIn('No new research actions',compact(self.sample())['context_scope'])
+ def test_large_candidate_set_is_partitioned_without_loss(self):
+  source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
+  nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef)and n.name in ('compact','ask')]
+  calls=[]
+  def one(core,identity,p,validate,rules,*args):
+   calls.append(p)
+   self.assertLess(len(json.dumps(p)),29000)
+   return validate(dict(kind='advertising_review',decisions=[dict(id=k,note='Keep')for k in p['data']['allowed_actions']],directions={d:dict(status='checked',note='Group only')for d in ('raise','add','reduce','exclude')},research=[])),{}
+  scope=dict(copy=copy,ask_one=one)
+  exec(compile(ast.Module(body=nodes,type_ignores=[]),'bounded','exec'),scope)
+  p=self.sample();p['data']['allowed_actions']={str(i):dict(nm_id=1,campaign_id=2,evidence='x'*2000)for i in range(35)}
+  result,_=scope['ask'](None,'test',p,lambda v:v,'rules','root',lambda v:'hash',None,None,json.dumps,'test')
+  self.assertGreater(len(calls),1)
+  self.assertEqual(set(p['data']['allowed_actions']),{r['id']for r in result['decisions']})
 if __name__=='__main__':unittest.main()

@@ -215,7 +215,10 @@ def run():
   completed_key='china_agent:advertising_midday_completed:'+day+':v1'
   done=io.get(completed_key)or{}
   review=done.get('review')or{}
-  reusable=done.get('status')=='complete'and review.get('economic_review_complete')is True and review.get('codex_analysis',{}).get('transport')=='responses_bounded_advertising_v3_full_scope'and (datetime.now(timezone.utc)-datetime.fromisoformat(done['observed_at'].replace('Z','+00:00'))).total_seconds()<600
+  resume=io.get('china_agent:advertising_midday_resume:'+day+':v1')or{}
+  def facts(v):return {k:x for k,x in (v or{}).items()if k!='observed_at'}
+  exact_recovery=resume.get('enabled')and facts(done.get('source',{}).get('full_growth_inputs'))==facts(resume.get('full_input'))and facts(io.get(resume['source_key']))==facts(resume.get('full_input'))
+  reusable=done.get('status')=='complete'and review.get('economic_review_complete')is True and review.get('codex_analysis',{}).get('transport')=='responses_bounded_advertising_v3_full_scope'and (exact_recovery or (datetime.now(timezone.utc)-datetime.fromisoformat(done['observed_at'].replace('Z','+00:00'))).total_seconds()<600)
   prepared=prepare_midday(io,day,current)
   b=only_completed_day_actions(merge_completed(prepared,review,completed_key)if reusable else attach(io,prepared,day));files=[]
   for i,f in enumerate(render_midday(b)):

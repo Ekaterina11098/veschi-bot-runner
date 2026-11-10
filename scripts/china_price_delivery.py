@@ -41,7 +41,14 @@ def deliver(w):
         parts=[dict(method='sendMessage',text=answer)]
     if not prepared:
         prepared=dict(status='prepared',answer_sha256=scope,answer=answer,parts=parts,selection_count=len(offers),expires_at=datetime.combine(w.day+timedelta(days=1),datetime.min.time(),w.now.tzinfo).isoformat(),execution_authorized=False,wb_writes=0)
+        from china_price_buttons import prepare as prepare_buttons
+        markup,registry=prepare_buttons(answer,offers,w.job['id'],day,prepared['expires_at'])
+        if markup:prepared.update(reply_markup=markup,button_registry=registry)
         if not c.create(root+':prepared',prepared):raise RuntimeError('Price preparation claimed')
+    if prepared.get('button_registry'):
+        registry=prepared['button_registry'];old_registry=c.get(registry['key'])
+        if old_registry and old_registry!=registry['payload']:raise RuntimeError('Frozen price buttons changed or revoked')
+        if not old_registry and not c.create(registry['key'],registry['payload']):raise RuntimeError('Price buttons registry claim lost')
     parts=prepared['parts'];token=os.environ['CHINA_TELEGRAM_BOT_TOKEN']
     def tg(method,body,files=None):
         try:
@@ -66,10 +73,11 @@ def deliver(w):
             if not c.create(key,dict(status='sending',answer_sha256=scope,started_at=stamp(),job_id=w.job['id'])):raise RuntimeError('Price delivery claimed')
             try:
                 body=dict(chat_id=w.chat);files=None
+                if prepared.get('reply_markup'):body['reply_markup']=json.dumps(prepared['reply_markup'],ensure_ascii=False)
                 if part['method']=='sendPhoto':
                     data=base64.b64decode(part['b64'],validate=True)
                     if hashlib.sha256(data).hexdigest()!=part['sha256']:raise RuntimeError('Price PNG changed')
-                    body['caption']='Китай · цены · '+w.day.strftime('%d.%m.%Y')+'. Ответьте «Сделай всё», чтобы подтвердить список. Новая цена покупателя — прогноз.'
+                    body['caption']='Китай · цены · '+w.day.strftime('%d.%m.%Y')+'. Подтвердите кнопкой под отчётом или ответом «Сделай всё». Новая цена покупателя — прогноз.'
                     files={'photo':('prices.png',data,'image/png')}
                 else:
                     body['text']=part['text']

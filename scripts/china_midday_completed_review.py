@@ -75,16 +75,7 @@ def completed_campaign_stats(io,campaigns,saved_stats,period_from,period_to):
  return result
 
 def validate_recommendation_readiness(review):
- if not review.get('economic_review_complete'):
-  # Missing evidence blocks that recommendation, not the scheduled factual report.
-  blockers=review.get('economic_review_blockers',[])
-  if not blockers:raise ValueError('Economic review incomplete without explicit blockers')
-  for campaign in review['campaigns']:
-   affected={r['article']for r in blockers if r['campaign_id']==campaign['id']}
-   for row in campaign.get('focus',[])+campaign.get('attention',[]):
-    if row.get('article')in affected and row.get('action'):raise ValueError('Unready economic action survived')
-   if affected:campaign['recommendation_review_note']='Нет готовых действий: проверка данных не завершена.'
-  for section in review.get('recommendation_directions',{}).values():section['status']='unavailable'
+ if not review.get('economic_review_complete'):raise ValueError('Incomplete economic review; full validation required before delivery')
  return review
 
 def attach(io,bundle,day):

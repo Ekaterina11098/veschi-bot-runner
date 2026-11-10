@@ -218,6 +218,8 @@ def run():
   saved=dict(day=day,status='frozen',bundle=b,files=files)
   if not io.create(art,saved):saved=io.get(art)
  if saved.get('day')!=day or saved.get('status')!='frozen':raise ValueError('Midday artifact scope mismatch')
+ if saved.get('bundle',{}).get('economic_review_complete')is not True:raise ValueError('Full economic validation required before Telegram')
+ if covered_totals(saved['bundle']['campaigns'])['missing']:raise ValueError('Incomplete current campaign coverage; no partial report')
  files=[]
  for f in saved['files']:
   cap='Китай · промежуточный отчёт · '+day+' · '+str(f['page'])+'/'+str(f['total'])+'. '

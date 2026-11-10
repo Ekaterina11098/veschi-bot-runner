@@ -41,6 +41,7 @@ def ask_one(core,identity,payload,validate,rules,root,digest,stamp,parse,message
  require_paid_api(core.db.get('china_agent:codex_cloud:v1:policy')or{})
  payload=dict(payload,transport='responses_bounded_advertising_v3_full_scope')
  fingerprint=digest(payload);key=root+digest([identity,fingerprint])
+ if core.db.get(key+':input')is None:core.db.once(key+':input',payload)
  state=core.db.get(key)
  receipt=dict(key=key,source_sha256=fingerprint,model=model,source_channel='codex_cloud',transport='responses_bounded_advertising_v1')
  if state and state.get('status')=='complete':return validate(copy.deepcopy(state['result'])),receipt

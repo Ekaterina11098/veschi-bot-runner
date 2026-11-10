@@ -16,6 +16,11 @@ class BoundedMidday(unittest.TestCase):
   p=self.sample();compact(p);self.assertEqual(2,len(p['data']['completed_source']['products']))
  def test_scope_disclosed(self):
   self.assertIn('No new research actions',compact(self.sample())['context_scope'])
+ def test_changes_keep_sku_and_campaign_events_without_other_sku_history(self):
+  p=self.sample();p['data']['relevant_changes_only']=True
+  p['data']['completed_source']['changes']=[dict(nm=1,campaign_id=2),dict(nm=3,campaign_id=2),dict(nm=None,campaign_id=2)]
+  rows=compact(p)['data']['completed_source']['changes']
+  self.assertEqual([1,None],[r['nm']for r in rows])
  def test_large_candidate_set_is_partitioned_without_loss(self):
   source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
   nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef)and n.name in ('compact','ask','replace_times')]

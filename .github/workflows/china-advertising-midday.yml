@@ -4,13 +4,14 @@ on:
     branches: [main]
     paths: ['.github/workflows/china-advertising-midday.yml']
   schedule:
+    - cron: '45 11 * * *' # Full preparation at 14:45 MSK; no Telegram delivery before 15:00.
     - cron: '0,15,30,45 12 * * *'
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: china-midday-advertising-report
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   daily:
     if: github.run_attempt == 1
@@ -48,7 +49,7 @@ jobs:
       - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0 openai==3.42.1 > "$RUNNER_TEMP/install.log" 2>&1
       - name: Check advertising arithmetic and duplicate safeguards
         run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
-      - name: Read current China day and verify complete catalogue with bounded parallel review and deliver green report
+      - name: Read current China day and fully prepare and verify agreed green report for 15:00 MSK
         working-directory: source
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

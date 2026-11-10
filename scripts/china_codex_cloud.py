@@ -37,6 +37,7 @@ INSTRUCTIONS += '''
 Полный следующий день нужен для оценки эффекта изменения, но не разрешает бесконечный расход: отдельно разберись с накопленным риском, собственной предварительной экономикой, наличием и вкладом SKU. Предложение ограничения риска не утверждает доказанный провал теста и тоже требует подтверждения. Не предлагай паузу всей РК без разбора товаров.
 Число и сумма сравнительных продаж всегда с ОБЕИМИ сопоставимыми базами вчера/неделя; отсутствие базы явно. Сначала используй уже собранные датированные отчёты. Для повторного вопроса не пересобирай весь кабинет без необходимости.
 '''
+INSTRUCTIONS += '\nДля свободного запроса про высокую ДРР/дорогую рекламу/снижение/исключение верни JSON {"kind":"review_advertising","campaign_ids":[]} (точные РК если указаны). Механизм сам получает текущий состав, минимумы, цену/COGS/МСК, проверяет завершённые дни и canonical verified, готовит конкретный точный план на подтверждение. Не возвращай простой read вместо подготовки плана для такого поручения. Это не разрешение действий и не подбор нового теста.'
 def stamp():return datetime.now(timezone.utc).isoformat()
 def today():return datetime.now(ZoneInfo('Europe/Moscow')).date()
 def valid_scope(p):
@@ -66,7 +67,7 @@ def envelope(text):
                 candidate,end=decoder.raw_decode(clean,start)
             except json.JSONDecodeError:
                 continue
-            if isinstance(candidate,dict) and candidate.get('kind') in ('answer','read','preliminary_profit','prepare_advertising'):
+            if isinstance(candidate,dict) and candidate.get('kind') in ('answer','read','preliminary_profit','prepare_advertising','review_advertising'):
                 candidates.append((candidate,end))
         if len(candidates)!=1 or clean[candidates[0][1]:].strip():
             raise ValueError('Missing or ambiguous final response envelope') from original
@@ -83,6 +84,9 @@ def envelope(text):
             value[field]=values
         if type(value.get('maximum_count'))is not int or not 1<=value['maximum_count']<=50:raise ValueError('Invalid candidate count')
         if set(value)-{'kind','subject_ids','nm_ids','maximum_count'}:raise ValueError('Preparation cannot contain execution instructions')
+    elif value.get('kind')=='review_advertising':
+        from china_codex_ad_review import request
+        value=request(value)
     elif value.get('kind')=='read':
         from china_codex_read_broker import validate_read
         value=validate_read(value,today())
@@ -271,7 +275,7 @@ class Worker:
                 request=dict(status='pending',job_id=jid,chat_id=CHAT,sender_id=inbox['sender_id'],reply_message_id=inbox['input_message_id'],request_text=inbox['request_text'],created_at=stamp(),nm_ids=response['nm_ids'],subject_ids=response['subject_ids'],maximum_count=response['maximum_count'],source_question_job_id=jid,grants_action_permission=False,source_channel='codex_cloud')
                 self.db.once(request_key,request)
             response={'kind':'answer','answer':'Готовлю конкретное предложение после расчётов: товары, РК, размещение, ставки, бюджет и предварительная экономика. Пришлю готовые варианты; если их меньше запрошенного, покажу фактическое число. Запуск — только после отдельного подтверждения плана.'}
-        if response['kind'] in ('preliminary_profit','read'):
+        if response['kind'] in ('preliminary_profit','read','review_advertising'):
             reqkey=ROOT+'data_request:'+str(jid);prior=self.db.get(reqkey)or{}
             from hashlib import sha256
             signature=sha256(json.dumps(response,sort_keys=True).encode()).hexdigest()
@@ -280,6 +284,7 @@ class Worker:
             if prior and prior.get('status') in ('requested','uncertain'):raise RuntimeError('Previous data request unresolved')
             round_no=prior.get('read_round',0)+1
             if round_no>3:raise RuntimeError('Read budget exhausted; answer with documented gaps')
+            if response['kind']=='review_advertising':response=dict(response,date_to=str(today()-timedelta(days=1)))
             req=dict(response,status='requested',job_id=jid,chat_id=CHAT,thread_id=THREAD,created_at=stamp(),read_round=round_no,request_history=history+[signature])
             if prior:self.db.update(reqkey,req)
             else:self.db.once(reqkey,req)
@@ -333,6 +338,12 @@ class Worker:
         request=self.db.get(ROOT+'data_request:'+str(jid))or{}
         expected=request.get('read_round')
         if inbox['status']=='collecting' and expected and (analytics or{}).get('read_round')!=expected:return 'waiting_analytics'
+        if analytics and analytics.get('kind')=='review_advertising' and analytics.get('status')=='calculated':
+            result=analytics['result']
+            if result.get('status')!='reviewed' or not isinstance(result.get('answer'),str):raise ValueError('Invalid typed review result')
+            claimed=inbox|{'status':'cloud_processing'}
+            if not self.db.update(key,claimed,inbox['status']):return 'claim_lost'
+            return self.finish(claimed,key,{'text':json.dumps({'kind':'answer','answer':result['answer']},ensure_ascii=False)},journal)
         phase=('analytics-'+str(analytics['read_round']) if analytics.get('read_round')else'analytics') if analytics else 'question'
         completion_key=CLOUD+'completion:'+str(jid)+':'+phase
         completion=self.db.get(completion_key)

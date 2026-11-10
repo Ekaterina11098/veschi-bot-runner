@@ -7,7 +7,9 @@ def compact(payload):
  p=copy.deepcopy(payload);d=p['data'];s=d['completed_source']
  actions=d.get('allowed_actions',{})
  nms={str(a.get('nm_id'))for a in actions.values()if a.get('nm_id')}
+ nms.update(map(str,d.get('review_scope_nm_ids',[])))
  cids={str(a.get('campaign_id'))for a in actions.values()if a.get('campaign_id')}
+ cids.update(str(c['id'])for c in s.get('current_campaigns',[])if any(str(n.get('nm_id'))in nms for n in c.get('nm_settings',[])))
  products=s.get('products',{})
  s['products']={k:v for k,v in products.items()if str(v.get('nm_id'))in nms}
  eco=s.get('economics')or{};eco['rows']={k:v for k,v in eco.get('rows',{}).items()if k in nms};s['economics']=eco
@@ -21,16 +23,16 @@ def compact(payload):
  d['readiness_blocks']={'excluded_not_ready_count':len(blocks),'scope':'Not actionable; missing evidence is not absence of opportunities'}
  s['catalogue']={'rows':[r for r in s.get('catalogue',{}).get('rows',[])if str(r.get('nmID'))in nms]}
  s['current_campaigns']=[dict(c,nm_settings=[n for n in c.get('nm_settings',[])if str(n.get('nm_id'))in nms])for c in s.get('current_campaigns',[])if str(c.get('id'))in cids]
- for key in ('addition_scan','growth_inputs_scope'):s.pop(key,None)
+ s.pop('addition_scan',None)
  obs=d.get('intraday_observation')or{}
  d['intraday_observation']={k:obs[k]for k in ('day','observed_at','recommendation_basis')if k in obs}
  p['work_notes']=[]
- p['context_scope']='Review all exact prevalidated allowed actions with completed-day metrics/economics; full catalogue deterministic scan retained privately. No new research actions in this bounded review; return research empty. Missing evidence remains unavailable, not zero.'
+ p['context_scope']='Review every supplied SKU and all four directions using completed-day metrics/economics and current states. Full catalogue is partitioned losslessly across groups, including SKUs with no allowed actions. No new research actions in this bounded review; return research empty. Only exact prevalidated allowed actions can be selected. Owner-held SKUs must not change. Checked means this group was examined, not that a candidate exists; distinguish rejected unready candidates from an unperformed review. Missing evidence is not zero.'
  return p
 
 def ask_one(core,identity,payload,validate,rules,root,digest,stamp,parse,message,model):
  require_paid_api(core.db.get('china_agent:codex_cloud:v1:policy')or{})
- payload=dict(payload,transport='responses_bounded_advertising_v2')
+ payload=dict(payload,transport='responses_bounded_advertising_v3_full_scope')
  fingerprint=digest(payload);key=root+digest([identity,fingerprint])
  state=core.db.get(key)
  receipt=dict(key=key,source_sha256=fingerprint,model=model,source_channel='codex_cloud',transport='responses_bounded_advertising_v1')
@@ -61,19 +63,26 @@ def ask_one(core,identity,payload,validate,rules,root,digest,stamp,parse,message
 def ask(core,identity,payload,validate,rules,root,digest,stamp,parse,message,model):
  """Review every candidate in bounded groups; retain exact actions and evidence."""
  actions=payload['data'].get('allowed_actions',{})
- groups=[];current={}
- def subset(items):
+ source=payload['data']['completed_source']
+ nms=sorted({str(r['nmID'])for r in source.get('catalogue',{}).get('rows',[])}|{str(r['nm_id'])for r in source.get('products',{}).values()}|{str(a['nm_id'])for a in actions.values()if a.get('nm_id')})
+ groups=[];current=[]
+ def subset(ids,items=None):
+  items=items if items is not None else {k:a for k,a in actions.items()if str(a.get('nm_id'))in ids}
   p=copy.deepcopy(payload);p['data']['allowed_actions']=items
+  p['data']['review_scope_nm_ids']=ids
   return compact(p)
- for key,action in actions.items():
-  trial=dict(current,**{key:action})
-  if current and len(message(subset(trial)))+len(rules)>29000:
-   groups.append(current);current={key:action}
+ for nm in nms:
+  trial=current+[nm]
+  if current and len(message(subset(trial)))+len(rules)>27000:
+   groups.append(current);current=[nm]
   else:current=trial
- groups.append(current)
+ if current:groups.append(current)
+ funding={k:a for k,a in actions.items()if not a.get('nm_id')}
+ if funding or not groups:groups.append([])
  values=[];receipts=[]
- for index,group in enumerate(groups):
-  p=subset(group)
+ for index,ids in enumerate(groups):
+  group=funding if not ids else {k:a for k,a in actions.items()if str(a.get('nm_id'))in ids}
+  p=subset(ids,group)
   p['context_scope']+=' This is candidate group '+str(index+1)+'/'+str(len(groups))+'. Coverage conclusions apply only to this group; do not claim the whole catalogue has no candidates.'
   def check(v):
    v=validate(v)
@@ -86,4 +95,4 @@ def ask(core,identity,payload,validate,rules,root,digest,stamp,parse,message,mod
  for direction in ('raise','add','reduce','exclude'):
   rows=[v['directions'][direction]for v in values]
   result['directions'][direction]=dict(status='unavailable'if any(r['status']=='unavailable'for r in rows)else'checked',note=('Candidate groups only; unready catalogue evidence remains private. '+'; '.join(r['note']for r in rows))[:3000])
- return validate(result),dict(identity=identity,transport='responses_bounded_advertising_v2',source_sha256=digest(payload),groups=receipts,model=model)
+ return validate(result),dict(identity=identity,transport='responses_bounded_advertising_v3_full_scope',source_sha256=digest(payload),groups=receipts,reviewed_nm_ids=nms,model=model)

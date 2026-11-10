@@ -48,7 +48,7 @@ jobs:
       - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0 openai==3.42.1 > "$RUNNER_TEMP/install.log" 2>&1
       - name: Check advertising arithmetic and duplicate safeguards
         run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
-      - name: Read current China day and deliver agreed green midday report
+      - name: Read current China day and deliver verified green midday report
         working-directory: source
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

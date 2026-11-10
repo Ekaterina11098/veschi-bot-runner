@@ -30,4 +30,16 @@ class BoundedMidday(unittest.TestCase):
   result,_=scope['ask'](None,'test',p,lambda v:v,'rules','root',lambda v:'hash',None,None,json.dumps,'test')
   self.assertGreater(len(calls),1)
   self.assertEqual(set(p['data']['allowed_actions']),{r['id']for r in result['decisions']})
+ def test_full_catalogue_reviewed_even_without_candidates(self):
+  source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
+  nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef)and n.name in ('compact','ask')]
+  seen=set()
+  def one(core,identity,p,validate,rules,*args):
+   seen.update(str(x['nm_id'])for x in p['data']['completed_source']['products'].values())
+   return dict(kind='advertising_review',decisions=[],directions={d:dict(status='checked',note='Checked')for d in ('raise','add','reduce','exclude')},research=[]),{}
+  scope=dict(copy=copy,ask_one=one);exec(compile(ast.Module(body=nodes,type_ignores=[]),'bounded','exec'),scope)
+  p=self.sample();p['data']['allowed_actions']={}
+  _,receipt=scope['ask'](None,'test',p,lambda v:v,'rules','root',lambda v:'hash',None,None,json.dumps,'test')
+  self.assertEqual({'1','3'},seen)
+  self.assertEqual({'1','3'},set(receipt['reviewed_nm_ids']))
 if __name__=='__main__':unittest.main()

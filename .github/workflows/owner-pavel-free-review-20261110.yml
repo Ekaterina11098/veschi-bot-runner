@@ -82,7 +82,8 @@ jobs:
           identity='pavel283-free-review-validation-v1'
           msg=compact_message(dict(runtime_scope=dict(today_msk='2026-11-10',sender_id=job['sender_id'],chat_id=CHAT,validation_only=True,wb_action_permission=False),dated_work_context=context,untrusted_telegram_question=text))
           model=BoundedSol(db,'china_agent:owner_pavel_free_review:2026-11-10:v1:')
-          decision=envelope(model.answer(identity,INSTRUCTIONS,msg))
+          prior=db.get(model.key(identity))or{}
+          decision=envelope(prior['text']if prior.get('status')=='completed'else model.answer(identity,INSTRUCTIONS,msg))
           assert decision['kind']=='review_advertising','Maintenance must become typed review, not plain read or new test'
           real_request=requests.sessions.Session.request;reads=[]
           def guarded(session,method,url,**kw):

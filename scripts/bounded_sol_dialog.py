@@ -14,11 +14,11 @@ def excerpt(v,n):
 def compact_message(value):
  """Keep the question and scope; cap dated evidence explicitly rather than copy session history."""
  ctx=value.get('dated_work_context',{})
- priority=('analytics','data_request','telegram_reply_context','latest_hourly_snapshot','campaign_execution_registry','work_notes','recent_delivered_replies','china_catalogue')
+ priority=('analytics','advertising_review','data_request','telegram_reply_context','latest_hourly_snapshot','campaign_execution_registry','work_notes','recent_delivered_replies','china_catalogue')
  out={};remaining=18000
  for key in list(priority)+[k for k in ctx if k not in priority]:
   if key not in ctx or remaining<300:continue
-  item=excerpt(ctx[key],min(remaining,7000 if key=='analytics' else 3000))
+  item=excerpt(ctx[key],min(remaining,9000 if key in ('analytics','advertising_review') else 3000))
   size=len(dump(item));out[key]=item;remaining-=size
  return dump(dict(value,dated_work_context=out,evidence_scope='bounded; omitted/excerpted data is not proof of absence'))
 

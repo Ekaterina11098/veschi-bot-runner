@@ -1,7 +1,14 @@
 """Bounded read-only price review; exact source is retained in the analysis journal."""
-import copy,json
+import copy,json,os
+from concurrent.futures import ThreadPoolExecutor
 from bounded_sol_dialog import BoundedSol
 from china_no_paid import require_paid_api
+class PrefillComplete(Exception):pass
+
+def replace_times(value,replacements):
+ if isinstance(value,dict):return {k:replace_times(v,replacements)for k,v in value.items()}
+ if isinstance(value,list):return [replace_times(v,replacements)for v in value]
+ return replacements.get(value,value)if isinstance(value,str)else value
 
 def compact(payload):
  p=copy.deepcopy(payload);d=p['data'];s=d['completed_source']
@@ -79,11 +86,37 @@ def ask(core,identity,payload,validate,rules,root,digest,stamp,parse,message,mod
  if current:groups.append(current)
  funding={k:a for k,a in actions.items()if not a.get('nm_id')}
  if funding or not groups:groups.append([])
- values=[];receipts=[]
- for index,ids in enumerate(groups):
+ day=(str(identity).split(':')+[''])[1]
+ control=core.db.get('china_agent:advertising_midday_resume:'+day+':v1')or{} if core is not None else {}
+ replacements={}
+ if control.get('enabled'):
+  live=core.db.get(control['source_key']);frozen=control['full_input']
+  def facts(v):return {k:x for k,x in v.items()if k!='observed_at'}
+  if facts(live)!=facts(frozen):raise ValueError('Resume input facts changed; cached analysis cannot be reused')
+  replacements[source.get('observed_at')]=control['full_observed_at']
+  obs=(payload['data'].get('intraday_observation')or{}).get('observed_at')
+  if obs:replacements[obs]=control['intraday_observed_at']
+ def prepared(index,ids):
   group=funding if not ids else {k:a for k,a in actions.items()if str(a.get('nm_id'))in ids}
   p=subset(ids,group)
   p['context_scope']+=' This is candidate group '+str(index+1)+'/'+str(len(groups))+'. Coverage conclusions apply only to this group; do not claim the whole catalogue has no candidates.'
+  return group,replace_times(p,replacements)
+ if control.get('enabled'):
+  _,first=prepared(0,groups[0])
+  if digest(dict(first,transport='responses_bounded_advertising_v3_full_scope'))!=control['expected_first_sha']:raise ValueError('Recovery source fingerprint differs; no model submission')
+ if os.environ.get('CHINA_AD_ANALYSIS_PREFILL')=='1':
+  def fill(pair):
+   index,ids=pair;group,p=prepared(index,ids)
+   def check(v):
+    v=validate(v)
+    if any(r['id']not in group for r in v['decisions'])or v.get('research'):raise ValueError('Prefill outside exact group')
+    return v
+   return ask_one(core,identity+':group:'+str(index),p,check,rules,root,digest,stamp,parse,message,model)
+  with ThreadPoolExecutor(max_workers=3)as pool:list(pool.map(fill,[(i,x)for i,x in enumerate(groups)if i>=control.get('prefill_from_group',9999)]))
+  raise PrefillComplete('Remaining bounded analysis groups completed; no report delivery')
+ values=[];receipts=[]
+ for index,ids in enumerate(groups):
+  group,p=prepared(index,ids)
   def check(v):
    v=validate(v)
    if any(r['id']not in group for r in v['decisions']):raise ValueError('Decision outside candidate group')

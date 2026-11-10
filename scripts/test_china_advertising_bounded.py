@@ -1,4 +1,6 @@
 import ast,copy,json,os,unittest
+from types import SimpleNamespace
+from unittest.mock import Mock
 from pathlib import Path
 def compact(value):
  source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
@@ -6,6 +8,16 @@ def compact(value):
  scope={'copy':copy};exec(compile(ast.Module(body=[fn],type_ignores=[]),'compact','exec'),scope)
  return scope['compact'](value)
 class BoundedMidday(unittest.TestCase):
+ def test_disabled_budget_prevents_model_submission(self):
+  source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
+  fn=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef)and n.name=='ask_one')
+  client=Mock()
+  db=SimpleNamespace(get=lambda key:dict(enabled=False,max_new_calls=0)if key=='china_agent:advertising_midday_model_budget:v1'else None,once=Mock())
+  scope=dict(require_paid_api=lambda v:None,BoundedSol=lambda *a:client)
+  exec(compile(ast.Module(body=[fn],type_ignores=[]),'budget','exec'),scope)
+  with self.assertRaisesRegex(RuntimeError,'disabled'):
+   scope['ask_one'](SimpleNamespace(db=db),'test',{},lambda x:x,'rules','root',lambda x:'hash',lambda:'now',None,None,'test')
+  client.answer.assert_not_called();client.recover.assert_not_called()
  def test_only_omitted_constant_discriminator_is_repaired(self):
   source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
   fn=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef)and n.name=='contract_object')

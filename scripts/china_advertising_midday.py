@@ -137,7 +137,7 @@ def recommendations(c):
  rows=[completed_recommendation(r)for r in c['attention']]
  rows+=c.get('addition_review_notes',[])
  # Unready research stays in the private analysis journal.
- return rows or ['Нет новых действий.']
+ return rows or [c.get('recommendation_review_note')or'Нет новых действий.']
 def covered_totals(campaigns):
  known=[c['today'] for c in campaigns if c.get('today') is not None]
  missing=[c['id'] for c in campaigns if c.get('today') is None and not c.get('draft')]

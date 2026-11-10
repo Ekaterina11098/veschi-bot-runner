@@ -18,7 +18,7 @@ def review(io,day,campaign_ids=(),refresh=True):
  end=(datetime.fromisoformat(day).date()-timedelta(days=1)).isoformat()
  if s.get('cabinet')!='token_3' or s.get('status')!='complete' or s.get('period_to')!=end:raise ValueError('Нет полного источника рекламы по '+end+'; требуется сбор завершённого дня')
  states={c['id']:c for b in s['batches'].values()for c in b['campaigns'].get('adverts',[])}
- ids=list(campaign_ids)or sorted(states)
+ ids=list(campaign_ids)or sorted(cid for cid,c in states.items()if c.get('status')==9)
  if not ids or len(ids)>50 or any(cid not in states for cid in ids):raise ValueError('Campaign scope missing or exceeds50')
  registry=io.get('china_agent:verified_campaign_state:v1')or{}
  for cid,key in registry.items():
@@ -34,6 +34,7 @@ def review(io,day,campaign_ids=(),refresh=True):
  missing=[cid for cid in ids if cid not in raw]
  if missing and refresh:
   records=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,missing))+'&beginDate='+s['period_from']+'&endDate='+s['period_to'])
+  if not isinstance(records,list):raise ValueError('WB did not return completed statistics for campaigns '+','.join(map(str,missing)))
   raw.update({r['advertId']:r for r in records})
  if any(cid not in raw for cid in ids):raise ValueError('Missing completed advertising statistics, not zero')
  budgets={r['advertId']:r for b in s['batches'].values()for r in b.get('budgets',{}).get('adverts',[])if r}

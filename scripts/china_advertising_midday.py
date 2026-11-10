@@ -75,7 +75,7 @@ def prepare_midday(io,day,source=None):
    draft=False
    rec=raw.get(c['id']);d=next((x for x in (rec or {}).get('days',[]) if x['date'][:10]==day),None)
    metric=daily_metrics(d) if d else dict(ZERO) if rec else None
-   if c['status']in[7,8,-1]and (metric is None or not any(metric.values())):continue
+   if c['status']in[7,8,-1]and metric is not None and not any(metric.values()):continue
    skus={}
    for app in (d or {}).get('apps',[]):
     for n in app.get('nms',[]):
@@ -229,8 +229,10 @@ def run():
   exact_recovery=resume.get('enabled')and facts(done.get('source',{}).get('full_growth_inputs'))==facts(resume.get('full_input'))and facts(io.get(resume['source_key']))==facts(resume.get('full_input'))
   def states(source):
    return {str(c['id']):{k:c.get(k)for k in ('status','currency','bid_type','settings','nm_settings')}for batch in source.get('batches',{}).values()for c in batch.get('campaigns',{}).get('adverts',[])}
-  same_campaign_state=states(current)==states(done.get('source',{}))
-  reusable=done.get('status')=='complete'and review.get('economic_review_complete')is True and review.get('codex_analysis',{}).get('transport')=='responses_bounded_advertising_v3_full_scope'and same_campaign_state and (exact_recovery or (datetime.now(timezone.utc)-datetime.fromisoformat(done['observed_at'].replace('Z','+00:00'))).total_seconds()<1200)
+  same_campaign_state=states(current)==(done.get('campaign_states')or states(done.get('source',{})))
+  from china_midday_rules_review import enabled as no_model_enabled
+  checked_review=review.get('codex_analysis',{}).get('transport')=='responses_bounded_advertising_v3_full_scope'or (no_model_enabled(io)and review.get('midday_review',{}).get('backend')=='owner_selected_full_checks_no_model')
+  reusable=done.get('status')=='complete'and review.get('economic_review_complete')is True and checked_review and same_campaign_state and (exact_recovery or (datetime.now(timezone.utc)-datetime.fromisoformat(done['observed_at'].replace('Z','+00:00'))).total_seconds()<1200)
   prepared=prepare_midday(io,day,current)
   b=only_completed_day_actions(merge_completed(prepared,review,completed_key)if reusable else attach(io,prepared,day));files=[]
   for i,f in enumerate(render_midday(b)):
@@ -241,8 +243,10 @@ def run():
  if saved.get('validation_revision')!='full_scope_closed_costs_v3':raise ValueError('Superseded report validation revision')
  if saved.get('day')!=day or saved.get('status')!='frozen':raise ValueError('Midday artifact scope mismatch')
  if saved.get('bundle',{}).get('economic_review_complete')is not True:raise ValueError('Full economic validation required before Telegram')
- if saved['bundle'].get('codex_analysis',{}).get('transport')!='responses_bounded_advertising_v3_full_scope':raise ValueError('Complete catalogue analysis required before Telegram')
- if covered_totals(saved['bundle']['campaigns'])['missing']:raise ValueError('Incomplete current campaign coverage; no partial report')
+ from china_midday_rules_review import enabled as no_model_enabled
+ rules_checked=no_model_enabled(io)and saved['bundle'].get('midday_review',{}).get('backend')=='owner_selected_full_checks_no_model'
+ if saved['bundle'].get('codex_analysis',{}).get('transport')!='responses_bounded_advertising_v3_full_scope'and not rules_checked:raise ValueError('Complete catalogue checks required before Telegram')
+ if covered_totals(saved['bundle']['campaigns'])['missing']and not(rules_checked and (io.get('china_agent:advertising_midday_review_policy:v1')or{}).get('show_unavailable_statistics')is True):raise ValueError('Incomplete current campaign coverage; no partial report')
  files=[]
  for f in saved['files']:
   cap='Китай · промежуточный отчёт · '+day+' · '+str(f['page'])+'/'+str(f['total'])+'. '

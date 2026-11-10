@@ -40,6 +40,22 @@ def collect(io,s,day):
  policy=io.get('china_agent:advertising_format:v2')or{}
  excluded=set(policy.get('growth_excluded_nm_ids',[1473245494,1473245510,1473244000]))
  ids=v.get('screened_nm_ids')or sorted({int(r['nmID'])for r in s['catalogue']['rows']}-excluded)
+ live=[copy.deepcopy(c)for batch in s.get('batches',{}).values()for c in batch.get('campaigns',{}).get('adverts',[])]
+ if live:
+  previous={c['id']:c for c in v.get('campaigns',[])}
+  changed={c['id']for c in live if previous.get(c['id'],{}).get('nm_settings')!=c.get('nm_settings')or previous.get(c['id'],{}).get('status')!=c.get('status')}
+  for cid in changed:v.get('minimums',{}).pop(str(cid),None)
+  if changed:v['addition_quotes']={}
+  v['campaigns']=live
+  active={c['id']for c in live if c.get('status')==9}
+  cash={r['advertId']:copy.deepcopy(r)for batch in s['batches'].values()for r in batch.get('budgets',{}).get('adverts',[])if r is not None}
+  if active<=set(cash):v['budgets']=dict(adverts=[cash[cid]for cid in sorted(active)]);v['budgets_observed_at']=s.get('budget_balance_observed_at_iso',s['observed_at'])
+  else:v.pop('budgets',None)
+  if s.get('config'):v['config']=copy.deepcopy(s['config'])
+  known={r['nm_id']for r in v.get('prices',{}).get('rows',[])}
+  unknown={n['nm_id']for cp in live for n in cp.get('nm_settings',[])}-known-excluded
+  if 'prices'in v and unknown:
+   for name in ('prices','stock','published_stock','economics','catalogue','screened_nm_ids','held_evidence'):v.pop(name,None)
  end=date.fromisoformat(day)-timedelta(days=1);first=end-timedelta(days=29)
  try:
   if 'own'not in v:
@@ -152,7 +168,7 @@ def collect(io,s,day):
 def proposed_actions(s):
  """Every current placement is evaluated; no top8/top12 truncation and no forced count."""
  from china_advertising_v2 import history,event_time
- v=s['full_growth_inputs'];end=date.fromisoformat(s['period_to']);today=end+timedelta(days=1);changes=history(s['executions'])
+ v=s['full_growth_inputs'];end=date.fromisoformat(s['period_to']);today=end+timedelta(days=1);changes=history(s['executions'])+list(s.get('verified_composition_changes',[]))
  metrics={};campaign_spend={}
  for batch in s['batches'].values():
   for cp in batch['stats']:

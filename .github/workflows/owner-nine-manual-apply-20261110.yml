@@ -1,9 +1,6 @@
 name: Owner approved nine China manual targets10Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-nine-manual-apply-20261110.yml']
 permissions:
   contents: read
 concurrency:
@@ -69,4 +66,4 @@ jobs:
           retention-days: 90
 
 
-# Resume same owner9 root with actual fresh physical MS reread after current orders; 265 offline checks passed.
+# Completed owner9 exact targets; manual audit/resume only, confirmed operations are never repeated.

@@ -1,0 +1,107 @@
+name: Read requested OOO weekly source November 2-8
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/read-ooo-weekly-20261102-08.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ooo-basic-finance-source
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Read source privately within account financial limits
+        shell: python
+        env:
+          WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          import os,json,gzip,datetime as dt,urllib.request,urllib.error,sys
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          ROOT="weekly_report_review:ooo:20261102_20261108:"
+          ACCESS="weekly_report_review:ooo:finance_access:v1"
+          URL="https://finance-api.wildberries.ru/api/finance/v1/sales-reports/detailed"
+          t=m.Transport();db=m.Cache(t)
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*args,**kwargs):raise RuntimeError("Redirect blocked")
+          op=urllib.request.build_opener(NoRedirect)
+          request_config=db.get(ROOT+"request:v1") or {}
+          if request_config.get("source_requests_authorized") is not True or request_config.get("writes_authorized") is not True:
+           print("Owner request disabled; no financial source request.");sys.exit(0)
+          proof=db.get(ROOT+"source_proof:v1") or {"status":"requested","dateFrom":"2026-11-02","dateTo":"2026-11-08","cabinet":"ooo","secret_name":"WB_FINANCE_TOKEN_1","chunks":[],"pages":[],"rows":0}
+          now=dt.datetime.now(dt.timezone.utc)
+          if proof.get("status")=="complete":
+           print("Existing complete private source retained; no API request.");sys.exit(0)
+          access=db.get(ACCESS) or {}
+          if access.get("next_allowed_at") and m.stamp(access["next_allowed_at"])>now:
+           proof.update(status="waiting_for_server_retry",next_allowed_at=access["next_allowed_at"]);db.put(ROOT+"source_proof:v1",proof)
+           print("Account financial API cooldown is active; no request.");sys.exit(0)
+          token=os.environ.get("WB_FINANCE_TOKEN_1","")
+          if not token:
+           proof.update(status="token_unavailable",at=m.now());db.put(ROOT+"source_proof:v1",proof);raise SystemExit(1)
+          cursor=proof.get("last_rrd_id",0)
+          body={"dateFrom":"2026-11-02","dateTo":"2026-11-08","period":"weekly","limit":100000,"rrdId":cursor}
+          proof.update(status="reading",requested_at=m.now(),run_id=os.environ["GITHUB_RUN_ID"])
+          db.put(ROOT+"source_proof:v1",proof)
+          db.put(ACCESS,{**access,"last_request_at":m.now(),"next_allowed_at":(now+dt.timedelta(hours=12,seconds=5)).isoformat(),"task":ROOT,"status":"requesting"})
+          request=urllib.request.Request(URL,method="POST",data=json.dumps(body).encode(),headers={"Authorization":token,"Content-Type":"application/json","Accept-Encoding":"gzip"})
+          status=None;headers={};data=None
+          try:
+           with op.open(request,timeout=120) as response:
+            status=response.status;raw=response.read();headers=dict(response.headers.items())
+            if response.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+            data=json.loads(raw) if raw else []
+          except urllib.error.HTTPError as exc:
+           status=exc.code;headers=dict(exc.headers.items());raw=exc.read()
+           if exc.headers.get("Content-Encoding")=="gzip":
+            try:raw=gzip.decompress(raw)
+            except Exception:pass
+           data={"error":raw.decode("utf-8",errors="replace").replace(token,"[REDACTED]")[:2500]}
+          except Exception as exc:
+           proof.update(status="source_transport_error",error_type=type(exc).__name__,at=m.now());db.put(ROOT+"source_proof:v1",proof)
+           print("Source read stopped; private receipt saved.");sys.exit(1)
+          rate={k:v for k,v in headers.items() if "ratelimit" in k.casefold() or k.casefold() in ("retry-after","x-report-total-rows","x-total-count","content-range")}
+          next_time=dt.datetime.now(dt.timezone.utc)+dt.timedelta(hours=12,seconds=5)
+          for key,value in headers.items():
+           if key.casefold() in ("x-ratelimit-retry","retry-after","x-ratelimit-reset"):
+            try:
+             seconds=float(value)
+             if 0<=seconds<200000:next_time=max(next_time,dt.datetime.now(dt.timezone.utc)+dt.timedelta(seconds=seconds+5))
+            except ValueError:pass
+          db.put(ACCESS,{**access,"last_request_at":proof["requested_at"],"next_allowed_at":next_time.isoformat(),"task":ROOT,"http":status,"headers":rate})
+          proof.setdefault("pages",[]).append({"at":m.now(),"http":status,"cursor":cursor,"headers":rate})
+          proof["http_status"]=status;proof["next_allowed_at"]=next_time.isoformat()
+          if status==204 or (status==200 and data==[]):
+           proof.update(status="complete" if proof["rows"] else "no_data",pagination_exhausted=True,completed_at=m.now());db.put(ROOT+"source_proof:v1",proof)
+           print("Source pagination exhausted; private proof saved.");sys.exit(0)
+          if status!=200:
+           proof.update(status="waiting_for_server_retry" if status==429 else "source_error",error=data,at=m.now());db.put(ROOT+"source_proof:v1",proof)
+           print("Source request stopped; sanitized private diagnostic saved.");sys.exit(0 if status==429 else 1)
+          if not isinstance(data,list) or not data:raise RuntimeError("Unexpected source representation")
+          seen=set()
+          for chunk in proof["chunks"]:
+           for row in db.get(chunk["key"]):seen.add(str(row["rrdId"]))
+          for row in data:
+           identity=str(row["rrdId"])
+           if identity in seen:raise RuntimeError("Duplicate financial source row")
+           seen.add(identity)
+           if row.get("dateFrom","")[:10]!="2026-11-02" or row.get("dateTo","")[:10]!="2026-11-08":raise RuntimeError("Financial source report period differs from requested dates")
+          for offset in range(0,len(data),100):
+           key=ROOT+"source_rows:"+str(proof["rows"]+offset);batch=data[offset:offset+100];db.put(key,batch)
+           proof["chunks"].append({"key":key,"rows":len(batch)})
+          proof["rows"]+=len(data);proof["last_rrd_id"]=data[-1]["rrdId"];proof["keys"]=list(data[0])
+          proof.update(status="page_downloaded",short_page=len(data)<100000,pagination_exhausted=False,report_ids=sorted({r["reportId"] for r in data}),currencies=sorted({r.get("currency") for r in data}),completed_page_at=m.now())
+          db.put(ROOT+"source_proof:v1",proof)
+          print("Requested financial source page saved privately; pagination and account cooldown recorded.")
+
+# Resume the authorized source-completeness check after the account gate.

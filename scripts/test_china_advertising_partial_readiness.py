@@ -10,11 +10,8 @@ def guard(value):
 class PartialReadiness(unittest.TestCase):
  def sample(self):
   return dict(economic_review_complete=False,economic_review_blockers=[dict(campaign_id=1,article='A')],campaigns=[dict(id=1,focus=[dict(article='A',action=None)],attention=[])],recommendation_directions={k:dict(status='checked')for k in ('raise','add','reduce','exclude')})
- def test_missing_evidence_is_visible_and_not_complete(self):
-  result=guard(self.sample())
-  self.assertFalse(result['economic_review_complete'])
-  self.assertIn('не завершена',result['campaigns'][0]['recommendation_review_note'])
-  self.assertTrue(all(x['status']=='unavailable'for x in result['recommendation_directions'].values()))
+ def test_missing_evidence_blocks_delivery(self):
+  with self.assertRaises(ValueError):guard(self.sample())
  def test_unsafe_action_still_blocks_delivery(self):
   p=self.sample();p['campaigns'][0]['focus'][0]['action']={'kind':'ad_exclude_sku'}
   with self.assertRaises(ValueError):guard(p)

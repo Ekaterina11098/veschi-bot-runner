@@ -34,10 +34,10 @@ class CompletedMidday(unittest.TestCase):
    def get(self,k):return self.d.get(k)
    def create(self,k,x):self.d[k]=copy.deepcopy(x);return True
    def put(self,k,x):self.d[k]=copy.deepcopy(x)
-  fresh=IO(5)
+  fresh=IO(1)
   with patch.object(v,'http',side_effect=AssertionError('Unexpected request')):
    self.assertEqual('complete',v.collect(fresh,day,current=True)['status'])
-  stale=IO(900)
+  stale=IO(3)
   with patch.object(v,'http',side_effect=RuntimeError('fresh collection requested')):
    with self.assertRaisesRegex(RuntimeError,'fresh collection requested'):v.collect(stale,day,current=True)
   archives=[x for k,x in stale.d.items()if ':rejected_stale:'in k]

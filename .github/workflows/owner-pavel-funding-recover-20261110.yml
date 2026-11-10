@@ -1,0 +1,111 @@
+name: Recover exact funding with verified MSK policy
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-pavel-funding-recover-20261110.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-dialog-queue
+  cancel-in-progress: false
+jobs:
+  exact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    concurrency:
+      group: china-dialog-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
+      - name: Install pinned read transport
+        run: pip install requests==2.32.5 Pillow==12.3.0 openai==3.42.1 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
+      - run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+      - name: Exact approved plans only; no historical queue drain
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          OPENAI_API_KEY: ""
+          CHINA_ANALYSIS_BACKEND: managed_codex
+          PYTHONPATH: scripts:source
+        run: |
+          python -u - <<'PY'
+          import json,copy,sys,types
+          from datetime import datetime,timezone,timedelta
+          from unittest.mock import patch
+          from china_budget_ready_model import validate_funding
+          # Regression: explicit MSK policy permits known WB zero; default and actual stock/COGS failures remain blocked.
+          ready=types.ModuleType('china_morning_readiness');moy=types.ModuleType('china_moysklad_read');adv=types.ModuleType('china_advertising_v2');adv.http=None
+          ready.current_prices=lambda io,ids:dict(rows=[dict(nm_id=1,article='test',seller_price=100)])
+          ready.published_stock=lambda io,p,ids:dict(missing_nm_ids=[],amounts={'1':0})
+          sample=dict(stock=1,reserve=0,price=10000)
+          moy.read_stock=lambda arts:dict(coverage_complete=True,rows=[dict(article='test',**sample)])
+          ev=dict(status='positive',ready=True,observed_at=datetime.now(timezone.utc).isoformat(),period_to='2026-11-09',expected_bids={'1':{'recommendations':28}},member_inputs={'1':dict(price=100,stock_free=1,published_stock=0,cost=100,buyout=.5,fx=12)},attributed_orders_by_nm={'1':3},modeled_after_ads_cny=100)
+          class Fake:
+              def __init__(self,required):self.required=required
+              def get(self,key):return {}if self.required is None else dict(require_published_stock=self.required)
+          with patch.dict(sys.modules,{'china_morning_readiness':ready,'china_moysklad_read':moy,'china_advertising_v2':adv}):
+              validate_funding(Fake(False),{'budget_evidence':ev},{'nm_settings':[dict(nm_id=1,bids_kopecks={'recommendations':28})]})
+              for required,stock,cost in [(True,1,10000),(None,1,10000),(False,0,10000),(False,1,0)]:
+                  sample.update(stock=stock,price=cost)
+                  try:validate_funding(Fake(required),{'budget_evidence':ev},{'nm_settings':[dict(nm_id=1,bids_kopecks={'recommendations':28})]})
+                  except ValueError:pass
+                  else:raise AssertionError('Guard weakened')
+          from china_loss_execute import IO
+          from china_daily_ad_actions import execute,EXEC
+          from china_loss_control import APPROVAL,PLAN,CHAT
+          io=IO();pid='daily-2026-11-10-budgets-1';key=EXEC+pid;ek='china_agent:owner_pavel_chain:2026-11-10:v1:funding_recovery'
+          if io.get(ek):raise ValueError('Recovery already exists; never replay')
+          e=io.get(key);blocked=[x for x in e['items']if x['id']=='topup:41270309']
+          if len(blocked)!=1 or blocked[0]['status']!='blocked' or blocked[0].get('request') or blocked[0].get('submitted_at'):raise ValueError('Not exact never-submitted blocker')
+          if any(x['status']!='verified'for x in e['items']if x['id']!='topup:41270309'):raise ValueError('Other unresolved item')
+          assert (io.get('china_agent:analysis_backend:v1')or{}).get('require_published_stock')is False
+          audit=dict(status='revalidating',reason='Owner standing MSK primary availability rule; published zero is risk, not automatic veto',original_execution=copy.deepcopy(e),started_at=datetime.now(timezone.utc).isoformat(),regression_cases=5)
+          assert io.create(ek,audit)
+          e['items']=[x for x in e['items']if x['id']!='topup:41270309'];e['status']='running';io.put(key,e)
+          result=execute(io,io.get(APPROVAL+'288'),io.get(PLAN+pid))
+          state=next(x for x in result['items']if x['id']=='topup:41270309')
+          audit.update(status=state['status'],after_item=state,completed_at=datetime.now(timezone.utc).isoformat());io.put(ek,audit)
+          if state['status']!='verified':raise ValueError('Fresh recovery not verified; do not retry')
+          dk=ek+':delivery';text='РК 41270309: пополнение на 200 CNY выполнено и проверено WB. Проверка исправлена по правилу Екатерины: наличие МСК учитывается отдельно от опубликованного остатка WB. Остальные пополнения повторно не выполнялись.'
+          assert io.create(dk,dict(status='sending',text=text))
+          try:
+              r=io.tg('sendMessage',dict(chat_id=CHAT,text=text,reply_parameters={'message_id':839,'allow_sending_without_reply':True}))
+              io.put(dk,dict(status='sent',text=text,message_id=r['message_id'],chat_id=CHAT))
+          except Exception:
+              io.put(dk,dict(status='uncertain',text=text));raise
+          print(json.dumps(dict(status=state['status'],regression_cases=5,wb_writes=result['wb_writes'])))
+          PY

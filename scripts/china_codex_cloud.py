@@ -30,6 +30,13 @@ INSTRUCTIONS += '\nПостоянное правило владельца8Nov: �
 INSTRUCTIONS += '\nКоличество в примере не ограничивает подбор. Если просят как можно больше, maximum_count=50; если указан предел20, сохраняй20. Покажи все фактически готовые, не дополняй слабыми ради количества. PNG должен быть краткой таблицей с группировкой по РК и краткими рекомендациями справа, без длинных карточек по каждому SKU.'
 INSTRUCTIONS += '''\nЕсли человек просит подобрать/пересчитать рекламное предложение или заменяет его категорию (например «зонты не хочу, давай сумки»), не ограничивайся обещанием. Верни JSON {"kind":"prepare_advertising","subject_ids":[50],"nm_ids":[],"maximum_count":20}. Сумки WB subject50, зонты61; точные nmID только из каталога. Это только расчёты: отдельный механизм подготовит и доставит конкретные РК/ставки/бюджет/экономику; запуск запрещён без нового подтверждения плана. Уточняй только неустранимую неоднозначность. Учитывай текущий отказ от прежнего предложения. МойСклад МСК минус резерв определяет наличие; опубликованный остаток WB не запрещает предложение. Минимальные ставки брать из датированной памяти по РК, категории и размещению. Не называй список кандидатов готовым предложением.'''
 
+INSTRUCTIONS += '''
+Уточнение владельца10Nov: платный API для этого облачного диалога разрешён; модель Sol, ограниченный контекст, без повторных модельных отправок. ИИ анализирует, запись WB выполняет только отдельный механизм после ответа действующего человека на точный доставленный план.
+Запрос о высокой ДРР, дорогой рекламе, снижении/исключении или конкретной РК — разбор текущей рекламы, НЕ подбор нового теста и НЕ prepare_advertising. Сначала читай факты выбранной РК и историю verified, раскладывай денежный вклад по товарам, затем предлагай точные действия и условия оценки. Отсутствие сегодняшнего кэша не означает недоступность API: запроси адресный read. Уже выполненное по canonical receipt не предлагай снова; владелец мог выполнить действие из Codex.
+Минимальные цены и блокировки автоакций через проверенный API не меняются. Обычная ценовая квитанция их не подтверждает. Поясни путь через официальный шаблон/загрузку кабинета, не обещай API исполнение.
+Полный следующий день нужен для оценки эффекта изменения, но не разрешает бесконечный расход: отдельно разберись с накопленным риском, собственной предварительной экономикой, наличием и вкладом SKU. Предложение ограничения риска не утверждает доказанный провал теста и тоже требует подтверждения. Не предлагай паузу всей РК без разбора товаров.
+Число и сумма сравнительных продаж всегда с ОБЕИМИ сопоставимыми базами вчера/неделя; отсутствие базы явно. Сначала используй уже собранные датированные отчёты. Для повторного вопроса не пересобирай весь кабинет без необходимости.
+'''
 def stamp():return datetime.now(timezone.utc).isoformat()
 def today():return datetime.now(ZoneInfo('Europe/Moscow')).date()
 def valid_scope(p):
@@ -130,7 +137,7 @@ class Worker:
         else:self.db.once(key,value)
     def sdk(self):
         from china_no_paid import require_paid_api
-        require_paid_api()
+        require_paid_api(self.db.get(CLOUD+'policy') or {})
         if self.client is None:
             from openai import OpenAI
             self.client=OpenAI(max_retries=0,timeout=120)
@@ -210,6 +217,8 @@ class Worker:
 
         registry=self.db.get('china_agent:verified_campaign_state:v1') or {}
         ctx['campaign_execution_registry']=bounded(registry,6000)
+        from china_codex_ad_context import context as advertising_context
+        ctx['advertising_review']=advertising_context(self.db,inbox['request_text'],day)
         jid=inbox['job_id']
         analytics=self.db.get(ROOT+'analytics:'+str(jid))
         if analytics:ctx['analytics']=bounded(analytics,110000)
@@ -221,7 +230,7 @@ class Worker:
         if sid=='responses-stateless':
             from china_no_paid import require_paid_api
             from bounded_sol_dialog import BoundedSol
-            require_paid_api()
+            require_paid_api(self.db.get(CLOUD+'policy') or {})
             return BoundedSol(self.db,CLOUD).answer(submission,INSTRUCTIONS,message)
         text=[];completed=False
         if len(message.encode('utf-8'))>3800000:raise ValueError('Cloud message exceeds bounded request scope')

@@ -1,0 +1,19 @@
+import ast,copy,unittest
+from pathlib import Path
+def compact(value):
+ source=Path(__file__).with_name('china_advertising_bounded_review.py').read_text(encoding='utf-8')
+ fn=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='compact')
+ scope={'copy':copy};exec(compile(ast.Module(body=[fn],type_ignores=[]),'compact','exec'),scope)
+ return scope['compact'](value)
+class BoundedMidday(unittest.TestCase):
+ def sample(self):
+  return dict(data=dict(allowed_actions={'one':dict(nm_id=1,campaign_id=2,target_minor=28)},candidate_evidence={'one':dict(metrics=None)},completed_source=dict(products={'2:1':dict(nm_id=1,daily={'closed':None}),'2:3':dict(nm_id=3)},economics=dict(rows={'1':dict(stock_free=0),'3':{}}),catalogue=dict(rows=[dict(nmID=1)]),current_campaigns=[dict(id=2,nm_settings=[dict(nm_id=1)])]),intraday_observation=dict(day='2026-11-10',campaigns=['duplicate'])),work_notes=[])
+ def test_exact_actions_and_evidence(self):
+  p=self.sample();v=compact(p);self.assertEqual(p['data']['allowed_actions'],v['data']['allowed_actions']);self.assertEqual(p['data']['candidate_evidence'],v['data']['candidate_evidence'])
+ def test_unknown_not_zero(self):
+  self.assertIsNone(compact(self.sample())['data']['completed_source']['products']['2:1']['daily']['closed'])
+ def test_original_catalogue_unchanged(self):
+  p=self.sample();compact(p);self.assertEqual(2,len(p['data']['completed_source']['products']))
+ def test_scope_disclosed(self):
+  self.assertIn('No new research actions',compact(self.sample())['context_scope'])
+if __name__=='__main__':unittest.main()

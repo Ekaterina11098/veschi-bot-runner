@@ -1,9 +1,6 @@
 name: Owner read-only bag57 listed stock10Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner57-fbs-read-20261110.yml']
 permissions:
   contents: read
 concurrency:

@@ -10,6 +10,12 @@ def replace_times(value,replacements):
  if isinstance(value,list):return [replace_times(v,replacements)for v in value]
  return replacements.get(value,value)if isinstance(value,str)else value
 
+def contract_object(value):
+ # Repair only an omitted constant discriminator, never a decision or evidence field.
+ if 'kind'not in value and {'decisions','directions','research','summary'}<=set(value):
+  value=dict(value,kind='advertising_review')
+ return value
+
 def compact(payload):
  p=copy.deepcopy(payload);d=p['data'];s=d['completed_source']
  actions=d.get('allowed_actions',{})
@@ -53,7 +59,8 @@ def ask_one(core,identity,payload,validate,rules,root,digest,stamp,parse,message
   state=dict(status='starting',identity=identity,kind='advertising',source_sha256=fingerprint,created_at=stamp(),model=model,wb_action_permission=False,transport='responses_bounded_advertising_v1')
   core.db.once(key,state)
   try:
-   raw=client.answer(token,rules,message(payload))
+   bounded_rules=rules+'\nОтвет строго JSON: kind=advertising_review обязателен; decisions только точные id; research=[]; четыре directions. Каждая note направления не длиннее180 знаков; summary не длиннее400. Не переписывай исходные таблицы или все числа в summary; проверяй их во входных данных.'
+   raw=client.answer(token,bounded_rules,message(payload))
   except Exception as ex:
    state.update(status='attention_required',error_type=type(ex).__name__,error=str(ex)[:250],failed_at=stamp())
    core.db.update(key,state);raise
@@ -61,7 +68,7 @@ def ask_one(core,identity,payload,validate,rules,root,digest,stamp,parse,message
  if completion:
   if completion.get('text')!=raw:raise ValueError('Immutable completion changed')
  else:core.db.once(key+':completion',dict(text=raw,observed_at=stamp()))
- try:value=validate(parse(raw))
+ try:value=validate(contract_object(parse(raw)))
  except Exception:
   state.update(status='invalid_output',finished_at=stamp());core.db.update(key,state);raise
  state.update(status='complete',result=value,completed_at=stamp(),source_channel='codex_cloud')

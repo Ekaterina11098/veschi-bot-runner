@@ -17,6 +17,27 @@ class IO:
   if json.loads(q['payload'][0][3:])!=self.cache[k]:return []
   self.cache[k]=copy.deepcopy(body['payload']);return [body]
 class TestButtons(unittest.TestCase):
+ def test_delivery_and_final_edit(self):
+  io=IO();io.bot='synthetic';io.cache[b.ROOT+'policy']={'enabled':True}
+  item=dict(id='x',kind='ad_exclude_sku',article='A',campaign_id=1,nm_id=2)
+  p=dict(plan_id='p',family='drr',plan_sha256=loss.digest([item]),items=[item],expires_at='2099-01-01T00:00:00Z')
+  io.cache['plan:p']=p;io.cache['china_agent:loss_plan:v1:p']=p;calls=[]
+  receipt=dict(message_id=10,chat={'id':loss.CHAT},**{'from':{'id':loss.BOT,'is_bot':True}})
+  def tg(method,body):
+   calls.append((method,body));return {'id':loss.BOT}if method=='getMe'else receipt
+  io.tg=tg
+  sys.modules['requests']=types.SimpleNamespace(post=lambda *a,**kw:(calls.append(('photo',kw))or types.SimpleNamespace(ok=True,json=lambda:{'ok':True,'result':receipt})))
+  from china_advertising_delivery import telegram_sender
+  file=dict(plan_id='p',family='drr',kind='drr:1',bytes=b'PNG',caption='report')
+  telegram_sender(io)(file)
+  self.assertIn('inline_keyboard',json.loads(next(v for k,v in calls if k=='photo')['data']['reply_markup']))
+  b.bind(io,file,receipt);self.assertEqual(io.get(b.ROOT+'message:10')['message_id'],10)
+  from china_execution_notice import deliver_result
+  before=dict(id=1,status=9,settings={},nm_settings=[dict(nm_id=2),dict(nm_id=3)])
+  after=dict(id=1,status=9,settings={},nm_settings=[dict(nm_id=3)])
+  deliver_result(io,dict(job_id=9,input_message_id=10,result_message_id=99),p,dict(items=[dict(id='x',status='verified',before=before,after=after)]))
+  self.assertEqual(calls[-1][0],'editMessageText');self.assertEqual(calls[-1][1]['message_id'],99)
+  self.assertFalse(any(k=='sendMessage'for k,v in calls))
  def test_shared_gate(self):
   io=IO();b.claim(io,'p',['drr'],'button:a');b.claim(io,'p',['drr'],'button:a');b.claim(io,'p',['budgets'],'button:b')
   with self.assertRaises(ValueError):b.claim(io,'p',['drr','budgets'],'job:5')

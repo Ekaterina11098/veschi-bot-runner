@@ -1,3 +1,4 @@
+import {handleReportButtons} from './china_report_buttons.mjs';
 import {handlePriceButtons} from './china_price_buttons.mjs';
 import {acceptCodex} from './codex-inbox.mjs';
 // Separate bots and queues; shared knowledge does not grant shared permissions.
@@ -30,6 +31,8 @@ function reply(chat: number,text: string,markup?: unknown) {
 }
 
 async function acknowledgeQuestion(config:any,message:any,jobId:number) {
+ const notice=await database('telegram_api_cache?cache_key=eq.china_agent:execution_notice_policy:v1&select=payload&limit=1');
+ if(notice?.[0]?.payload?.final_only===true)return new Response('OK');
  const key='china_agent:question_ack:v1:'+jobId;
  const rows=await database('telegram_api_cache?on_conflict=cache_key','POST',{
   cache_key:key,payload:{status:'webhook_response_issued',job_id:jobId,chat_id:config.chat_id,
@@ -253,6 +256,8 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     }
     const callback=update.callback_query;
     if(callback){
+      const reportButton=await handleReportButtons(config,callback,update.update_id,{database,telegram,digest,launch});
+      if(reportButton)return reportButton;
       const priceButton=await handlePriceButtons(config,callback,update.update_id,{database,telegram,digest,same,launchPrice,handlePriceApproval,reportProposals,deferMembership:true});
       if(priceButton)return priceButton;
       if(callback.data!=='agent:ask'||callback.message?.chat?.id!==config.chat_id||callback.message?.from?.id!==config.bot_id||callback.from?.is_bot)return new Response('OK');

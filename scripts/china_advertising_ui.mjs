@@ -151,6 +151,8 @@ function transition(ctx,op,now){
  else if(op==='showDates'){if(!c.dateStart||!c.dateEnd)throw Error('Выберите даты.');c.start=c.dateStart;c.end=c.dateEnd;c.period='range';c.view='graph';}
  else if(op==='noop')return ctx;
  else if(/^cand(All|Add|Raise|Reduce|Exclude)$/.test(op)){c.view='candidates';c.submit=false;const k=op.slice(4).toLowerCase(),all=['add','raise','reduce','exclude'];c.directions=k==='all'?(c.directions?.length===4?[]:all):all.filter(x=>x===k?!c.directions?.includes(x):c.directions?.includes(x));}
+ else if(op==='candRetry'){c.view='candidates';c.submit=true;c.directions=c.directions?.length?c.directions:c.kind==='all'?['add','raise','reduce','exclude']:c.kind.split('+');c.kind=c.directions.join('+');c.analysisRevision=String(now.getTime());}
+ else if(op==='funnelRetry'){c.view='graph';c.funnelRevision=String(now.getTime());}
  else if(op==='candSubmit'){c.view='candidates';if(!c.directions?.length)throw Error('Выберите хотя бы одно направление.');c.submit=true;c.kind=c.directions.join('+');}
  else throw Error('Откройте раздел заново.');
  return c;
@@ -183,7 +185,7 @@ export async function handleAdvertisingPath(config,update,deps){
  const selected=ctx.directions||[],choices=[['Add','add','Добавить товары'],['Raise','raise','Повысить ставки'],['Reduce','reduce','Снизить ставки'],['Exclude','exclude','Исключить / завершить']];
  view={text:'Предложить кандидатов\nОтметьте одно или несколько направлений, затем нажмите «Найти кандидатов».',reply_markup:{inline_keyboard:[[b((selected.length===4?'☑ ':'☐ ')+'Все направления','candAll')],...choices.map(([op,k,label])=>[b((selected.includes(k)?'☑ ':'☐ ')+label,'cand'+op)]),[b('Найти кандидатов'+(selected.length?' · '+selected.length:''),'candSubmit')],[ads],[home]]},source_keys:[]};
  }else if(ctx.view==='candidates'){
-  const analysisKey=ROOT+'analysis:'+a.id+':'+day(now)+':'+ctx.kind,prior=await get(analysisKey);
+  const analysisKey=ROOT+'analysis:'+a.id+':'+day(now)+':'+ctx.kind+(ctx.analysisRevision?':retry:'+ctx.analysisRevision:''),prior=await get(analysisKey);
   let job=prior?.job_id?await deps.database('business_agent_jobs?id=eq.'+prior.job_id+'&agent_id=eq.china&chat_id=eq.'+CHAT+'&sender_id=eq.'+a.id+'&select=id,status&limit=1'):null;
   if(!prior){
    if(!await insert(analysisKey,{status:'requesting',update_id:update.update_id,actor:a.id,created_at:now.toISOString(),grants_action_permission:false}))throw Error('Analysis already claimed');
@@ -194,9 +196,13 @@ export async function handleAdvertisingPath(config,update,deps){
    if(job?.length!==1)throw Error('Analysis job not verified');
    await put(analysisKey,{status:'accepted',job_id:job[0].id,update_id:update.update_id,actor:a.id,created_at:now.toISOString(),grants_action_permission:false});
   }
-  const state=job?.[0]?.status;
-  const line=state==='done'?'Анализ завершён. Ответ проверяйте в сообщении с результатом; завершение задания само по себе не подтверждает доставку.':state==='failed'?'Подготовить ответ не удалось. Изменения не выполнялись.':prior&&!job?.length?'Состояние запроса не подтверждено. Повтор автоматически не запускается.':'Запрос на анализ сохранён'+(job?.[0]?.id?' · №'+job[0].id:'')+'. Результат появится отдельным ответом после обработки; сейчас он ещё не доставлен.';
-  view={text:'Предложить кандидатов\n'+line+'\n\nТолько предложения: добавления, повышения, снижения и исключения. Исполнение — после отдельного подтверждения.',reply_markup:{inline_keyboard:[[b('Изменить направления','candAll')],[ads],[home]]},source_keys:[analysisKey]};
+  const state=job?.[0]?.status,jobId=job?.[0]?.id;
+  const recovery=jobId?await get('china_agent:menu_result:v1:'+jobId):null,blocked=jobId?await get('china_agent:menu_analytics:v1:'+jobId):null,outbox=jobId?await get('china_agent:codex_bridge:v1:outbox:'+jobId):null;
+  const delivered=recovery?.status==='sent'?recovery:outbox?.status==='delivered'&&blocked?.status!=='blocked'?outbox:null;
+  const failed=!delivered&&(state==='failed'||blocked?.status==='blocked');
+  const line=delivered?'Результат доставлен.':failed?'Расчёт не завершён. Можно повторить запрос. Изменения не выполнялись.':prior&&!job?.length?'Состояние запроса не подтверждено. Повтор автоматически не запускается.':'Запрос на анализ сохранён'+(jobId?' · №'+jobId:'')+'. Результат появится отдельным ответом после обработки; сейчас он ещё не доставлен.';
+  const resultId=(delivered?.message_ids?.[1]||delivered?.message_ids?.[0])||delivered?.message_id;
+  view={text:'Предложить кандидатов\\n'+line+'\\n\\nТолько предложения: добавления, повышения, снижения и исключения. Исполнение — после отдельного подтверждения.',reply_markup:{inline_keyboard:[...(resultId?[[{text:'Открыть результат',url:'https://t.me/c/4342917488/'+resultId}]]:[]),...(failed?[[b('Повторить расчёт','candRetry')]]:[]),[b('Изменить направления','candAll')],[ads],[home]]},source_keys:[analysisKey]};
  }else{
   let cache;
   if(ctx.view==='search')cache={cabinet:'token_3'};
@@ -213,8 +219,8 @@ export async function handleAdvertisingPath(config,update,deps){
   if(ctx.kind==='general'&&ctx.nm&&ctx.period==='range'&&['graph','table'].includes(ctx.view)){
    const source='china_agent:menu_funnel:v1:'+ctx.nm+':'+ctx.start+':'+ctx.end,saved=await get(source);
    if(saved?.status==='complete'&&saved.cabinet==='token_3'&&saved.nm===ctx.nm)cache={...cache,general_days:saved.rows};
-   if(dailyPoints(cache,ctx).some(p=>p.missing)){
-    const claim=ROOT+'funnel_request:'+a.id+':'+ctx.nm+':'+ctx.start+':'+ctx.end,prior=await get(claim);
+   if(!saved&&dailyPoints(cache,ctx).some(p=>p.missing)){
+    const claim=ROOT+'funnel_request:'+a.id+':'+ctx.nm+':'+ctx.start+':'+ctx.end+(ctx.funnelRevision?':retry:'+ctx.funnelRevision:''),prior=await get(claim);
     let jobId=prior?.job_id;
     if(!prior){
      if(!await insert(claim,{status:'requesting',actor:a.id,created_at:now.toISOString(),wb_writes:0}))throw Error('Funnel request already claimed');

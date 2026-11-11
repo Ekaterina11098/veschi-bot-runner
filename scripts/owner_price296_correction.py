@@ -59,7 +59,12 @@ def run():
  actual=io.get('china_agent:price_delivery:v2:2026-11-11:morning-corrected296:prepared')
  assert actual['selection_count']>=1 and actual.get('reply_markup')and actual.get('button_registry')
  for key in final['receipt_keys']:
-  part=io.get(key);assert part['status']=='sent'and part['receipt'].get('reply_markup')==actual['reply_markup']
+  part=io.get(key);assert part['status']=='sent'
+  if part['receipt'].get('reply_markup')!=actual['reply_markup']:
+   repaired=io.tg('editMessageReplyMarkup',dict(chat_id=w.chat,message_id=part['message_id'],reply_markup=actual['reply_markup']))
+   assert repaired['message_id']==part['message_id'] and repaired.get('reply_markup')==actual['reply_markup']
+   part.update(original_receipt_before_buttons=part['receipt'],receipt=repaired);io.put(key,part)
+  assert part['receipt'].get('reply_markup')==actual['reply_markup']
  prior.update(status='sent',delivery=final,selection_count=actual['selection_count'],preflight=w.audit.get('proposal_current_check'));io.put(K,prior)
  # Clarify the earlier false empty report in place; preserve its original receipt above.
  fixkey=K+':old_notice'

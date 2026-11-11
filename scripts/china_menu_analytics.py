@@ -214,21 +214,26 @@ def recover(job_id,native_funnel_scope=None):
  if native_funnel_scope is not None:text=native_funnel_request(text,native_funnel_scope)
  elif not recognized(text):raise ValueError('Original menu scope missing')
  key='china_agent:menu_result:v1:'+str(job_id);old=w.get(key)or{}
- if old.get('status')=='sent':return dict(status='already_sent',job_id=job_id,message_ids=old['message_ids'])
- w.active_question_id=job_id;w.reply_id=inbox['input_message_id']
+ if old.get('status')=='sent'and(native_funnel_scope is None or old.get('png_verified')):return dict(status='already_sent',job_id=job_id,message_ids=old['message_ids'])
+ if native_funnel_scope is not None and old.get('status')=='sent':w.save(key+':before-native-png',old,insert=True)
+ artifact_job=dict(job,id='native-funnel-'+str(job_id))if native_funnel_scope is not None else job
+ w.active_question_id=artifact_job['id'];w.reply_id=inbox['input_message_id']
  with saved_network_guard():
   answer=old.get('answer')or(candidate(w,job,text)if text.startswith(CANDIDATES)else funnel(w,job,text))
   w.save(key,dict(status='prepared',job_id=job_id,answer=answer,wb_writes=0,model_calls=0))
   from china_table_png import delivery_parts
   from conversion_watches import split_message
-  parts=delivery_parts(w,job,answer,split_message);ids=[]
+  parts=delivery_parts(w,artifact_job,answer,split_message)
+  if native_funnel_scope is not None and old.get('status')=='sent':parts=[part for part in parts if part.startswith('CHINA_TABLE_PNG:')]
+  if native_funnel_scope is not None and not any(part.startswith('CHINA_TABLE_PNG:')for part in parts):raise ValueError('Native funnel final PNG missing')
+  ids=list(old.get('message_ids',[]))if native_funnel_scope is not None and old.get('status')=='sent'else[]
   for i,part in enumerate(parts):
-   receipt_key='menu_result:'+str(job_id)+':'+str(i)
+   receipt_key='menu_result:'+str(job_id)+(':native_funnel:'if native_funnel_scope is not None else':')+str(i)
    status=w.send_once(receipt_key,job['chat_id'],part);receipt=w.get('china_agent:conversion_watch_delivery:v1:'+receipt_key)or{}
    if status!='sent'or receipt.get('status')!='sent'or not receipt.get('message_id'):raise ValueError('Menu result delivery not verified')
    ids.append(receipt['message_id'])
   bind(w,job_id,ids,answer)
-  w.save(key,dict(status='sent',job_id=job_id,answer=answer,message_ids=ids,wb_writes=0,model_calls=0))
+  w.save(key,dict(status='sent',job_id=job_id,answer=answer,message_ids=ids,png_verified=native_funnel_scope is not None,wb_writes=0,model_calls=0))
  return dict(status='sent',job_id=job_id,message_ids=ids)
 def verify_funnel(nm):
  from conversion_watches import runtime,saved_network_guard

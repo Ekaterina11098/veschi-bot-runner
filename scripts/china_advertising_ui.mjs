@@ -1,3 +1,4 @@
+import {tablePng} from './china_table_png.mjs';
 /** Advertising navigation: read-only conversion cache and explicitly requested analysis. */
 import {salesChart} from './china_sales_chart.mjs';
 const ROOT='china_agent:advertising_ui:v1:',CHAT=-1004342917488,BOT=8780468043;
@@ -6,7 +7,7 @@ const day=d=>new Date(d.getTime()+10800000).toISOString().slice(0,10);
 const shift=(d,n)=>new Date(Date.parse(d+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);
 const dates=(a,b)=>{const out=[];for(let d=a;d<=b&&out.length<32;d=shift(d,1))out.push(d);return out;};
 const finite=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
-const valid=r=>r&&finite(r.clicks)&&finite(r.orders);
+const valid=r=>r&&r.metrics_valid!==false&&finite(r.clicks)&&finite(r.orders);
 const cr=r=>valid(r)&&r.clicks>0?r.orders*100/r.clicks:null;
 const pct=v=>v===null?'нет знаменателя':fmt(v)+'%';
 const stamp=v=>Number.isFinite(Date.parse(v))?new Date(Date.parse(v)+10800000).toISOString().slice(0,16).replace('T',' ')+' МСК':'время не подтверждено';
@@ -14,6 +15,7 @@ const home={text:'‹ Главное меню',callback_data:'cmn1:home'},ads={t
 export function advertisingMenu(){return {text:'Реклама\nЧто хотите посмотреть?',reply_markup:{inline_keyboard:[
  [{text:'Предложить кандидатов',callback_data:'cmn1:candidates'}],
  [{text:'Конверсии и воронка',callback_data:'cmn1:conversions'}],
+ [{text:'ДРР',callback_data:'cmn1:drrview'}],
  [{text:'Кто вырос',callback_data:'cmn1:growth'}],
  [{text:'Кто упал',callback_data:'cmn1:decline'}],[home]]},source_keys:[]};}
 export function candidateRequest(kind='all'){
@@ -22,7 +24,9 @@ export function candidateRequest(kind='all'){
  return 'Предложи новых кандидатов для рекламы китайского кабинета. '+scope+' Только анализ, grants_action_permission=false: никаких WB изменений. Используй завершённые дни после последнего verified изменения, текущие точные ставку/минимум/шаг/цену/COGS/собственный выкуп/МСК минус резерв/опубликованный WB остаток и трёхдневный резерв по фактическим расходам. 143 и 590 не трогать, уже повышенные сегодня ставки повторно не повышать даже в другой РК. Выполненное не предлагать заново. Краткие конкретные предложения с РК, размещением, точным изменением и условием оценки; больше 5 товаров — PNG. Проверка неполная — укажи конкретный пробел, не утверждай отсутствие кандидатов. Готовый план привяжи к фактическому сообщению, hash и сроку; выполнение только после отдельного подтверждения человеком штатным способом.';
 }
 function normalizedGeneral(r){return r?.scope==='all_sources'?{clicks:r.clicks,orders:r.orders,carts:r.cart_count}:null;}
-function sum(rows){if(!rows.length||rows.some(r=>!valid(r)))return null;return rows.reduce((a,r)=>({clicks:a.clicks+r.clicks,orders:a.orders+r.orders,carts:finite(a.carts)&&finite(r.carts)?a.carts+r.carts:null}),{clicks:0,orders:0,carts:0});}
+export const drrValue=r=>finite(r?.spend)&&finite(r?.amount)&&finite(r?.orders)&&r.orders>0&&r.amount>0?r.spend*100/r.amount:null;
+const metricsValid=(r,ctx)=>valid(r)&&(ctx.metric!=='drr'||finite(r.spend)&&finite(r.amount));
+function sum(rows){if(!rows.length||rows.some(r=>!valid(r)))return null;return rows.reduce((a,r)=>({clicks:a.clicks+r.clicks,orders:a.orders+r.orders,carts:finite(a.carts)&&finite(r.carts)?a.carts+r.carts:null,views:finite(a.views)&&finite(r.views)?a.views+r.views:null,spend:finite(a.spend)&&finite(r.spend)?a.spend+r.spend:null,amount:finite(a.amount)&&finite(r.amount)?a.amount+r.amount:null}),{clicks:0,orders:0,carts:0,views:0,spend:0,amount:0});}
 export function dailyPoints(cache,ctx){
  return dates(ctx.start,ctx.end).map(date=>{
   if(ctx.kind==='general'){
@@ -32,10 +36,10 @@ export function dailyPoints(cache,ctx){
   const rows=(cache.daily||[]).filter(r=>r.date===date&&(!ctx.cid||r.campaign===ctx.cid));
   const total=sum(rows),expected=[...new Set(rows.flatMap(r=>r.expected_ids||[]).map(String))],seen=new Set(rows.map(r=>r.campaign));
   const missing=ctx.cid?!rows.length:!rows.length||expected.some(id=>!seen.has(id))||rows.some(r=>r.archived_missing?.length);
-  return {date,...(total||{}),source_keys:[...new Set(rows.map(r=>r.source_key))],observed_at:rows.map(r=>r.observed_at).sort().at(-1),missing:missing||!total};
+  return {date,...(total||{}),source_keys:[...new Set(rows.map(r=>r.source_key))],observed_at:rows.map(r=>r.observed_at).sort().at(-1),missing:missing||!metricsValid(total,ctx)};
  });
 }
-function headline(r,kind){return !valid(r)?'нет сопоставимых данных':(kind==='general'?'Открытия: ':'Клики: ')+fmt(r.clicks)+' · корзины: '+(finite(r.carts)?fmt(r.carts):'н/д')+' · заказы: '+fmt(r.orders)+' · CR '+pct(cr(r));}
+export function metricHeadline(r,kind,metric){if(metric==='drr'){if(!finite(r?.spend)||!finite(r?.amount)||!finite(r?.orders))return 'нет сопоставимых данных';if(r.orders===0)return 'Нет заказов · расход '+fmt(r.spend)+' CNY';return 'Расход: '+fmt(r.spend)+' CNY · рекламные заказы: '+fmt(r.orders)+' / '+fmt(r.amount)+' CNY · ДРР '+(drrValue(r)===null?'не определяется':pct(drrValue(r)));}return !valid(r)?'нет сопоставимых данных':(kind==='general'?'Открытия: ':'Клики: ')+fmt(r.clicks)+' · корзины: '+(finite(r.carts)?fmt(r.carts):'н/д')+' · заказы: '+fmt(r.orders)+' · CR '+pct(cr(r));}
 export function hourlyRows(cache,ctx){
  const current=(cache.hourly||[]).find(r=>r.offset===0);
  return [0,1,7].map(off=>{
@@ -54,7 +58,7 @@ export function hourlyRows(cache,ctx){
    const rows=(h.ad_rows||[]).filter(r=>!ctx.cid||String(r.campaign)===ctx.cid);metrics=sum(rows);
    missing ||= ctx.cid?!rows.length:h.ad_status!=='complete'||h.ad_missing?.length>0;
   }
-  return {offset:off,...(metrics||{}),slot_msk:h.slot_msk,observed_at:observed,source_key:h.source_key,missing:missing||!valid(metrics)};
+  return {offset:off,...(metrics||{}),slot_msk:h.slot_msk,observed_at:observed,source_key:h.source_key,missing:missing||!metricsValid(metrics,ctx)};
  });
 }
 export function stableAdCache(cache,ctx){
@@ -68,16 +72,20 @@ export function stableAdCache(cache,ctx){
  return {cache:filtered,ids,note:'Постоянная выборка: '+ids.length+' РК с данными за все '+days.length+' дней. Это не весь кабинет.'+(excluded.length?' Без полного ряда: '+excluded.join(', ')+'.':'')};
 }
 export async function conversionView(cache,ctx,sid,now){
- const b=(text,op)=>({text,callback_data:'cam1:'+sid+':'+op}),nav=rows=>({inline_keyboard:[...rows,[ads],[home]]});
+ const b=(text,op)=>({text,callback_data:'cam1:'+sid+':'+op}),nav=rows=>({inline_keyboard:[...rows,...(ctx.kind==='ad'&&!['types','search','matches','objects'].includes(ctx.view)?[[b('Найти товар по артикулу','search')]]:[]),[ads],[home]]});
  if(ctx.view==='types')return {text:'Конверсии и воронка\nРекламная конверсия и общая воронка — отдельные источники.',reply_markup:nav([[b('Рекламная конверсия','ad')],[b('Общая воронка товара','general')]])};
- const general=ctx.kind==='general';
+ const general=ctx.kind==='general',metric=ctx.metric==='drr'?'drr':'cr',metricName=metric==='drr'?'ДРР':'CR';
+ const objectLabel=ctx.nm&&!general?'Другой товар / РК':general?'Другой товар':'Другая РК';
  const products=[...new Map([...(cache.general_days||[]).map(r=>[r.nm,r.article]),...(cache.hourly||[]).flatMap(h=>(h.general?.rows||[]).map(r=>[String(r.nm_id),r.article]))]).entries()];
+ if(ctx.view==='search')return {text:'Найти товар по артикулу\nОтветьте на это сообщение: введите артикул, его часть или nmID.',reply_markup:{force_reply:true,selective:true,input_field_placeholder:'Артикул или nmID'}};
+ if(ctx.view==='matches'){const found=cache.matches||[];return {text:'Поиск «'+ctx.query+'»\n'+(found.length?'Выберите товар.'+(cache.truncated?' Показаны первые 20 совпадений; можно уточнить запрос.':''):'Совпадений в сохранённом каталоге нет. Уточните артикул.'),reply_markup:nav([...found.map(r=>[b(r.article.slice(0,60),'pick'+r.nm)]),[b('Уточнить артикул','search')]])};}
  if(ctx.view==='objects'){
-  const rows=general?products.map(([nm,article])=>[b(article||nm,'nm'+nm)]):[[b('Все РК · доступное покрытие','cidAll')],...[...new Set([...(cache.daily||[]).map(r=>r.campaign),...(cache.hourly||[]).flatMap(h=>(h.ad_rows||[]).map(r=>String(r.campaign)))])].sort().slice((ctx.page||0)*8,(ctx.page||0)*8+8).map(cid=>[b('РК '+cid,'cid'+cid)])];
-  if(!general){const count=new Set((cache.daily||[]).map(r=>r.campaign)).size;if(ctx.page>0)rows.push([b('‹ Предыдущие','page'+(ctx.page-1))]);if(((ctx.page||0)+1)*8<count)rows.push([b('Следующие ›','page'+((ctx.page||0)+1))]);}
-  return {text:general?'Общая воронка\nВыберите товар. Доступно только сохранённое покрытие; недоступные товары не считаются нулевыми.':'Рекламная конверсия\nВсе доступные РК или одна РК. Заказы — атрибутированные, не доказанно уникальные между РК.',reply_markup:nav([...rows,[b('‹ Источники','types')]])};
+  const campaignIds=[...new Set([...(cache.daily||[]).map(r=>r.campaign),...(cache.current_campaigns||[]).map(r=>r.campaign),...(cache.hourly||[]).flatMap(h=>(h.ad_rows||[]).map(r=>String(r.campaign)))])].sort();
+  const rows=general?products.map(([nm,article])=>[b(article||nm,'nm'+nm)]):[...(!ctx.nm?[[b('Все РК · доступное покрытие','cidAll')]]:[]),...campaignIds.slice((ctx.page||0)*8,(ctx.page||0)*8+8).map(cid=>[b('РК '+cid,'cid'+cid)])];
+  if(!general){const count=campaignIds.length;if(ctx.page>0)rows.push([b('‹ Предыдущие','page'+(ctx.page-1))]);if(((ctx.page||0)+1)*8<count)rows.push([b('Следующие ›','page'+((ctx.page||0)+1))]);}
+  return {text:general?'Общая воронка\nВыберите товар. Доступно только сохранённое покрытие; недоступные товары не считаются нулевыми.':(metric==='drr'?'ДРР':'Рекламная конверсия')+(ctx.nm?' · '+(ctx.article||ctx.nm)+'\nВыберите РК товара. Каждая кампания показывается отдельно; отсутствие строки статистики не означает ноль.':'\nВсе доступные РК или одна РК. Заказы — атрибутированные, не доказанно уникальные между РК.'),reply_markup:nav([...rows,...(!general?[[b('Найти товар по артикулу','search')],[b('Все рекламные кампании','allCampaigns')]]:[]),...(metric==='drr'?[]:[[b('‹ Источники','types')]])])};
  }
- if(ctx.view==='period')return {text:(general?'Общая воронка · '+(products.find(p=>p[0]===ctx.nm)?.[1]||ctx.nm):'Рекламная конверсия · '+(ctx.cid?'РК '+ctx.cid:'все доступные РК'))+'\nВыберите период.',reply_markup:nav([[b('7 полных дней','range7')],[b('14 полных дней','range14')],[b('Выбрать даты','calendar')],[b('Сегодня к тому же часу','today')],[b('Другой товар / РК','objects')]])};
+ if(ctx.view==='period')return {text:(general?'Общая воронка · '+(products.find(p=>p[0]===ctx.nm)?.[1]||ctx.nm):(metric==='drr'?'ДРР':'Рекламная конверсия')+' · '+(ctx.nm?(ctx.article||ctx.nm)+' · ':'')+(ctx.cid?'РК '+ctx.cid:'все доступные РК'))+'\nВыберите период.',reply_markup:nav([[b('7 полных дней','range7')],[b('14 полных дней','range14')],[b('Выбрать даты','calendar')],[b('Сегодня к тому же часу','today')],[b(objectLabel,'objects')]])};
  if(ctx.view==='calendar'){
   const month=ctx.month,first=month+'-01',last=shift((month.endsWith('-12')?String(+month.slice(0,4)+1)+'-01':month.slice(0,5)+String(+month.slice(5)+1).padStart(2,'0'))+'-01',-1),rows=[],row=[];
   for(let i=0;i<(new Date(first+'T00:00:00Z').getUTCDay()+6)%7;i++)row.push(b('·','noop'));
@@ -87,32 +95,43 @@ export async function conversionView(cache,ctx,sid,now){
   return {text:'Выберите '+(ctx.dateStart?'конец':'начало')+' периода · '+month+'\nПн Вт Ср Чт Пт Сб Вс'+(ctx.dateStart?'\nНачало: '+ctx.dateStart:''),reply_markup:nav(rows)};
  }
  if(ctx.view==='dateReview')return {text:'Период '+ctx.dateStart+' — '+ctx.dateEnd,reply_markup:nav([[b('Показать','showDates')],[b('Изменить даты','calendar')]])};
- const title=general?'Общая воронка · '+(products.find(p=>p[0]===ctx.nm)?.[1]||ctx.nm):'Рекламная конверсия · '+(ctx.cid?'РК '+ctx.cid:'все доступные РК');
+ const title=general?'Общая воронка · '+(products.find(p=>p[0]===ctx.nm)?.[1]||ctx.nm):(metric==='drr'?'ДРР':'Рекламная конверсия')+' · '+(ctx.nm?(ctx.article||ctx.nm)+' · ':'')+(ctx.cid?'РК '+ctx.cid:'все доступные РК');
  if(ctx.period==='today'){
   const rows=hourlyRows(cache,ctx),out=[title,'Сегодня: сопоставимые сохранённые срезы.'];
-  for(const r of rows)out.push('',(r.offset===0?'Сегодня':r.offset===1?'Вчера':'Неделю назад')+(r.slot_msk?' · 00:00–'+r.slot_msk.slice(11,16)+' МСК':''),r.missing?'Нет сопоставимых данных (неполное покрытие или время).':headline(r,ctx.kind),'Срез: '+stamp(r.observed_at));
-  out.push('',general?'API общей воронки может запаздывать до 2 часов. Полный вчера не подставляется вместо того же часа.':'Заказы атрибутированные; пересечения между РК возможны.','Текущий CR — диагностический срез, не основание менять ставки.');
+  for(const r of rows)out.push('',(r.offset===0?'Сегодня':r.offset===1?'Вчера':'Неделю назад')+(r.slot_msk?' · 00:00–'+r.slot_msk.slice(11,16)+' МСК':''),r.missing?'Нет сопоставимых данных (неполное покрытие или время).':metricHeadline(r,ctx.kind,metric),'Срез: '+stamp(r.observed_at));
+  out.push('',general?'API общей воронки может запаздывать до 2 часов. Полный вчера не подставляется вместо того же часа.':'Заказы атрибутированные; пересечения между РК возможны.','Текущий '+metricName+' — диагностический срез, не основание менять ставки.');
   const main=rows[0];if(main.observed_at&&(now.getTime()-Date.parse(main.observed_at)>4800000||main.slot_msk?.slice(0,13)!==new Date(now.getTime()+10800000).toISOString().slice(0,13)))out.push('Данные отстают; это последний сохранённый срез.');
-  return {text:out.join('\n'),source_keys:rows.map(r=>r.source_key).filter(Boolean),reply_markup:nav([[b('Изменить период','period')],[b('Другой товар / РК','objects')],[b('Обновить из кэша','today')]])};
+  return {text:out.join('\n'),source_keys:rows.map(r=>r.source_key).filter(Boolean),reply_markup:nav([[b('Изменить период','period')],[b(objectLabel,'objects')],[b('Обновить из кэша','today')]])};
  }
- const cohort=!general&&!ctx.cid?stableAdCache(cache,ctx):null;if(cohort)cache=cohort.cache;
- const points=dailyPoints(cache,ctx),missing=points.filter(p=>p.missing||!valid(p)).length,full=points.filter(p=>!p.missing&&valid(p)),total=full.length===points.length?sum(full):null;
- const out=[title,ctx.start+' — '+ctx.end+' · полные дни МСК',total?headline(total,ctx.kind):'Итог за весь период недоступен: неполное покрытие.','CR = сумма заказов / сумма '+(general?'открытий':'кликов')+' × 100%.'];
+ const cohort=!general&&!ctx.cid&&!ctx.nm?stableAdCache(cache,ctx):null;if(cohort)cache=cohort.cache;
+ const points=dailyPoints(cache,ctx),missing=points.filter(p=>p.missing||!metricsValid(p,ctx)).length,full=points.filter(p=>!p.missing&&metricsValid(p,ctx)),total=full.length===points.length?sum(full):null;
+ const out=[title,ctx.start+' — '+ctx.end+' · полные дни МСК',total?metricHeadline(total,ctx.kind,metric):'Итог за весь период недоступен: неполное покрытие.',metric==='drr'?'ДРР = сумма расхода / сумма рекламных заказов × 100%.':'CR = сумма заказов / сумма '+(general?'открытий':'кликов')+' × 100%.'];
  if(cohort)out.push(cohort.note);
  if(missing)out.push('Нет полного подтверждённого покрытия за '+missing+' дней; пропуски не заменены нулями.');
- const selected=points.slice((ctx.page||0)*5,(ctx.page||0)*5+5);
- if(ctx.view==='table')for(const p of selected){const previous=dailyPoints(cache,{...ctx,start:shift(p.date,-1),end:shift(p.date,-1)})[0],week=dailyPoints(cache,{...ctx,start:shift(p.date,-7),end:shift(p.date,-7)})[0];out.push('',p.date+': '+(p.missing?'нет полного покрытия':headline(p,ctx.kind)),'CR вчера: '+(previous.missing?'нет сопоставимых данных':pct(cr(previous)))+' · CR неделей ранее: '+(week.missing?'нет сопоставимых данных':pct(cr(week))));}
  const observed=points.map(p=>p.observed_at).filter(Boolean).sort();if(observed.length)out.push('Получено: '+stamp(observed[0])+(observed[0]!==observed.at(-1)?' — '+stamp(observed.at(-1)):''));
  out.push(general?'Все источники общей воронки; не складывается с рекламой.':'Рекламные заказы атрибутированные; это не общие продажи.');
- const paging=[];if(ctx.view==='table'){if(ctx.page>0)paging.push(b('‹','tablepage'+(ctx.page-1)));if(((ctx.page||0)+1)*5<points.length)paging.push(b('›','tablepage'+((ctx.page||0)+1)));}
- const markup=nav([...(paging.length?[paging]:[]),[b(ctx.view==='table'?'График':'Таблица по дням',ctx.view==='table'?'graph':'table')],[b('Изменить период','period')],[b('Другой товар / РК','objects')]]);
- return {text:out.join('\n'),reply_markup:markup,source_keys:[...new Set(points.flatMap(p=>p.source_keys))],...(ctx.view==='graph'?{photo:await salesChart(points.map(p=>({date:p.date,count:p.missing?null:p.clicks,amount_cny:p.missing?null:cr(p)})),[general?'ОТКРЫТИЯ':'КЛИКИ','CR %'])}:{})};
+ const paging=[];if(ctx.view==='table'){if(ctx.page>0)paging.push(b('‹','tablepage'+(ctx.page-1)));if(((ctx.page||0)+1)*12<points.length)paging.push(b('›','tablepage'+((ctx.page||0)+1)));}
+ const markup=nav([...(paging.length?[paging]:[]),[b(ctx.view==='table'?'График':'Таблица по дням',ctx.view==='table'?'graph':'table')],[b('Изменить период','period')],[b(objectLabel,'objects')]]);
+ let photo;
+ if(ctx.view==='graph')photo=await salesChart(points.map(p=>({date:p.date,count:p.missing?null:metric==='drr'?p.spend:p.clicks,amount_cny:p.missing?null:metric==='drr'?drrValue(p):cr(p)})),[metric==='drr'?'РАСХОД CNY':general?'ОТКРЫТИЯ':'КЛИКИ',metric==='drr'?'ДРР %':'CR %']);
+ else if(ctx.view==='table'){
+  const renderNum=v=>finite(v)?fmt(v):'н/д',ratio=p=>!p||p.missing?'н/д':metric==='drr'?(p.orders===0?'Нет заказов':drrValue(p)===null?'н/д':pct(drrValue(p))):pct(cr(p));
+  const columns=general?[['Дата',180],['Открытия',210],['Корзины',210],['Заказы',190],['CR',190],['CR день\nдо этого',260],['CR неделей\nранее',260]]:[['Дата',180],['Показы',170],['Клики',140],['Корзины',160],['Заказы',140],['Расход,\nCNY',190],['Сумма заказов,\nCNY',210],['CR',180],['ДРР',200],[metricName+' день\nдо этого',230],[metricName+' неделей\nранее',230]];
+  const values=(p,label,previous,week)=>general?[label,renderNum(p?.clicks),renderNum(p?.carts),renderNum(p?.orders),p&&cr(p)!==null?pct(cr(p)):'н/д',previous,week]:[label,renderNum(p?.views),renderNum(p?.clicks),renderNum(p?.carts),renderNum(p?.orders),renderNum(p?.spend),renderNum(p?.amount),p&&cr(p)!==null?pct(cr(p)):'н/д',p?(p.orders===0?'Нет заказов':drrValue(p)===null?'н/д':pct(drrValue(p))):'н/д',previous,week];
+  const rows=points.slice((ctx.page||0)*12,(ctx.page||0)*12+12).map(p=>{const previous=dailyPoints(cache,{...ctx,start:shift(p.date,-1),end:shift(p.date,-1)})[0],week=dailyPoints(cache,{...ctx,start:shift(p.date,-7),end:shift(p.date,-7)})[0];return values(p.missing?null:p,p.date.slice(8)+'.'+p.date.slice(5,7),ratio(previous),ratio(week));});
+  photo=await tablePng({title,subtitle:ctx.start+' — '+ctx.end+' · таблица по дням'+(points.length>12?' · часть '+((ctx.page||0)+1)+'/'+Math.ceil(points.length/12):''),columns:columns.map(([label,width])=>({label,width})),rows,total:values(total,'ИТОГО','—','—'),footnotes:[general?'CR = сумма заказов / сумма открытий × 100%.':'CR = сумма заказов / сумма кликов × 100%. ДРР = сумма расхода / сумма рекламных заказов × 100%.','«Нет заказов» читается вместе с расходом. н/д — нет сопоставимых данных.',...(points.length>12?['ИТОГО — за весь выбранный период, включая строки на других страницах.']:[]),...(cohort?[cohort.note]:[]),'Источник и время получения указаны в подписи. Рекламные заказы — атрибутированные.']});
+ }
+ if(metric==='drr'&&points.some(p=>!p.missing&&p.orders===0))out.push('Нет заказов: расход показан; на графике ДРР за такой день — пропуск.');
+ return {text:out.join('\n'),reply_markup:markup,source_keys:[...new Set(points.flatMap(p=>p.source_keys))],...(photo?{photo}:{})};
 }
 function transition(ctx,op,now){
  const c={...ctx};c.page=0;
  if(op==='types')c.view='types';
- else if(op==='ad'||op==='general'){c.kind=op;c.view='objects';delete c.nm;delete c.cid;}
+ else if(op==='ad'||op==='general'){c.kind=op;if(op==='general')c.metric='cr';c.view='objects';delete c.nm;delete c.cid;}
  else if(op==='objects')c.view='objects';
+ else if(op==='search'){c.view='search';}
+ else if(op==='allCampaigns'){delete c.nm;delete c.article;delete c.cid;c.view='objects';}
+ else if(/^pick\d{5,12}$/.test(op)){c.nm=op.slice(4);delete c.cid;c.view='objects';}
  else if(op==='cidAll'){delete c.cid;c.view='period';}
  else if(/^cid\d{5,12}$/.test(op)){c.cid=op.slice(3);c.view='period';}
  else if(/^nm\d{5,12}$/.test(op)){c.nm=op.slice(2);c.view='period';}
@@ -132,17 +151,21 @@ function transition(ctx,op,now){
  return c;
 }
 export async function handleAdvertisingPath(config,update,deps){
- const cb=update.callback_query,m=cb?.message,a=cb?.from,match=/^cam1:([a-f0-9]{16}):([A-Za-z0-9]+)$/.exec(cb?.data||'');
- const initial=['cmn1:candidates','cmn1:conversions'].includes(cb?.data);
- if(!initial&&!match)return null;
- if(config.active!==true||config.bot_id!==BOT||config.chat_id!==CHAT||!Number.isSafeInteger(update.update_id)||update.update_id<0||m?.chat?.id!==CHAT||!['supergroup','group'].includes(m.chat.type)||m.from?.id!==BOT||!Number.isSafeInteger(m.message_id)||!Number.isSafeInteger(a?.id)||a.id<=0||a.is_bot!==false||!cb.id||m.sender_chat||m.forward_origin)return new Response('OK');
+ const cb=update.callback_query,m=cb?.message||update.message,a=cb?.from||m?.from,match=/^cam1:([a-f0-9]{16}):([A-Za-z0-9]+)$/.exec(cb?.data||'');
+ const input=update.message?.text?.trim(),possibleReply=!cb&&typeof input==='string'&&input.length<=80&&m?.reply_to_message?.from?.id===BOT;
+ const initial=['cmn1:candidates','cmn1:conversions','cmn1:drrview'].includes(cb?.data);
+ if(!initial&&!match&&!possibleReply)return null;
+ if(config.active!==true||config.bot_id!==BOT||config.chat_id!==CHAT||!Number.isSafeInteger(update.update_id)||update.update_id<0||m?.chat?.id!==CHAT||!['supergroup','group'].includes(m.chat.type)||!Number.isSafeInteger(m.message_id)||!Number.isSafeInteger(a?.id)||a.id<=0||a.is_bot!==false||cb&&(m.from?.id!==BOT||!cb.id)||m.sender_chat||m.forward_origin)return new Response('OK');
  const get=async k=>(await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(k)+'&select=payload&limit=1'))?.[0]?.payload;
  if((await get('china_agent:main_menu:v1:policy'))?.enabled!==true)return null;
+ const pending=possibleReply?await get(ROOT+'input:'+a.id):null;
+ if(!initial&&!match&&pending?.message_id!==m.reply_to_message?.message_id)return null;
  const member=await deps.telegram('getChatMember',{chat_id:CHAT,user_id:a.id});
  if(member?.user?.id!==a.id||member.user.is_bot!==false||!(['creator','administrator','member'].includes(member.status)||member.status==='restricted'&&member.is_member===true))return new Response('OK');
- const answer=text=>Response.json({method:'answerCallbackQuery',callback_query_id:cb.id,...(text?{text,show_alert:true}:{})}),now=deps.now?deps.now():new Date();
- let ctx={view:cb.data==='cmn1:candidates'?'candidates':'types',kind:'all',period:'range',start:shift(day(now),-7),end:shift(day(now),-1)};
- if(match){const session=await get(ROOT+'session:'+match[1]);if(!session||session.actor!==a.id||session.message_id!==m.message_id||Date.parse(session.expires_at)<=now.getTime())return answer('Откройте раздел своей кнопкой меню.');try{ctx=transition(session.context,match[2],now);}catch(e){return answer(e.message);}if(match[2]==='noop')return answer('');}
+ const answer=text=>cb?Response.json({method:'answerCallbackQuery',callback_query_id:cb.id,...(text?{text,show_alert:true}:{})}):new Response('OK'),now=deps.now?deps.now():new Date();
+ let ctx={view:cb?.data==='cmn1:candidates'?'candidates':cb?.data==='cmn1:drrview'?'objects':'types',kind:cb?.data==='cmn1:drrview'?'ad':'all',metric:cb?.data==='cmn1:drrview'?'drr':'cr',period:'range',start:shift(day(now),-7),end:shift(day(now),-1)};
+ if(match){const session=await get(ROOT+'session:'+match[1]);if(!session||session.actor!==a.id||session.message_id!==m.message_id||Date.parse(session.expires_at)<=now.getTime())return answer('Откройте раздел своей кнопкой меню.');try{ctx=transition(session.context,match[2],now);if(match[2].startsWith('pick')){const picked=session.context.matches?.find(r=>r.nm===ctx.nm);if(!picked)return answer('Повторите поиск товара.');ctx.article=picked.article;}}catch(e){return answer(e.message);}if(match[2]==='noop')return answer('');}
+ else if(pending&&possibleReply&&pending.message_id===m.reply_to_message?.message_id){ctx={...pending.context,view:Date.parse(pending.expires_at)>now.getTime()?'matches':'search',query:input};}
  const key=ROOT+'delivery:'+update.update_id;if(await get(key))return answer('');
  const insert=async(k,p)=>(await deps.database('telegram_api_cache?on_conflict=cache_key','POST',{cache_key:k,payload:p,expires_at:'2036-11-11T00:00:00Z'},'resolution=ignore-duplicates,return=representation'))?.length===1;
  const put=async(k,p)=>{if((await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(k),'PATCH',{payload:p,updated_at:now.toISOString()},'return=representation'))?.length!==1)throw Error('Advertising state unavailable');};
@@ -166,19 +189,29 @@ export async function handleAdvertisingPath(config,update,deps){
   const line=state==='done'?'Анализ завершён. Ответ проверяйте в сообщении с результатом; завершение задания само по себе не подтверждает доставку.':state==='failed'?'Подготовить ответ не удалось. Изменения не выполнялись.':prior&&!job?.length?'Состояние запроса не подтверждено. Повтор автоматически не запускается.':'Запрос на анализ сохранён'+(job?.[0]?.id?' · №'+job[0].id:'')+'. Результат появится отдельным ответом после обработки; сейчас он ещё не доставлен.';
   view={text:'Предложить кандидатов\n'+line+'\n\nТолько предложения: добавления, повышения, снижения и исключения. Исполнение — после отдельного подтверждения.',reply_markup:{inline_keyboard:[[b('Все направления','candAll')],[b('Добавить товары','candAdd')],[b('Повысить ставки','candRaise')],[b('Снизить ставки','candReduce')],[b('Исключить / завершить','candExclude')],[ads],[home]]},source_keys:[analysisKey]};
  }else{
-  const cache=await deps.database('rpc/china_menu_conversion_cache','POST',{p_start:shift(ctx.start||shift(day(now),-7),-7),p_end:ctx.end||shift(day(now),-1)});
-  if(cache?.cabinet!=='token_3')throw Error('Conversion source unavailable');
+  let cache;
+  if(ctx.view==='search')cache={cabinet:'token_3'};
+  else if(ctx.view==='matches'){
+   const found=await deps.database('rpc/china_menu_product_lookup','POST',{p_query:ctx.query});
+   if(found?.cabinet!=='token_3')throw Error('Product catalogue unavailable');
+   ctx.matches=found.rows;cache={cabinet:'token_3',matches:found.rows,truncated:found.truncated};
+  }else {
+   const product=ctx.kind!=='general'&&!!ctx.nm;
+   cache=await deps.database(product?'rpc/china_menu_product_ad_cache':'rpc/china_menu_conversion_cache','POST',{p_start:shift(ctx.start||shift(day(now),-7),-7),p_end:ctx.end||shift(day(now),-1),...(product?{p_nm:Number(ctx.nm)}:{})});
+   if(cache?.cabinet!=='token_3'||product&&cache.nm!==ctx.nm)throw Error('Product or conversion source unavailable');
+  }
   view=await conversionView(cache,ctx,sid,now);
  }
  if(!await insert(ROOT+'session:'+sid,{actor:a.id,context:ctx,expires_at:new Date(now.getTime()+86400000).toISOString()}))throw Error('Advertising session claimed');
  const base={chat_id:CHAT,reply_markup:view.reply_markup};let receipt;
- if(view.photo)receipt=await deps.telegram('editMessageMedia',{...base,message_id:m.message_id,media:{type:'photo',media:'attach://chart',caption:view.text.slice(0,1024)},photo_bytes:view.photo});
- else if(!m.photo)receipt=await deps.telegram('editMessageText',{...base,message_id:m.message_id,text:view.text});
- else receipt=await deps.telegram('sendMessage',{...base,text:view.text});
+ if(view.photo)receipt=await deps.telegram(cb?'editMessageMedia':'sendPhoto',{...base,...(cb?{message_id:m.message_id,media:{type:'photo',media:'attach://chart',caption:view.text.slice(0,1024)}}:{caption:view.text.slice(0,1024)}),photo_bytes:view.photo});
+ else if(cb&&!m.photo&&ctx.view!=='search')receipt=await deps.telegram('editMessageText',{...base,message_id:m.message_id,text:view.text});
+ else {const name=String(a.first_name||'Участник');receipt=await deps.telegram('sendMessage',{...base,text:ctx.view==='search'?name+', '+view.text:view.text,...(ctx.view==='search'?{entities:[{type:'text_mention',offset:0,length:name.length,user:{id:a.id,first_name:name,is_bot:false}}],reply_parameters:{message_id:m.message_id,allow_sending_without_reply:true}}:{})});}
  if(receipt?.chat?.id!==CHAT||receipt.from?.id!==BOT||!Number.isSafeInteger(receipt.message_id))throw Error('Advertising receipt mismatch');
  await put(ROOT+'session:'+sid,{actor:a.id,context:ctx,message_id:receipt.message_id,expires_at:new Date(now.getTime()+86400000).toISOString()});
  await put(key,{status:'sent',actor:a.id,context:ctx,source_keys:view.source_keys||[],message_id:receipt.message_id,receipt,wb_writes:0});
- if(m.photo&&!view.photo){try{await deps.telegram('editMessageReplyMarkup',{chat_id:CHAT,message_id:m.message_id,reply_markup:{inline_keyboard:[]}});}catch{}}
+ if(ctx.view==='search'){const k=ROOT+'input:'+a.id,value={actor:a.id,message_id:receipt.message_id,context:ctx,expires_at:new Date(now.getTime()+900000).toISOString()};if(await get(k))await put(k,value);else if(!await insert(k,value))throw Error('Search input binding unavailable');}
+ if(cb&&m.photo&&!view.photo){try{await deps.telegram('editMessageReplyMarkup',{chat_id:CHAT,message_id:m.message_id,reply_markup:{inline_keyboard:[]}});}catch{}}
  }catch(e){await put(key,{status:'uncertain',actor:a.id,context:ctx,error:'Menu preparation or Telegram result not verified',wb_writes:0});throw e;}
  return answer('');
 }

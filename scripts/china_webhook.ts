@@ -296,6 +296,8 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     if(!text)return new Response('OK');
     const first=text.split(/\s+/,1)[0];const parsed=/^\/(\S+?)(?:@([a-z0-9_]+))?$/i.exec(first);const cmd=parsed?.[1].toLowerCase();
     if(parsed?.[2]&&parsed[2].toLowerCase()!==config.bot_username?.toLowerCase())return new Response('OK');
+    const advertisingInputResponse=await handleAdvertisingPath(config,update,{database,telegram});
+    if(advertisingInputResponse)return advertisingInputResponse;
     const salesResponse=await handleSalesPath(config,update,{database,telegram});
     if(salesResponse)return salesResponse;
     const menuResponse=await handleMainMenu(config,update,{database,telegram});

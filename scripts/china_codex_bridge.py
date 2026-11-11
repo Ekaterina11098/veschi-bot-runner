@@ -93,6 +93,8 @@ def handle(w,job,cfg):
  if not inbox:
   inbox=dict(status='queued',job_id=job['id'],update_id=job.get('update_id'),chat_id=CHAT,bot_id=BOT,sender_id=job['sender_id'],input_message_id=marker['message_id'],thread_id=THREAD,request_text=text,created_at=stamp(),origin='telegram',pilot=True,wb_action_permission=False)
   w.save(key,inbox)
+ from china_menu_analytics import prepare as prepare_menu
+ prepare_menu(w,job,inbox)
  out=w.get(ROOT+'outbox:'+str(job['id'])) or {}
  if not out:
   from china_no_paid import enabled,safe_answer

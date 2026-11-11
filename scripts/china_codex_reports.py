@@ -143,7 +143,7 @@ def review_price(worker,draft,trace,force=False,core=None):
  worker.audit['price_evidence']=dict(source_key=source_key,status=source['status'],financial_rows=len(source['financial_rows']),settled_cohort_profit_status=source['settled_cohort_profit_status'])
  data=dict(completed_source=source,report_day=str(worker.day),mode=getattr(worker,'mode',worker.audit.get('mode')),draft_evidence=draft,rows=rows,audit={k:worker.audit[k] for k in ['mode','source_blocker','errors','source_snapshot_id','source_collected_at','calculated_at'] if k in worker.audit},
   evidence_scope='Exact prevalidated actionable draft rows plus structured completed-period financial evidence. No draft candidates does not mean no source data. Reported MPStats profit is not settled cohort profit.',
-  instruction='Сформулируй собственный краткий вывод; выбери исходные строки с достаточными основаниями. Не меняй их числа/товары/цены. Если продажа держится — цену сохранить. Отдельно оцени наличие дневных заказов, отчётной экономики завершённого периода и окончательно закрытой прибыли когорты. Не называй отсутствующими переданные financial_rows. Для повышения +5% применяй согласованные дневные заказы и сохранённую общую конверсию: рост прибыли и окончательно закрытая прибыль когорты не являются условиями допуска. Для снижения нужны собственная предварительная экономика и проверка причин падения; неизвестные расходы не ноль. Отсутствие части источников не означает отсутствие кандидатов во всём каталоге. Не дополняй сегодня сравнением полного вчера. Summary без чисел/новых цен, конкретные проверенные данные только в выбранных исходных строках.')
+  instruction='Сформулируй собственный краткий вывод; выбери исходные строки с достаточными основаниями. Не меняй их числа/товары/цены. Правило «заказы держатся — цену сохранить» запрещает необоснованное снижение после теста, но НЕ отменяет согласованное повторное повышение +5% после четырёх полных дней ежедневных заказов и сохранённой общей конверсии. Отдельно оцени наличие дневных заказов, отчётной экономики завершённого периода и окончательно закрытой прибыли когорты. Не называй отсутствующими переданные financial_rows. Для повышения +5% применяй согласованные дневные заказы и сохранённую общую конверсию: рост прибыли и окончательно закрытая прибыль когорты не являются условиями допуска. Для снижения нужны собственная предварительная экономика и проверка причин падения; неизвестные расходы не ноль. Отсутствие части источников не означает отсутствие кандидатов во всём каталоге. Не дополняй сегодня сравнением полного вчера. Summary без чисел/новых цен, конкретные проверенные данные только в выбранных исходных строках.')
  def validate(v):
   if v.get('kind')!='price_review' or not isinstance(v.get('keep_rows'),list)or len(set(v['keep_rows']))!=len(v['keep_rows'])or any(x not in rows for x in v['keep_rows']):raise ValueError('Price rows changed/outside evidence')
   if not isinstance(v.get('summary'),str)or not v['summary'].strip() or re.search(r'\d|[¥₽→]',v['summary']):raise ValueError('Price summary must not invent actionable numbers')
@@ -153,7 +153,11 @@ def review_price(worker,draft,trace,force=False,core=None):
   return v
  ident='price:'+str(worker.day)+':'+str(getattr(worker,'mode',worker.audit.get('mode')))+':'+str(getattr(worker,'section',''))
  result,receipt=core.ask(ident,'price',data,dict(kind='price_review',keep_rows=['exact row ids'],summary='Краткий человеческий вывод без чисел и новых цен'),validate,force)
- keep=set(result['keep_rows']);parts=[] if rows else [draft]
+ from china_price_review_guard import protected_repeats
+ protected=protected_repeats(worker,rows)
+ keep=set(result['keep_rows'])|protected
+ worker.audit['price_review_guard']=dict(protected_repeat_rows=sorted(protected),model_omitted_ready_repeat_rows=sorted(protected-set(result['keep_rows'])),rule='owner_four_full_days_daily_orders_and_general_conversion_held')
+ parts=[] if rows else [draft]
  for t in tables:
   chosen=[rows[k]for k in t['rows']if k in keep]
   if chosen:parts.append('\n'.join(t['header']+chosen))

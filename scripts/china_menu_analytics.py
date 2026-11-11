@@ -159,7 +159,19 @@ def recover(job_id):
   bind(w,job_id,ids,answer)
   w.save(key,dict(status='sent',job_id=job_id,answer=answer,message_ids=ids,wb_writes=0,model_calls=0))
  return dict(status='sent',job_id=job_id,message_ids=ids)
+def verify_funnel(nm):
+ from conversion_watches import runtime,saved_network_guard
+ from china_table_png import blocks,render
+ w=runtime();today=datetime.now(ZoneInfo('Europe/Moscow')).date()
+ with saved_network_guard():answer=funnel(w,{},PREFIX+str(nm)+' '+str(today-timedelta(days=7))+' '+str(today-timedelta(days=1)))
+ files=[blob for kind,data in blocks(answer)if kind=='table'for blob in render(*data)]
+ if not files:raise ValueError('Funnel PNG missing')
+ w.save('china_agent:menu_funnel_qa:v1:'+str(nm),dict(status='complete',answer=answer,files=[base64.b64encode(b).decode()for b in files],wb_writes=0,model_calls=0))
+ return dict(status='complete',nm_id=nm,png_parts=len(files))
 if __name__=='__main__':
  import argparse,json
  p=argparse.ArgumentParser();p.add_argument('--recover-job',type=int,required=True);args=p.parse_args()
+ from pathlib import Path
+ request=json.loads(Path('china-conversion-watches-request.json').read_text())
+ if request.get('verify_funnel_nm_id'):print(json.dumps(verify_funnel(int(request['verify_funnel_nm_id']))))
  print(json.dumps(recover(args.recover_job)))

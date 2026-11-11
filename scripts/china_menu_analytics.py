@@ -30,7 +30,20 @@ def _candidate(w,job,text):
  from china_advertising_v2_png import render
  from china_loss_control import PLAN,digest
  wanted=directions(text);day=str(datetime.now(ZoneInfo('Europe/Moscow')).date())
- io=IO()
+ class MenuIO(IO):
+  # An on-demand review must not rewrite the multi-megabyte morning source.
+  # Keep its working copy in memory; dated inputs and final results still persist.
+  def __init__(self):super().__init__();self.menu_sources={}
+  def get(self,key):return self.menu_sources[key]if key in self.menu_sources else super().get(key)
+  def put(self,key,value):
+   if key.startswith('china_agent:advertising_source:'):self.menu_sources[key]=copy.deepcopy(value)
+   else:return super().put(key,value)
+  def create(self,key,value):
+   if key.startswith('china_agent:advertising_source:'):
+    if self.get(key)is not None:return False
+    self.menu_sources[key]=copy.deepcopy(value);return True
+   return super().create(key,value)
+ io=MenuIO()
  io.on_demand_menu=True
  from china_morning_rules_review import enabled
  if not enabled(io):raise ValueError('Режим расчёта без платной модели не включён')

@@ -65,7 +65,7 @@ def current_report_context(io,source,day):
  events=sorted(json.dumps(x,sort_keys=True,ensure_ascii=False)for x in history(records))
  return records,dict(verified_registry=pointers,history_sha256=hashlib.sha256(json.dumps(events,ensure_ascii=False).encode()).hexdigest(),manual_funding=manual,wb_writes=0)
 
-def prepare_midday(io,day,source=None):
+def prepare_midday(io,day,source=None,observational_only=False):
  source=collect(io,day,current=True) if source is None else source
  records,context=current_report_context(io,source,day)
  labels=price_map(source['catalogue']);changes=history(records);out=[]
@@ -84,7 +84,7 @@ def prepare_midday(io,day,source=None):
      for k,x in daily_metrics(n).items():v[k]+=x
    attention=[];protected=False;placement='search' if c['settings']['placements'].get('search') else 'recommendations'
    # Only direct current SKU evidence; no 3-day actions carried into an intraday PNG.
-   for n in c.get('nm_settings',[]):
+   for n in ([] if observational_only else c.get('nm_settings',[])):
     nm=n['nm_id'];p=skus.get(nm);label=labels.get(nm,{});price=label.get('price');old=n.get('bids_kopecks',{}).get(placement)
     if c['status']!=9 or not p or not isinstance(price,(int,float)) or price<=0 or type(old)is not int:continue
     # A bid change/addition today invalidates whole-day spend as a post-change exposure.

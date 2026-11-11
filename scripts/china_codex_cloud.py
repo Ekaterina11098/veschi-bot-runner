@@ -335,6 +335,10 @@ class Worker:
         from china_menu_analytics import recognized
         if recognized(inbox.get('request_text','')):
             return 'waiting_analytics'
+        if (self.db.get(CLOUD+'policy')or{}).get('transport')=='codex_appserver_v1':
+            from conversion_watches import runtime,saved_network_guard
+            from china_codex_runtime import run
+            with saved_network_guard():return run(runtime(),jobs[0],inbox)['status']
         journal=CLOUD+'job:'+str(jid);state=self.db.get(journal)
         analytics=self.db.get(ROOT+'analytics:'+str(jid))
         if inbox['status']=='collecting' and (not analytics or analytics.get('status') not in ('calculated','failed')):return 'waiting_analytics'

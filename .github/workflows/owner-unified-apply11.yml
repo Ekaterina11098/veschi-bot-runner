@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 pillow==11.3.0 python-dotenv simplejson==4.2.0 openai==3.42.1
-      - name: Verify and attach exact keyboard to delivered correction without resending
+      - name: Delete exact obsolete869 on explicit owner request; preserve corrected870
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

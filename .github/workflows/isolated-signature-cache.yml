@@ -1,0 +1,102 @@
+name: Isolated signature cache transport validation
+on:
+  push:
+    branches: [codex/isolated-signature-cache-20261111]
+permissions:
+  contents: read
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cabinet: [token_1, token_2, token_3]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: isolated_test
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U isolated_test'
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ISOLATED_DSN: host=127.0.0.1 port=5432 user=isolated_test dbname=postgres
+      TEST_CACHE_DIR: ${{ runner.temp }}/isolated-signature-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2
+      - name: Restore previous isolated run only
+        id: prior
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.TEST_CACHE_DIR }}
+          key: isolated-signature-validation-v2-${{ matrix.cabinet }}-${{ github.run_id }}-previous
+          restore-keys: isolated-signature-validation-v2-${{ matrix.cabinet }}-
+      - name: Build or reuse authenticated synthetic cache
+        run: python load_and_cache_check.py seed --cabinet ${{ matrix.cabinet }}
+      - name: Save isolated cache
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.TEST_CACHE_DIR }}
+          key: isolated-signature-validation-v2-${{ matrix.cabinet }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: seed-result-${{ matrix.cabinet }}
+          path: cache-result-seed-*.json
+  restore:
+    needs: seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cabinet: [token_1, token_2, token_3]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: isolated_test
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U isolated_test'
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ISOLATED_DSN: host=127.0.0.1 port=5432 user=isolated_test dbname=postgres
+      TEST_CACHE_DIR: ${{ runner.temp }}/isolated-signature-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2
+      - name: Restore cache from separate seed runner
+        id: restored
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.TEST_CACHE_DIR }}
+          key: isolated-signature-validation-v2-${{ matrix.cabinet }}-${{ github.run_id }}-new-process
+          restore-keys: isolated-signature-validation-v2-${{ matrix.cabinet }}-${{ github.run_id }}
+          fail-on-cache-miss: true
+      - name: Require an actual matched key
+        env:
+          MATCHED_KEY: ${{ steps.restored.outputs.cache-matched-key }}
+        run: test "$MATCHED_KEY" = 'isolated-signature-validation-v2-${{ matrix.cabinet }}-${{ github.run_id }}'
+      - name: Verify bytes decryption manifest signatures and cabinet isolation
+        run: python load_and_cache_check.py restore --cabinet ${{ matrix.cabinet }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: restore-result-${{ matrix.cabinet }}
+          path: cache-result-restore-*.json

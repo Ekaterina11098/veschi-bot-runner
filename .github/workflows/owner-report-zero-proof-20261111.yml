@@ -1,0 +1,50 @@
+name: Owner complete missing campaign history before PNG correction
+on:
+  push:
+    paths: ['.github/workflows/owner-report-zero-proof-20261111.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-advertising-daily
+  cancel-in-progress: false
+jobs:
+  proposal:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Read exact missing completed-day campaign and expense evidence; no publication
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: unused-no-telegram
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import requests,json
+          from datetime import datetime,timezone
+          from china_price_apply import IO
+          io=IO();K='china_agent:owner_report_complete:2026-11-11:v1:stats417-followup'
+          if io.get(K):raise SystemExit('Existing exact read')
+          e=dict(status='reading',wb_writes=0,telegram_calls=0,observed_at=datetime.now(timezone.utc).isoformat());assert io.create(K,e)
+          for label,path,params in [('stats','/adv/v3/fullstats',{'ids':'41756218','beginDate':'2026-11-08','endDate':'2026-11-10'}),('campaign','/api/advert/v2/adverts',{'ids':'41756218'}),('expenses','/adv/v1/upd',{'from':'2026-11-10','to':'2026-11-11'}),('day10','/adv/v3/fullstats',{'ids':'41756218','beginDate':'2026-11-10','endDate':'2026-11-10'}),('payments','/adv/v1/payments',{'from':'2026-11-10','to':'2026-11-11'})]:
+           r=requests.get('https://advert-api.wildberries.ru'+path,params=params,headers={'Authorization':io.token},timeout=45)
+           e[label+'_http']=r.status_code
+           if r.ok:
+            j=r.json()
+            e[label]=[x for x in j if x.get('advertId')==41756218] if label=='expenses' and isinstance(j,list) else j
+           else:e[label+'_error']=r.text[:400]
+           io.put(K,e)
+          r=requests.post('https://advert-api.wildberries.ru/api/advert/v2/budget',headers={'Authorization':io.token},json={'advertIds':[41756218]},timeout=40)
+          e['budget_http']=r.status_code
+          if r.ok:e['budget']=r.json()
+          e['status']='read';io.put(K,e);print('Exact dated source saved; no publication')
+          PY

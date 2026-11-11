@@ -40,7 +40,7 @@ export async function handleInlineSearch(config,update,deps){
   const title=(general?'Общая воронка':metric==='drr'?'ДРР':'Рекламная конверсия')+' · '+row.article;
   const buttons=general?[]:campaigns.slice(0,8).map(cid=>[{text:'РК '+cid,callback_data:'cai1:'+sid+':cid'+cid}]);
   buttons.push([{text:general?'Выбрать период':campaigns.length?'Все РК товара':'Выбрать РК товара',callback_data:'cai1:'+sid+':'+(general?'period':campaigns.length?'cidAll':'objects')}]);
-  results.push({type:'article',id:sid,title:row.article,description:(metric==='drr'?'ДРР':'Конверсия')+' · '+(campaigns.length?campaigns.length+' РК':'проверить сохранённые данные'),input_message_content:{message_text:title+(general?'\nВыберите период.':'\nВыберите РК товара:')},reply_markup:{inline_keyboard:buttons}});
+  results.push({type:'article',id:sid,title:row.article,description:general?'Общая воронка · выбрать период':(metric==='drr'?'ДРР':'Конверсия')+' · '+(campaigns.length?campaigns.length+' РК':'проверить сохранённые данные'),input_message_content:{message_text:title+(general?'\nВыберите период.':'\nВыберите РК товара:')},reply_markup:{inline_keyboard:buttons}});
  }
  const acknowledged=await deps.telegram('answerInlineQuery',{inline_query_id:q.id,results,cache_time:1,is_personal:true,next_offset:''});
  if(acknowledged!==true)throw Error('Inline answer not verified');

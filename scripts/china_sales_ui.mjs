@@ -81,10 +81,11 @@ export async function renderSales(ctx,data,sid,now=new Date()){
    const a=h.data[0].last;text.push('Сегодня: '+amounts(good(a)?a:null));
    for(const nday of [1,7]){const z=h.data[nday]?.last;text.push((nday===1?'Вчера':'Неделю назад')+': '+amounts(good(z)?z:null)+'; '+change(good(a)?a:null,good(z)?z:null));}
   }
-  text.push('',footer);const markup=summaryKeys(sid);if(ctx.originAds)markup.inline_keyboard.splice(-1,0,[b('‹ К списку','backList')],[{text:'‹ Реклама',callback_data:'cmn1:ads'}]);if(ctx.nm)markup.inline_keyboard.splice(2,0,[b('Другой товар','products'),b('Изменить период','period')]);return {text:text.join('\n'),reply_markup:markup};
+  text.push('',footer);const markup=summaryKeys(sid);if(ctx.originAds)markup.inline_keyboard.splice(-1,0,[b('‹ К списку','backList')],[{text:'‹ Реклама',callback_data:'cmn1:ads'}]);if(ctx.nm)markup.inline_keyboard.splice(2,0,[b('Другой товар','products'),b('Изменить период','period')]);if(ctx.nm&&ctx.sort==='leaders'&&!ctx.originAds)markup.inline_keyboard.splice(-1,0,[b('‹ К лидерам','backList')]);return {text:text.join('\n'),reply_markup:markup};
  }
  if(ctx.view==='period')return {text:'Другой период\nПериод сохранится при переходе к товарам.',reply_markup:nav([[b('Сегодня к текущему часу','today')],[b('Вчера · полный день','yesterday')],[b('Последние 7 полных дней','range7')],[b('Последние 14 полных дней','range14')],[b('Выбрать даты','calendar')]])};
- if(ctx.view==='products')return {text:'По товарам\n'+contextTotals(ctx,data).window+'\nКоличество и сумма — с обеими базами.',reply_markup:nav([[b('Лидеры по сумме заказов','leaders')],[b('Кто дал рост','growth')],[b('Кто дал снижение','decline')],[b('Найти товар по артикулу','search')]])};
+ if(ctx.view==='products')return {text:'По товарам\n'+contextTotals(ctx,data).window+'\nКоличество и сумма — с обеими базами.',reply_markup:nav([[b('Лидеры продаж','leaders')],[b('Кто дал рост','growth')],[b('Кто дал снижение','decline')],[b('Найти товар по артикулу','search')]])};
+ if(ctx.view==='leaderMetric')return {text:'Лидеры продаж\n'+contextTotals(ctx,data).window+'\nПо какому показателю показать товары?',reply_markup:nav([[b('По сумме заказов','metricAmount')],[b('По количеству заказов','metricCount')],[b('Изменить период','period')]])};
  if(ctx.view==='search')return {text:'Найти товар по артикулу\nОтветьте на это сообщение: введите артикул или его часть, например143.',reply_markup:{force_reply:true,selective:true,input_field_placeholder:'Артикул товара'}};
  if(ctx.view==='calendar'){
   const month=ctx.month||today(now).slice(0,7),first=month+'-01',end=shift((Number(month.slice(5))===12?String(Number(month.slice(0,4))+1)+'-01':month.slice(0,4)+'-'+String(Number(month.slice(5))+1).padStart(2,'0'))+'-01',-1);
@@ -102,15 +103,19 @@ export async function renderSales(ctx,data,sid,now=new Date()){
   let rows=ctx.query?computed.filter(x=>x.article.toLowerCase().includes(ctx.query.toLowerCase())):computed.filter(x=>x.current?.count||x.previous?.count||x.week?.count);
   if(ctx.sort==='growth')rows=rows.filter(x=>x.delta>0).sort((a,b)=>b.delta-a.delta);
   else if(ctx.sort==='decline')rows=rows.filter(x=>x.delta<0).sort((a,b)=>a.delta-b.delta);
-  else rows.sort((a,b)=>(b.current?.amount_cny||0)-(a.current?.amount_cny||0));
+  else {const metric=ctx.metric==='count'?'count':'amount_cny';rows=rows.filter(x=>good(x.current)&&x.current[metric]>0).sort((a,b)=>b.current[metric]-a.current[metric]||b.current[metric==='count'?'amount_cny':'count']-a.current[metric==='count'?'amount_cny':'count']||a.article.localeCompare(b.article,'ru'));}
   const page=Math.max(0,ctx.page||0),selectedRows=rows.slice(page*5,page*5+5),out=['По товарам · '+(ctx.query?'поиск «'+ctx.query+'»':ctx.sort==='growth'?'вклад в рост':ctx.sort==='decline'?'вклад в снижение':'лидеры по сумме'),contextTotals(ctx,data).window];
+  const leaders=ctx.sort==='leaders'&&!ctx.query,overall=leaders?contextTotals({...ctx,nm:undefined},data).current:null;
+  if(leaders){out[0]='Лидеры продаж · '+(ctx.metric==='count'?'по количеству заказов':'по сумме заказов');out.push('Всего за период: '+amounts(overall));}
+  const share=(value,total)=>!ok(value)||!ok(total)||total<=0||value>total+.005?'н/д':n(value/total*100)+'%';
   if(ctx.originAds)out.push('Отбор: '+(ctx.base==='week'?'к неделе назад':'к вчера / предыдущему периоду')+' · '+(ctx.metric==='count'?'по количеству':'по сумме CNY'));
-  for(const x of selectedRows)out.push('',x.article+': '+amounts(x.current),'К предыдущей базе: '+change(x.current,x.previous),'К неделе: '+change(x.current,x.week)+(x.delta!==null?'\nВклад к выбранной базе: '+(x.delta>=0?'+':'')+n(x.delta)+(ctx.metric==='count'?' шт.':' CNY'):''));
-  if(!rows.length)out.push('Нет совпадений либо нет сопоставимых данных для выбранного списка.');
+  for(const [index,x]of selectedRows.entries())out.push('',(leaders?String(page*5+index+1)+'. ':'')+x.article+': '+amounts(x.current),...(leaders?['Доля в сумме: '+share(x.current?.amount_cny,overall?.amount_cny)+' · в количестве: '+share(x.current?.count,overall?.count)]:[]),'К предыдущей базе: '+change(x.current,x.previous),'К неделе: '+change(x.current,x.week)+(!leaders&&x.delta!==null?'\nВклад к выбранной базе: '+(x.delta>=0?'+':'')+n(x.delta)+(ctx.metric==='count'?' шт.':' CNY'):''));
+  if(!rows.length)out.push(leaders&&good(overall)?(overall.count===0?'За выбранный период созданных заказов нет.':'Нет товаров с положительным значением выбранного показателя.'):'Нет совпадений либо нет сопоставимых данных для выбранного списка.');
   out.push('','Созданные заказы FBS · CNY после скидок WB',freshness(ctx,data),footer);
   const buttons=selectedRows.map(x=>[b(x.article,'item'+x.nm)]),paging=[];
   if(page>0)paging.push(b('‹ Назад','page'+(page-1)));if((page+1)*5<rows.length)paging.push(b('Далее ›','page'+(page+1)));if(paging.length)buttons.push(paging);
-  if(ctx.originAds)buttons.push([b('По сумме','metricAmount'),b('По количеству','metricCount')],[b('К вчера','baseYesterday'),b('К неделе','baseWeek')]);
+  if(leaders||ctx.originAds)buttons.push([b('По сумме','metricAmount'),b('По количеству','metricCount')]);
+  if(ctx.originAds)buttons.push([b('К вчера','baseYesterday'),b('К неделе','baseWeek')]);
   buttons.push([b('Другой товар','products'),b('Изменить период','period')]);return {text:out.join('\n'),reply_markup:nav(buttons)};
  }
  if(['days','table'].includes(ctx.view)){
@@ -141,7 +146,7 @@ function transition(old,op,now){
  else if(op==='table'){c.view='table';c.page=0;}
  else if(/^tablepage\d+$/.test(op)){c.view='table';c.page=Number(op.slice(9));}
  else if(op==='products'){delete c.nm;c.view='products';}
- else if(['leaders','growth','decline'].includes(op)){c.view='list';c.sort=op;c.page=0;delete c.query;}
+ else if(['leaders','growth','decline'].includes(op)){c.view=op==='leaders'?'leaderMetric':'list';c.sort=op;c.page=0;delete c.query;}
  else if(/^page\d+$/.test(op)){c.view='list';c.page=Number(op.slice(4));}
  else if(/^item\d{5,12}$/.test(op)){c.nm=op.slice(4);c.view='summary';}
  else if(op==='period'){c.view='period';}

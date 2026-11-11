@@ -154,7 +154,9 @@ export async function renderSales(ctx,data,sid,now=new Date()){
   out.push('','Созданные заказы FBS · CNY после скидок WB',freshness(ctx,data),footer);
   const paging=[];if(page>0)paging.push(b('‹','tablepage'+(page-1)));if((page+1)*5<points.length)paging.push(b('›','tablepage'+(page+1)));if(paging.length)rows.unshift(paging);
   rows.push([b('‹ К графикам','days'),b('Сегодня','today')]);
-  return {text:out.join('\n'),reply_markup:nav(rows)};
+  const title='Таблица по дням · '+(ctx.nm?data.names.get(ctx.nm):'все товары');
+  const photo=await tablePng({title,subtitle:ctx.start+' — '+ctx.end+' · часть '+(page+1)+'/'+Math.ceil(points.length/5),note:'Полные дни МСК · количество и сумма заказов',columns:[{label:'Дата',width:180},{label:'Заказы\nшт. / CNY',width:280},{label:'К предыдущему дню',width:390},{label:'К тому же дню\nнеделей ранее',width:390}],rows:points.slice(page*5,page*5+5).map(p=>{const a=data.days.get(p.date),prev=data.days.get(shift(p.date,-1)),week=data.days.get(shift(p.date,-7)),t=a?selected(a,ctx.nm):null;return [p.date,amounts(t),change(t,prev?selected(prev,ctx.nm):null),change(t,week?selected(week,ctx.nm):null)];}),footnotes:[freshness(ctx,data),footer,'Нет сопоставимых данных — не ноль.']});
+  return {text:title+'\n'+ctx.start+' — '+ctx.end+' · полные дни МСК\n'+freshness(ctx,data),photo,reply_markup:nav(rows)};
  }
  throw Error('Unknown sales view');
 }

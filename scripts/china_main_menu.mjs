@@ -1,3 +1,4 @@
+import {advertisingMenu} from './china_advertising_ui.mjs';
 import {keyboard as reportKeyboard} from './china_report_buttons.mjs';
 /** Cache-only Telegram navigation. Never dispatches workers or accesses marketplace APIs. */
 export const ROOT='china_agent:main_menu:v1:';
@@ -65,7 +66,7 @@ export async function advertisingView(get,family,now=new Date(),actorId=null){
 }
 
 async function advertisingPage(get,family,now=new Date(),actorId=null,provided=null){
- if(!family)return {text:'Реклама\nВыберите отчёт:',reply_markup:{inline_keyboard:[[{text:'Рекламные кампании',callback_data:'cmn1:drr'}],[{text:'Бюджеты',callback_data:'cmn1:budgets'}],[{text:'‹ Главное меню',callback_data:'cmn1:home'}]]},source_keys:[]};
+ if(!family)return advertisingMenu();
  const pointer=provided?.pointer||await get('china_agent:daily_ad_current_report:v1:'+family),index=provided?.index||await get(ROOT+'report:'+family);
  const p=provided?.plan||(pointer?.plan_id?await get('china_agent:loss_plan:v1:'+pointer.plan_id):null);
  const nav=[[{text:'‹ Реклама',callback_data:'cmn1:ads'}],[{text:'‹ Главное меню',callback_data:'cmn1:home'}]],title=family==='drr'?'Рекламные кампании':'Бюджеты';

@@ -51,7 +51,8 @@ def prepare(io,p,family):
  rows.extend([[dict(text='Выбрать всё',callback_data=prefix+'all'),dict(text='Сбросить',callback_data=prefix+'clear')],[dict(text='Посмотреть выбранное',callback_data=prefix+'review')]])
  return dict(inline_keyboard=rows)
 def bind(io,f,receipt):
- p=io.get(PLAN+f['plan_id']);family=f['family'];keyboard=prepare(io,p,family)
+ if not(io.get(ROOT+'policy')or{}).get('enabled'):return
+ p=io.get(PLAN+f['plan_id']);family=f.get('family',p['family']);keyboard=prepare(io,p,family)
  if not keyboard:return
  token=keyboard['inline_keyboard'][0][0]['callback_data'].split(':')[1]
  k=ROOT+'message:'+str(receipt['message_id'])
@@ -86,3 +87,4 @@ def execution_claim(io,a,p):
  parent=p.get('parent_plan_id')or p['plan_id']
  owner='button:'+a['button_confirmation']if a.get('button_confirmation')else'job:'+str(a['job_id'])
  claim(io,parent,domain(p['items']),owner)
+

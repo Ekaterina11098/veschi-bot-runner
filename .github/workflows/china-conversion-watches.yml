@@ -151,6 +151,8 @@ jobs:
           if [ "$MODE" = dialog_free ]; then
             python scripts/conversion_watches.py --exact-dialog-job "$DIALOG_JOB_ID"
             PYTHONPATH=scripts:source python scripts/china_free_ad_work.py --job-id "$DIALOG_JOB_ID"
+          elif [ "$MODE" = codex_setup ]; then
+            PYTHONPATH=scripts:source python scripts/china_codex_runtime.py --setup-notice
           elif [ "$MODE" = economics_complete ]; then
             PYTHONPATH=scripts:source python scripts/china_codex_runtime.py --economics-only
           elif [ "$MODE" = codex_probe ]; then

@@ -57,6 +57,8 @@ def build(worker):
         key=(t,json.dumps(p,sort_keys=True))
         if key not in read_cache:read_cache[key]=worker.db('GET',t,params=p)
         return read_cache[key]
+    from business_agents.data import Data
+    linked_data=Data('china',read)
     datasets={};sources=[];period_markers={}
     for a,b in sorted(windows):
         rows,marker=period(worker,a,b)

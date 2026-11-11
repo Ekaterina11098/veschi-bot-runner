@@ -12,9 +12,11 @@ def apply_review(bundle):
    if selected.get('reference_cny')is not None:
     c.update(budget_reference_need=selected['reference_cny'],budget_cash_gap=max(0,selected['reference_cny']-c['balance']),budget_average_daily=selected['reference_cny']/3)
    if selected.get('hide'):c['budget_review_required']=False
+   if selected.get('reference_label'):c['budget_reference_label']=selected['reference_label']
   elif selected['decision']=='limited_test_topup':
    e=copy.deepcopy(selected['evidence']);assert e['status']=='positive'and e['ready']and e['stress_after_ads_cny']>0
    a=copy.deepcopy(selected['action']);assert a['kind']=='topup_campaign'and a['campaign_id']==c['id']and a['amount_cny']>0
-   c.update(budget_action=a,budget_reserve_amount=a['amount_cny'],budget_reference_need=selected['reference_cny'],budget_cash_gap=max(0,selected['reference_cny']-c['balance']),budget_average_daily=selected['reference_cny']/3,budget_review_required=True,budget_audit_state='topup_ready',budget_short_note=selected['text'],budget_economics_status='positive',campaign_budget_economics=e)
+   c.update(budget_action=a,budget_reserve_amount=a['amount_cny'],budget_reference_need=selected['reference_cny'],budget_cash_gap=max(0,selected['reference_cny']-c['balance']),budget_average_daily=selected['reference_cny']/3,budget_review_required=True,budget_audit_state='owner_limited_test_ready',budget_short_note=selected['text'],budget_economics_status='positive',campaign_budget_economics=e)
+   c['budget_reference_label']='Прогноз на3дня по темпу запуска: '
   else:raise ValueError('Unknown final budget decision')
  return out

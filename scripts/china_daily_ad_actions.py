@@ -86,6 +86,7 @@ def execute(io,a,p):
   if kind=='topup_campaign':
    b=budget(cid);state['after_budget']=b
    return after['settings']==before['settings'] and after['status']==9 and b>=state['before_budget']+item['amount_cny']-2
+  if kind=='archive_campaign':return after['status']==7 and after['settings']==before['settings'] and after['nm_settings']==before['nm_settings']
   if kind=='pause_campaign':return after['status']==11 and after['settings']==before['settings'] and after['nm_settings']==before['nm_settings']
   if kind=='ad_add_sku':
    old={n['nm_id']:n for n in before['nm_settings']};actual={n['nm_id']:n for n in after['nm_settings']};nm=item['nm_id']
@@ -128,7 +129,7 @@ def execute(io,a,p):
    before=campaign(cid);state['before']=before;save()
    if before['status']!=9:raise ValueError('Campaign no longer active')
    kind=item['kind'];method='PATCH'
-   if kind in ['topup_campaign','pause_campaign'] and sorted(n['nm_id'] for n in before['nm_settings'])!=item['nm_ids']:raise ValueError('Campaign composition changed since PNG')
+   if kind in ['topup_campaign','pause_campaign','archive_campaign'] and sorted(n['nm_id'] for n in before['nm_settings'])!=item['nm_ids']:raise ValueError('Campaign composition changed since PNG')
    if kind in ['ad_set_bid','ad_exclude_sku']:
     selected=next((n for n in before['nm_settings'] if n['nm_id']==item['nm_id']),None)
     if kind=='ad_exclude_sku' and selected is None:state.update(status='verified',already_done=True,after=before);save();continue
@@ -155,6 +156,7 @@ def execute(io,a,p):
      state.update(status='verified',already_done=True,after=before);save();continue
     validate_addition(io,item,before)
     path='/adv/v0/auction/nms';body=dict(nms=[dict(advert_id=cid,nms=dict(add=[item['nm_id']],delete=[]))])
+   elif kind=='archive_campaign':path='/adv/v0/stop?id='+str(cid);method='GET';body=None
    elif kind=='pause_campaign':path='/adv/v0/pause?id='+str(cid);method='GET';body=None
    elif kind=='topup_campaign':
     from china_budget_ready_model import validate_funding

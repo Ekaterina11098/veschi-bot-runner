@@ -1,0 +1,55 @@
+name: Owner withdraw both current PNGs and revoke plans11Nov
+on:
+  push:
+    paths: ['.github/workflows/owner-withdraw-pngs-20261111.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-advertising-daily
+  cancel-in-progress: false
+jobs:
+  proposal:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Withdraw exactly855856 and revoke their plans; preserve audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: unused-no-wb
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import requests
+          from datetime import datetime,timezone
+          from china_price_apply import IO
+          from china_daily_ad_actions import BIND
+          from china_loss_control import PLAN
+          io=IO();K='china_agent:owner_withdraw_pngs:2026-11-11:v1'
+          if io.get(K):raise SystemExit('Existing withdrawal; no replay')
+          url='https://api.telegram.org/bot'+io.bot+'/'
+          j=requests.post(url+'getMe',timeout=25).json();assert j['ok'] and j['result']['id']==8780468043
+          e=dict(status='withdrawing',owner_quote='Пока исправляешь удали этиPNGизТГ',items=[],wb_writes=0,started_at=datetime.now(timezone.utc).isoformat());assert io.create(K,e)
+          for mid in (856,855):
+           binding=io.get(BIND+str(mid));assert binding and binding['chat_id']==-1004342917488
+           p=io.get(PLAN+binding['plan_id']);assert p and mid in p['report_message_ids']
+           assert io.create(K+':plan:'+str(mid),dict(binding=binding,plan=p))
+           p.update(status='revoked',invalidated_at=datetime.now(timezone.utc).isoformat(),invalidation_reason='Owner withdrew PNG pending complete correction and revised budgets/additions')
+           io.put(PLAN+p['plan_id'],p)
+           step=dict(message_id=mid,status='deleting',plan_id=p['plan_id']);e['items'].append(step);io.put(K,e)
+           try:
+            r=requests.post(url+'deleteMessage',json={'chat_id':-1004342917488,'message_id':mid},timeout=40);j=r.json();assert r.ok and j.get('ok')is True and j.get('result')is True
+            step.update(status='deleted_verified',response={'ok':True,'result':True});io.put(K,e)
+           except Exception:
+            step['status']='uncertain';e['status']='uncertain';io.put(K,e);raise
+          e.update(status='deleted_verified',completed_at=datetime.now(timezone.utc).isoformat());io.put(K,e);print('Deleted855856;bothplansrevoked;WB0')
+          PY

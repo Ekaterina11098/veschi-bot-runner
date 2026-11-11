@@ -21,9 +21,13 @@ def freeze(w,job,answer,blobs):
  if old and old!=value:raise ValueError('Frozen menu result already exists')
  if not old and not w.save(key,value,insert=True):raise ValueError('Concurrent menu artifact')
  return parts
+class CurrentInputsChanged(ValueError):pass
+
 def candidate(w,job,text):
  from china_analytic_dialog import reading
- with reading():return _candidate(w,job,text)
+ with reading():
+  try:return _candidate(w,job,text)
+  except CurrentInputsChanged:return _candidate(w,job,text)
 def _candidate(w,job,text):
  from china_loss_execute import IO
  from china_advertising_v2 import prepare
@@ -34,7 +38,20 @@ def _candidate(w,job,text):
   # An on-demand review must not rewrite the multi-megabyte morning source.
   # Keep its working copy in memory; dated inputs and final results still persist.
   def __init__(self):super().__init__();self.menu_sources={}
-  def get(self,key):return self.menu_sources[key]if key in self.menu_sources else super().get(key)
+  def get(self,key):
+   value=self.menu_sources[key]if key in self.menu_sources else super().get(key)
+   if value and key.startswith('china_agent:advertising_full_growth:')and key.endswith(':inputs'):
+    fresh=w.get('china_agent:menu_current_inputs:v1:'+str(job['id']))or{}
+    if fresh.get('observed_at')and (datetime.now(timezone.utc)-datetime.fromisoformat(fresh['observed_at'])).total_seconds()<900:
+     value=copy.deepcopy(value);prices={r['nm_id']:r for r in fresh['prices']['rows']};stocks={r['article'].casefold():r for r in fresh['stock']['rows']}
+     for row in value['prices']['rows']:
+      if row['nm_id']in prices:row.update(prices[row['nm_id']])
+     for nm,p in prices.items():
+      e=value['economics']['rows'].get(str(nm));st=stocks.get(p['article'].casefold())
+      if not e or not st:continue
+      e.update(seller_price_cny=p['seller_price'],own_cogs_rub=st['price']/100,stock_free=st['stock']-st['reserve'],price_observed_at=fresh['observed_at'],stock_observed_at=fresh['observed_at'],published_stock=fresh['published_stock']['amounts'].get(str(nm)),published_stock_observed_at=fresh['observed_at'])
+      e['expected_margin_before_ads_cny']=e['buyout']*(e['seller_price_cny']*(1-(e['commission_pct']+e['tax_pct']+e.get('payment_reserve_pct',0))/100)-e['own_cogs_rub']/e['fx_rub_per_cny'])-e['logistics_cny']-e.get('handling_rub',0)/e['fx_rub_per_cny']
+   return value
   def put(self,key,value):
    if key.startswith('china_agent:advertising_source:'):self.menu_sources[key]=copy.deepcopy(value)
    else:return super().put(key,value)
@@ -79,15 +96,15 @@ def _candidate(w,job,text):
   fresh_stock=read_stock(list(dict.fromkeys(a['article']for a in selected)))
   fresh_published=published_stock(io,fresh_prices,wanted)
   if not fresh_stock.get('coverage_complete'):raise ValueError('Current selected-SKU stock/COGS incomplete')
+  w.save('china_agent:menu_current_inputs:v1:'+str(job['id']),dict(prices=fresh_prices,stock=fresh_stock,published_stock=fresh_published,observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0))
   price_map={r['nm_id']:r for r in fresh_prices['rows']}
   stock_map={r['article'].casefold():r for r in fresh_stock['rows']}
   for a in selected:
    e=next((r.get('economics')for c in bundle['campaigns']for r in c.get('focus',[])if r.get('nm')==a['nm_id']and c['id']==a['campaign_id']),None)or a.get('growth_evidence')or{}
    st=stock_map.get(a['article'].casefold());p=price_map.get(a['nm_id'])
    if not st or not p or p['article'].casefold()!=a['article'].casefold():raise ValueError('Exact selected current identity missing')
-   if e.get('seller_price_cny')is not None and abs(p['seller_price']-e['seller_price_cny'])>.0001:raise ValueError('Selected current price changed; recalculate before proposal')
-   if e.get('own_cogs_rub')is not None and abs(st['price']/100-e['own_cogs_rub'])>.01:raise ValueError('Selected current COGS changed; recalculate before proposal')
-  w.save('china_agent:menu_current_inputs:v1:'+str(job['id']),dict(prices=fresh_prices,stock=fresh_stock,published_stock=fresh_published,observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0))
+   if e.get('seller_price_cny')is not None and abs(p['seller_price']-e['seller_price_cny'])>.0001:raise CurrentInputsChanged('Selected current price changed; recalculate before proposal')
+   if e.get('own_cogs_rub')is not None and abs(st['price']/100-e['own_cogs_rub'])>.01:raise CurrentInputsChanged('Selected current COGS changed; recalculate before proposal')
   io.daily_report_current_revalidation=True
   for a in selected:
    state=current[a['campaign_id']]

@@ -2,9 +2,9 @@ name: China morning advertising regression checks
 on:
   push:
     branches: [main, fix/china-morning-full-day-20261027]
-    paths: ['scripts/china_advertising_*.py', 'scripts/china_daily_ad_actions.py', 'scripts/conversion_watches.py', 'scripts/china_once_report.py', 'scripts/china_table_png.py', 'scripts/test_china_once_report.py', 'scripts/china_dialog_clock_policy.mjs', 'scripts/test_china_dialog_clock_policy.mjs', 'scripts/test_china_advertising_*.py', '.github/workflows/china-advertising-daily.yml', '.github/workflows/china-morning-regressions.yml']
+    paths: ['scripts/china_advertising_*.py', 'scripts/china_daily_ad_actions.py', 'scripts/china_report_buttons.py', 'scripts/conversion_watches.py', 'scripts/china_once_report.py', 'scripts/china_table_png.py', 'scripts/test_china_once_report.py', 'scripts/china_dialog_clock_policy.mjs', 'scripts/test_china_dialog_clock_policy.mjs', 'scripts/test_china_advertising_*.py', '.github/workflows/china-advertising-daily.yml', '.github/workflows/china-morning-regressions.yml']
   pull_request:
-    paths: ['scripts/china_advertising_*.py', 'scripts/china_daily_ad_actions.py', 'scripts/test_china_advertising_*.py', '.github/workflows/china-advertising-daily.yml', '.github/workflows/china-morning-regressions.yml']
+    paths: ['scripts/china_advertising_*.py', 'scripts/china_daily_ad_actions.py', 'scripts/china_report_buttons.py', 'scripts/test_china_advertising_*.py', '.github/workflows/china-advertising-daily.yml', '.github/workflows/china-morning-regressions.yml']
 permissions:
   contents: read
 jobs:

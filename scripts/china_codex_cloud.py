@@ -332,6 +332,9 @@ class Worker:
             if not self.db.update(key,inbox|{'status':'owner_resolved','resolved_at':stamp(),
                     'resolution_key':'china_agent:owner_dialog_resolution:v1:job:'+str(jid)},inbox['status']):return 'claim_lost'
             return 'owner_resolved'
+        from china_menu_analytics import recognized
+        if recognized(inbox.get('request_text','')):
+            return 'waiting_analytics'
         journal=CLOUD+'job:'+str(jid);state=self.db.get(journal)
         analytics=self.db.get(ROOT+'analytics:'+str(jid))
         if inbox['status']=='collecting' and (not analytics or analytics.get('status') not in ('calculated','failed')):return 'waiting_analytics'
@@ -379,13 +382,14 @@ class Worker:
         completion={'text':text,'created_at':stamp(),'phase':phase,'recovered':False}
         self.db.once(completion_key,completion)
         return self.finish(claimed,key,completion,journal)
-    def run(self):
+    def run(self,job_id=None):
         free=self.db.get('china_agent:no_paid_ai:v1') or {}
         if free.get('owner_no_paid_lock') is True and free.get('chat_id')==CHAT and free.get('bot_id')==BOT:
             return {'status':'disabled_owner_no_paid','observed_at':stamp()}
         p=self.db.get(ROOT+'policy') or {};cloud=self.db.get(CLOUD+'policy') or {}
         if not valid_scope(p) or cloud.get('enabled') is not True:return {'status':'disabled'}
         query={'cache_key':'like.'+ROOT+'inbox:*','payload->>status':'in.(queued,collecting,cloud_processing)','order':'payload->>created_at.asc,cache_key.asc','limit':1,'select':'cache_key,payload'}
+        if job_id is not None:query['cache_key']='eq.'+ROOT+'inbox:'+str(job_id)
         if cloud.get('dialogue_not_before'):query['payload->>created_at']='gte.'+cloud['dialogue_not_before']
         rows=self.db.api('GET','telegram_api_cache',query)
         if not rows:return {'status':'idle','observed_at':stamp()}
@@ -399,11 +403,11 @@ class Worker:
             return {'status':'attention_required','job_id':jid,'error_type':type(exc).__name__,'observed_at':stamp()}
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--bootstrap',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--bootstrap',action='store_true');parser.add_argument('--job-id',type=int);args=parser.parse_args()
     w=Worker()
     if args.bootstrap:
         state=w.bootstrap();print(json.dumps({'status':'bootstrapped','model':state['model'],'session_saved':True}));return
-    result=w.run()
+    result=w.run(args.job_id)
     w.db.update(CLOUD+'health',result) if w.db.get(CLOUD+'health') else w.db.once(CLOUD+'health',result)
     print(json.dumps(result))
     if result['status']=='attention_required':raise SystemExit(1)

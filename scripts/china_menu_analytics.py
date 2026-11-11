@@ -31,6 +31,7 @@ def _candidate(w,job,text):
  from china_loss_control import PLAN,digest
  wanted=directions(text);day=str(datetime.now(ZoneInfo('Europe/Moscow')).date())
  io=IO()
+ io.on_demand_menu=True
  from china_morning_rules_review import enabled
  if not enabled(io):raise ValueError('Режим расчёта без платной модели не включён')
  bundle=prepare(io,day)
@@ -39,6 +40,26 @@ def _candidate(w,job,text):
   if k not in wanted:s['rows']=[];s['count']=0;s['note']='Не выбрано в этом запросе.'
   elif s.get('status')=='unavailable':raise ValueError(LABELS[k]+': проверка не завершена')
   else:selected.extend(r['action']for r in s['rows']if r.get('ready') and r.get('action'))
+ # Cached complete-day statistics do not establish the current campaign/price/stock.
+ if selected:
+  from china_advertising_v2 import http
+  from china_advertising_growth import validate_raise
+  from china_advertising_full_growth import validate_addition
+  ids=sorted({a['campaign_id']for a in selected});current={}
+  for offset in range(0,len(ids),50):
+   group=ids[offset:offset+50];states=http(io,'/api/advert/v2/adverts?ids='+','.join(map(str,group))).get('adverts',[])
+   if {c['id']for c in states}!=set(group):raise ValueError('Текущие РК не подтверждены полностью')
+   current.update({c['id']:c for c in states})
+  io.daily_report_current_revalidation=True
+  for a in selected:
+   state=current[a['campaign_id']]
+   if state.get('currency')!='CNY'or state.get('status')!=9:raise ValueError('Состояние выбранной РК изменилось')
+   if a.get('direction')=='add':validate_addition(io,a,state)
+   else:
+    member=next((n for n in state['nm_settings']if n['nm_id']==a['nm_id']),None)
+    if not member:raise ValueError('Состав выбранной РК изменился')
+    if a['kind']=='ad_set_bid'and member['bids_kopecks'].get(a['placement'])!=a['old_minor']:raise ValueError('Ставка выбранного товара уже изменилась')
+    if a.get('direction')=='raise':validate_raise(io,a,state)
  signature=lambda a:tuple(a.get(k)for k in ('kind','campaign_id','nm_id','target_minor','old_minor'))
  keep={signature(a)for a in selected}
  for c in bundle['campaigns']:

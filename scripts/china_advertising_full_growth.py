@@ -143,10 +143,10 @@ def collect(io,s,day):
    nm=r['nm_id'];cid=r['campaign_id'];zone=r['placement'];typ='search'if zone=='search'else'recommendation';qkey=addition_key(r)
    if qkey not in v['addition_quotes']:
     try:
-     from china_addition_minimum import read_quote
+     from china_addition_minimum import read_quote,MinimumMembershipUnavailable
      v['addition_quotes'][qkey]=read_quote(io,v,r);save()
     except Exception as ex:
-     if 'HTTP 400'in str(ex):v['addition_quotes'][qkey]=dict(unavailable=str(ex),observed_at=stamp());save()
+     if isinstance(ex,MinimumMembershipUnavailable)or 'HTTP 400'in str(ex):v['addition_quotes'][qkey]=dict(status='checked_unavailable',unavailable=str(ex),observed_at=stamp(),bid_verified=False);save()
      else:v['quote_errors']['add:'+qkey]=str(ex);save()
   # A transient quote failure is retried by the existing next preparation, never relabelled no candidates.
   if v['quote_errors']:raise ValueError('Exact growth quotes unavailable')

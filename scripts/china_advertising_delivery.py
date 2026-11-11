@@ -1,5 +1,5 @@
 """Durable two-photo China delivery. Never repeat a sending/uncertain part."""
-import hashlib
+import hashlib,json
 from datetime import datetime,timezone
 CHAT=-1004342917488
 BOT=8780468043
@@ -38,9 +38,15 @@ def telegram_sender(io):
  if io.tg('getMe',{}).get('id')!=BOT:raise ValueError('Wrong China bot')
  def send(f):
   caption=f.get('caption','')
-  r=requests.post('https://api.telegram.org/bot'+io.bot+'/sendPhoto',data={'chat_id':str(CHAT),'caption':caption},files={'photo':(f['kind']+'.png',f['bytes'],'image/png')},timeout=60)
+  markup=None
+  if f.get('plan_id'):
+   from china_report_buttons import prepare
+   p=io.get('china_agent:loss_plan:v1:'+f['plan_id'])
+   if p:markup=prepare(io,p,f['family'])
+  data={'chat_id':str(CHAT),'caption':caption}
+  if markup:data['reply_markup']=json.dumps(markup,ensure_ascii=False)
+  r=requests.post('https://api.telegram.org/bot'+io.bot+'/sendPhoto',data=data,files={'photo':(f['kind']+'.png',f['bytes'],'image/png')},timeout=60)
   j=r.json()
   if not r.ok or not j.get('ok'):raise RuntimeError('Telegram send failed')
   return j['result']
  return send
-

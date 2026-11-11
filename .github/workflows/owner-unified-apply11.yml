@@ -29,4 +29,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: node scripts/owner_delete_incomplete_midday11.mjs
+        run: node scripts/owner_withdraw_price_diagnostic11.mjs

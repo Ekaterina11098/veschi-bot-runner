@@ -28,6 +28,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: |
-          node scripts/owner_daily_table_png11.mjs
-          node scripts/owner_advertising_drr_menu11.mjs
+        run: node scripts/owner_inline_search_preflight11.mjs

@@ -285,6 +285,13 @@ def run():
     if c.get(key) != e:
         raise RuntimeError('Frozen snapshot readback mismatch')
     publish_latest(c,key,e)
+    # The menu uses completed days; this optional cache is independent of the hourly report.
+    if (c.get('china_agent:main_menu:v1:policy')or{}).get('enabled') is True:
+        try:
+            from china_sales_menu_daily import collect as collect_menu_day
+            collect_menu_day(1)
+        except Exception:
+            print('Sales menu completed-day cache unavailable; hourly source retained')
     print(json.dumps(dict(status=e['status'], source_key=key, orders={k:v['status'] for k,v in e['orders'].items()}, advertising=e['advertising']['status'], wb_writes=0, telegram_calls=0)))
 
 

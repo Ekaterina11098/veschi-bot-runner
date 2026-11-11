@@ -1,98 +1,32 @@
-name: Recover owner confirmed report299
+name: Owner approved Advertising menu11Nov
 on:
   push:
     paths: ['.github/workflows/owner-unified-apply11.yml']
-permissions:
-  contents: read
+permissions: {contents: read}
 concurrency:
-  group: china-dialog-queue
+  group: china-owner-ui-menu11
   cancel-in-progress: false
 jobs:
-  watches:
+  verify-menu:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 18
-    concurrency:
-      group: china-dialog-data
-      cancel-in-progress: false
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-          fetch-depth: 1
-          filter: blob:none
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /scripts/
-            /.github/
-            /*request*.json
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/checkout@v4
-        with:
-          repository: Ekaterina11098/VESCHI_AI
-          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
-          token: ${{ secrets.SOURCE_READ_TOKEN }}
-          path: source
-          persist-credentials: false
-          filter: blob:none
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /analytics/
-            /business_agents/
-            /advertising_agent/
-            /china_agent/
-            /tests/
-            /*.py
-      - name: Install pinned read transport
-        run: pip install requests==2.32.5 Pillow==12.3.0 openai==3.42.1 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
-      - name: Adapt isolated dialog and test without credentials
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Verify navigation and preserve report confirmations
         run: |
-          python scripts/install_china_dialog.py
-          python scripts/install_china_buyout.py --root source
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_buyout_policy.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_search_analytics.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_control.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_ads.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_order_decline.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_new_ads.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_free_diagnostics.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_ad_retest.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_free_ads.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_sol_proposals.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_proposal_final_review.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_codex_ad_review.py
-          node --test scripts/test_codex_inbox.mjs scripts/test_codex_route.mjs
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_experience.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_analytic_dialog.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_profit_forecast31.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_conversion_context.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_analytic_evidence.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_product_diagnosis.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_growth_candidates.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_advertising_plans.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_bid_proposals.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_agent_reports.py
-          python scripts/china_chat_migration.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_once_report.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_advertising_scheduled_png.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_advertising_report_autonomy.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_reply_*.py'
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_catalog_price_command.py
-          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_zero_orders_stock.py
-      - name: Process only existing confirmed report299 and deliver native result
+          mkdir -p work/main-menu11 work/advertising-menu11
+          node scripts/test_main_menu.mjs
+          node scripts/test_sales_full_path.mjs
+          node scripts/test_direct_ads.mjs
+          node scripts/test_advertising_ui.mjs
+          node --experimental-strip-types scripts/test_inline_ingress.mjs
+      - name: Deliver exact owner approved menu once without marketplace calls
         env:
-          DIALOG_JOB_ID: "299"
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          OPENAI_API_KEY: ""
-          CHINA_ANALYSIS_BACKEND: managed_codex
-          PYTHONPATH: scripts:source
-        run: |
-          python scripts/conversion_watches.py --dialog-job 299
-          python scripts/owner_finish_confirmed_report299.py
+        run: node scripts/owner_remove_stale293_notice11.mjs

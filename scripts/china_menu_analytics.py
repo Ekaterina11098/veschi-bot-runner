@@ -22,6 +22,9 @@ def freeze(w,job,answer,blobs):
  if not old and not w.save(key,value,insert=True):raise ValueError('Concurrent menu artifact')
  return parts
 def candidate(w,job,text):
+ from china_analytic_dialog import reading
+ with reading():return _candidate(w,job,text)
+def _candidate(w,job,text):
  from china_loss_execute import IO
  from china_advertising_v2 import prepare
  from china_advertising_v2_png import render
@@ -68,6 +71,9 @@ def history_rows(raw,nm,first,last,key,observed):
   rows.append(dict(date=day,nm=str(nm),article=data[0]['product'].get('vendorCode',str(nm)),source_key=key,observed_at=observed,metrics=dict(period_from=day,period_to=day,scope='all_sources',clicks=item['openCount'],cart_count=item['cartCount'],orders=item['orderCount'])))
  return rows
 def funnel(w,job,text):
+ from china_analytic_dialog import reading
+ with reading():return _funnel(w,job,text)
+def _funnel(w,job,text):
  from china_wb_evidence import Reports,FUNNEL
  match=re.fullmatch(re.escape(PREFIX)+r'(\d+) (\d{4}-\d{2}-\d{2}) (\d{4}-\d{2}-\d{2})',text)
  if not match:raise ValueError('Некорректный запрос периода')
@@ -102,8 +108,37 @@ def prepare(w,job,inbox):
  if old:return True
  try:answer=funnel(w,job,text)if text.startswith(PREFIX)else candidate(w,job,text)
  except Exception as e:
-  w.save('china_agent:menu_analytics:v1:'+str(job['id']),dict(status='blocked',error_type=type(e).__name__,error=str(e),wb_writes=0,model_calls=0))
-  answer='Не удалось завершить '+('общую воронку'if text.startswith(PREFIX)else'подбор кандидатов')+': '+str(e)[:450]+'. Готового результата нет; изменения не выполнялись.'
+  import traceback
+  w.save('china_agent:menu_analytics:v1:'+str(job['id']),dict(status='blocked',error_type=type(e).__name__,error=str(e),trace=traceback.format_exc()[-5000:],wb_writes=0,model_calls=0))
+  answer='Не удалось получить все данные для '+('общей воронки'if text.startswith(PREFIX)else'подбора кандидатов')+'. Готового результата нет; изменения не выполнялись. Запрос №'+str(job['id'])+'.'
  out=dict(status='ready',job_id=job['id'],chat_id=job['chat_id'],input_message_id=inbox['input_message_id'],thread_id=inbox['thread_id'],answer=answer,created_at=datetime.now(timezone.utc).isoformat(),source_channel='deterministic_menu',wb_action_permission=False,model_calls=0)
  if not w.save(ROOT+'outbox:'+str(job['id']),out,insert=True):raise ValueError('Concurrent menu outbox')
  return True
+def recover(job_id):
+ from conversion_watches import runtime,saved_network_guard
+ from china_codex_ad_review import bind
+ w=runtime();rows=w.db('GET','business_agent_jobs',params={'id':'eq.'+str(job_id),'agent_id':'eq.china','chat_id':'eq.-1004342917488','select':'id,status,sender_id,chat_id,request_text,tool_trace'})
+ if len(rows)!=1 or rows[0]['sender_id']not in (5122667182,307200273):raise ValueError('Exact original menu request unavailable')
+ job=rows[0];inbox=w.get(ROOT+'inbox:'+str(job_id))or{}
+ if inbox.get('job_id')!=job_id or not recognized(inbox.get('request_text','')):raise ValueError('Original menu scope missing')
+ key='china_agent:menu_result:v1:'+str(job_id);old=w.get(key)or{}
+ if old.get('status')=='sent':return dict(status='already_sent',job_id=job_id,message_ids=old['message_ids'])
+ w.active_question_id=job_id;w.reply_id=inbox['input_message_id']
+ with saved_network_guard():
+  answer=old.get('answer')or(candidate(w,job,inbox['request_text'])if inbox['request_text'].startswith(CANDIDATES)else funnel(w,job,inbox['request_text']))
+  w.save(key,dict(status='prepared',job_id=job_id,answer=answer,wb_writes=0,model_calls=0))
+  from china_table_png import delivery_parts
+  from conversion_watches import split_message
+  parts=delivery_parts(w,job,answer,split_message);ids=[]
+  for i,part in enumerate(parts):
+   receipt_key='menu_result:'+str(job_id)+':'+str(i)
+   status=w.send_once(receipt_key,job['chat_id'],part);receipt=w.get('china_agent:conversion_watch_delivery:v1:'+receipt_key)or{}
+   if status!='sent'or receipt.get('status')!='sent'or not receipt.get('message_id'):raise ValueError('Menu result delivery not verified')
+   ids.append(receipt['message_id'])
+  bind(w,job_id,ids,answer)
+  w.save(key,dict(status='sent',job_id=job_id,answer=answer,message_ids=ids,wb_writes=0,model_calls=0))
+ return dict(status='sent',job_id=job_id,message_ids=ids)
+if __name__=='__main__':
+ import argparse,json
+ p=argparse.ArgumentParser();p.add_argument('--recover-job',type=int,required=True);args=p.parse_args()
+ print(json.dumps(recover(args.recover_job)))

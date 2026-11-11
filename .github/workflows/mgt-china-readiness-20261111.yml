@@ -67,3 +67,5 @@ jobs:
 
 
 # One-time read-only FBS check; no daily execution or Telegram notifications.
+
+# Resume metadata audit preserving missing stocks as unknown, no writes.

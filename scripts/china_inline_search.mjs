@@ -2,7 +2,7 @@ import {handleAdvertisingPath} from './china_advertising_ui.mjs';
 const ROOT='china_agent:advertising_ui:v1:',CHAT=-1004342917488,BOT=8780468043;
 const nonce=()=>[...crypto.getRandomValues(new Uint8Array(8))].map(n=>n.toString(16).padStart(2,'0')).join('');
 export async function handleInlineSearch(config,update,deps){
- const q=update.inline_query,cb=update.callback_query,match=/^cai1:([a-f0-9]{16}):(objects|cid\d{5,12})$/.exec(cb?.data||'');
+ const q=update.inline_query,cb=update.callback_query,match=/^cai1:([a-f0-9]{16}):(objects|cidAll|cid\d{5,12})$/.exec(cb?.data||'');
  if(!q&&!match)return null;
  const actor=q?.from||cb?.from,now=deps.now?deps.now():new Date();
  const empty=async()=>{if(q?.id)await deps.telegram('answerInlineQuery',{inline_query_id:q.id,results:[],cache_time:0,is_personal:true});return new Response('OK');};
@@ -15,10 +15,10 @@ export async function handleInlineSearch(config,update,deps){
  if(member?.user?.id!==actor.id||member.user.is_bot!==false||!(['creator','administrator','member'].includes(member.status)||member.status==='restricted'&&member.is_member===true))return q?await empty():alert('Поиск доступен участникам рабочей группы.');
  if(match){
   const result=await get(ROOT+'inline_result:'+match[1]);
-  if(!result||result.actor!==actor.id||Date.parse(result.expires_at)<=now.getTime()||!cb.inline_message_id||result.source_message?.chat?.id!==CHAT||result.source_message.from?.id!==BOT||match[2]!=='objects'&&!result.campaigns.includes(match[2].slice(3)))return alert('Откройте поиск заново из меню «Реклама».');
+  if(!result||result.actor!==actor.id||Date.parse(result.expires_at)<=now.getTime()||!cb.inline_message_id||result.source_message?.chat?.id!==CHAT||result.source_message.from?.id!==BOT||!['objects','cidAll'].includes(match[2])&&!result.campaigns.includes(match[2].slice(3)))return alert('Откройте поиск заново из меню «Реклама».');
   // The inline picker carries no financial data. Continue only in the bound work group,
   // using an actor-bound native session and a new bot-owned card.
-  const synthetic={...update,callback_query:{...cb,data:'cam1:'+match[1]+':'+match[2],message:result.source_message}};
+  const synthetic={...update,callback_query:{...cb,data:'cam1:'+match[1]+':'+(match[2]==='objects'&&result.campaigns.length?'cidAll':match[2]),message:result.source_message}};
   return handleAdvertisingPath(config,synthetic,{...deps,forceNewMessage:true});
  }
  if(!q.id||!['group','supergroup'].includes(q.chat_type)||typeof q.query!=='string'||q.query.length>100||q.offset)return empty();
@@ -39,7 +39,7 @@ export async function handleInlineSearch(config,update,deps){
   if(!await insert(ROOT+'inline_result:'+sid,{actor:actor.id,nm:row.nm,article:row.article,campaigns,source_message:context.source_message,expires_at}))throw Error('Inline result unavailable');
   const title=(metric==='drr'?'ДРР':'Рекламная конверсия')+' · '+row.article;
   const buttons=campaigns.slice(0,8).map(cid=>[{text:'РК '+cid,callback_data:'cai1:'+sid+':cid'+cid}]);
-  buttons.push([{text:campaigns.length?'Все РК товара':'Выбрать РК товара',callback_data:'cai1:'+sid+':objects'}]);
+  buttons.push([{text:campaigns.length?'Все РК товара':'Выбрать РК товара',callback_data:'cai1:'+sid+':'+(campaigns.length?'cidAll':'objects')}]);
   results.push({type:'article',id:sid,title:row.article,description:(metric==='drr'?'ДРР':'Конверсия')+' · '+(campaigns.length?campaigns.length+' РК':'проверить сохранённые данные'),input_message_content:{message_text:title+'\nВыберите РК товара:'},reply_markup:{inline_keyboard:buttons}});
  }
  const acknowledged=await deps.telegram('answerInlineQuery',{inline_query_id:q.id,results,cache_time:1,is_personal:true,next_offset:''});

@@ -37,7 +37,8 @@ class TestMenu(unittest.TestCase):
   rendered=[]
   def render(b):
    rendered.append(b);return [{'family':'drr','bytes':b'PNG'}]
-  mods={'china_loss_execute':module(IO=lambda:object()),'china_advertising_v2':module(prepare=lambda io,day:bundle),'china_advertising_v2_png':module(render=render),'china_loss_control':module(PLAN='plan:',digest=lambda x:str(len(x))),'china_morning_rules_review':module(enabled=lambda io:True),'china_table_png':module(KEY='table:',PREFIX='PNG:')}
+  from contextlib import nullcontext
+  mods={'china_analytic_dialog':module(reading=nullcontext),'china_loss_execute':module(IO=lambda:object()),'china_advertising_v2':module(prepare=lambda io,day:bundle),'china_advertising_v2_png':module(render=render),'china_loss_control':module(PLAN='plan:',digest=lambda x:str(len(x))),'china_morning_rules_review':module(enabled=lambda io:True),'china_table_png':module(KEY='table:',PREFIX='PNG:')}
   with patch.dict(sys.modules,mods):answer=m.candidate(w,job,m.CANDIDATES+'Новые товары для добавления. Новые повышения ставок.')
   self.assertEqual({a['id']for a in w.get('plan:dialog-menu-303')['items']},{'add','raise'})
   self.assertEqual(rendered[0]['recommendation_directions']['reduce']['rows'],[])

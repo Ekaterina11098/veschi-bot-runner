@@ -57,6 +57,16 @@ export function hourlyRows(cache,ctx){
   return {offset:off,...(metrics||{}),slot_msk:h.slot_msk,observed_at:observed,source_key:h.source_key,missing:missing||!valid(metrics)};
  });
 }
+export function stableAdCache(cache,ctx){
+ const days=dates(ctx.start,ctx.end),rows=(cache.daily||[]).filter(r=>days.includes(r.date));
+ const expected=[...new Set(rows.flatMap(r=>r.expected_ids||[]).map(String))];
+ const candidates=[...new Set(rows.map(r=>r.campaign))];
+ const ids=candidates.filter(cid=>days.every(date=>{const matches=rows.filter(r=>r.date===date&&r.campaign===cid);return matches.length===1&&valid(matches[0]);}));
+ if(!ids.length)return {cache,note:'Нет РК с подтверждённым рядом за все выбранные дни.'};
+ const filtered={...cache,daily:(cache.daily||[]).filter(r=>ids.includes(r.campaign)).map(r=>({...r,expected_ids:ids,archived_missing:[]}))};
+ const excluded=expected.filter(cid=>!ids.includes(cid));
+ return {cache:filtered,ids,note:'Постоянная выборка: '+ids.length+' РК с данными за все '+days.length+' дней. Это не весь кабинет.'+(excluded.length?' Без полного ряда: '+excluded.join(', ')+'.':'')};
+}
 export async function conversionView(cache,ctx,sid,now){
  const b=(text,op)=>({text,callback_data:'cam1:'+sid+':'+op}),nav=rows=>({inline_keyboard:[...rows,[ads],[home]]});
  if(ctx.view==='types')return {text:'Конверсии и воронка\nРекламная конверсия и общая воронка — отдельные источники.',reply_markup:nav([[b('Рекламная конверсия','ad')],[b('Общая воронка товара','general')]])};
@@ -85,8 +95,10 @@ export async function conversionView(cache,ctx,sid,now){
   const main=rows[0];if(main.observed_at&&(now.getTime()-Date.parse(main.observed_at)>4800000||main.slot_msk?.slice(0,13)!==new Date(now.getTime()+10800000).toISOString().slice(0,13)))out.push('Данные отстают; это последний сохранённый срез.');
   return {text:out.join('\n'),source_keys:rows.map(r=>r.source_key).filter(Boolean),reply_markup:nav([[b('Изменить период','period')],[b('Другой товар / РК','objects')],[b('Обновить из кэша','today')]])};
  }
+ const cohort=!general&&!ctx.cid?stableAdCache(cache,ctx):null;if(cohort)cache=cohort.cache;
  const points=dailyPoints(cache,ctx),missing=points.filter(p=>p.missing||!valid(p)).length,full=points.filter(p=>!p.missing&&valid(p)),total=full.length===points.length?sum(full):null;
  const out=[title,ctx.start+' — '+ctx.end+' · полные дни МСК',total?headline(total,ctx.kind):'Итог за весь период недоступен: неполное покрытие.','CR = сумма заказов / сумма '+(general?'открытий':'кликов')+' × 100%.'];
+ if(cohort)out.push(cohort.note);
  if(missing)out.push('Нет полного подтверждённого покрытия за '+missing+' дней; пропуски не заменены нулями.');
  const selected=points.slice((ctx.page||0)*5,(ctx.page||0)*5+5);
  if(ctx.view==='table')for(const p of selected){const previous=dailyPoints(cache,{...ctx,start:shift(p.date,-1),end:shift(p.date,-1)})[0],week=dailyPoints(cache,{...ctx,start:shift(p.date,-7),end:shift(p.date,-7)})[0];out.push('',p.date+': '+(p.missing?'нет полного покрытия':headline(p,ctx.kind)),'CR вчера: '+(previous.missing?'нет сопоставимых данных':pct(cr(previous)))+' · CR неделей ранее: '+(week.missing?'нет сопоставимых данных':pct(cr(week))));}

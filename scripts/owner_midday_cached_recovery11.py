@@ -4,7 +4,9 @@ from datetime import datetime,timezone
 from china_price_apply import IO
 from china_advertising_midday import prepare_midday,unavailable_history_report,MSK
 if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main required')
-io=IO();day=datetime.now(MSK).date().isoformat()
+os.environ['WB_TOKEN_3']='disabled-cache-only'
+io=IO();io.wb=lambda *a,**k:(_ for _ in ()).throw(RuntimeError('WB calls forbidden in cached recovery'))
+day=datetime.now(MSK).date().isoformat()
 if day!='2026-11-11':raise ValueError('Owner oneoff expired')
 source=io.get('china_agent:advertising_midday_inclusive:'+day+':v1')
 if not source or not source.get('batches')or source.get('day')not in (None,day):raise ValueError('Current source unavailable')

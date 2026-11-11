@@ -155,6 +155,7 @@ def _render_legacy(bundle):
  if not selected:
   d.text((44,y),'Проверены все РК: нет новых пополнений или неразобранных бюджетных рисков.',font=font(29),fill=INK);y+=55
  footer='Резерв на 3 дня = расход за 3 завершённых дня; нехватка = резерв − остаток. Сумма округлена вверх до 50 ¥, минимум WB '+money(bundle.get('budget_minimum_topup_cny',100))+' ¥. Пополнение — только после отдельной команды на готовую рекомендацию. Решения по РК — в рекламном PNG.'
+ if bundle.get('owner_unified_approval'):footer+=' Реклама и пополнения — единый план. Ответ «Сделай всё» на любой из двух PNG выполняет весь согласованный набор один раз.'
  for line in wrap(d,footer,W-88,24):d.text((44,y+10),line,font=font(24),fill='#536b79');y+=32
  finish(im,y,'budgets',actions)
  for family in ['drr','budgets']:

@@ -1,17 +1,20 @@
-name: Owner full midday recovery11Nov checked additions
+name: Owner fully recalculate price controls11Nov
 on:
   push:
     paths: ['.github/workflows/owner-unified-apply11.yml']
 permissions:
   contents: read
 concurrency:
-  group: china-midday-advertising-report
+  group: china-price-reports
   cancel-in-progress: false
 jobs:
-  daily:
+  report:
     if: github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 18
+    concurrency:
+      group: china-price-report-data
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,18 +43,36 @@ jobs:
             /tests/
             /*.py
       - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0 openai==3.42.1 > "$RUNNER_TEMP/install.log" 2>&1
-      - name: Check advertising arithmetic and duplicate safeguards
-        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
-      - name: Read current China day and publish exact owner-approved report or fully prepare next green report
+        with:
+          python-version: '3.12'
+      - name: Install pinned transport and existing worker dependencies
+        run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 openai==3.42.1 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Deliver exact China intraday report
         working-directory: source
         env:
-          OPENAI_API_KEY: "" # Owner: no model API for this report; Telegram dialogue is separate.
-          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: PYTHONPATH=../scripts:. python ../scripts/china_advertising_midday.py
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          PYTHONPATH: ../scripts:.
+          REPORT_ACTION: verify
+        run: |
+          python ../scripts/china_chat_migration.py --root .
+          python ../scripts/install_china_codex_price.py --root .
+          python ../scripts/install_china_order_coverage.py
+          python ../scripts/install_china_buyout.py
+          python ../scripts/check_china_installed_price_step.py china_agent/demand.py
+          python ../scripts/test_china_price_pending.py
+          python ../scripts/test_china_price_delivery.py
+          python ../scripts/test_price_repair_install.py
+          python ../scripts/test_price_review_blocks.py
+          python ../scripts/test_price_period.py
+          python ../scripts/test_price_selection.py
+          cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
+          cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
+          cp ../scripts/china_price_brief.py china_agent/price_brief.py
+          cp ../scripts/china_buyer_price_forecast.py china_agent/buyer_price_forecast.py
+          python ../scripts/owner_price_full_recalculation11.py

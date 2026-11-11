@@ -1,4 +1,4 @@
-import sys, types, unittest, asyncio
+import sys, types, unittest, asyncio, json, hashlib
 from unittest.mock import patch
 from china_codex_runtime import Tools, SPECS, final_report_answer
 
@@ -7,6 +7,23 @@ class W:
  def catalog(self): return [('1473243817','455-NoelBag-yellow')]
 
 class ReportContract(unittest.TestCase):
+ def test_native_recovery_bound_to_original_product_and_dates(self):
+  from china_menu_analytics import native_funnel_request,PREFIX
+  text='/codex show general funnel for 021 nmid 1473244991 for 2026-11-05 to 2026-11-11 full msk days. read only.'
+  scope={'nm_id':1473244991,'date_from':'2026-11-05','date_to':'2026-11-11'}
+  self.assertEqual(native_funnel_request(text,scope),PREFIX+'1473244991 2026-11-05 2026-11-11')
+  for wrong in [dict(scope,nm_id=1473244990),dict(scope,date_from='2026-11-01'),dict(scope,execute=True)]:
+   with self.assertRaises(ValueError):native_funnel_request(text,wrong)
+ def test_restored_thread_gets_current_tools_without_rewriting_history(self):
+  from china_codex_appserver import restore_rollout,encode
+  history=b'{"type":"response_item","payload":{"text":"retained work history"}}\n'
+  raw=json.dumps({'type':'session_meta','payload':{'id':'test-thread','dynamic_tools':[{'name':'old'}]}}).encode()+b'\n'+history
+  state={'thread_id':'test-thread','rollout_gzip_b64':encode(raw),'rollout_sha256':hashlib.sha256(raw).hexdigest()}
+  restored=restore_rollout(state,SPECS)
+  self.assertEqual(restored.split(b'\n',1)[1],history)
+  self.assertEqual(json.loads(restored.splitlines()[0])['payload']['dynamic_tools'],SPECS)
+  state['rollout_sha256']='incorrect'
+  with self.assertRaises(ValueError):restore_rollout(state,SPECS)
  def tools(self):
   with patch.dict(sys.modules,{'china_analytic_dialog':types.SimpleNamespace(Analyst=lambda *a:None)}):
    return Tools(W(),{'id':303})

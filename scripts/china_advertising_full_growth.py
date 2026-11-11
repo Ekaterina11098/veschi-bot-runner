@@ -118,6 +118,8 @@ def collect(io,s,day):
    for nm in held_model.get('rows',{}):v['economics']['missing'].pop(nm,None)
    for nm,e in v['economics']['rows'].items():e.update(published_stock=v['published_stock']['amounts'].get(nm),published_stock_observed_at=v['published_stock']['observed_at'],fx_rub_per_cny=float(v['fx']['rub_per_cny']),fx_date=day)
    save()
+  from china_held_evidence import merge_held
+  merge_held(v);save()
   if 'campaigns'not in v:
    v['campaigns']=http(io,'/api/advert/v2/adverts?ids='+','.join(map(str,s['ids'])))['adverts'];save()
   if 'budgets'not in v:

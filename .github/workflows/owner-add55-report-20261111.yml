@@ -37,7 +37,7 @@ jobs:
           from china_advertising_delivery import deliver,telegram_sender
           io=IO();K='china_agent:owner_add55_report:2026-11-11:v1'
           old=io.get(K)
-          if old:raise SystemExit('Existing revision; no replay')
+          if old and old.get('status')!='prepared':raise SystemExit('Existing delivered/uncertain revision; no replay')
           a=io.get('china_agent:advertising_artifacts:2026-11-11:v2');assert a and a['status']=='frozen'
           bundle=copy.deepcopy(a['bundle']);c=next(c for c in bundle['campaigns']if c['id']==41680341)
           r=next(r for r in c['focus'] if r['nm']==1473243908)
@@ -55,8 +55,8 @@ jobs:
           f.update(plan_id=p['plan_id'],plan_sha256=p['plan_sha256'])
           f['caption']='Китай · реклама · 11 ноября. Обновлённый план взамен сообщения854: добавлено исключение55-NoelBag-green из РК41680341. Всего7 действий. Ответьте «Сделай всё» на этот PNG для совместного выполнения. Бюджетный отчёт855 остаётся отдельным.'
           rev=dict(status='prepared',source_artifact='china_agent:advertising_artifacts:2026-11-11:v2',replaces_message_id=854,bundle=bundle,plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],png_b64=base64.b64encode(f['bytes']).decode(),wb_writes=0,owner_quote='добавь в ТГ, уберем все вместе',prepared_at=datetime.now(timezone.utc).isoformat())
-          assert io.create(K,rev)
-          result=deliver(io,'2026-11-11-owner55',[f],telegram_sender(io),binder=lambda f,r:bind(io,f,r))
+          if not old:assert io.create(K,rev)
+          result=deliver(io,'2026-11-11-owner55',[f],telegram_sender(io),binder=lambda f,r:bind(io,f,r),expected_families={'drr'})
           assert result['status']=='delivered'
           rev.update(status='sent',delivery=result,completed_at=datetime.now(timezone.utc).isoformat());io.put(K,rev)
           print(json.dumps({'status':'sent','message_ids':[x['message_id']for x in result['parts']],'actions':7,'wb_writes':0}))

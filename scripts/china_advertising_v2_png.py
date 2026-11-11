@@ -100,15 +100,17 @@ def _render_legacy(bundle):
  for key in ['period','last']:
   known=[c for c in bundle['campaigns'] if c.get(key) is not None]
   missing=[c for c in bundle['campaigns'] if c.get(key) is None and not c.get('never_started')]
-  totals.append(None if missing else dict(spend=sum(c[key]['spend'] for c in known),amount=sum(c[key]['amount'] for c in known)))
+  unapproved=[c for c in missing if str(c['id'])not in(bundle.get('approved_statistics_exceptions')or{})]
+  totals.append(None if unapproved else dict(spend=sum(c[key]['spend'] for c in known),amount=sum(c[key]['amount'] for c in known)))
  p,day=totals
  d.rounded_rectangle((24,y+10,W-24,y+190),18,fill='white')
- d.text((44,y+30),'ИТОГО · кабинет Китай (token_3)',font=font(29,True),fill=NAVY)
+ d.text((44,y+30),('ИТОГО · подтверждённые данные · кроме РК '+', '.join((bundle.get('approved_statistics_exceptions')or{}))) if bundle.get('approved_statistics_exceptions') else 'ИТОГО · кабинет Китай (token_3)',font=font(29,True),fill=NAVY)
  d.text((44,y+82),'Расход 3 дня: '+money(p['spend'] if p else None)+' ¥   |   Расход день: '+money(day['spend'] if day else None)+' ¥',font=font(29,True),fill=INK)
  for x,label,value in [(44,'Общая ДРР 3 дня: ',p),(1050,'Общая ДРР день: ',day)]:
   d.text((x,y+132),label,font=font(29,True),fill=INK)
   d.text((x+d.textlength(label,font=font(29,True)),y+132),pct(value),font=font(29,True),fill=color(value))
  footer='ДРР = сумма расходов / сумма рекламных заказов до скидок WB. Дни без заказов входят в расходы. Нет заказов — сумма заказов 0, ДРР не вычисляется. Исторические расходы исключённых товаров и архивных РК включены в итог. Атрибуция не равна выкупам и прибыли. Новые тесты отмечены; период может включать прежний состав. Итог относится только к кабинету Китай.'
+ if bundle.get('approved_statistics_exceptions'):footer+=' РК '+', '.join(bundle['approved_statistics_exceptions'])+': новый запуск; статистика WB не сформирована, в числовой итог не включена.'
  for j,line in enumerate(wrap(d,footer,W-88,24)):d.text((44,y+218+j*31),line,font=font(24),fill='#536b79')
  finish(im,y+240+len(wrap(d,footer,W-88,24))*31,'drr',actions)
  # Owner-approved three columns; no row without a known cash shortfall.
@@ -174,7 +176,9 @@ def validate_mandatory_format(bundle):
   if any(k not in c for k in ['period','last','name','status']):
    raise ValueError('Mandatory campaign row missing historical/current metrics')
   if c['period'] is None or c['last'] is None:
-   raise ValueError('Complete campaign statistics required before publication: '+str(c['id']))
+   exception=(bundle.get('approved_statistics_exceptions')or{}).get(str(c['id']))or{}
+   if not(exception.get('owner_id')==5122667182 and exception.get('reason')=='new_campaign_no_wb_statistics' and exception.get('owner_accepted_separate_row')is True and c.get('created')==days[-1]):
+    raise ValueError('Complete campaign statistics required before publication: '+str(c['id']))
   for metrics in[c['period'],c['last']]:
    if metrics is not None and any(k not in metrics for k in['spend','amount','orders','clicks']):
     raise ValueError('Mandatory campaign metrics incomplete')

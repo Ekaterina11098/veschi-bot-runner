@@ -60,7 +60,8 @@ class Tools:
    from china_economics_recovery import collect
    recovery=collect(self.w,self.job)
    unresolved=[r for r in recovery['rows']if r['unresolved']]
-   if unresolved:return dict(status='blocked_after_addressed_collection',economics_recovery=recovery,note='Адресный сбор выполнен. Нужных исторических данных/модели действительно нет в проверенных источниках. Не называй это отсутствием всех кандидатов и не отправляй пустой статистический PNG вместо готового плана.')
+   # Missing settled samples are uncertainty, not a cabinet-wide veto. The typed
+   # selector keeps per-SKU model/current-state/own-sample gates and reports coverage.
    from china_menu_analytics import candidate,CANDIDATES
    labels={'add':'Новые товары для добавления.','raise':'Новые повышения ставок.','reduce':'Новые снижения ставок.','exclude':'Новые исключения товаров.'}
    return dict(answer=candidate(self.w,self.job,CANDIDATES+' '.join(labels[k]for k in args['directions'])),prepared_for_exact_job=self.job['id'])

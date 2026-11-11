@@ -1,32 +1,54 @@
-name: Owner approved Advertising menu11Nov
+name: Owner recover missing midday report11Nov
 on:
   push:
     paths: ['.github/workflows/owner-unified-apply11.yml']
-permissions: {contents: read}
+permissions:
+  contents: read
 concurrency:
-  group: china-owner-ui-menu11
+  group: china-midday-advertising-report
   cancel-in-progress: false
 jobs:
-  verify-menu:
-    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+  daily:
+    if: github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false, sparse-checkout: scripts}
-      - uses: actions/setup-node@v4
-        with: {node-version: '24'}
-      - name: Verify navigation and preserve report confirmations
-        run: |
-          mkdir -p work/main-menu11 work/advertising-menu11
-          node scripts/test_main_menu.mjs
-          node scripts/test_sales_full_path.mjs
-          node scripts/test_direct_ads.mjs
-          node scripts/test_advertising_ui.mjs
-          node --experimental-strip-types scripts/test_inline_ingress.mjs
-      - name: Deliver exact owner approved menu once without marketplace calls
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /.github/
+            /*request*.json
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /tests/
+            /*.py
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 python-dotenv simplejson==4.2.0 pillow==11.3.0 openai==3.42.1 > "$RUNNER_TEMP/install.log" 2>&1
+      - name: Check advertising arithmetic and duplicate safeguards
+        run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
+      - name: Read current China day and publish exact owner-approved report or fully prepare next green report
+        working-directory: source
         env:
+          OPENAI_API_KEY: "" # Owner: no model API for this report; Telegram dialogue is separate.
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: node scripts/owner_three_report_fixes11.mjs
+        run: PYTHONPATH=../scripts:. python ../scripts/owner_midday_cached_recovery11.py

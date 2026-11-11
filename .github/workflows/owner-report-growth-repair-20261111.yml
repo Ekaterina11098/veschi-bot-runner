@@ -1,0 +1,69 @@
+name: Owner complete report categories and missing statistics
+on:
+  push:
+    paths: ['.github/workflows/owner-report-growth-repair-20261111.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-advertising-daily
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Read exact categories and quotes; no WB writes or Telegram
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: unused-no-telegram
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import copy,requests,time
+          from datetime import datetime,timezone
+          from china_price_apply import IO
+          from china_growth_subjects import ensure_subjects
+          from china_growth_placements import placement_candidates,addition_key
+          from china_advertising_v2 import http
+          io=IO();K='china_agent:owner_report_complete:2026-11-11:v1:growth-repair'
+          if io.get(K):raise SystemExit('Existing read journal; no replay')
+          e=dict(status='reading',wb_writes=0,telegram_calls=0,model_calls=0,observed_at=datetime.now(timezone.utc).isoformat());assert io.create(K,e)
+          try:
+           v=copy.deepcopy(io.get('china_agent:advertising_full_growth:2026-11-11:v1:inputs'))
+           s=io.get('china_agent:advertising_source:2026-11-11:v2')
+           ensure_subjects(io,v)
+           # Refuse campaign/category disagreement rather than infer identity.
+           for cp in v['campaigns']:
+            for n in cp['nm_settings']:
+             actual=v['subjects']['by_nm'].get(str(n['nm_id']))
+             if actual is not None:assert actual==n['subject']['id']
+           v['addition_candidates']=placement_candidates(s,v)
+           e.update(subject_count=len(v['subjects']['by_nm']),candidates=v['addition_candidates'],inputs=v);io.put(K,e)
+           v['addition_quotes']={}
+           for a in v['addition_candidates']:
+            time.sleep(1)
+            v['addition_quotes'][addition_key(a)]=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=a['campaign_id'],nm_ids=[a['nm_id']],payment_type='cpc',placement_types=['search'if a['placement']=='search'else'recommendation']))
+            e['inputs']=v;io.put(K,e)
+           # One completed-day read, not another three-day request immediately followed by it.
+           r=requests.get('https://advert-api.wildberries.ru/adv/v3/fullstats',params={'ids':'41756218','beginDate':'2026-11-10','endDate':'2026-11-10'},headers={'Authorization':io.token},timeout=40)
+           e['stats417_http']=r.status_code
+           if r.ok:e['stats417']=r.json()
+           else:e['stats417_error']='HTTP '+str(r.status_code)
+           r=requests.post('https://advert-api.wildberries.ru/api/advert/v2/budget',json={'advertIds':[41756218]},headers={'Authorization':io.token},timeout=40)
+           e['budget417_http']=r.status_code
+           if r.ok:e['budget417']=r.json()
+           e.update(status='prepared',inputs=v,completed_at=datetime.now(timezone.utc).isoformat());io.put(K,e)
+          except Exception as ex:
+           e.update(status='failed',error=type(ex).__name__+': '+str(ex)[:500]);io.put(K,e);raise
+          print('Private exact evidence saved; publication and WB writes: 0')
+          PY

@@ -1,4 +1,4 @@
-name: Owner fully verify exact price controls11Nov
+name: Owner verify approved report contract11Nov
 on:
   push:
     paths: ['.github/workflows/owner-unified-apply11.yml']

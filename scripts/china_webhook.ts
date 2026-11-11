@@ -1,3 +1,4 @@
+import {handleSalesPath} from './china_sales_ui.mjs';
 import {handleMainMenu} from './china_main_menu.mjs';
 import {handleReportButtons} from './china_report_buttons.mjs';
 import {handlePriceButtons} from './china_price_buttons.mjs';
@@ -64,7 +65,14 @@ async function telegramToken():Promise<string>{
 async function telegram(method: string, body: unknown) {
   const token=await telegramToken();
   if(!token)throw new Error('Bot unavailable');
-  const r=await fetch('https://api.telegram.org/bot'+token+'/'+method,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(8000)});
+  let options:any={method:'POST',signal:AbortSignal.timeout(20000)};
+  if((body as any)?.photo_bytes instanceof Uint8Array){
+   const data:any={...(body as any)},bytes=data.photo_bytes;delete data.photo_bytes;
+   const form=new FormData();
+   for(const [key,value]of Object.entries(data))form.append(key,typeof value==='object'?JSON.stringify(value):String(value));
+   form.append(method==='sendPhoto'?'photo':'chart',new Blob([bytes],{type:'image/png'}),'sales.png');options.body=form;
+  }else {options.headers={'Content-Type':'application/json'};options.body=JSON.stringify(body);}
+  const r=await fetch('https://api.telegram.org/bot'+token+'/'+method,options);
   const value=await r.json();if(!value.ok)throw new Error('Telegram verification failed');return value.result;
 }
 
@@ -269,6 +277,8 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     }
     const callback=update.callback_query;
     if(callback){
+      const salesResponse=await handleSalesPath(config,update,{database,telegram});
+      if(salesResponse)return salesResponse;
       const menuResponse=await handleMainMenu(config,update,{database,telegram});
       if(menuResponse)return menuResponse;
       const reportButton=await handleReportButtons(config,callback,update.update_id,{database,telegram,digest,launch});
@@ -283,6 +293,8 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     if(!text)return new Response('OK');
     const first=text.split(/\s+/,1)[0];const parsed=/^\/(\S+?)(?:@([a-z0-9_]+))?$/i.exec(first);const cmd=parsed?.[1].toLowerCase();
     if(parsed?.[2]&&parsed[2].toLowerCase()!==config.bot_username?.toLowerCase())return new Response('OK');
+    const salesResponse=await handleSalesPath(config,update,{database,telegram});
+    if(salesResponse)return salesResponse;
     const menuResponse=await handleMainMenu(config,update,{database,telegram});
     if(menuResponse)return menuResponse;
     const bridgeInput=await acceptCodex(config,message,text,update.update_id,database,(job:number)=>launch(job,'dialog_free'));

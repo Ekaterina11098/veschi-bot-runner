@@ -57,7 +57,7 @@ def main():
     return overlay(value,models,at)
    return value
  china_loss_execute.IO=ReviewedIO
- job=dict(id='owner-moscow-economics-20261111',chat_id=-1004342917488,sender_id=5122667182,request_text='Завершить подбор после расчета шуб из Москвы')
+ job=dict(id='owner-moscow-economics-20261111-final',chat_id=-1004342917488,sender_id=5122667182,request_text='Завершить подбор после расчета шуб из Москвы')
  try:
   answer=candidate(w,job,CANDIDATES+'Все четыре направления: добавление, повышение, снижение, исключение.')
   review=w.get('china_agent:menu_analytics:v1:'+str(job['id']))or{}

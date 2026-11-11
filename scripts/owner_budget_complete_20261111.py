@@ -10,7 +10,7 @@ from china_budget_ready_model import attach
 from china_advertising_v2 import history
 def run():
  io=IO();K='china_agent:owner_budget_complete:2026-11-11:v1:read'
- if io.get(K):raise SystemExit('Existing exact budget read')
+ if (io.get(K)or{}).get('status')=='read':raise SystemExit('Existing exact budget read')
  s=copy.deepcopy(io.get('china_agent:advertising_source:2026-11-11:v2'));v=merge_held(s['full_growth_inputs'])
  prices=current_prices(io,[1473245494,1473244000]);stock=read_stock([p['article']for p in prices['rows']]);pub=published_stock(io,prices,[1473245494,1473244000])
  econ=model_rows(dict(products=v['own'],prices=prices,stock=stock,fx=dict(rub_per_cny=v['fx']['rub_per_cny'])),io.get('china_agent:new_ad_economics_policy:v1'),io.get('china_agent:expected_profit_delivery_model:v1'))
@@ -27,7 +27,7 @@ def run():
   if c['id']in cash:c['balance']=cash[c['id']]['total']
  b['budget_observed_at']=s['observed_at'];b['budget_balance_observed_at_iso']=s['observed_at']
  b=attach(b,s,history(s['executions']))
- out=dict(status='read',source=s,bundle=b,prices=prices,stock=stock,published_stock=pub,economics=econ,balances=balances,observed_at=s['observed_at'],wb_writes=0,telegram_calls=0)
- assert io.create(K,out);assert io.get(K)==out
+ out=dict(status='read',bundle=b,prices=prices,stock=stock,published_stock=pub,economics=econ,balances=balances,observed_at=s['observed_at'],wb_writes=0,telegram_calls=0)
+ io.put(K,out);assert io.get(K)==out
  print('Exact budget evidence completed privately; no writes/sends')
 if __name__=='__main__':run()

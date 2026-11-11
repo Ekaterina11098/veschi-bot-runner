@@ -173,6 +173,8 @@ def validate_mandatory_format(bundle):
   if c.get('never_started'):continue
   if any(k not in c for k in ['period','last','name','status']):
    raise ValueError('Mandatory campaign row missing historical/current metrics')
+  if c['period'] is None or c['last'] is None:
+   raise ValueError('Complete campaign statistics required before publication: '+str(c['id']))
   for metrics in[c['period'],c['last']]:
    if metrics is not None and any(k not in metrics for k in['spend','amount','orders','clicks']):
     raise ValueError('Mandatory campaign metrics incomplete')

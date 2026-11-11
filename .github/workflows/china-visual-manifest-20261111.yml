@@ -8,19 +8,26 @@ permissions:
 jobs:
   manifest:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
+      - run: pip install requests
       - name: Read current photo order only
         env:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
         shell: python
         run: |
-          import os,json,time,urllib.request
+          import os,json,time,requests
           cursor={'limit':100};total=0
           for page in range(40):
            body={'settings':{'sort':{'ascending':True},'cursor':cursor,'filter':{'withPhoto':-1}}}
-           req=urllib.request.Request('https://content-api.wildberries.cn/content/v2/get/cards/list',data=json.dumps(body).encode(),headers={'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'})
-           with urllib.request.urlopen(req,timeout=60) as r: b=json.load(r)
+           for attempt in range(3):
+            try:
+             r=requests.post('https://content-api.wildberries.cn/content/v2/get/cards/list',json=body,headers={'Authorization':os.environ['WB_TOKEN_3']},timeout=(20,90))
+             if r.status_code==429:raise RuntimeError('Rate limit: stop')
+             r.raise_for_status();b=r.json();break
+            except requests.exceptions.RequestException:
+             if attempt==2:raise
+             time.sleep(5)
            b=b.get('data',b) if 'cards' not in b else b
            rows=b['cards']
            for c in rows:

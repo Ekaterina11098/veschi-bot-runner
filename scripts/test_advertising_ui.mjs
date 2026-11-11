@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {advertisingMenu,handleAdvertisingPath,dailyPoints,hourlyRows,candidateRequest,conversionView} from './china_advertising_ui.mjs';
+import {stableAdCache,advertisingMenu,handleAdvertisingPath,dailyPoints,hourlyRows,candidateRequest,conversionView} from './china_advertising_ui.mjs';
 import {handleSalesPath} from './china_sales_ui.mjs';
 const CHAT=-1004342917488,BOT=8780468043,now=new Date('2026-11-11T10:30:00Z'),config={active:true,chat_id:CHAT,bot_id:BOT};
 const c=new Map(),messages=new Map(),calls=[],jobs=new Map();let u=10,next=1000,requests=0;
@@ -64,3 +64,9 @@ const point=dailyPoints(cache,{start:'2026-11-10',end:'2026-11-10',kind:'ad',cid
 assert.match(candidateRequest(),/Все четыре направления/);
 const bad={...cache,daily:[{...cache.daily[0],expected_ids:[12345678,99999999]}]};assert.equal(dailyPoints(bad,{start:cache.daily[0].date,end:cache.daily[0].date,kind:'ad'})[0].missing,true);
 console.log('PASS four Advertising buttons; direct growth/decline; actor-bound sessions; amount/count and both bases; conversion graph/table/calendar; separate general funnel; same-hour/coverage guards; candidate requests once per actor/day/filter, no WB commands; duplicate delivery.');
+
+
+const cohortFixture=structuredClone(cache);cohortFixture.daily.push({date:'2026-11-04',campaign:'99999999',clicks:500,orders:50,expected_ids:[12345678,99999999],source_key:'partial-campaign',observed_at:'2026-11-11T05:00:00Z'});
+const stable=stableAdCache(cohortFixture,{start:'2026-11-04',end:'2026-11-10'});assert.deepEqual(stable.ids,['12345678']);assert.match(stable.note,/не весь кабинет/);
+const stableView=await conversionView(cohortFixture,{view:'graph',kind:'ad',period:'range',start:'2026-11-04',end:'2026-11-10'},'a'.repeat(16),now);assert.match(stableView.text,/Постоянная выборка/);assert.match(stableView.text,/2%/);assert.doesNotMatch(stableView.text,/Итог за весь период недоступен/);
+console.log('PASS stable campaign intersection preserves real graph despite incomplete other campaigns; no fabricated zero or changing cohort.');

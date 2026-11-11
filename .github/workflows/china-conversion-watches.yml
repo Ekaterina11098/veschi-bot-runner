@@ -154,6 +154,8 @@ jobs:
             PYTHONPATH=scripts:source python scripts/china_free_ad_work.py --job-id "$DIALOG_JOB_ID"
           elif [ "$MODE" = codex_setup ]; then
             PYTHONPATH=scripts:source python scripts/china_codex_runtime.py --setup-notice
+          elif [ "$MODE" = report_keyboard_repair ]; then
+            PYTHONPATH=scripts:source python scripts/china_report_keyboard.py
           elif [ "$MODE" = moscow_fur_finish_deliver ]; then
             PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_menu_current_inputs.py
             PYTHONPATH=scripts:source python scripts/china_moscow_fur_finish.py

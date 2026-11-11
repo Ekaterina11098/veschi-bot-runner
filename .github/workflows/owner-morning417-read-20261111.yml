@@ -26,19 +26,21 @@ jobs:
           PYTHONPATH: scripts
         run: |
           python - <<'PY'
-          import requests,time
+          import requests,time,copy
           from datetime import datetime,timezone
           from china_price_apply import IO
-          io=IO();K='china_agent:owner_morning417:2026-11-11:v1:read'
+          io=IO();K='china_agent:owner_morning_quotes:2026-11-11:v1:read'
           if io.get(K):raise SystemExit('Existing read; no replay')
           e=dict(status='reading',wb_writes=0,telegram_calls=0,observed_at=datetime.now(timezone.utc).isoformat());assert io.create(K,e)
-          calls=[('batch_history','https://advert-api.wildberries.ru/adv/v3/fullstats',{'ids':'40964981,41756218','beginDate':'2026-11-08','endDate':'2026-11-10'}),('cn_history','https://advert-api.wildberries.cn/adv/v3/fullstats',{'ids':'41756218','beginDate':'2026-11-10','endDate':'2026-11-10'}),('lifetime','https://advert-api.wildberries.ru/adv/v3/fullstats',{'ids':'41756218','beginDate':'2026-11-10','endDate':'2026-11-11'}),('states','https://advert-api.wildberries.ru/api/advert/v2/adverts',{'ids':'40964981,41155909,41332083,41756218'})]
-          for i,(label,url,params) in enumerate(calls):
-           if i:time.sleep(21)
+          v=io.get('china_agent:owner_report_complete:2026-11-11:v1:growth-repair2')['inputs']
+          ids=[c['id']for c in v['campaigns']if c['status']in[9,11]]
+          calls=[('exact_product_other_placement','POST','/api/advert/v1/bids/min',dict(advert_id=41296363,nm_ids=[1473242577],payment_type='cpc',placement_types=['search'])),('budgets','POST','/api/advert/v2/budget',{'advertIds':ids}),('states','GET','/api/advert/v2/adverts?ids='+','.join(map(str,ids)),None)]
+          for label,method,path,body in calls:
+           time.sleep(3.5)
            try:
-            r=requests.get(url,params=params,headers={'Authorization':io.token},timeout=25)
+            r=requests.request(method,'https://advert-api.wildberries.ru'+path,json=body,headers={'Authorization':io.token},timeout=35)
             e[label]={'http':r.status_code,'data':r.json() if r.content else None}
            except Exception as ex:e[label]={'error':type(ex).__name__}
            io.put(K,e)
-          e['status']='read';io.put(K,e);print('Dated bounded read saved')
+          e['status']='read';io.put(K,e);print('Exact dated placement quotes and balances saved')
           PY

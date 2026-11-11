@@ -508,6 +508,14 @@ def build(s,minima=None):
 def prepare(io,day):
  s=dict(collect(io,day));s['intraday']=io.get('china_agent:advertising_intraday:'+day+':v1') or {};minimums={}
  s=include_archived(io,s,day)
+ if getattr(io,'on_demand_menu',False):
+  ids=sorted({cp['id']for b in s['batches'].values()for cp in b['campaigns']['adverts']});states={}
+  for offset in range(0,len(ids),50):
+   group=ids[offset:offset+50];rows=http(io,'/api/advert/v2/adverts?ids='+','.join(map(str,group))).get('adverts',[])
+   if {cp['id']for cp in rows}!=set(group):raise ValueError('Current menu campaign coverage incomplete')
+   states.update({cp['id']:cp for cp in rows})
+  for batch in s['batches'].values():batch['campaigns']['adverts']=[states[cp['id']]for cp in batch['campaigns']['adverts']]
+  s['current_state_observed_at']=stamp()
  s=refresh_budget_context(io,s,day)
  from china_campaign_pause_reason import attach_previous
  s=attach_previous(io,s)
@@ -518,7 +526,8 @@ def prepare(io,day):
  s=collect_full_growth(io,s,day) if full_growth_enabled(io) else enrich_economics(io,s,rough,day)
  save(io,'china_agent:advertising_source:'+day+':v2',s)
  for c in rough['campaigns']:
-  ids=[r['nm'] for r in c['focus'] if not r.get('pending_first_day') and 'Выполнено.' not in r['decision']]
+  members={n['nm_id']for b in s['batches'].values()for cp in b['campaigns']['adverts']if cp['id']==c['id']for n in cp.get('nm_settings',[])}
+  ids=sorted({r['nm'] for r in c['focus'] if r['nm']in members and not r.get('pending_first_day') and 'Выполнено.' not in r['decision']})
   if not ids or c['status']!=9 or c['payment']!='cpc':continue
   zone='search' if c['zone']=='поиск' else 'recommendation'
   j=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=c['id'],nm_ids=ids,payment_type='cpc',placement_types=[zone]))

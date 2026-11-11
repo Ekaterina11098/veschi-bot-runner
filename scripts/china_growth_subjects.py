@@ -2,6 +2,8 @@
 import time,requests
 from datetime import datetime,timezone
 def ensure_subjects(io,v):
+ # Without any own sales/funnel rows, no SKU can pass the existing addition sample gate.
+ if not v.get('own',{}).get('rows'):return v
  if v.get('subjects',{}).get('status')=='complete':
   subjects=v['subjects']['by_nm']
  else:

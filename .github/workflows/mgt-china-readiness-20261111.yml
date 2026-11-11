@@ -1,9 +1,6 @@
 name: New China MGT warehouse read-only readiness11Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/mgt-china-readiness-20261111.yml']
 permissions:
   contents: read
 concurrency:

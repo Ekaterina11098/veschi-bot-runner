@@ -171,8 +171,9 @@ export async function handleAdvertisingPath(config,update,deps){
  if(member?.user?.id!==a.id||member.user.is_bot!==false||!(['creator','administrator','member'].includes(member.status)||member.status==='restricted'&&member.is_member===true))return new Response('OK');
  const answer=text=>cb?Response.json({method:'answerCallbackQuery',callback_query_id:cb.id,...(text?{text,show_alert:true}:{})}):new Response('OK'),now=deps.now?deps.now():new Date();
  let ctx={view:cb?.data==='cmn1:candidates'?'candidates':cb?.data==='cmn1:drrview'?'objects':'types',kind:cb?.data==='cmn1:drrview'?'ad':'all',metric:cb?.data==='cmn1:drrview'?'drr':'cr',period:'range',start:shift(day(now),-7),end:shift(day(now),-1)};
- if(match){const session=await get(ROOT+'session:'+match[1]);if(!session||session.actor!==a.id||session.message_id!==m.message_id||Date.parse(session.expires_at)<=now.getTime())return answer('Откройте раздел своей кнопкой меню.');try{ctx=transition(session.context,match[2],now);if(match[2].startsWith('pick')){const picked=session.context.matches?.find(r=>r.nm===ctx.nm);if(!picked)return answer('Повторите поиск товара.');ctx.article=picked.article;}}catch(e){return answer(e.message);}if(match[2]==='noop')return answer('');}
+ if(match){const session=await get(ROOT+'session:'+match[1]);if(!session||session.actor!==a.id||session.message_id!==m.message_id||Date.parse(session.expires_at)<=now.getTime())return answer('Откройте раздел своей кнопкой меню.');try{ctx=transition(session.context,match[2],now);if(ctx.view==='candidates'&&!ctx.analysisDay)ctx.analysisDay=day(new Date(Date.parse(session.expires_at)-86400000));if(match[2].startsWith('pick')){const picked=session.context.matches?.find(r=>r.nm===ctx.nm);if(!picked)return answer('Повторите поиск товара.');ctx.article=picked.article;}}catch(e){return answer(e.message);}if(match[2]==='noop')return answer('');}
  else if(pending&&possibleReply&&pending.message_id===m.reply_to_message?.message_id){ctx={...pending.context,view:Date.parse(pending.expires_at)>now.getTime()?'matches':'search',query:input};}
+ if(ctx.view==='candidates'&&!ctx.analysisDay)ctx.analysisDay=day(now);
  ctx.inlineEnabled=menuPolicy.inline_search_enabled===true;
  const key=ROOT+'delivery:'+update.update_id;if(await get(key))return answer('');
  const insert=async(k,p)=>(await deps.database('telegram_api_cache?on_conflict=cache_key','POST',{cache_key:k,payload:p,expires_at:'2036-11-11T00:00:00Z'},'resolution=ignore-duplicates,return=representation'))?.length===1;
@@ -185,7 +186,7 @@ export async function handleAdvertisingPath(config,update,deps){
  const selected=ctx.directions||[],choices=[['Add','add','Добавить товары'],['Raise','raise','Повысить ставки'],['Reduce','reduce','Снизить ставки'],['Exclude','exclude','Исключить / завершить']];
  view={text:'Предложить кандидатов\nОтметьте одно или несколько направлений, затем нажмите «Найти кандидатов».',reply_markup:{inline_keyboard:[[b((selected.length===4?'☑ ':'☐ ')+'Все направления','candAll')],...choices.map(([op,k,label])=>[b((selected.includes(k)?'☑ ':'☐ ')+label,'cand'+op)]),[b('Найти кандидатов'+(selected.length?' · '+selected.length:''),'candSubmit')],[ads],[home]]},source_keys:[]};
  }else if(ctx.view==='candidates'){
-  const analysisKey=ROOT+'analysis:'+a.id+':'+day(now)+':'+ctx.kind+(ctx.analysisRevision?':retry:'+ctx.analysisRevision:''),prior=await get(analysisKey);
+  const analysisKey=ROOT+'analysis:'+a.id+':'+ctx.analysisDay+':'+ctx.kind+(ctx.analysisRevision?':retry:'+ctx.analysisRevision:''),prior=await get(analysisKey);
   let job=prior?.job_id?await deps.database('business_agent_jobs?id=eq.'+prior.job_id+'&agent_id=eq.china&chat_id=eq.'+CHAT+'&sender_id=eq.'+a.id+'&select=id,status&limit=1'):null;
   if(!prior){
    if(!await insert(analysisKey,{status:'requesting',update_id:update.update_id,actor:a.id,created_at:now.toISOString(),grants_action_permission:false}))throw Error('Analysis already claimed');

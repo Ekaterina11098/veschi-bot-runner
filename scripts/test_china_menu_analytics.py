@@ -31,17 +31,19 @@ class TestMenu(unittest.TestCase):
   w=W();self.assertFalse(m.prepare(w,{}, {'request_text':'Сколько заказов?'}));self.assertFalse(w.data)
  def test_candidate_plan_keeps_only_selected_directions(self):
   w=W();job={'id':303,'chat_id':-1004342917488,'sender_id':5122667182}
-  actions={k:dict(id=k,kind='ad_add_sku'if k=='add'else'ad_set_bid',campaign_id=123,nm_id=i+1,target_minor=30,old_minor=28 if k=='raise'else 32)for i,k in enumerate(m.LABELS)}
+  actions={k:dict(id=k,direction=k,placement='recommendations',kind='ad_add_sku'if k=='add'else'ad_set_bid',campaign_id=123,nm_id=i+1,target_minor=30,old_minor=28 if k=='raise'else 32)for i,k in enumerate(m.LABELS)}
   bundle={'days':['2026-11-08','2026-11-09','2026-11-10'],'recommendation_directions':{k:dict(status='checked',rows=[{'ready':True,'action':a}],count=1)for k,a in actions.items()},'campaigns':[{'id':123,'focus':[{'action':a}for a in actions.values()],'attention':[]}]}
   def module(**values):return types.SimpleNamespace(**values)
   rendered=[]
   def render(b):
    rendered.append(b);return [{'family':'drr','bytes':b'PNG'}]
   from contextlib import nullcontext
-  mods={'china_analytic_dialog':module(reading=nullcontext),'china_loss_execute':module(IO=lambda:object()),'china_advertising_v2':module(prepare=lambda io,day:bundle),'china_advertising_v2_png':module(render=render),'china_loss_control':module(PLAN='plan:',digest=lambda x:str(len(x))),'china_morning_rules_review':module(enabled=lambda io:True),'china_table_png':module(KEY='table:',PREFIX='PNG:')}
+  checks=[]
+  mods={'china_analytic_dialog':module(reading=nullcontext),'china_loss_execute':module(IO=lambda:module()),'china_advertising_v2':module(prepare=lambda io,day:bundle,http=lambda *args:{'adverts':[{'id':123,'currency':'CNY','status':9,'nm_settings':[{'nm_id':2,'bids_kopecks':{'recommendations':28}}]}]}),'china_advertising_growth':module(validate_raise=lambda io,a,c:checks.append(a['id'])),'china_advertising_full_growth':module(validate_addition=lambda io,a,c:checks.append(a['id'])),'china_advertising_v2_png':module(render=render),'china_loss_control':module(PLAN='plan:',digest=lambda x:str(len(x))),'china_morning_rules_review':module(enabled=lambda io:True),'china_table_png':module(KEY='table:',PREFIX='PNG:')}
   with patch.dict(sys.modules,mods):answer=m.candidate(w,job,m.CANDIDATES+'Новые товары для добавления. Новые повышения ставок.')
   self.assertEqual({a['id']for a in w.get('plan:dialog-menu-303')['items']},{'add','raise'})
   self.assertEqual(rendered[0]['recommendation_directions']['reduce']['rows'],[])
   self.assertEqual(w.get('table:303')['parts'][0],answer)
   self.assertEqual(w.get('china_agent:codex_ad_review:v1:303')['answer'],answer)
+  self.assertEqual(set(checks),{'add','raise'})
 if __name__=='__main__':unittest.main()

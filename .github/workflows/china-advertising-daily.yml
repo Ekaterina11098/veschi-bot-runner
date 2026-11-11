@@ -1,5 +1,8 @@
 name: Daily China advertising PNG reports 07:30 MSK
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/china-advertising-daily.yml']
   schedule:
     - cron: '15,30,45 4 * * *'
     - cron: '0,15 5 * * *'

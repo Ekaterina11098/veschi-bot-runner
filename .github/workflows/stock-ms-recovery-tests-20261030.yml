@@ -12,14 +12,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 193d3520ec3e7b9aeea3217a90e04c8ab993298c
+          ref: 51b57710b7e060e79f51c6bbd533b51e6030f61f
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9'
-      - run: python -m unittest test_stock_china_mgt_daily test_stock_china_mgt_publish test_stock_china_mgt test_stock_fur_identity test_stock_live_capacity test_stock_debit_checkpoint test_stock_return_credit test_stock_incremental_orders test_stock_read_retries test_stock_schedule test_stock_regular_service test_stock_presence_two test_stock_group_execution test_stock_reduction_credit test_stock_performance test_stock_furcoat_exclusion test_stock_ozon test_stock_notice_policy test_stock_unposted_orders test_stock_inventory_notice test_stock_document_identities test_stock_shared_requests test_stock_current_order_reserve test_stock_wb_supply_history test_stock_checkpoint_warehouses test_stock_approved_warehouses test_stock_batch_plan test_stock_batch_transport test_stock_automatic_recovery test_owner_low_rule test_order_demand test_stock_ms_recovery -v
+      - run: python -m unittest test_stock_physical_pool_routing test_stock_china_mgt_daily test_stock_china_mgt_publish test_stock_china_mgt test_stock_fur_identity test_stock_live_capacity test_stock_debit_checkpoint test_stock_return_credit test_stock_incremental_orders test_stock_read_retries test_stock_schedule test_stock_regular_service test_stock_presence_two test_stock_group_execution test_stock_reduction_credit test_stock_performance test_stock_furcoat_exclusion test_stock_ozon test_stock_notice_policy test_stock_unposted_orders test_stock_inventory_notice test_stock_document_identities test_stock_shared_requests test_stock_current_order_reserve test_stock_wb_supply_history test_stock_checkpoint_warehouses test_stock_approved_warehouses test_stock_batch_plan test_stock_batch_transport test_stock_automatic_recovery test_owner_low_rule test_order_demand test_stock_ms_recovery -v
 
       - name: Verify fur category China-only targets
         run: |

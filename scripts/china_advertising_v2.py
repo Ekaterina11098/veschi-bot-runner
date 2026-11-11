@@ -563,7 +563,8 @@ def prepare(io,day):
  from china_sales_growth_review import attach as sales_review
  result=sales_review(result)
  result['mandatory_campaign_format']=(io.get(FORMAT)or{}).get('mandatory') is True
- return result
+ from china_new_campaign_reporting import attach as attach_new_campaign_reporting
+ return attach_new_campaign_reporting(io,result)
 
 
 

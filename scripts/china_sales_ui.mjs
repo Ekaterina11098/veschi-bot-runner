@@ -82,7 +82,7 @@ export async function renderSales(ctx,data,sid,now=new Date()){
    const a=h.data[0].last;text.push('Сегодня: '+amounts(good(a)?a:null));
    for(const nday of [1,7]){const z=h.data[nday]?.last;text.push((nday===1?'Вчера':'Неделю назад')+': '+amounts(good(z)?z:null)+'; '+change(good(a)?a:null,good(z)?z:null));}
   }
-  text.push('',footer);const markup=summaryKeys(sid);if(ctx.originAds)markup.inline_keyboard.splice(-1,0,[b('‹ К списку','backList')],[{text:'‹ Реклама',callback_data:'cmn1:ads'}]);if(ctx.nm)markup.inline_keyboard.splice(2,0,[b('Другой товар','products'),b('Изменить период','period')]);if(ctx.nm&&ctx.sort==='leaders'&&!ctx.originAds)markup.inline_keyboard.splice(-1,0,[b('‹ К лидерам','backList')]);return {text:text.join('\n'),reply_markup:markup};
+  text.push('',footer);const markup=summaryKeys(sid);if(ctx.originAds)markup.inline_keyboard.splice(-1,0,[b('‹ К списку','backList')],[{text:'‹ Реклама',callback_data:'cmn1:ads'}]);if(ctx.nm)markup.inline_keyboard.splice(2,0,[b('Другой товар','products')]);if(ctx.nm&&ctx.sort==='leaders'&&!ctx.originAds)markup.inline_keyboard.splice(-1,0,[b('‹ К лидерам','backList')]);return {text:text.join('\n'),reply_markup:markup};
  }
  if(ctx.view==='period')return {text:'Другой период\nПериод сохранится при переходе к товарам.',reply_markup:nav([[b('Сегодня к текущему часу','today')],[b('Вчера · полный день','yesterday')],[b('Последние 7 полных дней','range7')],[b('Последние 14 полных дней','range14')],[b('Выбрать даты','calendar')]])};
  if(ctx.view==='products')return {text:'По товарам\n'+contextTotals(ctx,data).window+'\nКоличество и сумма — с обеими базами.',reply_markup:nav([[b('Лидеры продаж','leaders')],[b('Кто дал рост','growth')],[b('Кто дал снижение','decline')],[b('Найти товар по артикулу','search')]])};
@@ -155,7 +155,7 @@ export async function renderSales(ctx,data,sid,now=new Date()){
   const paging=[];if(page>0)paging.push(b('‹','tablepage'+(page-1)));if((page+1)*5<points.length)paging.push(b('›','tablepage'+(page+1)));if(paging.length)rows.unshift(paging);
   rows.push([b('‹ К графикам','days'),b('Сегодня','today')]);
   const title='Таблица по дням · '+(ctx.nm?data.names.get(ctx.nm):'все товары');
-  const photo=await tablePng({title,subtitle:ctx.start+' — '+ctx.end+' · часть '+(page+1)+'/'+Math.ceil(points.length/5),note:'Полные дни МСК · количество и сумма заказов',columns:[{label:'Дата',width:180},{label:'Заказы\nшт. / CNY',width:280},{label:'К предыдущему дню',width:390},{label:'К тому же дню\nнеделей ранее',width:390}],rows:points.slice(page*5,page*5+5).map(p=>{const a=data.days.get(p.date),prev=data.days.get(shift(p.date,-1)),week=data.days.get(shift(p.date,-7)),t=a?selected(a,ctx.nm):null;return [p.date,amounts(t),change(t,prev?selected(prev,ctx.nm):null),change(t,week?selected(week,ctx.nm):null)];}),footnotes:[freshness(ctx,data),footer,'Нет сопоставимых данных — не ноль.']});
+  const photo=await tablePng({title,subtitle:ctx.start+' — '+ctx.end+' · часть '+(page+1)+'/'+Math.ceil(points.length/5),note:'Полные дни МСК · количество и сумма заказов',columns:[{label:'Дата',width:180},{label:'Заказы\nшт. / CNY',width:280},{label:'К предыдущему дню',width:390},{label:'К тому же дню\nнеделей ранее',width:390}],rows:points.slice(page*5,page*5+5).map(p=>{const a=data.days.get(p.date),prev=data.days.get(shift(p.date,-1)),week=data.days.get(shift(p.date,-7)),t=a?selected(a,ctx.nm):null;return [p.date,amounts(t).replace(' · ','\n'),change(t,prev?selected(prev,ctx.nm):null).replace(' · ','\n'),change(t,week?selected(week,ctx.nm):null).replace(' · ','\n')];}),footnotes:[freshness(ctx,data),footer,'Нет сопоставимых данных — не ноль.']});
   return {text:title+'\n'+ctx.start+' — '+ctx.end+' · полные дни МСК\n'+freshness(ctx,data),photo,reply_markup:nav(rows)};
  }
  throw Error('Unknown sales view');
@@ -221,7 +221,7 @@ export async function handleSalesPath(config,update,deps){
  try{
   const markup=view.reply_markup,base={chat_id:CHAT,reply_markup:markup};
   if(view.photo)receipt=await deps.telegram(cb?'editMessageMedia':'sendPhoto',{...base,...(cb?{message_id:m.message_id,media:{type:'photo',media:'attach://chart',caption:view.text}}:{caption:view.text}),photo_bytes:view.photo});
-  else if(cb&&!m.photo)receipt=await deps.telegram('editMessageText',{...base,message_id:m.message_id,text:view.text});
+  else if(cb&&!m.photo&&ctx.view!=='search')receipt=await deps.telegram('editMessageText',{...base,message_id:m.message_id,text:view.text});
   else {const name=String(actor.first_name||'Участник');receipt=await deps.telegram('sendMessage',{...base,text:ctx.view==='search'?name+', '+view.text:view.text,...(ctx.view==='search'?{entities:[{type:'text_mention',offset:0,length:name.length,user:{id:actor.id,first_name:name,is_bot:false}}]}:{})});}
   if(receipt?.chat?.id!==CHAT||receipt?.from?.id!==BOT||!Number.isSafeInteger(receipt.message_id))throw Error('Sales delivery receipt mismatch');
  }catch(e){await put(key,{...entry,status:'uncertain'});throw e;}

@@ -21,6 +21,7 @@ def allowed_read(method,url,body=None):
  if u.scheme!='https':return False
  from china_wb_evidence import allowed_read as wb_report_read
  if wb_report_read(method,url,body):return True
+ if u.hostname=='content-api.wildberries.ru':return method=='POST' and path=='/content/v2/get/cards/list' and isinstance(body,dict) and set(body)=={'settings'} and isinstance(body.get('settings'),dict) and set(body['settings'])<={'cursor','filter'} and isinstance(body['settings'].get('cursor'),dict) and body['settings']['cursor'].get('limit')==100 and (body['settings'].get('filter')or{}).get('withPhoto')==-1
  if u.hostname=='www.wildberries.ru':return method=='GET' and re.fullmatch(r'/catalog/[1-9]\d*/detail\.aspx',path) is not None
  if u.hostname=='api.moysklad.ru':return method=='GET' and path in ['/api/remap/1.2/entity/store','/api/remap/1.2/report/stock/all','/api/remap/1.2/entity/product']
  if u.hostname=='www.cbr.ru':return method=='GET' and path=='/scripts/XML_daily.asp'

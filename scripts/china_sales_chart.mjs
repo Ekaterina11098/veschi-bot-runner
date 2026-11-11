@@ -9,7 +9,8 @@ function crc(a){let c=0xffffffff;for(const b of a)c=table[(c^b)&255]^(c>>>8);ret
 function uint(n){return new Uint8Array([(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255]);}
 function join(parts){const a=new Uint8Array(parts.reduce((n,p)=>n+p.length,0));let i=0;for(const p of parts){a.set(p,i);i+=p.length;}return a;}
 function chunk(s,data){const type=new TextEncoder().encode(s),body=join([type,data]);return join([uint(data.length),body,uint(crc(body))]);}
-export async function salesChart(points){
+Object.assign(FONT,{'Л':['00111','01001','01001','01001','01001','01001','10001'],'И':['10001','10011','10101','10101','11001','10001','10001'],'О':['01110','10001','10001','10001','10001','10001','01110'],'Т':['11111','00100','00100','00100','00100','00100','00100'],'Р':['11110','10001','10001','11110','10000','10000','10000'],'Я':['01111','10001','10001','01111','00101','01001','10001'],'R':['11110','10001','10001','11110','10100','10010','10001'],'%':['11001','11010','00100','01000','10110','00110','00000']});
+export async function salesChart(points,labels=null){
  const W=800,H=780,pixels=new Uint8Array(W*H*3).fill(255);
  const set=(x,y,c)=>{x=Math.round(x);y=Math.round(y);if(x<0||x>=W||y<0||y>=H)return;const i=(y*W+x)*3;pixels.set(c,i);};
  const rect=(x,y,w,h,c)=>{for(let j=y;j<y+h;j++)for(let i=x;i<x+w;i++)set(i,j,c);};
@@ -18,10 +19,10 @@ export async function salesChart(points){
  const blue=[36,139,200],grid=[221,231,237],gray=[101,124,139];
  for(let chart=0;chart<2;chart++){
   const top=45+chart*370,left=110,right=765,y0=top+55,y1=top+280,field=chart?'amount_cny':'count';
-  text(28,top,chart?'СУММА, CNY':'ЗАКАЗЫ',4);
+  text(28,top,labels?labels[chart]:chart?'СУММА, CNY':'ЗАКАЗЫ',4);
   const vals=points.map(p=>p[field]).filter(n=>typeof n==='number'&&Number.isFinite(n));
   const max=Math.max(1,...vals)*1.12;
-  for(let i=0;i<=4;i++){const y=y1-(y1-y0)*i/4;line(left,y,right,y,grid,1);text(8,y-9,String(Math.round(max*i/4)),2,gray);}
+  for(let i=0;i<=4;i++){const y=y1-(y1-y0)*i/4;line(left,y,right,y,grid,1);text(8,y-9,String(labels&&chart?Math.round(max*i/4*100)/100:Math.round(max*i/4)),2,gray);}
   line(left,y0,left,y1,gray,2);line(left,y1,right,y1,gray,2);
   let prev=null;
   points.forEach((p,i)=>{

@@ -125,3 +125,7 @@ def bind(w,job_id,message_ids,answer):
   if old and old!=value:raise ValueError('Existing message binding changed')
   if not old:w.save(key,value,insert=True)
  w.save(PLAN+p['plan_id'],p)
+ from china_report_keyboard import attach
+ artifact=w.get('china_agent:table_png:v1:'+str(job_id))or{}
+ expected=len(artifact.get('parts',[]))
+ if message_ids and (not expected or len(message_ids)>=expected):attach(w,p,message_ids[-1])

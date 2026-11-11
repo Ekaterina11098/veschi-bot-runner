@@ -74,6 +74,15 @@ def campaign_table(bundle):
    elif key=='exclude':text='Исключить из РК.'
    else:text=(('Тест: повысить'if a.get('manual_experiment')else'Повысить')if key=='raise'else'Снизить')+' '+str(a['old_minor']/100)+' → '+str(a['target_minor']/100)+' CNY.'
    c['direction_recommendations'].append(r['article']+': '+text)
+ # Exact owner-selected proposals must remain visible in their actual campaign row.
+ for c in out['campaigns']:
+  for r in c.get('attention',[]):
+   a=r.get('action')or{}
+   if a.get('owner_selected')is not True:continue
+   if a.get('kind')=='ad_exclude_sku':text=r['article']+': Исключить из РК.'
+   elif a.get('kind')=='archive_campaign':text='Завершить РК и перевести в архив.'
+   else:continue
+   if text not in c['direction_recommendations']:c['direction_recommendations'].append(text)
  # Unready research stays in the private Codex analysis journal.
  return out
 

@@ -24,7 +24,12 @@ def run():
    self.job=result[0];return result
  w=Worker();prior=io.get(K)
  if prior and prior.get('status')=='sent':
-  print('Already corrected; no duplicate');return
+  cleanup=K+':old_deleted_by_owner'
+  if not io.get(cleanup):
+   assert prior['original_delivery']['message_id']==869
+   result=io.tg('deleteMessage',dict(chat_id=w.chat,message_id=869));assert result is True
+   io.put(cleanup,dict(status='deleted_verified',message_id=869,chat_id=w.chat,telegram_result=result,source='explicit_owner_delete_screenshot_11Nov',original_receipt=prior['original_delivery']))
+  print('Old false report deleted; corrected870 retained');return
  old=io.get('china_agent:price_delivery:v2:2026-11-11:morning:part:0')
  assert old['status']=='sent'and old['message_id']==869
  if prior is None:

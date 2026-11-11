@@ -1,3 +1,4 @@
+import {handleInlineSearch} from './china_inline_search.mjs';
 import {handleAdvertisingPath} from './china_advertising_ui.mjs';
 import {handleSalesPath} from './china_sales_ui.mjs';
 import {handleMainMenu} from './china_main_menu.mjs';
@@ -250,15 +251,21 @@ async function launchPrice(approval_key:string) {
  if(!r.ok)throw Error('Price dispatch pending');
 }
 
+async function verifyIngress(config:any,secret:string):Promise<boolean>{
+ const candidate=await digest(secret);if(candidate===config.secret_digest)return true;
+ const transition=(await database('telegram_api_cache?cache_key=eq.china_agent:inline_ingress_transition:v1&select=payload&limit=1'))?.[0]?.payload;
+ return transition?.status==='prepared'&&transition.bot_id===config.bot_id&&transition.chat_id===config.chat_id&&transition.old_digest===config.secret_digest&&transition.new_digest===candidate&&Date.parse(transition.valid_until)>Date.now();
+}
 Deno.serve(async(request:Request):Promise<Response>=>{
   if(request.method!=='POST')return new Response('Method not allowed',{status:405});
   const secret=request.headers.get('X-Telegram-Bot-Api-Secret-Token');
   if(!secret||secret.length>200)return new Response('Unauthorized',{status:401});
   try{
     let config=(await database('business_agent_config?agent_id=eq.china&limit=1'))?.[0];
-    if(!config?.active||!config.secret_digest||await digest(secret)!==config.secret_digest)return new Response('Unauthorized',{status:401});
+    if(!config?.active||!config.secret_digest||!await verifyIngress(config,secret))return new Response('Unauthorized',{status:401});
     const update=await request.json();
     if(update.probe===true)return Response.json({authenticated:true,queue_ready:true,agent_id:'china'});
+    if(update.inline_query)return await handleInlineSearch(config,update,{database,telegram})||new Response('OK');
     let message=update.message;
     // An authenticated maintenance call carries the previously verified Telegram 400 proof.
     // Reconfirm that proof live before applying it, never trust supplied target IDs alone.
@@ -278,6 +285,8 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     }
     const callback=update.callback_query;
     if(callback){
+      const inlineResponse=await handleInlineSearch(config,update,{database,telegram});
+      if(inlineResponse)return inlineResponse;
       const advertisingResponse=await handleAdvertisingPath(config,update,{database,telegram,requestAnalysis:async(text:string,u:any)=>{const c=u.callback_query;const r=await acceptCodex(config,{...c.message,from:c.from,reply_to_message:c.message},text,u.update_id,database,(job:number)=>launch(job,'dialog_free'));return r.response??new Response('Analysis route unavailable',{status:503});}});
       if(advertisingResponse)return advertisingResponse;
       const salesResponse=await handleSalesPath(config,update,{database,telegram});

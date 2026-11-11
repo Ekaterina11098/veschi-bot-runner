@@ -198,18 +198,26 @@ def prepare(w,job,inbox):
  out=dict(status='ready',job_id=job['id'],chat_id=job['chat_id'],input_message_id=inbox['input_message_id'],thread_id=inbox['thread_id'],answer=answer,created_at=datetime.now(timezone.utc).isoformat(),source_channel='deterministic_menu',wb_action_permission=False,model_calls=0)
  if not w.save(ROOT+'outbox:'+str(job['id']),out,insert=True):raise ValueError('Concurrent menu outbox')
  return True
-def recover(job_id):
+def native_funnel_request(text,scope):
+ if not isinstance(scope,dict)or set(scope)!={'nm_id','date_from','date_to'}:raise ValueError('Exact native funnel scope required')
+ nm=scope['nm_id'];first=scope['date_from'];last=scope['date_to']
+ if type(nm)is not int or not isinstance(first,str)or not isinstance(last,str)or not re.search(r'(?<!\d)'+str(nm)+r'(?!\d)',text)or first not in text or last not in text or not re.search(r'funnel|воронк',text,re.I):raise ValueError('Native funnel scope does not match original human request')
+ return PREFIX+str(nm)+' '+first+' '+last
+def recover(job_id,native_funnel_scope=None):
  from conversion_watches import runtime,saved_network_guard
  from china_codex_ad_review import bind
  w=runtime();rows=w.db('GET','business_agent_jobs',params={'id':'eq.'+str(job_id),'agent_id':'eq.china','chat_id':'eq.-1004342917488','select':'id,status,sender_id,chat_id,request_text,tool_trace'})
  if len(rows)!=1 or rows[0]['sender_id']not in (5122667182,307200273):raise ValueError('Exact original menu request unavailable')
  job=rows[0];inbox=w.get(ROOT+'inbox:'+str(job_id))or{}
- if inbox.get('job_id')!=job_id or not recognized(inbox.get('request_text','')):raise ValueError('Original menu scope missing')
+ if inbox.get('job_id')!=job_id:raise ValueError('Original message scope missing')
+ text=inbox.get('request_text','')
+ if native_funnel_scope is not None:text=native_funnel_request(text,native_funnel_scope)
+ elif not recognized(text):raise ValueError('Original menu scope missing')
  key='china_agent:menu_result:v1:'+str(job_id);old=w.get(key)or{}
  if old.get('status')=='sent':return dict(status='already_sent',job_id=job_id,message_ids=old['message_ids'])
  w.active_question_id=job_id;w.reply_id=inbox['input_message_id']
  with saved_network_guard():
-  answer=old.get('answer')or(candidate(w,job,inbox['request_text'])if inbox['request_text'].startswith(CANDIDATES)else funnel(w,job,inbox['request_text']))
+  answer=old.get('answer')or(candidate(w,job,text)if text.startswith(CANDIDATES)else funnel(w,job,text))
   w.save(key,dict(status='prepared',job_id=job_id,answer=answer,wb_writes=0,model_calls=0))
   from china_table_png import delivery_parts
   from conversion_watches import split_message
@@ -255,4 +263,4 @@ if __name__=='__main__':
  if request.get('correct_empty_result'):print(json.dumps(correct_empty_result(args.recover_job)))
  else:
   if request.get('verify_funnel_nm_id'):print(json.dumps(verify_funnel(int(request['verify_funnel_nm_id']))))
-  print(json.dumps(recover(args.recover_job)))
+  print(json.dumps(recover(args.recover_job,request.get('native_funnel_scope'))))

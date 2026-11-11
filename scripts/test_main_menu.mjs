@@ -37,11 +37,11 @@ function fixture(){
  const w=fixture(),v=await salesView(w.get,NOW,true);assert.match(v.text,/Динамика/);assert.match(v.text,/накопительные/);assert.match(v.text,/05:00 · нет данных/);
 }
 {
- const w=fixture(),receipt={message_id:50,date:1794380000,chat:{id:CHAT},from:{id:BOT}};
+ const w=fixture(),receipt={message_id:50,date:1794380000,chat:{id:CHAT},from:{id:BOT},photo:[{file_id:'test-photo'}]};
  w.c.set('china_agent:daily_ad_current_report:v1:drr',{plan_id:'p'});
  w.c.set('china_agent:loss_plan:v1:p',{plan_id:'p',plan_sha256:'hash',report_message_ids:[50]});
  w.c.set(ROOT+'report:drr',{status:'sent',family:'drr',chat_id:CHAT,bot_id:BOT,plan_id:'p',plan_sha256:'hash',message_id:50,report_day:'2026-11-11',receipt});
- assert.equal((await advertisingView(w.get,'drr',NOW)).reply_markup.inline_keyboard[0][0].url,'https://t.me/c/4342917488/50');
+ assert.equal((await advertisingView(w.get,'drr',NOW)).photos[0].photo,'test-photo');
  w.c.get('china_agent:loss_plan:v1:p').invalidated_at=NOW.toISOString();
  assert.match((await advertisingView(w.get,'drr',NOW)).text,/недоступен/);
 }

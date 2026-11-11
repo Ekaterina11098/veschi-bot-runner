@@ -2,7 +2,7 @@
 import os,json,base64,hashlib,io as bio
 from datetime import datetime,timezone,timedelta,date
 from PIL import Image,ImageDraw
-from china_advertising_v2 import collect,build,http,price_map,history,daily_metrics,sums,ratio,MSK,never_started_draft,event_time,save
+from china_advertising_v2 import collect,build,http,price_map,history,daily_metrics,sums,ratio,MSK,never_started_draft,event_time
 from china_advertising_v2_png import font,money,pct,color
 ZERO=dict(spend=0,amount=0,orders=0,views=0,clicks=0)
 
@@ -65,7 +65,7 @@ def current_report_context(io,source,day):
  events=sorted(json.dumps(x,sort_keys=True,ensure_ascii=False)for x in history(records))
  return records,dict(verified_registry=pointers,history_sha256=hashlib.sha256(json.dumps(events,ensure_ascii=False).encode()).hexdigest(),manual_funding=manual,wb_writes=0)
 
-def prepare_midday(io,day,source=None,observational_only=False):
+def prepare_midday(io,day,source=None):
  source=collect(io,day,current=True) if source is None else source
  records,context=current_report_context(io,source,day)
  labels=price_map(source['catalogue']);changes=history(records);out=[]
@@ -84,7 +84,7 @@ def prepare_midday(io,day,source=None,observational_only=False):
      for k,x in daily_metrics(n).items():v[k]+=x
    attention=[];protected=False;placement='search' if c['settings']['placements'].get('search') else 'recommendations'
    # Only direct current SKU evidence; no 3-day actions carried into an intraday PNG.
-   for n in ([] if observational_only else c.get('nm_settings',[])):
+   for n in c.get('nm_settings',[]):
     nm=n['nm_id'];p=skus.get(nm);label=labels.get(nm,{});price=label.get('price');old=n.get('bids_kopecks',{}).get(placement)
     if c['status']!=9 or not p or not isinstance(price,(int,float)) or price<=0 or type(old)is not int:continue
     # A bid change/addition today invalidates whole-day spend as a post-change exposure.
@@ -201,34 +201,6 @@ def render_midday(b):
  finish(im,y+272+len(wrap(d,foot,W-88,24))*31,acts)
  for i,f in enumerate(files,1):f.update(kind='drr:'+str(i).zfill(3),page=i,total=len(files))
  return files
-
-def unavailable_history_report(io,day,current,prepared,error):
- """Publish factual intraday counters once; never certify or bind an unreviewed action."""
- import copy
- from china_advertising_delivery import deliver,telegram_sender
- reason=str(error)
- if not reason.startswith(('Completed-day campaign history unavailable:','Completed-day active campaign history incomplete')):
-  raise error
- policy=io.get('china_agent:advertising_midday_review_policy:v1')or{}
- if policy.get('show_unavailable_statistics')is not True:raise error
- b=copy.deepcopy(prepared)
- for c in b['campaigns']:
-  c['attention']=[];c['addition_review_notes']=[]
-  c['owner_review_note']='Рекомендации не готовы: проверка завершённых дней не завершена.'
- b['recommendation_directions']={k:dict(status='unavailable',count=0)for k in ('raise','add','reduce','exclude')}
- b['economic_review_complete']=False
- b['diagnostic_only']=True
- b['review_blocker']=reason
- key='china_agent:advertising_midday_delivery:'+day+':v1:diagnostic'
- if (io.get(key)or{}).get('status')=='delivered':return
- files=[]
- for f in render_midday(b):
-  if f['actions']:raise ValueError('Diagnostic report cannot carry actions')
-  files.append(dict(f,caption='Китай · промежуточный отчёт · '+day+' · '+str(f['page'])+'/'+str(f['total'])+'. Рекомендации пока недоступны: нет полной истории завершённых дней. Это не отсутствие кандидатов.'))
- save(io,key+':evidence',dict(status='partial_review',bundle=b,blocker=reason,observed_at=b['observed_at'],wb_writes=0))
- r=deliver(io,day,files,telegram_sender(io),delivery_key=key,expected_families={'drr'})
- print(json.dumps(dict(status=r['status'],day=day,diagnostic_only=True,wb_writes=0)))
-
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
  from china_price_apply import IO
@@ -264,11 +236,7 @@ def run():
   reusable=done.get('status')=='complete'and review.get('economic_review_complete')is True and checked_review and same_campaign_state and (exact_recovery or (datetime.now(timezone.utc)-datetime.fromisoformat(done['observed_at'].replace('Z','+00:00'))).total_seconds()<1200)
   prepared=prepare_midday(io,day,current)
   reusable=reusable and prepared.get('review_context',{}).get('history_sha256')==done.get('input_review_context',{}).get('history_sha256')
-  try:
-   b=only_completed_day_actions(merge_completed(prepared,review,completed_key)if reusable else attach(io,prepared,day))
-  except ValueError as error:
-   unavailable_history_report(io,day,current,prepared,error);return
-  files=[]
+  b=only_completed_day_actions(merge_completed(prepared,review,completed_key)if reusable else attach(io,prepared,day));files=[]
   for i,f in enumerate(render_midday(b)):
    p=plan(io,day,f,i,slot='midday-full-v3')
    files.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))

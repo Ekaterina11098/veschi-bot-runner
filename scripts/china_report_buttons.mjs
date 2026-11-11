@@ -34,7 +34,18 @@ export async function handleReportButtons(config,cb,updateId,deps){
  const binding=await get(ROOT+'message:'+m.message_id),review=await get(ROOT+'review_message:'+m.message_id);
  const onReport=binding?.status==='sent'&&binding.token===token&&binding.plan_sha256===p.plan_sha256&&binding.chat_id===config.chat_id&&binding.receipt?.message_id===m.message_id&&binding.receipt.chat?.id===config.chat_id;
  const onReview=review?.status==='sent'&&review.token===token&&review.actor_id===actor.id&&review.plan_sha256===p.plan_sha256;
- if(!onReport&&!onReview)return answer('Кнопка не связана с вашим доставленным выбором.',true);
+ const sharedReview=review?.status==='sent'&&review.token===token&&review.plan_sha256===p.plan_sha256&&review.receipt?.message_id===m.message_id&&review.receipt.chat?.id===config.chat_id;
+ if(sharedReview){
+  const confirmed=await get(ROOT+'confirmation:'+token+'-'+review.actor_id);
+  if(confirmed?.status==='confirmed'&&confirmed.plan_sha256===p.plan_sha256){
+   const executed=await get('china_agent:daily_ad_execution:v2:'+p.plan_id+'-buttons-'+token+'-'+review.actor_id);
+   if(executed?.status==='done'&&review.selected_ids?.every(id=>executed.items?.some(i=>i.id===id&&i.status==='verified')))return answer('Уже выполнено. Итог — в этой карточке. Повторных изменений не будет.',true);
+   if(executed?.status==='done')return answer('Обработка завершена. Смотрите итог в этой карточке.',true);
+   return answer('Этот выбор уже подтверждён. Повтор закрыт; итог появится в этой карточке.',true);
+  }
+  if(review.actor_id!==actor.id)return answer('Это выбор другого участника. Под исходным PNG соберите свой выбор и нажмите «Посмотреть выбранное».',true);
+ }
+ if(!onReport&&!onReview)return answer('Откройте свой выбор кнопкой «Посмотреть выбранное» под исходным PNG.',true);
  if(original.visible_from&&Date.parse(original.visible_from)>Date.parse(binding?.receipt?.date?new Date(binding.receipt.date*1000).toISOString():review?.created_at||'')){
   if(onReport)return answer('Отчёт обновлён после создания кнопок.',true);
  }

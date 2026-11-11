@@ -27,6 +27,12 @@ def bind(io,f,receipt):
  publish(io,p)
  from china_report_buttons import bind as bind_buttons
  bind_buttons(io,f,receipt)
+ # Navigation indexing must not turn a verified report send into uncertain delivery.
+ try:
+  from china_main_menu_index import bind as bind_menu
+  bind_menu(io,f,p,receipt)
+ except Exception:
+  print('Menu report index unavailable; canonical delivery retained')
 
 def handle(w,job):
  from china_report_buttons import handle as report_buttons_handle

@@ -15,6 +15,8 @@ SPECS.append(spec('collect_missing_economics','Дособрать адресно
 class Tools:
  def __init__(self,w,job):
   from china_analytic_dialog import Analyst
+  from china_economics_recovery import extend_catalog
+  extend_catalog(w)
   self.w=w;self.job=job;self.analyst=Analyst(w,job,[]);self.count=0
  def __call__(self,name,args):
   self.count+=1

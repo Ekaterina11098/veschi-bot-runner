@@ -3,13 +3,21 @@ from datetime import datetime,timedelta,timezone
 from zoneinfo import ZoneInfo
 IDS=[1900197978,2215883910,2216045897,2216111729,2216167898,2216217906,2216257724]
 ROOT='china_agent:owner_economics_recovery:v1:'
+def extend_catalog(w):
+ today=datetime.now(ZoneInfo('Europe/Moscow')).date();source=w.get('china_agent:advertising_full_growth:'+str(today)+':v1:inputs')or{}
+ labels={str(n):a for n,a in w.catalog()}
+ if source.get('cabinet')=='token_3'and source.get('status')=='complete':
+  for row in source.get('catalogue',{}).get('rows',[]):
+   if type(row.get('nmID'))is int and isinstance(row.get('vendorCode'),str):labels[str(row['nmID'])]=row['vendorCode']
+ merged=list(labels.items());w.catalog=lambda:merged
+ return merged
 def collect(w,job):
  from china_analytic_dialog import Analyst,reading
  from china_wb_evidence import Reports,FUNNEL,normalize_funnel
  today=datetime.now(ZoneInfo('Europe/Moscow')).date();last=today-timedelta(days=1);first=last-timedelta(days=29)
  key=ROOT+str(today);old=w.get(key)
  if old and old.get('status')=='checked'and(datetime.now(timezone.utc)-datetime.fromisoformat(old['observed_at'])).total_seconds()<3600:return old
- a=Analyst(w,job,[])
+ extend_catalog(w);a=Analyst(w,job,[])
  with reading():
   own=a.live('products',IDS,str(first),str(last));stock=a.live('stock',IDS,str(first),str(last));prices=a.live('prices',IDS,str(first),str(last))
   own_sources=[own]

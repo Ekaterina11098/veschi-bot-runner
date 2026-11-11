@@ -37,4 +37,6 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           OPENAI_API_KEY: ""
           PYTHONPATH: scripts:source
-        run: python scripts/owner_price296_correction.py
+        run: |
+          cp scripts/china_price_brief.py source/china_agent/price_brief.py
+          python scripts/owner_price296_correction.py

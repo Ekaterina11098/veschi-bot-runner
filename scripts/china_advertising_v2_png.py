@@ -40,7 +40,7 @@ def recommendations(c):
 def budget_column(c):
  """Owner-approved display only; execution conditions remain in the structured plan."""
  if c.get('owner_budget_refused'):return 'Пока не пополнять'
- if c.get('budget_audit_state')=='owner_decided_no_fund':return c['budget_short_note']
+ if c.get('budget_audit_state')in('owner_decided_no_fund','owner_limited_test_ready'):return c['budget_short_note']
  if c.get('budget_audit_state')in('paused_zero','paused_review','budget_pause_review','owner_paused','draft_review','starter_review','data_blocked'):
   return c['budget_short_note']
  if c.get('budget_audit_state')=='funding_blocked':return 'Пополнение не готово.\n'+(c.get('budget_economics_reason')or'Нужна проверка экономики РК.')
@@ -135,7 +135,7 @@ def _render_legacy(bundle):
   for j,line in enumerate(title):d.text((44,y+16+j*36),line,font=font(29,True),fill=NAVY)
   left=y+26+len(title)*36
   d.text((44,left),'Остаток: '+money(c.get('balance'))+' ¥',font=font(29,True),fill=INK)
-  d.text((44,left+48),'Запас на 3 дня: '+money(need)+' ¥',font=font(27),fill=INK)
+  d.text((44,left+48),c.get('budget_reference_label','Запас на 3 дня: ')+money(need)+' ¥',font=font(27),fill=INK)
   d.text((44,left+88),'Нехватка: '+money(gap)+' ¥',font=font(27),fill=INK)
   d.text((860,y+16),'Расходы и ДРР',font=font(29,True),fill=NAVY)
   bp=c.get('budget_period')

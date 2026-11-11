@@ -99,14 +99,22 @@ jobs:
         id: cloud_initial
         continue-on-error: true
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          DIALOG_JOB_ID: ${{ inputs.job_id }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }} # Owner10Nov: scoped bounded Sol dialogue only
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_menu_analytics.py
           PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_codex_cloud.py
           PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_no_paid.py
           set -o pipefail
-          python -u scripts/china_codex_cloud.py | tee "$RUNNER_TEMP/china-cloud-initial.json"
+          if [ "$EVENT_NAME" = push ]; then
+            DIALOG_JOB_ID=$(python -c "import json;print(json.load(open('china-conversion-watches-request.json')).get('job_id',''))")
+          fi
+          CLOUD_ARGS=()
+          if [ -n "$DIALOG_JOB_ID" ]; then CLOUD_ARGS=(--job-id "$DIALOG_JOB_ID"); fi
+          python -u scripts/china_codex_cloud.py "${CLOUD_ARGS[@]}" | tee "$RUNNER_TEMP/china-cloud-initial.json"
           python -c "import json,os; r=json.load(open(os.environ['RUNNER_TEMP']+'/china-cloud-initial.json')); f=open(os.environ['GITHUB_OUTPUT'],'a'); f.write('status='+str(r['status'])+'\\njob_id='+str(r.get('job_id',''))+'\\n')"
 
       - name: Process owner watch commands and due conversion reports

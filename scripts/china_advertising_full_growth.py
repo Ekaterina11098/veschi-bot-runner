@@ -19,6 +19,12 @@ def save_analytic_cache(io,key,value):
 def finite_number(value):return type(value)in(int,float)and math.isfinite(value)
 def stamp():return datetime.now(timezone.utc).isoformat()
 def enabled(io):return (io.get('china_agent:advertising_format:v2')or{}).get('full_cabinet_growth_review_required')is True
+def has_completed_campaign_day(campaign,period_to):
+ """The launch day is excluded; unknown dates do not waive a required read."""
+ started=campaign.get('timestamps',{}).get('started')
+ if not started:return True
+ try:return datetime.fromisoformat(started.replace('Z','+00:00')).astimezone(ZoneInfo('Europe/Moscow')).date()<date.fromisoformat(str(period_to))
+ except (ValueError,TypeError):return True
 def collect(io,s,day):
  from china_advertising_v2 import http,history
  from china_morning_readiness import published_stock,PendingAdvertisingDay
@@ -130,6 +136,9 @@ def collect(io,s,day):
   for cp in v['campaigns']:
    if cp['status']!=9 or cp['bid_type']!='manual'or cp['settings']['payment_type']!='cpc':continue
    cid=cp['id'];zone='search'if cp['settings']['placements'].get('search')else'recommendation'
+   if not has_completed_campaign_day(cp,end):
+    v.setdefault('deferred_minimums',{})[str(cid)]=dict(reason='No completed day after campaign launch in decision window',period_to=str(end),started=cp.get('timestamps',{}).get('started'),minimum_unknown=True)
+    continue
    wanted=[n['nm_id']for n in cp['nm_settings']if n['nm_id']not in excluded and v['economics']['rows'].get(str(n['nm_id']),{}).get('expected_margin_before_ads_cny',-1)>0 and v['economics']['rows'].get(str(n['nm_id']),{}).get('published_stock') is not None and v['economics']['rows'].get(str(n['nm_id']),{}).get('published_stock')>0]
    if wanted and str(cid)not in v['minimums']:
     try:v['minimums'][str(cid)]=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=wanted,payment_type='cpc',placement_types=[zone]));save()

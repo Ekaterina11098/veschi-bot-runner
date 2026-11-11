@@ -49,8 +49,20 @@ async function acknowledgeQuestion(config:any,message:any,jobId:number) {
 
 function same(a:any,b:any):boolean { const sorted=(x:any):any=>Array.isArray(x)?x.map(sorted):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,sorted(x[k])])):x;return JSON.stringify(sorted(a))===JSON.stringify(sorted(b)); }
 
+let transportTokenPromise:Promise<string>|null=null;
+async function telegramToken():Promise<string>{
+ const configured=Deno.env.get('CHINA_TELEGRAM_BOT_TOKEN');
+ if(configured)return configured;
+ if(!transportTokenPromise)transportTokenPromise=(async()=>{
+  const value=await database('rpc/china_bot_transport_token','POST',{});
+  if(typeof value!=='string'||!value.startsWith('8780468043:'))throw new Error('Bot unavailable');
+  return value;
+ })();
+ try{return await transportTokenPromise;}catch{transportTokenPromise=null;throw new Error('Bot unavailable');}
+}
+
 async function telegram(method: string, body: unknown) {
-  const token=Deno.env.get('CHINA_TELEGRAM_BOT_TOKEN');
+  const token=await telegramToken();
   if(!token)throw new Error('Bot unavailable');
   const r=await fetch('https://api.telegram.org/bot'+token+'/'+method,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(8000)});
   const value=await r.json();if(!value.ok)throw new Error('Telegram verification failed');return value.result;
@@ -242,7 +254,7 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     // An authenticated maintenance call carries the previously verified Telegram 400 proof.
     // Reconfirm that proof live before applying it, never trust supplied target IDs alone.
     if(update.reconcile_migration){
-      const old=config.chat_id,token=Deno.env.get('CHINA_TELEGRAM_BOT_TOKEN');
+      const old=config.chat_id,token=await telegramToken();
       const r=await fetch('https://api.telegram.org/bot'+token+'/getChatAdministrators',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:old}),signal:AbortSignal.timeout(8000)});
       const proof=await r.json();const target=proof.parameters?.migrate_to_chat_id;
       if(proof.ok||proof.error_code!==400||!Number.isSafeInteger(target))throw new Error('Migration proof unavailable');

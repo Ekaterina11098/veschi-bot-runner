@@ -26,6 +26,7 @@ def placement_candidates(source,inputs):
   if nm in blocked or e.get('commission_policy_fallback')or e.get('buyout_fallback')or e.get('sample_size',0)<5:continue
   if e.get('expected_margin_before_ads_cny',-1)<=0 or e.get('stock_free',0)<=0 or not e.get('published_stock')or e['published_stock']<3:continue
   if o.get('is_payed',0)<3 or not o.get('open_card_count')or o.get('funnel_orders_count',0)/o['open_card_count']<.005:continue
+  if type(o.get('subject_id'))is not int:raise ValueError('Eligible addition exact subject missing: '+str(nm))
   for zone in ['search','recommendations']:
    if (nm,zone)in occupied:continue
    choices=[cid for z,subject,cid in targets if z==zone and subject==o.get('subject_id')]

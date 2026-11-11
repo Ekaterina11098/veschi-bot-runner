@@ -4,7 +4,7 @@ from datetime import date,datetime,timedelta,timezone
 from zoneinfo import ZoneInfo
 def finite(v):return type(v)in(int,float)and math.isfinite(v)
 def instant(v):return datetime.fromisoformat(v.replace('Z','+00:00').replace(' UTC','+00:00'))
-def assess_campaign(state,raw,economics,own,changes,days,observed):
+def assess_campaign(state,raw,economics,own,changes,days,observed,funding_reference_days=None):
  result=dict(status='unknown',observed_at=observed,preliminary=True,unknown_costs=True,source='whole_campaign_attribution_with_own_buyout_model',ready=False)
  if state.get('status')!=9 or not raw:return dict(result,reason='Нет полного результата действующей РК.')
  end=date.fromisoformat(days[-1]);members={n['nm_id']for n in state['nm_settings']}
@@ -17,7 +17,12 @@ def assess_campaign(state,raw,economics,own,changes,days,observed):
   # Funding uses completed historical traffic/current economics, not a causal post-change verdict.
   launched=instant(state['timestamps']['started']).astimezone(ZoneInfo('Europe/Moscow')).date()if state.get('timestamps',{}).get('started')else None
   reference=[d for d in days if not launched or date.fromisoformat(d)>launched]
-  if len(reference)!=3:return dict(result,status='unknown',evaluation_status='waiting',reason='Нет трёх завершённых дней исторического расхода для расчёта продолжения теста; нужен отдельный ограниченный стартовый бюджет.')
+  if len(reference)!=3:
+   available={d['date'][:10]for d in raw.get('days',[])}
+   chosen=[d for d in(funding_reference_days or[])if d in days and d in available]
+   if not chosen or chosen!=funding_reference_days:return dict(result,status='unknown',evaluation_status='waiting',reason='Нет трёх завершённых дней исторического расхода для расчёта продолжения теста; нужен отдельный ограниченный стартовый бюджет.')
+   reference=chosen
+   result.update(owner_manual_launch_day_continuation=True,reference_window='completed_calendar_day_partial_launch_traffic',not_three_full_test_days=True)
   wanted=reference
   result.update(funding_basis='continuation_historical_traffic_current_economics',evaluation_status='waiting',first_full_post_change_day=first.isoformat(),post_change_result_available=False)
 
@@ -61,7 +66,7 @@ def attach(bundle,source,changes):
  data=source.get('full_growth_inputs')or{};own=data.get('own')or{}
  for c in out['campaigns']:
   if c['id']in states:
-   c['campaign_budget_economics']=assess_campaign(states[c['id']],stats.get(c['id']),source.get('economics',{}),own,changes,out['budget_days'],source['observed_at'])
+   c['campaign_budget_economics']=assess_campaign(states[c['id']],stats.get(c['id']),source.get('economics',{}),own,changes,out['budget_days'],source['observed_at'],funding_reference_days=(source.get('owner_launch_day_funding_refs')or{}).get(str(c['id'])))
    e=c['campaign_budget_economics'];e['expected_bids']={str(n['nm_id']):n['bids_kopecks']for n in states[c['id']]['nm_settings']}
    models=source.get('economics',{}).get('rows',{});labels={int(r['nmID']):r['vendorCode']for r in source['catalogue']['rows']}
    price_rows={int(r['nm_id']):r for r in data.get('prices',{}).get('rows',[])};stock_rows={r['article'].casefold():r for r in data.get('stock',{}).get('rows',[])}

@@ -2,7 +2,7 @@ import {advertisingMenu} from './china_advertising_ui.mjs';
 import {keyboard as reportKeyboard} from './china_report_buttons.mjs';
 /** Cache-only Telegram navigation. Never dispatches workers or accesses marketplace APIs. */
 export const ROOT='china_agent:main_menu:v1:';
-export const mainKeyboard={keyboard:[[{text:'📊 Продажи'}],[{text:'📣 Реклама'}]],resize_keyboard:true,is_persistent:true,one_time_keyboard:false,input_field_placeholder:'Выберите раздел или напишите вопрос'};
+export const mainKeyboard={keyboard:[[{text:'☰ Меню'}],[{text:'📊 Продажи'},{text:'📣 Реклама'}]],resize_keyboard:true,is_persistent:true,one_time_keyboard:false,input_field_placeholder:'Выберите раздел или напишите вопрос'};
 const CHAT=-1004342917488,BOT=8780468043;
 const fmt=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
 const finite=n=>typeof n==='number'&&Number.isFinite(n);
@@ -123,7 +123,7 @@ export async function bindDirectReport(view,receipt,deps){
 
 export async function handleMainMenu(config,update,deps){
  const cb=update.callback_query,m=cb?.message||update.message,text=update.message?.text?.trim();
- const commands={'📊 Продажи':'sales','Продажи':'sales','📣 Реклама':'ads','Реклама':'ads','Главное меню':'home','/menu':'home','/start':'home'};
+ const commands={'☰ Меню':'home','Меню':'home','📊 Продажи':'sales','Продажи':'sales','📣 Реклама':'ads','Реклама':'ads','Главное меню':'home','/menu':'home','/start':'home'};
  const match=cb?/^cmn1:(home|sales|dynamic|ads|drr|budgets)$/.exec(cb.data||''):null;
  let op=cb?match?.[1]:(Object.hasOwn(commands,text)?commands[text]:null)||(/^\/(?:menu|start)@[a-z0-9_]+$/i.test(text||'')&&text.split('@')[1].toLowerCase()===config.bot_username?.toLowerCase()?'home':null);
  const processedReply=!cb&&/^(?:сделай(?:\s+вс[её])?|делай|выполни(?:\s+вс[её])?)[.!]?$/iu.test(text||'')&&m?.reply_to_message?.from?.id===BOT;

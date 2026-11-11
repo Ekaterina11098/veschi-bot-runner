@@ -141,6 +141,8 @@ jobs:
           if [ "$MODE" = dialog_free ]; then
             python scripts/conversion_watches.py --exact-dialog-job "$DIALOG_JOB_ID"
             PYTHONPATH=scripts:source python scripts/china_free_ad_work.py --job-id "$DIALOG_JOB_ID"
+          elif [ "$MODE" = menu_result ]; then
+            PYTHONPATH=scripts:source python scripts/china_menu_analytics.py --recover-job "$DIALOG_JOB_ID"
           elif [ "$MODE" = dialog ]; then
             python scripts/conversion_watches.py --exact-dialog-job "$DIALOG_JOB_ID"
           elif [ "$MODE" = reports ]; then

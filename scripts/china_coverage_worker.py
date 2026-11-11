@@ -154,7 +154,10 @@ class CoverageWorker(ScheduledWorker):
             trace.append(dict(name='china_order_catalogue_coverage',**self.audit['order_coverage']))
         if self.audit.get('mode')=='intraday':
             from china_agent.price_brief import render_plain as brief
-            review=self.get('china_agent:daily_expected_candidates:'+str(self.day))
+            from china_agent.price_aggregate_control import build as recalculate_control
+            self.control_preview=preview
+            review=recalculate_control(self)
+            trace.append(dict(name='china_price_control_recalculated',status=review['status'],report_date=str(self.day),source_ref='china_agent:daily_expected_candidates:'+str(self.day)+(':verify' if preview else ''),products=len(review['products'])))
             from china_agent.buyer_price_forecast import load
             buyer=load(self)
             trace.append(dict(name='china_buyer_price_forecast',**buyer))

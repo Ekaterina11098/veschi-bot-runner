@@ -19,7 +19,8 @@ export function advertisingMenu(){return {text:'Реклама\nЧто хоти�
  [{text:'Кто вырос',callback_data:'cmn1:growth'}],
  [{text:'Кто упал',callback_data:'cmn1:decline'}],[home]]},source_keys:[]};}
 export function candidateRequest(kind='all'){
- const scope={all:'Все четыре направления: повышение ставок, добавление новых товаров, снижение ставок, исключение товаров / завершение РК.',add:'Новые товары для добавления в рекламу по всему каталогу.',raise:'Новые повышения ставок.',reduce:'Новые снижения ставок.',exclude:'Новые исключения товаров / завершения РК.'}[kind];
+ const scopes={all:'Все четыре направления: повышение ставок, добавление новых товаров, снижение ставок, исключение товаров / завершение РК.',add:'Новые товары для добавления в рекламу по всему каталогу.',raise:'Новые повышения ставок.',reduce:'Новые снижения ставок.',exclude:'Новые исключения товаров / завершения РК.'};
+ const scope=Array.isArray(kind)?kind.map(k=>scopes[k]).join(' '):scopes[kind];
  if(!scope)throw Error('Unknown candidate filter');
  return 'Предложи новых кандидатов для рекламы китайского кабинета. '+scope+' Только анализ, grants_action_permission=false: никаких WB изменений. Используй завершённые дни после последнего verified изменения, текущие точные ставку/минимум/шаг/цену/COGS/собственный выкуп/МСК минус резерв/опубликованный WB остаток и трёхдневный резерв по фактическим расходам. 143 и 590 не трогать, уже повышенные сегодня ставки повторно не повышать даже в другой РК. Выполненное не предлагать заново. Краткие конкретные предложения с РК, размещением, точным изменением и условием оценки; больше 5 товаров — PNG. Проверка неполная — укажи конкретный пробел, не утверждай отсутствие кандидатов. Готовый план привяжи к фактическому сообщению, hash и сроку; выполнение только после отдельного подтверждения человеком штатным способом.';
 }
@@ -72,7 +73,7 @@ export function stableAdCache(cache,ctx){
  return {cache:filtered,ids,note:'Постоянная выборка: '+ids.length+' РК с данными за все '+days.length+' дней. Это не весь кабинет.'+(excluded.length?' Без полного ряда: '+excluded.join(', ')+'.':'')};
 }
 export async function conversionView(cache,ctx,sid,now){
- const b=(text,op)=>op==='search'&&ctx.inlineEnabled?{text,switch_inline_query_current_chat:ctx.metric==='drr'?'ДРР ':'Конверсия '}:{text,callback_data:'cam1:'+sid+':'+op},nav=rows=>({inline_keyboard:[...rows,...(ctx.kind==='ad'&&!['types','search','matches','objects'].includes(ctx.view)?[[b('Найти товар по артикулу','search')]]:[]),[ads],[home]]});
+ const b=(text,op)=>op==='search'&&ctx.inlineEnabled?{text,switch_inline_query_current_chat:ctx.kind==='general'?'Воронка ':ctx.metric==='drr'?'ДРР ':'Конверсия '}:{text,callback_data:'cam1:'+sid+':'+op},nav=rows=>({inline_keyboard:[...rows,...(['ad','general'].includes(ctx.kind)&&!['types','search','matches','objects'].includes(ctx.view)?[[b('Найти товар по артикулу','search')]]:[]),[ads],[home]]});
  if(ctx.view==='types')return {text:'Конверсии и воронка\nРекламная конверсия и общая воронка — отдельные источники.',reply_markup:nav([[b('Рекламная конверсия','ad')],[b('Общая воронка товара','general')]])};
  const general=ctx.kind==='general',metric=ctx.metric==='drr'?'drr':'cr',metricName=metric==='drr'?'ДРР':'CR';
  const objectLabel=ctx.nm&&!general?'Другой товар / РК':general?'Другой товар':'Другая РК';
@@ -82,11 +83,11 @@ export async function conversionView(cache,ctx,sid,now){
  if(ctx.view==='matches'){const found=cache.matches||[];return {text:'Поиск «'+ctx.query+'»\n'+(found.length?'Выберите товар.'+(cache.truncated?' Показаны первые 20 совпадений; можно уточнить запрос.':''):'Совпадений в сохранённом каталоге нет. Уточните артикул.'),reply_markup:nav([...found.map(r=>[b(r.article.slice(0,60),'pick'+r.nm)]),[b('Уточнить артикул','search')]])};}
  if(ctx.view==='objects'){
   const campaignIds=[...new Set([...(cache.daily||[]).map(r=>r.campaign),...(cache.current_campaigns||[]).map(r=>r.campaign),...(cache.hourly||[]).flatMap(h=>(h.ad_rows||[]).map(r=>String(r.campaign)))])].sort();
-  const rows=general?products.map(([nm,article])=>[b(article||nm,'nm'+nm)]):[...[[b(ctx.nm?'Все РК товара':'Все РК · доступное покрытие','cidAll')]],...campaignIds.slice((ctx.page||0)*8,(ctx.page||0)*8+8).map(cid=>[b('РК '+cid,'cid'+cid)])];
+  const rows=general?[[b('Найти товар по артикулу','search')],...products.map(([nm,article])=>[b(article||nm,'nm'+nm)])]:[...[[b(ctx.nm?'Все РК товара':'Все РК · доступное покрытие','cidAll')]],...campaignIds.slice((ctx.page||0)*8,(ctx.page||0)*8+8).map(cid=>[b('РК '+cid,'cid'+cid)])];
   if(!general){const count=campaignIds.length;if(ctx.page>0)rows.push([b('‹ Предыдущие','page'+(ctx.page-1))]);if(((ctx.page||0)+1)*8<count)rows.push([b('Следующие ›','page'+((ctx.page||0)+1))]);}
   return {text:general?'Общая воронка\nВыберите товар. Доступно только сохранённое покрытие; недоступные товары не считаются нулевыми.':(metric==='drr'?'ДРР':'Рекламная конверсия')+(ctx.nm?' · '+(ctx.article||ctx.nm)+'\nВыберите РК товара. Каждая кампания показывается отдельно; отсутствие строки статистики не означает ноль.':'\nВсе доступные РК или одна РК. Заказы — атрибутированные, не доказанно уникальные между РК.'),reply_markup:nav([...rows,...(!general?[[b('Найти товар по артикулу','search')],[b('Все РК кабинета','cabinetCampaigns')]]:[]),...(metric==='drr'?[]:[[b('‹ Источники','types')]])])};
  }
- if(ctx.view==='period')return {text:(general?'Общая воронка · '+(products.find(p=>p[0]===ctx.nm)?.[1]||ctx.nm):(metric==='drr'?'ДРР':'Рекламная конверсия')+' · '+(ctx.nm?(ctx.article||ctx.nm)+' · ':'')+(ctx.cid?'РК '+ctx.cid:'все доступные РК'))+'\nВыберите период.',reply_markup:nav([[b('7 полных дней','range7')],[b('14 полных дней','range14')],[b('Выбрать даты','calendar')],[b('Сегодня к тому же часу','today')],[b(objectLabel,'objects')]])};
+ if(ctx.view==='period')return {text:(general?'Общая воронка · '+(ctx.article||products.find(p=>p[0]===ctx.nm)?.[1]||ctx.nm):(metric==='drr'?'ДРР':'Рекламная конверсия')+' · '+(ctx.nm?(ctx.article||ctx.nm)+' · ':'')+(ctx.cid?'РК '+ctx.cid:'все доступные РК'))+'\nВыберите период.',reply_markup:nav([[b('7 полных дней','range7')],[b('14 полных дней','range14')],[b('Выбрать даты','calendar')],[b('Сегодня к тому же часу','today')],[b(objectLabel,'objects')]])};
  if(ctx.view==='calendar'){
   const month=ctx.month,first=month+'-01',last=shift((month.endsWith('-12')?String(+month.slice(0,4)+1)+'-01':month.slice(0,5)+String(+month.slice(5)+1).padStart(2,'0'))+'-01',-1),rows=[],row=[];
   for(let i=0;i<(new Date(first+'T00:00:00Z').getUTCDay()+6)%7;i++)row.push(b('·','noop'));
@@ -96,7 +97,7 @@ export async function conversionView(cache,ctx,sid,now){
   return {text:'Выберите '+(ctx.dateStart?'конец':'начало')+' периода · '+month+'\nПн Вт Ср Чт Пт Сб Вс'+(ctx.dateStart?'\nНачало: '+ctx.dateStart:''),reply_markup:nav(rows)};
  }
  if(ctx.view==='dateReview')return {text:'Период '+ctx.dateStart+' — '+ctx.dateEnd,reply_markup:nav([[b('Показать','showDates')],[b('Изменить даты','calendar')]])};
- const title=general?'Общая воронка · '+(products.find(p=>p[0]===ctx.nm)?.[1]||ctx.nm):(metric==='drr'?'ДРР':'Рекламная конверсия')+' · '+(ctx.nm?(ctx.article||ctx.nm)+' · ':'')+(ctx.cid?'РК '+ctx.cid:'все доступные РК');
+ const title=general?'Общая воронка · '+(ctx.article||products.find(p=>p[0]===ctx.nm)?.[1]||ctx.nm):(metric==='drr'?'ДРР':'Рекламная конверсия')+' · '+(ctx.nm?(ctx.article||ctx.nm)+' · ':'')+(ctx.cid?'РК '+ctx.cid:'все доступные РК');
  if(ctx.period==='today'){
   const rows=hourlyRows(cache,ctx),out=[title,'Сегодня: сопоставимые сохранённые срезы.'];
   for(const r of rows)out.push('',(r.offset===0?'Сегодня':r.offset===1?'Вчера':'Неделю назад')+(r.slot_msk?' · 00:00–'+r.slot_msk.slice(11,16)+' МСК':''),r.missing?'Нет сопоставимых данных (неполное покрытие или время).':metricHeadline(r,ctx.kind,metric),'Срез: '+stamp(r.observed_at));
@@ -148,7 +149,8 @@ function transition(ctx,op,now){
  else if(/^date\d{8}$/.test(op)){const date=op.slice(4,8)+'-'+op.slice(8,10)+'-'+op.slice(10);if(date>=day(now)||date<shift(day(now),-60)||shift(date,0)!==date)throw Error('Выберите завершённый день.');if(!c.dateStart){c.dateStart=date;c.view='calendar';}else {if(date<c.dateStart||dates(c.dateStart,date).length>31)throw Error('Период: не более 31 дня, конец не раньше начала.');c.dateEnd=date;c.view='dateReview';}}
  else if(op==='showDates'){if(!c.dateStart||!c.dateEnd)throw Error('Выберите даты.');c.start=c.dateStart;c.end=c.dateEnd;c.period='range';c.view='graph';}
  else if(op==='noop')return ctx;
- else if(/^cand(All|Add|Raise|Reduce|Exclude)$/.test(op)){c.view='candidates';c.kind=op.slice(4).toLowerCase();}
+ else if(/^cand(All|Add|Raise|Reduce|Exclude)$/.test(op)){c.view='candidates';c.submit=false;const k=op.slice(4).toLowerCase(),all=['add','raise','reduce','exclude'];c.directions=k==='all'?(c.directions?.length===4?[]:all):all.filter(x=>x===k?!c.directions?.includes(x):c.directions?.includes(x));}
+ else if(op==='candSubmit'){c.view='candidates';if(!c.directions?.length)throw Error('Выберите хотя бы одно направление.');c.submit=true;c.kind=c.directions.join('+');}
  else throw Error('Откройте раздел заново.');
  return c;
 }
@@ -176,13 +178,16 @@ export async function handleAdvertisingPath(config,update,deps){
  if(!await insert(key,{status:'preparing',actor:a.id,input_message_id:m.message_id,context:ctx,wb_writes:0}))return answer('');
  let view;
  try{
- if(ctx.view==='candidates'){
+ if(ctx.view==='candidates'&&!ctx.submit){
+ const selected=ctx.directions||[],choices=[['Add','add','Добавить товары'],['Raise','raise','Повысить ставки'],['Reduce','reduce','Снизить ставки'],['Exclude','exclude','Исключить / завершить']];
+ view={text:'Предложить кандидатов\nОтметьте одно или несколько направлений, затем нажмите «Найти кандидатов».',reply_markup:{inline_keyboard:[[b((selected.length===4?'☑ ':'☐ ')+'Все направления','candAll')],...choices.map(([op,k,label])=>[b((selected.includes(k)?'☑ ':'☐ ')+label,'cand'+op)]),[b('Найти кандидатов'+(selected.length?' · '+selected.length:''),'candSubmit')],[ads],[home]]},source_keys:[]};
+ }else if(ctx.view==='candidates'){
   const analysisKey=ROOT+'analysis:'+a.id+':'+day(now)+':'+ctx.kind,prior=await get(analysisKey);
   let job=prior?.job_id?await deps.database('business_agent_jobs?id=eq.'+prior.job_id+'&agent_id=eq.china&chat_id=eq.'+CHAT+'&sender_id=eq.'+a.id+'&select=id,status&limit=1'):null;
   if(!prior){
    if(!await insert(analysisKey,{status:'requesting',update_id:update.update_id,actor:a.id,created_at:now.toISOString(),grants_action_permission:false}))throw Error('Analysis already claimed');
    if(typeof deps.requestAnalysis!=='function')throw Error('Analysis route unavailable');
-   const result=await deps.requestAnalysis(candidateRequest(ctx.kind),update);
+   const result=await deps.requestAnalysis(candidateRequest(ctx.directions||ctx.kind),update);
    if(result?.status!==200)throw Error('Analysis not accepted');
    job=await deps.database('business_agent_jobs?agent_id=eq.china&update_id=eq.'+update.update_id+'&chat_id=eq.'+CHAT+'&sender_id=eq.'+a.id+'&select=id,status&limit=1');
    if(job?.length!==1)throw Error('Analysis job not verified');
@@ -190,7 +195,7 @@ export async function handleAdvertisingPath(config,update,deps){
   }
   const state=job?.[0]?.status;
   const line=state==='done'?'Анализ завершён. Ответ проверяйте в сообщении с результатом; завершение задания само по себе не подтверждает доставку.':state==='failed'?'Подготовить ответ не удалось. Изменения не выполнялись.':prior&&!job?.length?'Состояние запроса не подтверждено. Повтор автоматически не запускается.':'Запрос на анализ сохранён'+(job?.[0]?.id?' · №'+job[0].id:'')+'. Результат появится отдельным ответом после обработки; сейчас он ещё не доставлен.';
-  view={text:'Предложить кандидатов\n'+line+'\n\nТолько предложения: добавления, повышения, снижения и исключения. Исполнение — после отдельного подтверждения.',reply_markup:{inline_keyboard:[[b('Все направления','candAll')],[b('Добавить товары','candAdd')],[b('Повысить ставки','candRaise')],[b('Снизить ставки','candReduce')],[b('Исключить / завершить','candExclude')],[ads],[home]]},source_keys:[analysisKey]};
+  view={text:'Предложить кандидатов\n'+line+'\n\nТолько предложения: добавления, повышения, снижения и исключения. Исполнение — после отдельного подтверждения.',reply_markup:{inline_keyboard:[[b('Изменить направления','candAll')],[ads],[home]]},source_keys:[analysisKey]};
  }else{
   let cache;
   if(ctx.view==='search')cache={cabinet:'token_3'};
@@ -214,8 +219,8 @@ export async function handleAdvertisingPath(config,update,deps){
  if(receipt?.chat?.id!==CHAT||receipt.from?.id!==BOT||!Number.isSafeInteger(receipt.message_id))throw Error('Advertising receipt mismatch');
  await put(ROOT+'session:'+sid,{actor:a.id,context:ctx,message_id:receipt.message_id,expires_at:new Date(now.getTime()+86400000).toISOString()});
  await put(key,{status:'sent',actor:a.id,context:ctx,source_keys:view.source_keys||[],message_id:receipt.message_id,receipt,wb_writes:0});
- if(ctx.kind==='ad'&&ctx.view!=='candidates'){
-  const metric=ctx.metric==='drr'?'drr':'cr',k=ROOT+'inline_context:'+a.id+':'+metric,context={...ctx};delete context.matches;delete context.query;
+ if(['ad','general'].includes(ctx.kind)&&ctx.view!=='candidates'){
+  const metric=ctx.kind==='general'?'general':ctx.metric==='drr'?'drr':'cr',k=ROOT+'inline_context:'+a.id+':'+metric,context={...ctx};delete context.matches;delete context.query;
   const value={actor:a.id,context,source_message:{message_id:receipt.message_id,chat:{id:CHAT,type:'supergroup'},from:{id:BOT,is_bot:true},...(receipt.photo?{photo:receipt.photo}:{})},expires_at:new Date(now.getTime()+900000).toISOString()};
   if(await get(k))await put(k,value);else if(!await insert(k,value))throw Error('Inline context unavailable');
  }

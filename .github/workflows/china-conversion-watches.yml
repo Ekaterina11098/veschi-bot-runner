@@ -95,12 +95,21 @@ jobs:
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_reply_*.py'
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_catalog_price_command.py
           PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_zero_orders_stock.py
+      - name: Install pinned native Codex for incoming requests
+        if: github.event_name != 'schedule'
+        run: npm install --global @openai/codex@0.167.1 > "$RUNNER_TEMP/codex-install.log" 2>&1
       - name: Continue owner-authorized persistent cloud Codex conversation
         id: cloud_initial
+        if: github.event_name != 'schedule'
         continue-on-error: true
         env:
           EVENT_NAME: ${{ github.event_name }}
           DIALOG_JOB_ID: ${{ inputs.job_id }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }} # Owner10Nov: scoped bounded Sol dialogue only
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -129,7 +138,8 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          OPENAI_API_KEY: "" # Owner: no paid model API
+          OPENAI_API_KEY: "" # Ordinary deterministic workers have no model credential
+          NATIVE_CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CHINA_ANALYSIS_BACKEND: managed_codex
           PYTHONPATH: source
         run: |
@@ -141,6 +151,9 @@ jobs:
           if [ "$MODE" = dialog_free ]; then
             python scripts/conversion_watches.py --exact-dialog-job "$DIALOG_JOB_ID"
             PYTHONPATH=scripts:source python scripts/china_free_ad_work.py --job-id "$DIALOG_JOB_ID"
+          elif [ "$MODE" = codex_probe ]; then
+            OPENAI_API_KEY="$NATIVE_CODEX_API_KEY" PYTHONPATH=scripts:source python scripts/china_codex_runtime.py --probe
+            PYTHONPATH=scripts:source python scripts/china_codex_runtime.py --economics-only
           elif [ "$MODE" = menu_result ]; then
             PYTHONPATH=scripts:source python scripts/china_menu_analytics.py --recover-job "$DIALOG_JOB_ID"
           elif [ "$MODE" = dialog ]; then

@@ -75,4 +75,11 @@ jobs:
           cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
           cp ../scripts/china_price_brief.py china_agent/price_brief.py
           cp ../scripts/china_buyer_price_forecast.py china_agent/buyer_price_forecast.py
+          cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
+          cp ../scripts/china_price_aggregate_control.py china_agent/price_aggregate_control.py
+          cp ../scripts/china_daily_expected_control.py china_agent/daily_expected_control.py
+          cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py
+          cp ../scripts/china_expected_order_profit.py china_agent/expected_order_profit.py
+          cp ../scripts/china_price_experiment_result.py china_agent/price_experiment_result.py
+          cp ../scripts/china_price_economic_target.py china_agent/price_economic_target.py
           python ../scripts/owner_price_full_recalculation11.py

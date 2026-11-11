@@ -140,7 +140,9 @@ def collect(io,s,day):
   for r in v['addition_candidates']:
    nm=r['nm_id'];cid=r['campaign_id'];zone=r['placement'];typ='search'if zone=='search'else'recommendation';qkey=addition_key(r)
    if qkey not in v['addition_quotes']:
-    try:v['addition_quotes'][qkey]=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=[typ]));save()
+    try:
+     from china_addition_minimum import read_quote
+     v['addition_quotes'][qkey]=read_quote(io,v,r);save()
     except Exception as ex:
      if 'HTTP 400'in str(ex):v['addition_quotes'][qkey]=dict(unavailable=str(ex),observed_at=stamp());save()
      else:v['quote_errors']['add:'+qkey]=str(ex);save()
@@ -165,7 +167,7 @@ def collect(io,s,day):
   qkey=addition_key(r);typ='search'if r['placement']=='search'else'recommendation'
   q=v['addition_quotes'].get(qkey,{})
   vals=[b['value']for row in q.get('bids',[])if row['nm_id']==r['nm_id']for b in row['bids']if b['type']==typ and b['currency']=='CNY']
-  if len(vals)==1:out['addition_bid_quotes'][qkey]=dict(campaign_id=r['campaign_id'],placement=r['placement'],target_minor=vals[0],bid_verified=True,observed_at=v['observed_at'])
+  if len(vals)==1:out['addition_bid_quotes'][qkey]=dict(campaign_id=r['campaign_id'],placement=r['placement'],target_minor=vals[0],bid_verified=True,quote_campaign_id=q.get('quote_campaign_id',r['campaign_id']),observed_at=v['observed_at'])
  return out
 def proposed_actions(s):
  """Every current placement is evaluated; no top8/top12 truncation and no forced count."""

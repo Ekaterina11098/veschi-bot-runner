@@ -247,7 +247,7 @@ def addition_actions(s,raises):
   reserve_extra=90*target/100
   if balances.get(cid,-1)<reserve.get(cid,1e99)+reserve_extra:continue
   reserve[cid]+=reserve_extra
-  evidence=dict(e,cabinet='token_3',currency='CNY',article=prices[nm]['article'],observed_at=v['observed_at'],price_cny=e['seller_price_cny'],minimum_minor=target,period_to=s['period_to'],period_from=v['own']['period_from'],subject_id=o['subject_id'],ad_cpa_unknown=True,preliminary=True,unknown_costs=True,manual_strategy_proposal=True,source_key=ROOT+str(date.fromisoformat(s['period_to'])+timedelta(days=1))+':v1:inputs',test_review_after_first_completed_day=True,ad_traffic_forecast_clicks_per_day=30,campaign_reserve_required_cny=reserve[cid],forecast_not_a_spend_cap=True)
+  evidence=dict(e,cabinet='token_3',currency='CNY',article=prices[nm]['article'],observed_at=v['observed_at'],price_cny=e['seller_price_cny'],minimum_minor=target,minimum_quote_campaign_id=quote.get('quote_campaign_id',cid),period_to=s['period_to'],period_from=v['own']['period_from'],subject_id=o['subject_id'],ad_cpa_unknown=True,preliminary=True,unknown_costs=True,manual_strategy_proposal=True,source_key=ROOT+str(date.fromisoformat(s['period_to'])+timedelta(days=1))+':v1:inputs',test_review_after_first_completed_day=True,ad_traffic_forecast_clicks_per_day=30,campaign_reserve_required_cny=reserve[cid],forecast_not_a_spend_cap=True)
   result.append(dict(id=str(cid)+':add:'+str(nm),kind='ad_add_sku',direction='add',campaign_id=cid,nm_id=nm,article=prices[nm]['article'],placement=placement,target_minor=target,subject_id=o['subject_id'],manual_experiment=True,exact_addition_quote=True,growth_evidence=evidence))
   seen.add(nm)
   added_counts[cid]=added_counts.get(cid,0)+1
@@ -271,7 +271,11 @@ def validate_addition(io,item,before):
  cfg=http(io,'/api/advert/v1/config')
  if cfg['currency']!='CNY'or item['target_minor']%cfg['cpcStep']or item['target_minor']>cfg['cpcMaxBid']:raise ValueError('Addition bid step changed')
  typ='search'if item['placement']=='search'else'recommendation'
- q=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=[typ]))
+ quote_cid=e.get('minimum_quote_campaign_id',cid)
+ if quote_cid!=cid:
+  qs=http(io,'/api/advert/v2/adverts?ids='+str(quote_cid)).get('adverts',[])
+  if len(qs)!=1 or qs[0]['currency']!='CNY'or qs[0]['settings']['payment_type']!='cpc'or not any(n['nm_id']==nm and n['subject']['id']==item['subject_id']for n in qs[0]['nm_settings']):raise ValueError('Exact minimum quote membership changed')
+ q=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=quote_cid,nm_ids=[nm],payment_type='cpc',placement_types=[typ]))
  vals=[b['value']for row in q.get('bids',[])if row['nm_id']==nm for b in row['bids']if b['currency']=='CNY'and b['type']==typ]
  if len(vals)!=1 or vals[0]>item['target_minor']:raise ValueError('Exact addition minimum changed')
  balance=http(io,'/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts']

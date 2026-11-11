@@ -1,3 +1,4 @@
+import {handleMainMenu} from './china_main_menu.mjs';
 import {handleReportButtons} from './china_report_buttons.mjs';
 import {handlePriceButtons} from './china_price_buttons.mjs';
 import {acceptCodex} from './codex-inbox.mjs';
@@ -256,6 +257,8 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     }
     const callback=update.callback_query;
     if(callback){
+      const menuResponse=await handleMainMenu(config,update,{database,telegram});
+      if(menuResponse)return menuResponse;
       const reportButton=await handleReportButtons(config,callback,update.update_id,{database,telegram,digest,launch});
       if(reportButton)return reportButton;
       const priceButton=await handlePriceButtons(config,callback,update.update_id,{database,telegram,digest,same,launchPrice,handlePriceApproval,reportProposals,deferMembership:true});
@@ -268,6 +271,8 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     if(!text)return new Response('OK');
     const first=text.split(/\s+/,1)[0];const parsed=/^\/(\S+?)(?:@([a-z0-9_]+))?$/i.exec(first);const cmd=parsed?.[1].toLowerCase();
     if(parsed?.[2]&&parsed[2].toLowerCase()!==config.bot_username?.toLowerCase())return new Response('OK');
+    const menuResponse=await handleMainMenu(config,update,{database,telegram});
+    if(menuResponse)return menuResponse;
     const bridgeInput=await acceptCodex(config,message,text,update.update_id,database,(job:number)=>launch(job,'dialog_free'));
     if(bridgeInput.response)return bridgeInput.response;
     if(bridgeInput.legacy_text!==undefined)text=bridgeInput.legacy_text;

@@ -15,3 +15,6 @@ transition.valid_until=new Date(Date.now()+60000).toISOString();transition.bot_i
 transition.bot_id=config.bot_id;transition.status='completed';assert.equal((await probe('new-test-secret')).status,401);
 config.secret_digest=await hash('new-test-secret');assert.equal((await probe('new-test-secret')).status,200);assert.equal((await probe('old-test-secret')).status,401);
 console.log('PASS canonical ingress authentication, bounded exact-scope transition, expired/wrong/complete transition rejected; new canonical verified; no external writes.');
+
+
+const selected=await handler(new Request('https://unit.invalid/webhook',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':'new-test-secret','Content-Type':'application/json'},body:JSON.stringify({update_id:123,message:{message_id:9,chat:{id:config.chat_id,type:'supergroup'},from:{id:7,is_bot:false},via_bot:{id:config.bot_id},text:'ДРР · 454-NoelBag-cream\nВыберите РК товара:'}})}));assert.equal(selected.status,200);console.log('PASS selected inline card never becomes a queued cloud question.');

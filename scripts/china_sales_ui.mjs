@@ -1,5 +1,6 @@
 /** Owner-approved Sales path: today -> daily graphs / products / periods. Cache-only. */
 import {advertisingMenu} from './china_advertising_ui.mjs';
+import {tablePng} from './china_table_png.mjs';
 import {salesChart} from './china_sales_chart.mjs';
 const ROOT='china_agent:sales_ui:v1:',DAILY='china_agent:sales_menu:v2:day:',CHAT=-1004342917488,BOT=8780468043;
 const BASIS='FBS created units, all statuses, dedup id; native CNY buyer-discounted amount; not buyouts or all sales models';
@@ -110,6 +111,27 @@ export async function renderSales(ctx,data,sid,now=new Date()){
   const share=(value,total)=>!ok(value)||!ok(total)||total<=0||value>total+.005?'н/д':n(value/total*100)+'%';
   if(ctx.originAds)out.push('Отбор: '+(ctx.base==='week'?'к неделе назад':'к вчера / предыдущему периоду')+' · '+(ctx.metric==='count'?'по количеству':'по сумме CNY'));
   for(const [index,x]of selectedRows.entries())out.push('',(leaders?String(page*5+index+1)+'. ':'')+x.article+': '+amounts(x.current),...(leaders?['Доля в сумме: '+share(x.current?.amount_cny,overall?.amount_cny)+' · в количестве: '+share(x.current?.count,overall?.count)]:[]),'К предыдущей базе: '+change(x.current,x.previous),'К неделе: '+change(x.current,x.week)+(!leaders&&x.delta!==null?'\nВклад к выбранной базе: '+(x.delta>=0?'+':'')+n(x.delta)+(ctx.metric==='count'?' шт.':' CNY'):''));
+  if(['growth','decline'].includes(ctx.sort)&&!ctx.query){
+   const totals=contextTotals(ctx,data),todayMode=ctx.period==='today',window=totals.window;
+   const len=todayMode?1:dates(ctx.start,ctx.end).length;
+   const prevLabel=todayMode?data.hourly.p.orders['1'].start_msk.slice(0,10)+' · '+window.slice(window.indexOf('00:')):shift(ctx.start,-len)+' — '+shift(ctx.end,-len);
+   const weekLabel=todayMode?data.hourly.p.orders['7'].start_msk.slice(0,10)+' · '+window.slice(window.indexOf('00:')):shift(ctx.start,-7)+' — '+shift(ctx.end,-7);
+   const signed=v=>ok(v)?(v>=0?'+':'')+n(v):'н/д';
+   const delta=(a,z,k)=>good(a)&&good(z)?signed(a[k]-z[k]):'н/д';
+   const pc=(v,b)=>b===0?'нет базы':signed((v/b-1)*100)+'%';
+   const one=(a,z)=>good(a)&&good(z)?delta(a,z,'count')+' шт. ('+pc(a.count,z.count)+')\n'+delta(a,z,'amount_cny')+' CNY ('+pc(a.amount_cny,z.amount_cny)+')':'Нет данных';
+   const cell=a=>good(a)?n(a.count)+' шт.\n'+n(a.amount_cny)+' CNY':'Нет данных';
+   const pageRows=rows.slice(page*10,page*10+10);
+   const title=ctx.sort==='growth'?'Кто вырос':'Кто упал';
+   const caption=title+' · '+window+'\nСравнение: '+(ctx.base==='week'?weekLabel:prevLabel)+'\nПо '+(ctx.metric==='count'?'количеству заказов':'сумме заказов')+'. '+(rows.length?'Товаров: '+rows.length+'.':'Нет товаров с подтверждённым изменением.');
+   const keys=[];
+   if(page>0)keys.push(b('‹ Назад','page'+(page-1)));
+   if((page+1)*10<rows.length)keys.push(b('Далее ›','page'+(page+1)));
+   const markup=nav([...(keys.length?[keys]:[]),[b('По сумме','metricAmount'),b('По количеству','metricCount')],[b('К предыдущему периоду','baseYesterday'),b('К неделе','baseWeek')],[b('Изменить период','period')]]);
+   if(!pageRows.length)return {text:caption,reply_markup:markup};
+   const photo=await tablePng({title:title+' · '+(ctx.metric==='count'?'по количеству':'по сумме CNY'),note:todayMode?'Одинаковое окно МСК · итоговые проценты рассчитаны по суммам':'Полные дни МСК · итоговые проценты рассчитаны по суммам',subtitle:window.replaceAll('–','—')+' · часть '+(page+1)+'/'+Math.ceil(rows.length/10),columns:[{label:'Товар',width:320},{label:'Сейчас\nшт. / CNY',width:200},{label:'Предыдущий\nпериод\nшт. / CNY',width:240},{label:'Изменение\nк предыдущему периоду',width:350},{label:'Неделей ранее\nшт. / CNY',width:240},{label:'Изменение\nк неделе',width:350}],rows:pageRows.map(x=>[x.article,cell(x.current),cell(x.previous),one(x.current,x.previous),cell(x.week),one(x.current,x.week)]),footnotes:['Предыдущий период: '+prevLabel.replaceAll('–','—')+'. Неделей ранее: '+weekLabel.replaceAll('–','—')+'.','Сортировка: '+(ctx.base==='week'?'изменение к неделе':'изменение к предыдущему периоду')+'. Обе базы показаны отдельно.','Созданные заказы FBS. CNY после скидок WB — не прибыль и не выкупы.',freshness(ctx,data),'Нет базы — проценты не вычисляются; отсутствующие данные не заменены нулями.']});
+   return {text:caption,photo,reply_markup:markup};
+  }
   if(!rows.length)out.push(leaders&&good(overall)?(overall.count===0?'За выбранный период созданных заказов нет.':'Нет товаров с положительным значением выбранного показателя.'):'Нет совпадений либо нет сопоставимых данных для выбранного списка.');
   out.push('','Созданные заказы FBS · CNY после скидок WB',freshness(ctx,data),footer);
   const buttons=selectedRows.map(x=>[b(x.article,'item'+x.nm)]),paging=[];
@@ -146,7 +168,7 @@ function transition(old,op,now){
  else if(op==='table'){c.view='table';c.page=0;}
  else if(/^tablepage\d+$/.test(op)){c.view='table';c.page=Number(op.slice(9));}
  else if(op==='products'){delete c.nm;c.view='products';}
- else if(['leaders','growth','decline'].includes(op)){c.view=op==='leaders'?'leaderMetric':'list';c.sort=op;c.page=0;delete c.query;}
+ else if(['leaders','growth','decline'].includes(op)){c.view=op==='leaders'?'leaderMetric':'period';c.sort=op;c.page=0;delete c.query;}
  else if(/^page\d+$/.test(op)){c.view='list';c.page=Number(op.slice(4));}
  else if(/^item\d{5,12}$/.test(op)){c.nm=op.slice(4);c.view='summary';}
  else if(op==='period'){c.view='period';}
@@ -161,7 +183,7 @@ function transition(old,op,now){
  else if(op==='home'){c.view='home';}
  else if(op==='noop')return old;
  else throw Error('Unknown navigation');
- if(c.originAds&&['today','yesterday','range7','range14','showDates'].includes(op)){delete c.nm;c.view='list';c.page=0;}
+ if((c.originAds||['growth','decline'].includes(c.sort))&&['today','yesterday','range7','range14','showDates'].includes(op)){delete c.nm;c.view='list';c.page=0;}
  return c;
 }
 export async function handleSalesPath(config,update,deps){
@@ -185,7 +207,7 @@ export async function handleSalesPath(config,update,deps){
  if(match){const s=await get(ROOT+'session:'+match[1]);if(!s||s.actor!==actor.id||s.message_id!==m.message_id||Date.parse(s.expires_at)<=now.getTime())return answer('Откройте «Продажи» своей кнопкой меню.');try{ctx=transition(s.context,match[2],now);}catch(e){return answer(e.message);}if(match[2]==='noop')return answer('');}
  else if(pending?.message_id===m.reply_to_message?.message_id&&!initial){if(Date.parse(pending.expires_at)<=now.getTime())return null;ctx={...pending.context,view:'list',query:text,sort:'leaders',page:0};}
  else if(cb?.data==='cmn1:dynamic'){ctx=transition(ctx,'days',now);}
- else if(['cmn1:growth','cmn1:decline'].includes(cb?.data)){ctx={period:'today',view:'list',sort:cb.data.endsWith('growth')?'growth':'decline',originAds:true,base:'previous',metric:'amount_cny',page:0};}
+ else if(['cmn1:growth','cmn1:decline'].includes(cb?.data)){ctx={period:'today',view:'period',sort:cb.data.endsWith('growth')?'growth':'decline',originAds:true,base:'previous',metric:'amount_cny',page:0};}
  const data=await source(deps,get,ctx,now);
  if(ctx.nm&&!data.names.has(ctx.nm))return answer('Товар не найден в проверенном каталоге.');
  const sid=[...crypto.getRandomValues(new Uint8Array(8))].map(n=>n.toString(16).padStart(2,'0')).join('');

@@ -201,6 +201,34 @@ def render_midday(b):
  finish(im,y+272+len(wrap(d,foot,W-88,24))*31,acts)
  for i,f in enumerate(files,1):f.update(kind='drr:'+str(i).zfill(3),page=i,total=len(files))
  return files
+
+def unavailable_history_report(io,day,current,prepared,error):
+ """Publish factual intraday counters once; never certify or bind an unreviewed action."""
+ import copy
+ from china_advertising_delivery import deliver,telegram_sender
+ reason=str(error)
+ if not reason.startswith(('Completed-day campaign history unavailable:','Completed-day active campaign history incomplete')):
+  raise error
+ policy=io.get('china_agent:advertising_midday_review_policy:v1')or{}
+ if policy.get('show_unavailable_statistics')is not True:raise error
+ b=copy.deepcopy(prepared)
+ for c in b['campaigns']:
+  c['attention']=[];c['addition_review_notes']=[]
+  c['owner_review_note']='Рекомендации не готовы: проверка завершённых дней не завершена.'
+ b['recommendation_directions']={k:dict(status='unavailable',count=0)for k in ('raise','add','reduce','exclude')}
+ b['economic_review_complete']=False
+ b['diagnostic_only']=True
+ b['review_blocker']=reason
+ key='china_agent:advertising_midday_delivery:'+day+':v1:diagnostic'
+ if (io.get(key)or{}).get('status')=='delivered':return
+ files=[]
+ for f in render_midday(b):
+  if f['actions']:raise ValueError('Diagnostic report cannot carry actions')
+  files.append(dict(f,caption='Китай · промежуточный отчёт · '+day+' · '+str(f['page'])+'/'+str(f['total'])+'. Рекомендации пока недоступны: нет полной истории завершённых дней. Это не отсутствие кандидатов.'))
+ save(io,key+':evidence',dict(status='partial_review',bundle=b,blocker=reason,observed_at=b['observed_at'],wb_writes=0))
+ r=deliver(io,day,files,telegram_sender(io),delivery_key=key,expected_families={'drr'})
+ print(json.dumps(dict(status=r['status'],day=day,diagnostic_only=True,wb_writes=0)))
+
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
  from china_price_apply import IO
@@ -236,7 +264,11 @@ def run():
   reusable=done.get('status')=='complete'and review.get('economic_review_complete')is True and checked_review and same_campaign_state and (exact_recovery or (datetime.now(timezone.utc)-datetime.fromisoformat(done['observed_at'].replace('Z','+00:00'))).total_seconds()<1200)
   prepared=prepare_midday(io,day,current)
   reusable=reusable and prepared.get('review_context',{}).get('history_sha256')==done.get('input_review_context',{}).get('history_sha256')
-  b=only_completed_day_actions(merge_completed(prepared,review,completed_key)if reusable else attach(io,prepared,day));files=[]
+  try:
+   b=only_completed_day_actions(merge_completed(prepared,review,completed_key)if reusable else attach(io,prepared,day))
+  except ValueError as error:
+   unavailable_history_report(io,day,current,prepared,error);return
+  files=[]
   for i,f in enumerate(render_midday(b)):
    p=plan(io,day,f,i,slot='midday-full-v3')
    files.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))

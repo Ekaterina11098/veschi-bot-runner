@@ -1,0 +1,79 @@
+name: Owner update existingPNG856 with3archive proposals
+on:
+  push:
+    paths: ['.github/workflows/owner-archive3-report-20261111.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-advertising-daily
+  cancel-in-progress: false
+jobs:
+  proposal:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Edit existing856 and replace exact plan binding; no WB mutation
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import copy,json,base64,requests
+          from datetime import datetime,timezone
+          from china_price_apply import IO
+          from china_daily_ad_actions import plan,bind,BIND
+          from china_loss_control import PLAN
+          from china_advertising_v2_png import render
+          from china_execution_notice import proven
+          io=IO();K='china_agent:owner_archive3_report:2026-11-11:v1'
+          if io.get(K):raise SystemExit('Existing edit journal; no replay')
+          # Regression check: archive completion is proven only with status7 and identical members.
+          before={'id':1,'status':9,'settings':{},'nm_settings':[{'nm_id':2}]}
+          assert proven({'campaign_id':1,'kind':'archive_campaign'},{'status':'verified','before':before,'after':dict(before,status=7)})
+          assert not proven({'campaign_id':1,'kind':'archive_campaign'},{'status':'verified','before':before,'after':dict(before,status=11)})
+          assert not proven({'campaign_id':1,'kind':'archive_campaign'},{'status':'verified','before':before,'after':dict(before,status=7,nm_settings=[])})
+          prior=io.get('china_agent:owner_add55_report:2026-11-11:v1');assert prior['status']=='sent'
+          b=io.get(BIND+'856');assert b['plan_id']==prior['plan_id']
+          current=io.get('china_agent:daily_ad_current_report:v1:drr');assert current['plan_id']==b['plan_id']
+          bundle=copy.deepcopy(prior['bundle']);ids=[41155824,41270471,41570073]
+          r=requests.get('https://advert-api.wildberries.ru/api/advert/v2/adverts',params={'ids':','.join(map(str,ids))},headers={'Authorization':io.token},timeout=40);r.raise_for_status();states={c['id']:c for c in r.json()['adverts']};assert set(states)==set(ids)
+          for cid in ids:
+           cp=states[cid];assert cp['status']==9 and cp['currency']=='CNY'
+           c=next(c for c in bundle['campaigns']if c['id']==cid);assert c['period']['orders']==0 and c['period']['spend']>0
+           assert {x['nm_id']for x in cp['nm_settings']}=={x['nm']for x in c['current_articles']}
+           action=dict(id=str(cid)+':owner-archive',kind='archive_campaign',campaign_id=cid,nm_ids=sorted(n['nm_id']for n in cp['nm_settings']),status_before=9,status_after=7,owner_selected=True,article=c['name'])
+           row=dict(nm=cp['nm_settings'][0]['nm_id'],article=c['name'],action=action,decision='Завершить РК и перевести в архив.',period=c['period'],daily=[])
+           c['attention'].append(row);c['direction_recommendations']=['Завершить РК и перевести в архив: за8–10ноября нет рекламных заказов.']
+          pages=[f for f in render(bundle)if f['family']=='drr'];assert len(pages)==1 and len(pages[0]['actions'])==10
+          f=pages[0];p=plan(io,'2026-11-11',f,0,slot='owner55archive3')
+          e=dict(status='prepared',message_id=856,old_binding=b,new_plan_id=p['plan_id'],new_plan_sha256=p['plan_sha256'],png_b64=base64.b64encode(f['bytes']).decode(),bundle=bundle,wb_writes=0,owner_quote='Добавь это в существующий ПНГ вТГ',prepared_at=datetime.now(timezone.utc).isoformat())
+          assert io.create(K,e)
+          old=io.get(PLAN+b['plan_id']);assert io.create(K+':old_plan',old)
+          old.update(invalidated_at=datetime.now(timezone.utc).isoformat(),invalidation_reason='Owner added3archive proposals to samePNG856; new exact plan required');io.put(PLAN+old['plan_id'],old)
+          url='https://api.telegram.org/bot'+io.bot+'/'
+          me=requests.post(url+'getMe',timeout=25).json();assert me['ok'] and me['result']['id']==8780468043
+          caption='Китай · реклама · 11ноября. Обновлено:7действий по товарам, включая исключение55; завершить и перевести в архив РК41155824,41270471,41570073. Всего10действий. Ответьте «Сделай всё» на этот обновлённый PNG для совместного выполнения. Бюджеты855 — отдельно. Ничего ещё не исполнено.'
+          e['status']='editing';io.put(K,e)
+          try:
+           r=requests.post(url+'editMessageMedia',data={'chat_id':-1004342917488,'message_id':856,'media':json.dumps({'type':'photo','media':'attach://report','caption':caption},ensure_ascii=False)},files={'report':('report.png',f['bytes'],'image/png')},timeout=90)
+           j=r.json();assert r.ok and j.get('ok')is True
+           receipt=j['result'];assert receipt['message_id']==856 and receipt['chat']['id']==-1004342917488 and receipt['from']['id']==8780468043
+           p['visible_from']=datetime.now(timezone.utc).isoformat();io.put(PLAN+p['plan_id'],p)
+           f.update(plan_id=p['plan_id'],plan_sha256=p['plan_sha256'])
+           io.put(BIND+'856',dict(plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],chat_id=-1004342917488,family='drr'));bind(io,f,receipt)
+           e.update(status='edited_verified',receipt={'message_id':856,'chat_id':-1004342917488,'edit_date':receipt.get('edit_date')},completed_at=datetime.now(timezone.utc).isoformat());io.put(K,e)
+          except Exception:
+           e['status']='uncertain';io.put(K,e);raise
+          print('ExistingPNG856updated10actions;WBwrites0')
+          PY

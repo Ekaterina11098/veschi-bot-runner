@@ -7,6 +7,29 @@ class W:
  def catalog(self): return [('1473243817','455-NoelBag-yellow')]
 
 class ReportContract(unittest.TestCase):
+ def test_native_png_recovery_reuses_answer_and_has_separate_delivery_identity(self):
+  from china_menu_analytics import recover,ROOT
+  from contextlib import nullcontext
+  text='/codex general funnel 1473244991 2026-11-05 2026-11-11'
+  class Worker:
+   def __init__(self):
+    self.state={ROOT+'inbox:305':{'job_id':305,'request_text':text,'input_message_id':957},'china_agent:menu_result:v1:305':{'status':'sent','answer':'ready table','message_ids':[962]}};self.sends=[]
+   def db(self,*a,**kw):return [{'id':305,'sender_id':5122667182,'chat_id':-1004342917488}]
+   def get(self,key):return self.state.get(key)
+   def save(self,key,value,**kw):self.state[key]=value
+   def send_once(self,key,chat,part):
+    self.sends.append((key,chat,part));self.state['china_agent:conversion_watch_delivery:v1:'+key]={'status':'sent','message_id':963};return 'sent'
+  w=Worker()
+  def parts(worker,job,answer,split):
+   self.assertEqual(job['id'],'native-funnel-305');self.assertEqual(worker.active_question_id,job['id']);self.assertEqual(answer,'ready table')
+   return ['header','CHINA_TABLE_PNG:test:0','footer']
+  mods={'conversion_watches':types.SimpleNamespace(runtime=lambda:w,saved_network_guard=nullcontext,split_message=lambda t:[t]),'china_codex_ad_review':types.SimpleNamespace(bind=lambda *a:None),'china_table_png':types.SimpleNamespace(delivery_parts=parts)}
+  with patch.dict(sys.modules,mods),patch('china_menu_analytics.funnel',side_effect=AssertionError('must reuse collected data')):
+   scope={'nm_id':1473244991,'date_from':'2026-11-05','date_to':'2026-11-11'}
+   self.assertEqual(recover(305,scope)['message_ids'],[962,963])
+   self.assertEqual(recover(305,scope)['status'],'already_sent')
+  self.assertEqual(len(w.sends),1);self.assertEqual(w.sends[0][2],'CHINA_TABLE_PNG:test:0')
+  self.assertTrue(w.state['china_agent:menu_result:v1:305']['png_verified'])
  def test_native_recovery_bound_to_original_product_and_dates(self):
   from china_menu_analytics import native_funnel_request,PREFIX
   text='/codex show general funnel for 021 nmid 1473244991 for 2026-11-05 to 2026-11-11 full msk days. read only.'

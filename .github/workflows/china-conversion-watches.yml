@@ -100,7 +100,7 @@ jobs:
         run: npm install --global @openai/codex@0.167.1 > "$RUNNER_TEMP/codex-install.log" 2>&1
       - name: Continue owner-authorized persistent cloud Codex conversation
         id: cloud_initial
-        if: github.event_name != 'schedule'
+        if: github.event_name == 'push' || inputs.action == 'dialog' || inputs.action == 'dialog_free'
         continue-on-error: true
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -195,7 +195,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           set -o pipefail
-          python -u scripts/china_codex_cloud.py | tee "$RUNNER_TEMP/china-cloud-1.json"
+          python -u scripts/china_codex_cloud.py --job-id "${{ steps.cloud_initial.outputs.job_id }}" | tee "$RUNNER_TEMP/china-cloud-1.json"
           python -c "import json,os; r=json.load(open(os.environ['RUNNER_TEMP']+'/china-cloud-1.json')); f=open(os.environ['GITHUB_OUTPUT'],'a'); f.write('status='+str(r['status'])+'\\njob_id='+str(r.get('job_id',''))+'\\n')"
       - name: Collect or deliver exact continued chat job 1
         if: success() && steps.cloud_continue_1.outputs.job_id != '' && contains(fromJSON('["collecting","waiting_analytics","ready","existing_outbox"]'), steps.cloud_continue_1.outputs.status)
@@ -222,7 +222,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           set -o pipefail
-          python -u scripts/china_codex_cloud.py | tee "$RUNNER_TEMP/china-cloud-2.json"
+          python -u scripts/china_codex_cloud.py --job-id "${{ steps.cloud_initial.outputs.job_id }}" | tee "$RUNNER_TEMP/china-cloud-2.json"
           python -c "import json,os; r=json.load(open(os.environ['RUNNER_TEMP']+'/china-cloud-2.json')); f=open(os.environ['GITHUB_OUTPUT'],'a'); f.write('status='+str(r['status'])+'\\njob_id='+str(r.get('job_id',''))+'\\n')"
       - name: Collect or deliver exact continued chat job 2
         if: success() && steps.cloud_continue_2.outputs.job_id != '' && contains(fromJSON('["collecting","waiting_analytics","ready","existing_outbox"]'), steps.cloud_continue_2.outputs.status)
@@ -249,7 +249,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           set -o pipefail
-          python -u scripts/china_codex_cloud.py | tee "$RUNNER_TEMP/china-cloud-3.json"
+          python -u scripts/china_codex_cloud.py --job-id "${{ steps.cloud_initial.outputs.job_id }}" | tee "$RUNNER_TEMP/china-cloud-3.json"
           python -c "import json,os; r=json.load(open(os.environ['RUNNER_TEMP']+'/china-cloud-3.json')); f=open(os.environ['GITHUB_OUTPUT'],'a'); f.write('status='+str(r['status'])+'\\njob_id='+str(r.get('job_id',''))+'\\n')"
       - name: Collect or deliver exact continued chat job 3
         if: success() && steps.cloud_continue_3.outputs.job_id != '' && contains(fromJSON('["collecting","waiting_analytics","ready","existing_outbox"]'), steps.cloud_continue_3.outputs.status)

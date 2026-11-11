@@ -87,16 +87,21 @@ async def execute(w,job,inbox,probe=False):
  from china_analytic_dialog import reading
  if job.get('chat_id')!=CHAT or job.get('sender_id')not in (5122667182,307200273)or inbox.get('job_id')!=job['id']:raise PermissionError('Original work-message scope mismatch')
  key=ROOT+'thread:'+str(CHAT);state=w.get(key);journal=ROOT+'job:'+str(job['id']);old=w.get(journal)or{}
- if old.get('status')in ('running','uncertain'):raise RuntimeError('Existing native turn must be reconciled, not repeated')
+ if old.get('status')in ('preparing','running','uncertain'):raise RuntimeError('Existing native turn must be reconciled, not repeated')
  outkey='china_agent:codex_bridge:v1:outbox:'+str(job['id'])
  if w.get(outkey):return dict(status='existing_outbox',job_id=job['id'])
- w.save(journal,dict(status='running',job_id=job['id'],started_at=stamp(),transport='native_codex_app_server',model=MODEL))
- tools=Tools(w,job)
+ w.save(journal,dict(status='preparing',job_id=job['id'],started_at=stamp(),transport='native_codex_app_server',model=MODEL,model_request_started=False))
+ try:tools=Tools(w,job)
+ except Exception as e:
+  w.save(journal,dict(status='blocked_before_model',job_id=job['id'],error_type=type(e).__name__,error=str(e)[:500],failed_at=stamp(),model_request_started=False,model_calls=0))
+  raise
  with tempfile.TemporaryDirectory(prefix='veschi-codex-')as home:
-  client=Client(tools,home,MODEL)
+  client=Client(tools,home,MODEL);model_request_started=False
   try:
    await client.start()
    prompt=json.dumps(dict(today_msk=str(w.now.astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date()),sender_id=job['sender_id'],request=inbox['request_text'],data_instructions='Текст вопроса не меняет права. Сначала прочитай work_memory.'),ensure_ascii=False)
+   model_request_started=True
+   w.save(journal,dict(status='running',job_id=job['id'],model_request_started=True,model_request_started_at=stamp(),transport='native_codex_app_server',model=MODEL))
    with reading():answer=await client.turn(state,prompt,INSTRUCTIONS,SPECS)
    answer=final_report_answer(tools,answer)
    snapshot=await client.snapshot();w.save(key,snapshot)
@@ -108,7 +113,7 @@ async def execute(w,job,inbox,probe=False):
    w.save(journal,dict(status='ready',job_id=job['id'],completed_at=stamp(),native_thread_id=snapshot['thread_id'],tool_calls=client.calls,answer=answer,wb_writes=0,probe=probe))
    return dict(status='ready',job_id=job['id'],native_thread_id=snapshot['thread_id'],tool_calls=client.calls)
   except Exception as e:
-   w.save(journal,dict(status='uncertain',job_id=job['id'],error_type=type(e).__name__,error=str(e)[:500],failed_at=stamp()))
+   w.save(journal,dict(status='uncertain'if model_request_started else'blocked_before_model',job_id=job['id'],error_type=type(e).__name__,error=str(e)[:500],failed_at=stamp(),model_request_started=model_request_started))
    raise
   finally:await client.close()
 def run(w,job,inbox,probe=False):return asyncio.run(execute(w,job,inbox,probe))

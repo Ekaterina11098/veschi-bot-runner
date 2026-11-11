@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 pillow==11.3.0 python-dotenv simplejson==4.2.0 openai==3.42.1
-      - name: Verify hourly source and full Sales path; no duplicate correction
+      - name: Verify direct reports and correct extra link screen without execution
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -39,6 +39,8 @@ jobs:
           PYTHONPATH: scripts:source
         run: |
           PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_hourly_sales_read.py
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_main_menu_index.py
+          node scripts/test_direct_ads.mjs
           node scripts/test_main_menu.mjs
           node scripts/test_sales_full_path.mjs
-          node scripts/owner_sales_path_correction11.mjs
+          node scripts/owner_direct_report_view11.mjs

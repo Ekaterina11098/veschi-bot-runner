@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 pillow==11.3.0 python-dotenv simplejson==4.2.0 openai==3.42.1
-      - name: Delete exact obsolete869 on explicit owner request; preserve corrected870
+      - name: Publish approved Sales and Advertising main menu once
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -38,5 +38,4 @@ jobs:
           OPENAI_API_KEY: ""
           PYTHONPATH: scripts:source
         run: |
-          cp scripts/china_price_brief.py source/china_agent/price_brief.py
-          python scripts/owner_price296_correction.py
+          python scripts/owner_main_menu11.py

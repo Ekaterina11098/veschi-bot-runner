@@ -6,6 +6,18 @@ ROOT='china_agent:codex_appserver:v1:'
 def stamp():return datetime.now(timezone.utc).isoformat()
 def encode(data):return base64.b64encode(gzip.compress(data)).decode()
 def decode(text):return gzip.decompress(base64.b64decode(text,validate=True))
+def restore_rollout(state,specs):
+ raw=decode(state['rollout_gzip_b64'])
+ if hashlib.sha256(raw).hexdigest()!=state['rollout_sha256']:raise ValueError('Native thread integrity mismatch')
+ lines=raw.splitlines(keepends=True)
+ if not lines:raise ValueError('Native thread metadata missing')
+ meta=json.loads(lines[0])
+ if meta.get('type')!='session_meta'or meta.get('payload',{}).get('id')!=state['thread_id']:raise ValueError('Native thread metadata identity mismatch')
+ # This pinned protocol restores tool definitions from rollout metadata. Refresh
+ # only that registry; preserve every historical turn byte-for-byte.
+ meta['payload']['dynamic_tools']=specs
+ lines[0]=(json.dumps(meta,ensure_ascii=False,separators=(',',':'))+'\n').encode()
+ return b''.join(lines)
 class Client:
  def __init__(self,tool,home,model):self.tool=tool;self.home=Path(home);self.model=model;self.seq=0;self.waiters={};self.finished=None;self.final=[];self.calls=[]
  async def start(self):
@@ -58,8 +70,7 @@ class Client:
  async def turn(self,state,prompt,instructions,specs):
   params={'model':self.model,'cwd':str(self.home),'approvalPolicy':'never','sandbox':'read-only','developerInstructions':instructions}
   if state:
-   path=self.home/'restored-session.jsonl';raw=decode(state['rollout_gzip_b64'])
-   if hashlib.sha256(raw).hexdigest()!=state['rollout_sha256']:raise ValueError('Native thread integrity mismatch')
+   path=self.home/'restored-session.jsonl';raw=restore_rollout(state,specs)
    path.write_bytes(raw)
    result=await self.rpc('thread/resume',dict(params,threadId=state['thread_id'],path=str(path),excludeTurns=True))
   else:result=await self.rpc('thread/start',dict(params,dynamicTools=specs,historyMode='legacy',serviceName='veschi_telegram'))

@@ -25,8 +25,13 @@ def bind(io,f,receipt):
  if not old and not io.create(BIND+str(mid),b):raise ValueError('Concurrent daily binding')
  from china_daily_report_validity import publish
  publish(io,p)
+ from china_report_buttons import bind as bind_buttons
+ bind_buttons(io,f,receipt)
 
 def handle(w,job):
+ from china_report_buttons import handle as report_buttons_handle
+ button_result=report_buttons_handle(w,job)
+ if button_result is not None:return button_result
  from china_daily_bid_selection import handle as bid_selection_handle
  bid_selection_result=bid_selection_handle(w,job)
  if bid_selection_result is not None:return bid_selection_result
@@ -50,6 +55,9 @@ def handle(w,job):
  if p.get('visible_from') and datetime.fromisoformat(job['created_at'])<datetime.fromisoformat(p['visible_from']):return ('PNG обновлён после этого подтверждения. Ответьте на обновлённый отчёт ещё раз.',[])
  if not p['items']:return ('В этом PNG нет новых действий. Уже выполненное и наблюдение повторно не запускаю.',[])
  if any(x.get('kind')=='approve_budget_reserve'for x in p['items']):return ('В этом PNG только рекомендации по резерву. Условное согласование сумм отменено; для пополнения нужен готовый расчёт и отдельная команда.',[])
+ from china_report_buttons import claim,domain
+ if (w.get('china_agent:report_buttons:v1:policy')or{}).get('enabled'):
+  claim(w,p['plan_id'],domain(p['items']),'job:'+str(job['id']))
  a=dict(status='approved',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],job_id=job['id'],update_id=job['update_id'],sender_id=job['sender_id'],chat_id=CHAT,bot_id=BOT,input_message_id=m.get('message_id'),reply_message_id=m['reply_message_id'],created_at=job['created_at'],price_changes=False)
  w.save(APPROVAL+str(job['id']),a,insert=True)
  conditional=sum(x.get('kind')=='approve_budget_reserve' for x in p['items'])
@@ -58,6 +66,8 @@ def handle(w,job):
 
 def execute(io,a,p):
  io.validate_owner(a)
+ from china_report_buttons import execution_claim
+ execution_claim(io,a,p)
  from china_daily_report_validity import require
  require(io,p)
  io.daily_report_current_revalidation=p.get('validity_mode')=='until_replaced'
@@ -191,6 +201,3 @@ def execute(io,a,p):
 def process_and_deliver(io,a,p):
  # execute always journals and delivers its own result, including direct recovery calls.
  return execute(io,a,p)
-
-
-

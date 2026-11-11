@@ -36,7 +36,7 @@ def run():
  b['approved_statistics_exceptions']={'41756218':dict(owner_id=5122667182,owner_accepted_separate_row=True,reason='new_campaign_no_wb_statistics',source='owner accepted send now with417 separately; WB UI8-10Nov also no data')}
  c=next(c for c in b['campaigns']if c['id']==41756218)
  c.update(period=None,last=None,missing_stats=True)
- c['direction_recommendations']=['Новая РК от10.11. Первый полный день11.11; оценка12.11. Без изменений.']
+ c['owner_statistics_note']='Новая РК от10.11. Первый полный день11.11; оценка12.11. Без изменений.'
  ids=[1535337771,1535337772,1535337773,1535337779,1556488181]
  prices=current_prices(io,ids);stock=read_stock([p['article']for p in prices['rows']]);pub=published_stock(io,prices,ids)
  econ=model_rows(dict(products=v['own'],prices=prices,stock=stock,fx=dict(rub_per_cny=v['fx']['rub_per_cny'])),io.get('china_agent:new_ad_economics_policy:v1'),io.get('china_agent:expected_profit_delivery_model:v1'))

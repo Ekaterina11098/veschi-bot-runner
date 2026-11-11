@@ -31,13 +31,13 @@ with runtime_db() as lock:
      ident=r.get('chrtId');q=r.get('amount')
      if ident not in page or ident in amounts or type(q) not in(int,float) or not math.isfinite(q) or q<0 or int(q)!=q:raise Stopped('MGT stock coverage invalid')
      amounts[ident]=int(q)
-   if set(amounts)!=set(ids):raise Stopped('MGT stock response incomplete')
+   missing_ids=sorted(set(ids)-set(amounts))
    rows=[]
-   allarts=set(a for a,q in physical.items() if q!=0)|{a for a,vals in sizes.items() if sum(amounts[v] for v in vals)>0}
+   allarts=set(a for a,q in physical.items() if q!=0)|{a for a,vals in sizes.items() if sum(amounts.get(v,0) for v in vals)>0}
    for art in sorted(allarts):
     matching=[c for c in cards if g.norm(c.get('vendorCode'))==art];values=sizes.get(art,set())
-    rows.append(dict(article=art,physical=physical.get(art),fbs=sum(amounts[v] for v in values) if values else None,
+    rows.append(dict(article=art,physical=physical.get(art),fbs=sum(amounts[v] for v in values) if values and values.issubset(amounts) else None,
      card_count=len(matching),sizes=sorted(values),photo=all(bool(c.get('photos')) for c in matching) if matching else False))
-   result=dict(complete=True,readiness_only=True,stock_writes=0,ms_document_writes=0,started_at=time.time(),finished_at=time.time(),ms_store={k:msstore.get(k) for k in('id','name','archived')},wb_warehouse=selected[0],rows=rows,unresolved_ms=unresolved,wb_catalog_cards=len(cards))
+   result=dict(complete=True,readiness_only=True,stock_writes=0,ms_document_writes=0,started_at=time.time(),finished_at=time.time(),ms_store={k:msstore.get(k) for k in('id','name','archived')},wb_warehouse=selected[0],rows=rows,unresolved_ms=unresolved,wb_catalog_cards=len(cards),stock_response_missing_ids=missing_ids)
    with store.transaction():store.sql('INSERT INTO stock_runs VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET snapshot=excluded.snapshot',(ROOT,canonical(result),'{}',digest({}),'technical-no-executor',time.time()))
    seal('mgt-china-readiness',result);print(json.dumps(dict(complete=True,stock_writes=0)))

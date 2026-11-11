@@ -1,4 +1,4 @@
-name: Owner fully recalculate price controls11Nov
+name: Owner fully verify exact price controls11Nov
 on:
   push:
     paths: ['.github/workflows/owner-unified-apply11.yml']

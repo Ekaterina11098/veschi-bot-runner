@@ -555,8 +555,11 @@ def prepare(io,day):
  from china_advertising_directions import attach
  from china_budget_page_actions import owner_policy
  result=owner_policy(io,attach(result,s))
- from china_codex_reports import review_advertising
- result=review_advertising(io,result,s,'advertising:'+day+':morning')
+ from china_morning_rules_review import enabled as no_model_enabled,review as no_model_review
+ if no_model_enabled(io):result=no_model_review(io,result,s)
+ else:
+  from china_codex_reports import review_advertising
+  result=review_advertising(io,result,s,'advertising:'+day+':morning')
  from china_sales_growth_review import attach as sales_review
  result=sales_review(result)
  result['mandatory_campaign_format']=(io.get(FORMAT)or{}).get('mandatory') is True

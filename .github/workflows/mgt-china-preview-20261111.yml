@@ -1,9 +1,6 @@
 name: China MGT safe preview without publication11Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/mgt-china-preview-20261111.yml']
 permissions:
   contents: read
 concurrency:

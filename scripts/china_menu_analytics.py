@@ -53,6 +53,14 @@ def _candidate(w,job,text):
   if k not in wanted:s['rows']=[];s['count']=0;s['note']='Не выбрано в этом запросе.'
   elif s.get('status')=='unavailable':raise ValueError(LABELS[k]+': проверка не завершена')
   else:selected.extend(r['action']for r in s['rows']if r.get('ready') and r.get('action'))
+ if not selected:
+  scope=bundle.get('full_cabinet_growth_review')or{}
+  missing=scope.get('missing_economics')or{}
+  answer='По выбранным направлениям ('+', '.join(LABELS[k].lower()for k in wanted)+') готовых предложений сейчас нет.'
+  if missing:answer+=' По '+str(len(missing))+' товарам не хватает данных собственной экономики; вывод об их пригодности не сделан.'
+  answer+=' Уже выполненные действия и сегодняшние повышения не повторяю. Изменений нет.'
+  w.save('china_agent:menu_analytics:v1:'+str(job['id']),dict(status='reviewed',report_kind='no_ready_actions',directions=wanted,ready_actions=0,coverage=scope,wb_writes=0,model_calls=0))
+  return answer
  # Cached complete-day statistics do not establish the current campaign/price/stock.
  if selected:
   from china_advertising_v2 import http
@@ -189,10 +197,28 @@ def verify_funnel(nm):
  if not files:raise ValueError('Funnel PNG missing')
  w.save('china_agent:menu_funnel_qa:v1:'+str(nm),dict(status='complete',answer=answer,files=[base64.b64encode(b).decode()for b in files],wb_writes=0,model_calls=0))
  return dict(status='complete',nm_id=nm,png_parts=len(files))
+def correct_empty_result(job_id):
+ from conversion_watches import runtime,saved_network_guard
+ w=runtime();key='china_agent:menu_result:v1:'+str(job_id);prior=w.get(key)or{}
+ if prior.get('status')!='sent'or 'Готовых действий: 0.'not in prior.get('answer',''):raise ValueError('No verified empty result to clarify')
+ inputs=w.get('china_agent:advertising_full_growth:'+str(datetime.now(ZoneInfo('Europe/Moscow')).date())+':v1:inputs')or{}
+ if inputs.get('status')!='complete':raise ValueError('Completed review inputs missing')
+ missing=inputs.get('economics',{}).get('missing')or{}
+ answer='Уточнение к подбору: готовых добавлений и повышений сейчас не выделено. По '+str(len(missing))+' товарам не хватает собственной экономики; это не означает, что они не подходят. Предыдущий PNG — статистика РК, а не новый план действий. Изменений нет.'
+ receipt_key='menu_result:'+str(job_id)+':empty_clarification';w.reply_id=(w.get(ROOT+'inbox:'+str(job_id))or{})['input_message_id']
+ with saved_network_guard():
+  if w.send_once(receipt_key,-1004342917488,answer)!='sent':raise ValueError('Clarification delivery not verified')
+ receipt=w.get('china_agent:conversion_watch_delivery:v1:'+receipt_key)or{}
+ if receipt.get('status')!='sent'or not receipt.get('message_id'):raise ValueError('Clarification receipt missing')
+ w.save(key+':initial',prior,insert=True)
+ w.save(key,dict(status='sent',job_id=job_id,answer=answer,message_ids=[receipt['message_id']],supersedes_message_ids=prior['message_ids'],wb_writes=0,model_calls=0))
+ return dict(status='sent',job_id=job_id,message_ids=[receipt['message_id']])
 if __name__=='__main__':
  import argparse,json
  p=argparse.ArgumentParser();p.add_argument('--recover-job',type=int,required=True);args=p.parse_args()
  from pathlib import Path
  request=json.loads(Path('china-conversion-watches-request.json').read_text())
- if request.get('verify_funnel_nm_id'):print(json.dumps(verify_funnel(int(request['verify_funnel_nm_id']))))
- print(json.dumps(recover(args.recover_job)))
+ if request.get('correct_empty_result'):print(json.dumps(correct_empty_result(args.recover_job)))
+ else:
+  if request.get('verify_funnel_nm_id'):print(json.dumps(verify_funnel(int(request['verify_funnel_nm_id']))))
+  print(json.dumps(recover(args.recover_job)))

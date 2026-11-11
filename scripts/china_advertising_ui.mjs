@@ -84,7 +84,7 @@ export async function conversionView(cache,ctx,sid,now){
   const campaignIds=[...new Set([...(cache.daily||[]).map(r=>r.campaign),...(cache.current_campaigns||[]).map(r=>r.campaign),...(cache.hourly||[]).flatMap(h=>(h.ad_rows||[]).map(r=>String(r.campaign)))])].sort();
   const rows=general?products.map(([nm,article])=>[b(article||nm,'nm'+nm)]):[...[[b(ctx.nm?'Все РК товара':'Все РК · доступное покрытие','cidAll')]],...campaignIds.slice((ctx.page||0)*8,(ctx.page||0)*8+8).map(cid=>[b('РК '+cid,'cid'+cid)])];
   if(!general){const count=campaignIds.length;if(ctx.page>0)rows.push([b('‹ Предыдущие','page'+(ctx.page-1))]);if(((ctx.page||0)+1)*8<count)rows.push([b('Следующие ›','page'+((ctx.page||0)+1))]);}
-  return {text:general?'Общая воронка\nВыберите товар. Доступно только сохранённое покрытие; недоступные товары не считаются нулевыми.':(metric==='drr'?'ДРР':'Рекламная конверсия')+(ctx.nm?' · '+(ctx.article||ctx.nm)+'\nВыберите РК товара. Каждая кампания показывается отдельно; отсутствие строки статистики не означает ноль.':'\nВсе доступные РК или одна РК. Заказы — атрибутированные, не доказанно уникальные между РК.'),reply_markup:nav([...rows,...(!general?[[b('Найти товар по артикулу','search')],[b(ctx.nm?'Все РК товара':'Все рекламные кампании','allCampaigns')]]:[]),...(metric==='drr'?[]:[[b('‹ Источники','types')]])])};
+  return {text:general?'Общая воронка\nВыберите товар. Доступно только сохранённое покрытие; недоступные товары не считаются нулевыми.':(metric==='drr'?'ДРР':'Рекламная конверсия')+(ctx.nm?' · '+(ctx.article||ctx.nm)+'\nВыберите РК товара. Каждая кампания показывается отдельно; отсутствие строки статистики не означает ноль.':'\nВсе доступные РК или одна РК. Заказы — атрибутированные, не доказанно уникальные между РК.'),reply_markup:nav([...rows,...(!general?[[b('Найти товар по артикулу','search')],[b('Все РК кабинета','cabinetCampaigns')]]:[]),...(metric==='drr'?[]:[[b('‹ Источники','types')]])])};
  }
  if(ctx.view==='period')return {text:(general?'Общая воронка · '+(products.find(p=>p[0]===ctx.nm)?.[1]||ctx.nm):(metric==='drr'?'ДРР':'Рекламная конверсия')+' · '+(ctx.nm?(ctx.article||ctx.nm)+' · ':'')+(ctx.cid?'РК '+ctx.cid:'все доступные РК'))+'\nВыберите период.',reply_markup:nav([[b('7 полных дней','range7')],[b('14 полных дней','range14')],[b('Выбрать даты','calendar')],[b('Сегодня к тому же часу','today')],[b(objectLabel,'objects')]])};
  if(ctx.view==='calendar'){
@@ -132,6 +132,7 @@ function transition(ctx,op,now){
  else if(op==='objects')c.view='objects';
  else if(op==='search'){c.view='search';}
  else if(op==='allCampaigns'){delete c.cid;c.view=c.nm?'period':'objects';}
+ else if(op==='cabinetCampaigns'){delete c.nm;delete c.article;delete c.cid;c.view='objects';}
  else if(/^pick\d{5,12}$/.test(op)){c.nm=op.slice(4);delete c.cid;c.view='objects';}
  else if(op==='cidAll'){delete c.cid;c.view='period';}
  else if(/^cid\d{5,12}$/.test(op)){c.cid=op.slice(3);c.view='period';}

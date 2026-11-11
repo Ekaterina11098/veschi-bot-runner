@@ -1,0 +1,28 @@
+name: Owner final morning prepare11Nov
+on:
+  push:
+    paths: ['.github/workflows/owner-morning-final11.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-advertising-daily
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 pillow==11.3.0
+      - name: Prepare and verify owner-approved correction without publication
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: unused-no-telegram
+          PYTHONPATH: scripts
+        run: python scripts/owner_morning_final_20261111.py

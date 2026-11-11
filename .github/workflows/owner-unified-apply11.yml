@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 pillow==11.3.0 python-dotenv simplejson==4.2.0 openai==3.42.1
-      - name: Configure existing bot transport for approved cache-only menu
+      - name: Prepare completed-day FBS data for approved Sales menu
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -38,4 +38,4 @@ jobs:
           OPENAI_API_KEY: ""
           PYTHONPATH: scripts:source
         run: |
-          python scripts/owner_china_transport11.py
+          python scripts/china_sales_menu_daily.py

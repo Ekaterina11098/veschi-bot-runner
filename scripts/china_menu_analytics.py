@@ -48,6 +48,7 @@ def _candidate(w,job,text):
  from china_morning_rules_review import enabled
  if not enabled(io):raise ValueError('Режим расчёта без платной модели не включён')
  bundle=prepare(io,day)
+ w.save('china_agent:menu_analytics_audit:v1:'+str(job['id']),dict(day=day,rows=[dict(campaign_id=c['id'],article=r.get('article'),nm=r.get('nm'),period=r.get('period'),comparison=r.get('comparison'),economics=r.get('economics'),decision=r.get('decision'),reason=r.get('reason'),action=r.get('action'))for c in bundle['campaigns']for r in c.get('focus',[])if r.get('action')],observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0))
  sections=bundle['recommendation_directions'];selected=[]
  for k,s in sections.items():
   if k not in wanted:s['rows']=[];s['count']=0;s['note']='Не выбрано в этом запросе.'
@@ -71,6 +72,22 @@ def _candidate(w,job,text):
    group=ids[offset:offset+50];states=http(io,'/api/advert/v2/adverts?ids='+','.join(map(str,group))).get('adverts',[])
    if {c['id']for c in states}!=set(group):raise ValueError('Текущие РК не подтверждены полностью')
    current.update({c['id']:c for c in states})
+  from china_morning_readiness import current_prices,published_stock
+  from china_moysklad_read import read_stock
+  wanted=sorted({a['nm_id']for a in selected})
+  fresh_prices=current_prices(io,wanted)
+  fresh_stock=read_stock(list(dict.fromkeys(a['article']for a in selected)))
+  fresh_published=published_stock(io,fresh_prices,wanted)
+  if not fresh_stock.get('coverage_complete'):raise ValueError('Current selected-SKU stock/COGS incomplete')
+  price_map={r['nm_id']:r for r in fresh_prices['rows']}
+  stock_map={r['article'].casefold():r for r in fresh_stock['rows']}
+  for a in selected:
+   e=next((r.get('economics')for c in bundle['campaigns']for r in c.get('focus',[])if r.get('nm')==a['nm_id']and c['id']==a['campaign_id']),None)or a.get('growth_evidence')or{}
+   st=stock_map.get(a['article'].casefold());p=price_map.get(a['nm_id'])
+   if not st or not p or p['article'].casefold()!=a['article'].casefold():raise ValueError('Exact selected current identity missing')
+   if e.get('seller_price_cny')is not None and abs(p['seller_price']-e['seller_price_cny'])>.0001:raise ValueError('Selected current price changed; recalculate before proposal')
+   if e.get('own_cogs_rub')is not None and abs(st['price']/100-e['own_cogs_rub'])>.01:raise ValueError('Selected current COGS changed; recalculate before proposal')
+  w.save('china_agent:menu_current_inputs:v1:'+str(job['id']),dict(prices=fresh_prices,stock=fresh_stock,published_stock=fresh_published,observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0))
   io.daily_report_current_revalidation=True
   for a in selected:
    state=current[a['campaign_id']]

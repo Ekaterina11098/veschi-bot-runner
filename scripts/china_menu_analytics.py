@@ -65,7 +65,7 @@ def _candidate(w,job,text):
  from china_morning_rules_review import enabled
  if not enabled(io):raise ValueError('Режим расчёта без платной модели не включён')
  bundle=prepare(io,day)
- w.save('china_agent:menu_analytics_audit:v1:'+str(job['id']),dict(day=day,rows=[dict(campaign_id=c['id'],article=r.get('article'),nm=r.get('nm'),period=r.get('period'),comparison=r.get('comparison'),economics=r.get('economics'),decision=r.get('decision'),reason=r.get('reason'),action=r.get('action'))for c in bundle['campaigns']for r in c.get('focus',[])if r.get('action')],observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0))
+ w.save('china_agent:menu_analytics_audit:v1:'+str(job['id']),dict(day=day,rows=[dict(campaign_id=c['id'],article=r.get('article'),nm=r.get('nm'),period=r.get('period'),comparison=r.get('comparison'),economics=r.get('economics'),decision=r.get('decision'),reason=r.get('reason'),action=r.get('action'))for c in bundle.get('campaigns',[])for r in c.get('focus',[])if r.get('action')],observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0))
  sections=bundle['recommendation_directions'];selected=[]
  for k,s in sections.items():
   if k not in wanted:s['rows']=[];s['count']=0;s['note']='Не выбрано в этом запросе.'

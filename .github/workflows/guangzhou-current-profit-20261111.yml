@@ -1,0 +1,54 @@
+name: Read Guangzhou current profitability
+on:
+  push:
+    paths: ['.github/workflows/guangzhou-current-profit-20261111.yml']
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Read inputs without changes
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        shell: python
+        run: |
+          import os,json,urllib.request,urllib.parse,gzip,time,datetime
+          articles=["025-MadisonBag-zblack","026-MadisonBag-zcoffee","027-MadisonBag-zdarkred","30-CristineBag-zblack","31-CristineBag-zcoffee","32-CristineBag-zgrey","68-JackieBag-black","69-JackieBag-coffee","70-CelineaBag-zblack","71-CelineaBag-zcoffee","72-CelineaBag-zdarkred","157-CelineaBag-black","159-CelineaBag-coffee","160-CelineaBag-burgundy","161-SamantaBag-black","163-SamantaBag-coffee","164-SamantaBag-darkred","165-SamantaBag-grey"]
+          def call(url,token,payload=None):
+           req=urllib.request.Request(url,data=None if payload is None else json.dumps(payload).encode(),headers={"Authorization":token,"Accept-Encoding":"gzip","Content-Type":"application/json"})
+           with urllib.request.urlopen(req,timeout=45) as r:
+            b=r.read()
+            return json.loads(gzip.decompress(b) if r.headers.get("Content-Encoding")=="gzip" else b)
+          wb=os.environ["WB_TOKEN_3"];ms="https://api.moysklad.ru/api/remap/1.2";mt="Bearer "+os.environ["MOYSKLAD_API_TOKEN"]
+          prices={};offset=0
+          for price_page in range(10):
+           goods=call("https://discounts-prices-api.wildberries.cn/api/v2/list/goods/filter?limit=1000&offset="+str(offset),wb)["data"]["listGoods"]
+           for g in goods:
+            if g.get("vendorCode","").lower() in [a.lower() for a in articles]:prices[g["vendorCode"].lower()]=g
+           if len(prices)==18 or not goods:break
+           offset+=1000;time.sleep(1)
+          cards={};cursor={"limit":100}
+          for page in range(30):
+           d=call("https://content-api.wildberries.cn/content/v2/get/cards/list",wb,{"settings":{"cursor":cursor,"filter":{"withPhoto":-1}}})
+           for c in d.get("cards",[]):
+            if c.get("vendorCode","").lower() in [a.lower() for a in articles]:cards[c["vendorCode"].lower()]=c
+           if len(cards)==len(articles) or d.get("cursor",{}).get("total",0)<100:break
+           cursor={"limit":100,"updatedAt":d["cursor"]["updatedAt"],"nmID":d["cursor"]["nmID"]};time.sleep(.7)
+          for a in articles:
+           out={"article":a,"current_price":prices.get(a.lower())};c=cards.get(a.lower())
+           if c:out["wb"]={k:c.get(k) for k in ["nmID","vendorCode","subjectID","subjectName","dimensions","characteristics"]}
+           try:
+            ps=call(ms+"/entity/product?"+urllib.parse.urlencode({"filter":"article="+a}),mt).get("rows",[])
+            ps=[p for p in ps if p.get("article","").lower()==a.lower()]
+            out["ms_products"]=[{k:p.get(k) for k in ["id","name","article","buyPrice"]} for p in ps]
+            out["cost_rows"]=[]
+            for p in ps:
+             rr=call(ms+"/report/stock/all?"+urllib.parse.urlencode({"filter":"product="+p["meta"]["href"]+";stockMode=all;quantityMode=all"}),mt)
+             out["cost_rows"] += [{k:r.get(k) for k in ["name","article","price","stock","quantity","sum"]} for r in rr.get("rows",[])]
+           except Exception as e:out["ms_error"]=str(e)
+           print("BAG_DATA="+json.dumps(out,ensure_ascii=False),flush=True)
+           time.sleep(.3)
+          print("CHECKED_AT="+datetime.datetime.now(datetime.timezone.utc).isoformat())

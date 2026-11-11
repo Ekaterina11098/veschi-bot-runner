@@ -72,11 +72,12 @@ export function stableAdCache(cache,ctx){
  return {cache:filtered,ids,note:'Постоянная выборка: '+ids.length+' РК с данными за все '+days.length+' дней. Это не весь кабинет.'+(excluded.length?' Без полного ряда: '+excluded.join(', ')+'.':'')};
 }
 export async function conversionView(cache,ctx,sid,now){
- const b=(text,op)=>({text,callback_data:'cam1:'+sid+':'+op}),nav=rows=>({inline_keyboard:[...rows,...(ctx.kind==='ad'&&!['types','search','matches','objects'].includes(ctx.view)?[[b('Найти товар по артикулу','search')]]:[]),[ads],[home]]});
+ const b=(text,op)=>op==='search'&&ctx.inlineEnabled?{text,switch_inline_query_current_chat:ctx.metric==='drr'?'ДРР ':'Конверсия '}:{text,callback_data:'cam1:'+sid+':'+op},nav=rows=>({inline_keyboard:[...rows,...(ctx.kind==='ad'&&!['types','search','matches','objects'].includes(ctx.view)?[[b('Найти товар по артикулу','search')]]:[]),[ads],[home]]});
  if(ctx.view==='types')return {text:'Конверсии и воронка\nРекламная конверсия и общая воронка — отдельные источники.',reply_markup:nav([[b('Рекламная конверсия','ad')],[b('Общая воронка товара','general')]])};
  const general=ctx.kind==='general',metric=ctx.metric==='drr'?'drr':'cr',metricName=metric==='drr'?'ДРР':'CR';
  const objectLabel=ctx.nm&&!general?'Другой товар / РК':general?'Другой товар':'Другая РК';
  const products=[...new Map([...(cache.general_days||[]).map(r=>[r.nm,r.article]),...(cache.hourly||[]).flatMap(h=>(h.general?.rows||[]).map(r=>[String(r.nm_id),r.article]))]).entries()];
+ if(ctx.view==='search'&&ctx.inlineEnabled)return {text:'Поиск товара\nНажмите кнопку и начните вводить артикул или название.',reply_markup:nav([[b('Ввести артикул или название','search')]])};
  if(ctx.view==='search')return {text:'Найти товар по артикулу\nОтветьте на это сообщение: введите артикул, его часть или nmID.',reply_markup:{force_reply:true,selective:true,input_field_placeholder:'Артикул или nmID'}};
  if(ctx.view==='matches'){const found=cache.matches||[];return {text:'Поиск «'+ctx.query+'»\n'+(found.length?'Выберите товар.'+(cache.truncated?' Показаны первые 20 совпадений; можно уточнить запрос.':''):'Совпадений в сохранённом каталоге нет. Уточните артикул.'),reply_markup:nav([...found.map(r=>[b(r.article.slice(0,60),'pick'+r.nm)]),[b('Уточнить артикул','search')]])};}
  if(ctx.view==='objects'){
@@ -157,7 +158,7 @@ export async function handleAdvertisingPath(config,update,deps){
  if(!initial&&!match&&!possibleReply)return null;
  if(config.active!==true||config.bot_id!==BOT||config.chat_id!==CHAT||!Number.isSafeInteger(update.update_id)||update.update_id<0||m?.chat?.id!==CHAT||!['supergroup','group'].includes(m.chat.type)||!Number.isSafeInteger(m.message_id)||!Number.isSafeInteger(a?.id)||a.id<=0||a.is_bot!==false||cb&&(m.from?.id!==BOT||!cb.id)||m.sender_chat||m.forward_origin)return new Response('OK');
  const get=async k=>(await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(k)+'&select=payload&limit=1'))?.[0]?.payload;
- if((await get('china_agent:main_menu:v1:policy'))?.enabled!==true)return null;
+ const menuPolicy=await get('china_agent:main_menu:v1:policy');if(menuPolicy?.enabled!==true)return null;
  const pending=possibleReply?await get(ROOT+'input:'+a.id):null;
  if(!initial&&!match&&pending?.message_id!==m.reply_to_message?.message_id)return null;
  const member=await deps.telegram('getChatMember',{chat_id:CHAT,user_id:a.id});
@@ -166,6 +167,7 @@ export async function handleAdvertisingPath(config,update,deps){
  let ctx={view:cb?.data==='cmn1:candidates'?'candidates':cb?.data==='cmn1:drrview'?'objects':'types',kind:cb?.data==='cmn1:drrview'?'ad':'all',metric:cb?.data==='cmn1:drrview'?'drr':'cr',period:'range',start:shift(day(now),-7),end:shift(day(now),-1)};
  if(match){const session=await get(ROOT+'session:'+match[1]);if(!session||session.actor!==a.id||session.message_id!==m.message_id||Date.parse(session.expires_at)<=now.getTime())return answer('Откройте раздел своей кнопкой меню.');try{ctx=transition(session.context,match[2],now);if(match[2].startsWith('pick')){const picked=session.context.matches?.find(r=>r.nm===ctx.nm);if(!picked)return answer('Повторите поиск товара.');ctx.article=picked.article;}}catch(e){return answer(e.message);}if(match[2]==='noop')return answer('');}
  else if(pending&&possibleReply&&pending.message_id===m.reply_to_message?.message_id){ctx={...pending.context,view:Date.parse(pending.expires_at)>now.getTime()?'matches':'search',query:input};}
+ ctx.inlineEnabled=menuPolicy.inline_search_enabled===true;
  const key=ROOT+'delivery:'+update.update_id;if(await get(key))return answer('');
  const insert=async(k,p)=>(await deps.database('telegram_api_cache?on_conflict=cache_key','POST',{cache_key:k,payload:p,expires_at:'2036-11-11T00:00:00Z'},'resolution=ignore-duplicates,return=representation'))?.length===1;
  const put=async(k,p)=>{if((await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(k),'PATCH',{payload:p,updated_at:now.toISOString()},'return=representation'))?.length!==1)throw Error('Advertising state unavailable');};
@@ -204,14 +206,20 @@ export async function handleAdvertisingPath(config,update,deps){
  }
  if(!await insert(ROOT+'session:'+sid,{actor:a.id,context:ctx,expires_at:new Date(now.getTime()+86400000).toISOString()}))throw Error('Advertising session claimed');
  const base={chat_id:CHAT,reply_markup:view.reply_markup};let receipt;
- if(view.photo)receipt=await deps.telegram(cb?'editMessageMedia':'sendPhoto',{...base,...(cb?{message_id:m.message_id,media:{type:'photo',media:'attach://chart',caption:view.text.slice(0,1024)}}:{caption:view.text.slice(0,1024)}),photo_bytes:view.photo});
+ if(deps.forceNewMessage)receipt=await deps.telegram('sendMessage',{...base,text:view.text});
+ else if(view.photo)receipt=await deps.telegram(cb?'editMessageMedia':'sendPhoto',{...base,...(cb?{message_id:m.message_id,media:{type:'photo',media:'attach://chart',caption:view.text.slice(0,1024)}}:{caption:view.text.slice(0,1024)}),photo_bytes:view.photo});
  else if(cb&&!m.photo&&ctx.view!=='search')receipt=await deps.telegram('editMessageText',{...base,message_id:m.message_id,text:view.text});
  else {const name=String(a.first_name||'Участник');receipt=await deps.telegram('sendMessage',{...base,text:ctx.view==='search'?name+', '+view.text:view.text,...(ctx.view==='search'?{entities:[{type:'text_mention',offset:0,length:name.length,user:{id:a.id,first_name:name,is_bot:false}}],reply_parameters:{message_id:m.message_id,allow_sending_without_reply:true}}:{})});}
  if(receipt?.chat?.id!==CHAT||receipt.from?.id!==BOT||!Number.isSafeInteger(receipt.message_id))throw Error('Advertising receipt mismatch');
  await put(ROOT+'session:'+sid,{actor:a.id,context:ctx,message_id:receipt.message_id,expires_at:new Date(now.getTime()+86400000).toISOString()});
  await put(key,{status:'sent',actor:a.id,context:ctx,source_keys:view.source_keys||[],message_id:receipt.message_id,receipt,wb_writes:0});
+ if(ctx.kind==='ad'&&ctx.view!=='candidates'){
+  const metric=ctx.metric==='drr'?'drr':'cr',k=ROOT+'inline_context:'+a.id+':'+metric,context={...ctx};delete context.matches;delete context.query;
+  const value={actor:a.id,context,source_message:{message_id:receipt.message_id,chat:{id:CHAT,type:'supergroup'},from:{id:BOT,is_bot:true},...(receipt.photo?{photo:receipt.photo}:{})},expires_at:new Date(now.getTime()+900000).toISOString()};
+  if(await get(k))await put(k,value);else if(!await insert(k,value))throw Error('Inline context unavailable');
+ }
  if(ctx.view==='search'){const k=ROOT+'input:'+a.id,value={actor:a.id,message_id:receipt.message_id,context:ctx,expires_at:new Date(now.getTime()+900000).toISOString()};if(await get(k))await put(k,value);else if(!await insert(k,value))throw Error('Search input binding unavailable');}
- if(cb&&m.photo&&!view.photo){try{await deps.telegram('editMessageReplyMarkup',{chat_id:CHAT,message_id:m.message_id,reply_markup:{inline_keyboard:[]}});}catch{}}
+ if(!deps.forceNewMessage&&cb&&m.photo&&!view.photo){try{await deps.telegram('editMessageReplyMarkup',{chat_id:CHAT,message_id:m.message_id,reply_markup:{inline_keyboard:[]}});}catch{}}
  }catch(e){await put(key,{status:'uncertain',actor:a.id,context:ctx,error:'Menu preparation or Telegram result not verified',wb_writes:0});throw e;}
  return answer('');
 }

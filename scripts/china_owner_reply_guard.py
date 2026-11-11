@@ -4,7 +4,10 @@ def resolved(w,job):
  p=w.get('china_agent:owner_dialog_resolution:v1:job:'+str(job['id'])) or {}
  if p.get('status')!='answered_by_owner' or p.get('chat_id')!=job['chat_id'] or not p.get('receipt_key'):return None
  r=w.get(p['receipt_key']) or {}
- if r.get('status')!='sent' or r.get('chat_id')!=job['chat_id'] or r.get('message_id')!=p.get('message_id'):return None
+ receipt=r.get('receipt')if r.get('status')=='sent'else r.get('edit_receipt')if r.get('status')=='completed'else None
+ direct=r.get('status')=='sent'and r.get('chat_id')==job['chat_id']and r.get('message_id')==p.get('message_id')
+ edited=isinstance(receipt,dict)and receipt.get('chat',{}).get('id')==job['chat_id']and receipt.get('message_id')==p.get('message_id')and receipt.get('from',{}).get('id')==8780468043
+ if not(direct or edited):return None
  return p
 def growth_reply(job,answer,trace):
  text=job.get('request_text','')

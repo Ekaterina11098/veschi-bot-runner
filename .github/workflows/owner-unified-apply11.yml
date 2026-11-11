@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 pillow==11.3.0 python-dotenv simplejson==4.2.0 openai==3.42.1
-      - name: Recover exact untouched campaign funding and deliver complete verified result
+      - name: Consolidate final Telegram result and delete intermediates
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -37,4 +37,4 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           OPENAI_API_KEY: ""
           PYTHONPATH: scripts:source
-        run: python scripts/owner_funding_recovery_20261111.py
+        run: python scripts/owner_execution_cleanup_20261111.py

@@ -27,7 +27,7 @@ def dates(first,last):
  return a,b
 def digest(body):return hashlib.sha256(json.dumps(body,sort_keys=True).encode()).hexdigest()[:24]
 def allowed_read(method,url,body):
- return method.upper()=='POST' and url in (FUNNEL,FINANCE) and isinstance(body,dict) and ('selectedPeriod' in body if url==FUNNEL else {'dateFrom','dateTo','rrdId','period'}<=set(body))
+ return method.upper()=='POST' and url in (FUNNEL,FUNNEL+'/history',FINANCE) and isinstance(body,dict) and ('selectedPeriod' in body if url.startswith(FUNNEL) else {'dateFrom','dateTo','rrdId','period'}<=set(body))
 
 class Reports:
  def __init__(self,w,send=None):self.w=w;self.send=send

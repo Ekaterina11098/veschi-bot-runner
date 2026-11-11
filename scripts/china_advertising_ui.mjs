@@ -201,8 +201,8 @@ export async function handleAdvertisingPath(config,update,deps){
   const delivered=recovery?.status==='sent'?recovery:outbox?.status==='delivered'&&blocked?.status!=='blocked'?outbox:null;
   const failed=!delivered&&(state==='failed'||blocked?.status==='blocked');
   const line=delivered?'Результат доставлен.':failed?'Расчёт не завершён. Можно повторить запрос. Изменения не выполнялись.':prior&&!job?.length?'Состояние запроса не подтверждено. Повтор автоматически не запускается.':'Запрос на анализ сохранён'+(jobId?' · №'+jobId:'')+'. Результат появится отдельным ответом после обработки; сейчас он ещё не доставлен.';
-  const resultId=(delivered?.message_ids?.[1]||delivered?.message_ids?.[0])||delivered?.message_id;
-  view={text:'Предложить кандидатов\\n'+line+'\\n\\nТолько предложения: добавления, повышения, снижения и исключения. Исполнение — после отдельного подтверждения.',reply_markup:{inline_keyboard:[...(resultId?[[{text:'Открыть результат',url:'https://t.me/c/4342917488/'+resultId}]]:[]),...(failed?[[b('Повторить расчёт','candRetry')]]:[]),[b('Изменить направления','candAll')],[ads],[home]]},source_keys:[analysisKey]};
+  const resultId=delivered?.message_ids?.at(-1)||delivered?.message_id;
+  view={text:'Предложить кандидатов\n'+line+'\n\nТолько предложения: добавления, повышения, снижения и исключения. Исполнение — после отдельного подтверждения.',reply_markup:{inline_keyboard:[...(resultId?[[{text:'Открыть результат',url:'https://t.me/c/4342917488/'+resultId}]]:[]),...(failed?[[b('Повторить расчёт','candRetry')]]:[]),[b('Изменить направления','candAll')],[ads],[home]]},source_keys:[analysisKey]};
  }else{
   let cache;
   if(ctx.view==='search')cache={cabinet:'token_3'};
@@ -231,7 +231,7 @@ export async function handleAdvertisingPath(config,update,deps){
      jobId=jobs[0].id;await put(claim,{status:'accepted',job_id:jobId,actor:a.id,created_at:now.toISOString(),wb_writes:0});
     }
     requestedFunnel=true;
-    view={text:'Общая воронка · '+(ctx.article||ctx.nm)+'\\n'+ctx.start+' — '+ctx.end+'\\n'+(prior?'Запрос уже сохранён':'Запрос сохранён')+' · №'+jobId+'. Результат по выбранному товару придёт отдельной таблицей PNG. Сейчас он ещё не доставлен.',reply_markup:{inline_keyboard:[[b('Изменить период','period')],[b('Другой товар','objects')],[ads],[home]]},source_keys:[claim]};
+    view={text:'Общая воронка · '+(ctx.article||ctx.nm)+'\n'+ctx.start+' — '+ctx.end+'\n'+(prior?'Запрос уже сохранён':'Запрос сохранён')+' · №'+jobId+'. Результат по выбранному товару придёт отдельной таблицей PNG. Сейчас он ещё не доставлен.',reply_markup:{inline_keyboard:[[b('Изменить период','period')],[b('Другой товар','objects')],[ads],[home]]},source_keys:[claim]};
    }
   }
   if(!requestedFunnel)view=await conversionView(cache,ctx,sid,now);

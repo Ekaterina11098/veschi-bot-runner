@@ -3,6 +3,10 @@ on:
   push:
     branches: [main]
     paths:
+      - scripts/china_report_buttons.py
+      - scripts/china_report_buttons.mjs
+      - scripts/check_report_button_worker.py
+      - scripts/test_report_buttons.mjs
       - scripts/china_morning_readiness.py
       - scripts/china_advertising_v2.py
       - scripts/test_china_advertising_readiness.py
@@ -99,3 +103,10 @@ jobs:
           python -m unittest discover -s scripts -p test_china_analytic_dialog.py
           python -m unittest discover -s scripts -p test_china_bid_proposals.py
           python -m py_compile scripts/conversion_watches.py scripts/china_reply_evidence.py scripts/china_reply_quality.py scripts/china_catalog_price_command.py scripts/china_zero_orders_stock.py
+
+      - name: Exact report buttons, mocked transports only
+        run: |
+          node scripts/test_report_buttons.mjs
+          python scripts/check_report_button_worker.py
+          python -m unittest discover -s scripts -p test_china_daily_ad_actions.py
+          python -m unittest discover -s scripts -p test_china_advertising_delivery.py

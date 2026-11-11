@@ -180,6 +180,9 @@ def apply(bundle,minimum_cny=100):
   try:new_test=bool(started and str(instant(started).astimezone(MSK).date())>=days[0])
   except (TypeError,ValueError):new_test=True
   if new_test:
+   # Preserve economic readiness separately from the missing three-full-day reserve baseline.
+   estate,ereason=economics_review(c,days,observed)
+   c.update(budget_economics_status=estate,budget_economics_reason=ereason)
    # Partial launch traffic is neither three full reference days nor proof of runway.
    note='Новый тест: трёх полных дней расхода нет. Нужен отдельный расчёт резерва продолжения; текущий остаток не доказывает запас на 3 дня.'
    c.update(budget_audit_state='starter_review',budget_review_required=True,budget_reference_need=None,budget_cash_gap=None,budget_average_daily=None,budget_short_note=note,budget_recommendation=note)

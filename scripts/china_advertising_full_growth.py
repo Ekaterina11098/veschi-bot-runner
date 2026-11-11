@@ -134,6 +134,8 @@ def collect(io,s,day):
     except Exception as ex:v['quote_errors'][str(cid)]=str(ex);save()
   # Screen every SKU for an absent placement, including products advertising elsewhere.
   v['excluded_nm_ids']=sorted(excluded)
+  from china_growth_subjects import ensure_subjects
+  ensure_subjects(io,v);save()
   v['addition_candidates']=placement_candidates(dict(s,period_to=str(end)),v)
   for r in v['addition_candidates']:
    nm=r['nm_id'];cid=r['campaign_id'];zone=r['placement'];typ='search'if zone=='search'else'recommendation';qkey=addition_key(r)

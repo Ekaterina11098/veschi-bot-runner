@@ -99,7 +99,16 @@ def run(w,job,inbox,probe=False):return asyncio.run(execute(w,job,inbox,probe))
 def main():
  import argparse
  from conversion_watches import runtime,saved_network_guard
- p=argparse.ArgumentParser();p.add_argument('--probe',action='store_true');p.add_argument('--economics-only',action='store_true');args=p.parse_args();w=runtime()
+ p=argparse.ArgumentParser();p.add_argument('--probe',action='store_true');p.add_argument('--economics-only',action='store_true');p.add_argument('--setup-notice',action='store_true');args=p.parse_args();w=runtime()
+ if args.setup_notice:
+  proof=w.get(ROOT+'verification')or{};policy=w.get('china_agent:codex_cloud:v1:policy')or{};cfg=w.config()
+  if proof.get('status')!='verified'or policy.get('transport')!='codex_appserver_v1'or cfg.get('chat_id')!=CHAT or cfg.get('bot_id')!=BOT:raise ValueError('Native setup not verified and active')
+  text='Подключён полноценный Codex с постоянной рабочей историей, общей памятью и инструментами данных. Работает по вашим сообщениям; мониторов и почасовых отчётов нет. Рекламные изменения — только после отдельного подтверждения.'
+  with saved_network_guard():status=w.send_once('native_codex_setup:20261111',CHAT,text)
+  receipt=w.get('china_agent:conversion_watch_delivery:v1:native_codex_setup:20261111')or{}
+  if status!='sent'or receipt.get('status')!='sent'or not receipt.get('message_id'):raise ValueError('Setup notice delivery not verified')
+  w.save(ROOT+'activation_delivery',dict(status='sent',message_id=receipt['message_id'],receipt_key='china_agent:conversion_watch_delivery:v1:native_codex_setup:20261111',observed_at=stamp()))
+  print(json.dumps(dict(status='sent',message_id=receipt['message_id'])));return
  if args.economics_only:
   from china_economics_recovery import collect
   with saved_network_guard():r=collect(w,dict(id=303,chat_id=CHAT,sender_id=5122667182,request_text='Дособрать экономику перед итоговым подбором'))

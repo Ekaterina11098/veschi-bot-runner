@@ -270,7 +270,9 @@ def validate_addition(io,item,before):
  if {n['subject']['id']for n in before['nm_settings']}!={item['subject_id']}:raise ValueError('Addition category changed')
  prices=current_prices(io,[nm]);p=prices['rows'][0];stock=read_stock([item['article']]);pub=published_stock(io,prices,[nm])
  if p['article'].casefold()!=item['article'].casefold()or p['seller_price']!=e['price_cny']or not stock['coverage_complete']or stock['rows'][0]['stock']-stock['rows'][0]['reserve']<=0 or pub['amounts'].get(str(nm),0)<=0:raise ValueError('Addition price/stock unknown or changed')
- st=stock['rows'][0];delta=e['buyout']*(st['price']/100-e['own_cogs_rub'])/e['fx_rub_per_cny']
+ st=stock['rows'][0];fx=float(e['fx_rub_per_cny'])
+ if not math.isfinite(fx)or fx<=0:raise ValueError('Addition exchange rate unavailable')
+ delta=e['buyout']*(st['price']/100-e['own_cogs_rub'])/fx
  if st['price']<=0 or e['expected_margin_before_ads_cny']-delta<=0:raise ValueError('Addition current economics no longer positive')
  cfg=http(io,'/api/advert/v1/config')
  if cfg['currency']!='CNY'or item['target_minor']%cfg['cpcStep']or item['target_minor']>cfg['cpcMaxBid']:raise ValueError('Addition bid step changed')

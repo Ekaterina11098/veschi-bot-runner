@@ -35,11 +35,11 @@ jobs:
           from china_growth_subjects import ensure_subjects
           from china_growth_placements import placement_candidates,addition_key
           from china_advertising_v2 import http
-          io=IO();K='china_agent:owner_report_complete:2026-11-11:v1:growth-repair'
+          io=IO();K='china_agent:owner_report_complete:2026-11-11:v1:growth-repair2'
           if io.get(K):raise SystemExit('Existing read journal; no replay')
           e=dict(status='reading',wb_writes=0,telegram_calls=0,model_calls=0,observed_at=datetime.now(timezone.utc).isoformat());assert io.create(K,e)
           try:
-           v=copy.deepcopy(io.get('china_agent:advertising_full_growth:2026-11-11:v1:inputs'))
+           v=copy.deepcopy(io.get('china_agent:owner_report_complete:2026-11-11:v1:growth-repair')['inputs'])
            s=io.get('china_agent:advertising_source:2026-11-11:v2')
            ensure_subjects(io,v)
            # Refuse campaign/category disagreement rather than infer identity.
@@ -49,11 +49,6 @@ jobs:
              if actual is not None:assert actual==n['subject']['id']
            v['addition_candidates']=placement_candidates(s,v)
            e.update(subject_count=len(v['subjects']['by_nm']),candidates=v['addition_candidates'],inputs=v);io.put(K,e)
-           v['addition_quotes']={}
-           for a in v['addition_candidates']:
-            time.sleep(1)
-            v['addition_quotes'][addition_key(a)]=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=a['campaign_id'],nm_ids=[a['nm_id']],payment_type='cpc',placement_types=['search'if a['placement']=='search'else'recommendation']))
-            e['inputs']=v;io.put(K,e)
            # One completed-day read, not another three-day request immediately followed by it.
            r=requests.get('https://advert-api.wildberries.ru/adv/v3/fullstats',params={'ids':'41756218','beginDate':'2026-11-10','endDate':'2026-11-10'},headers={'Authorization':io.token},timeout=40)
            e['stats417_http']=r.status_code
@@ -62,6 +57,17 @@ jobs:
            r=requests.post('https://advert-api.wildberries.ru/api/advert/v2/budget',json={'advertIds':[41756218]},headers={'Authorization':io.token},timeout=40)
            e['budget417_http']=r.status_code
            if r.ok:e['budget417']=r.json()
+           v['addition_quotes']={};e['quote_errors']={}
+           groups={}
+           for a in v['addition_candidates']:groups.setdefault((a['campaign_id'],a['placement']),[]).append(a)
+           for (cid,zone),rows in groups.items():
+            time.sleep(3.5)
+            r=requests.post('https://advert-api.wildberries.ru/api/advert/v1/bids/min',headers={'Authorization':io.token},json=dict(advert_id=cid,nm_ids=[a['nm_id']for a in rows],payment_type='cpc',placement_types=['search'if zone=='search'else'recommendation']),timeout=40)
+            if r.ok:
+             q=r.json()
+             for a in rows:v['addition_quotes'][addition_key(a)]=q
+            else:e['quote_errors'][str(cid)+':'+zone]={'http':r.status_code,'body':r.text[:1200]}
+            e['inputs']=v;io.put(K,e)
            e.update(status='prepared',inputs=v,completed_at=datetime.now(timezone.utc).isoformat());io.put(K,e)
           except Exception as ex:
            e.update(status='failed',error=type(ex).__name__+': '+str(ex)[:500]);io.put(K,e);raise

@@ -107,6 +107,7 @@ export async function conversionView(cache,ctx,sid,now){
  }
  const cohort=!general&&!ctx.cid&&!ctx.nm?stableAdCache(cache,ctx):null;if(cohort)cache=cohort.cache;
  const points=dailyPoints(cache,ctx),missing=points.filter(p=>p.missing||!metricsValid(p,ctx)).length,full=points.filter(p=>!p.missing&&metricsValid(p,ctx)),total=full.length===points.length?sum(full):null;
+ if(general&&full.length===0)return {text:title+'\n'+ctx.start+' — '+ctx.end+' · полные дни МСК\nНет данных общей воронки за выбранный период. Конверсия не рассчитана.',reply_markup:nav([[b('Изменить период','period')],[b('Другой товар','objects')]]),source_keys:[]};
  const out=[title,ctx.start+' — '+ctx.end+' · полные дни МСК',total?metricHeadline(total,ctx.kind,metric):'Итог за весь период недоступен: неполное покрытие.',metric==='drr'?'ДРР = сумма расхода / сумма рекламных заказов × 100%.':'CR = сумма заказов / сумма '+(general?'открытий':'кликов')+' × 100%.'];
  if(cohort)out.push(cohort.note);
  if(missing)out.push('Нет полного подтверждённого покрытия за '+missing+' дней; пропуски не заменены нулями.');

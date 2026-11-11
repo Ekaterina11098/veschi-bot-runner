@@ -146,6 +146,22 @@ jobs:
           fi
 
 
+      - name: Collect or deliver exact initial chat job
+        if: success() && steps.cloud_initial.outputs.job_id != '' && contains(fromJSON('["collecting","waiting_analytics","ready","existing_outbox"]'), steps.cloud_initial.outputs.status)
+        env:
+          DIALOG_JOB_ID: ${{ steps.cloud_initial.outputs.job_id }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_ANALYSIS_BACKEND: managed_codex
+          PYTHONPATH: source
+        run: python scripts/conversion_watches.py --exact-dialog-job "$DIALOG_JOB_ID"
+
+
       - name: Continue collected chat analytics 1 of 3
         id: cloud_continue_1
         if: success() && contains(fromJSON('["collecting","waiting_analytics"]'), steps.cloud_initial.outputs.status)
@@ -171,7 +187,7 @@ jobs:
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           CHINA_ANALYSIS_BACKEND: managed_codex
           PYTHONPATH: source
-        run: python scripts/conversion_watches.py --dialog-job "$DIALOG_JOB_ID"
+        run: python scripts/conversion_watches.py --exact-dialog-job "$DIALOG_JOB_ID"
 
       - name: Continue collected chat analytics 2 of 3
         id: cloud_continue_2
@@ -198,7 +214,7 @@ jobs:
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           CHINA_ANALYSIS_BACKEND: managed_codex
           PYTHONPATH: source
-        run: python scripts/conversion_watches.py --dialog-job "$DIALOG_JOB_ID"
+        run: python scripts/conversion_watches.py --exact-dialog-job "$DIALOG_JOB_ID"
 
       - name: Continue collected chat analytics 3 of 3
         id: cloud_continue_3
@@ -225,7 +241,7 @@ jobs:
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           CHINA_ANALYSIS_BACKEND: managed_codex
           PYTHONPATH: source
-        run: python scripts/conversion_watches.py --dialog-job "$DIALOG_JOB_ID"
+        run: python scripts/conversion_watches.py --exact-dialog-job "$DIALOG_JOB_ID"
 
       - name: Apply only newly owner-approved loss plan items and report gaps
         if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.action == 'dialog' || github.event_name == 'push' && contains(github.event.head_commit.message, '[dialog-recovery]'))

@@ -38,10 +38,6 @@ def merge_completed(bundle,review,source_ref):
  out['growth_review']=copy.deepcopy(review.get('growth_review',{}))
  if review.get('codex_analysis'):out['codex_analysis']=copy.deepcopy(review['codex_analysis'])
  if review.get('midday_review'):out['midday_review']=copy.deepcopy(review['midday_review'])
- out['recommendation_unavailable_campaigns']=copy.deepcopy(review.get('recommendation_unavailable_campaigns',{}))
- for c in out['campaigns']:
-  if str(c['id'])in out['recommendation_unavailable_campaigns']:
-   c['attention']=[];c['owner_review_note']='Нет решения: недоступна история завершённых дней.'
  if review.get('sales_growth_review'):out['sales_growth_review']=copy.deepcopy(review['sales_growth_review'])
  for c in out['campaigns']:
   c['codex_research_recommendations']=copy.deepcopy((closed.get(c['id'])or{}).get('codex_research_recommendations',[]))
@@ -55,7 +51,7 @@ def merge_completed(bundle,review,source_ref):
  out['economic_review_complete']=review.get('economic_review_complete')is True
  out['recommendation_basis']='completed_days_with_fresh_economics_and_current_state'
  return out
-def completed_campaign_stats(io,campaigns,saved_stats,period_from,period_to,unavailable=None):
+def completed_campaign_stats(io,campaigns,saved_stats,period_from,period_to):
  """A campaign created after the closed window has verified empty history, not missing API data."""
  result=copy.deepcopy(saved_stats);missing=[]
  for c in campaigns:
@@ -73,17 +69,11 @@ def completed_campaign_stats(io,campaigns,saved_stats,period_from,period_to,unav
   else:missing.append(cid)
  if missing:
   extra=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,missing))+'&beginDate='+period_from+'&endDate='+period_to)
-  if not isinstance(extra,list):
-   if unavailable is None:raise ValueError('Completed-day campaign history unavailable: expected list for '+','.join(map(str,missing)))
-   for cid in missing:unavailable[cid]='completed_history_api_not_list'
-   extra=[]
+  if not isinstance(extra,list):raise ValueError('Completed-day campaign history unavailable: expected list for '+','.join(map(str,missing)))
   for r in extra:
    if not isinstance(r,dict)or type(r.get('advertId'))is not int or r['advertId']not in missing or not isinstance(r.get('days'),list):raise ValueError('Completed-day campaign history malformed')
    result[r['advertId']]=copy.deepcopy(r)
- for c in campaigns:
-  if c['id']not in result:
-   if unavailable is None and c.get('status')!=7:raise ValueError('Completed-day active campaign history incomplete')
-   if unavailable is not None:unavailable[c['id']]='completed_history_unavailable'
+ if any(c['id']not in result for c in campaigns if c.get('status')!=7):raise ValueError('Completed-day active campaign history incomplete')
  return result
 
 def validate_recommendation_readiness(review):
@@ -100,19 +90,11 @@ def attach(io,bundle,day):
  source=refresh_budget_context(io,source,day)
  saved_stats={r['advertId']:copy.deepcopy(r) for b in source['batches'].values() for r in b['stats']}
  source['ids']=list(current['ids']);source['batches']=copy.deepcopy(current['batches'])
- unavailable={};unavailable_nms=set()
  for batch in source['batches'].values():
   ids=[c['id']for c in batch['campaigns']['adverts'] if not never_started_draft(c)]
   active=[c for c in batch['campaigns']['adverts']if c['id']in ids]
-  saved_stats=completed_campaign_stats(io,active,saved_stats,source['period_from'],end,unavailable=unavailable)
-  for c in active:
-   if c['id']in unavailable:unavailable_nms.update(n['nm_id']for n in c.get('nm_settings',[]))
-  batch['campaigns']['adverts']=[c for c in batch['campaigns']['adverts']if c['id']not in unavailable]
+  saved_stats=completed_campaign_stats(io,active,saved_stats,source['period_from'],end)
   batch['stats']=[copy.deepcopy(saved_stats[cid]) for cid in ids if cid in saved_stats]
- source['ids']=[cid for cid in source['ids']if cid not in unavailable]
- source['recommendation_unavailable_campaigns']={str(cid):reason for cid,reason in unavailable.items()}
- source['recommendation_unavailable_nm_ids']=sorted(unavailable_nms)
- if not source['ids']:raise ValueError('No completed-day campaign cohort available')
  source['config']=copy.deepcopy(current['config'])
  source['executions']=copy.deepcopy(current.get('executions',source.get('executions',[])))
  records,context=__import__('china_advertising_midday').current_report_context(io,source,day)
@@ -176,14 +158,7 @@ def attach(io,bundle,day):
   from china_advertising_full_growth import enrich as full_review
   review=full_review(MiddayFullIO(),source,review)
  else:review=growth_enrich(MiddayGrowthIO(),source,review)
- # Unknown advertising history protects the affected SKU across every placement.
- for cp in review['campaigns']:
-  cp['attention']=[r for r in cp.get('attention',[])if (r.get('action')or{}).get('nm_id')not in unavailable_nms]
-  for row in cp.get('focus',[]):
-   if row.get('nm')in unavailable_nms:
-    row['action']=None;row['data_blocker']='Рекламная история товара неполная';row['decision']='Нет решения: неполные рекламные данные.'
  review=attach_directions(review,source)
- review['recommendation_unavailable_campaigns']=source['recommendation_unavailable_campaigns']
  from china_midday_rules_review import enabled as no_model_enabled,review as no_model_review
  if no_model_enabled(io):review=no_model_review(review,source)
  else:

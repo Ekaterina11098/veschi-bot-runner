@@ -333,7 +333,7 @@ class Worker:
                     'resolution_key':'china_agent:owner_dialog_resolution:v1:job:'+str(jid)},inbox['status']):return 'claim_lost'
             return 'owner_resolved'
         from china_menu_analytics import recognized
-        if recognized(inbox.get('request_text','')):
+        if recognized(inbox.get('request_text','')) and not ((self.db.get(CLOUD+'policy')or{}).get('transport')=='codex_appserver_v1' and inbox.get('request_text','').startswith('Предложи новых кандидатов для рекламы китайского кабинета. ')):
             return 'waiting_analytics'
         if (self.db.get(CLOUD+'policy')or{}).get('transport')=='codex_appserver_v1':
             from conversion_watches import runtime,saved_network_guard

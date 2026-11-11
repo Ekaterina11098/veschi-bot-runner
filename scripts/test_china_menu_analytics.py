@@ -39,7 +39,8 @@ class TestMenu(unittest.TestCase):
    rendered.append(b);return [{'family':'drr','bytes':b'PNG'}]
   from contextlib import nullcontext
   checks=[]
-  mods={'china_analytic_dialog':module(reading=nullcontext),'china_loss_execute':module(IO=lambda:module()),'china_advertising_v2':module(prepare=lambda io,day:bundle,http=lambda *args:{'adverts':[{'id':123,'currency':'CNY','status':9,'nm_settings':[{'nm_id':2,'bids_kopecks':{'recommendations':28}}]}]}),'china_advertising_growth':module(validate_raise=lambda io,a,c:checks.append(a['id'])),'china_advertising_full_growth':module(validate_addition=lambda io,a,c:checks.append(a['id'])),'china_advertising_v2_png':module(render=render),'china_loss_control':module(PLAN='plan:',digest=lambda x:str(len(x))),'china_morning_rules_review':module(enabled=lambda io:True),'china_table_png':module(KEY='table:',PREFIX='PNG:')}
+  class FakeIO:pass
+  mods={'china_analytic_dialog':module(reading=nullcontext),'china_loss_execute':module(IO=FakeIO),'china_advertising_v2':module(prepare=lambda io,day:bundle,http=lambda *args:{'adverts':[{'id':123,'currency':'CNY','status':9,'nm_settings':[{'nm_id':2,'bids_kopecks':{'recommendations':28}}]}]}),'china_advertising_growth':module(validate_raise=lambda io,a,c:checks.append(a['id'])),'china_advertising_full_growth':module(validate_addition=lambda io,a,c:checks.append(a['id'])),'china_advertising_v2_png':module(render=render),'china_loss_control':module(PLAN='plan:',digest=lambda x:str(len(x))),'china_morning_rules_review':module(enabled=lambda io:True),'china_table_png':module(KEY='table:',PREFIX='PNG:')}
   with patch.dict(sys.modules,mods):answer=m.candidate(w,job,m.CANDIDATES+'Новые товары для добавления. Новые повышения ставок.')
   self.assertEqual({a['id']for a in w.get('plan:dialog-menu-303')['items']},{'add','raise'})
   self.assertEqual(rendered[0]['recommendation_directions']['reduce']['rows'],[])

@@ -58,7 +58,7 @@ def attach(bundle,source):
 def campaign_table(bundle):
  """Preserve the approved campaign-row table. Only the recommendation cell is brief."""
  out=copy.deepcopy(bundle);byid={c['id']:c for c in out['campaigns']}
- for c in out['campaigns']:c['direction_recommendations']=['Не запускать.']if c['status']==7 else[]
+ for c in out['campaigns']:c['direction_recommendations']=['Не запускать.']if c['status']==7 else[c['owner_statistics_note']]if c.get('owner_statistics_note')else[]
  for key,section in out['recommendation_directions'].items():
   for r in section['rows']:
    cid=r.get('campaign_id')

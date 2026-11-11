@@ -83,9 +83,9 @@ export async function conversionView(cache,ctx,sid,now){
  if(ctx.view==='matches'){const found=cache.matches||[];return {text:'Поиск «'+ctx.query+'»\n'+(found.length?'Выберите товар.'+(cache.truncated?' Показаны первые 20 совпадений; можно уточнить запрос.':''):'Совпадений в сохранённом каталоге нет. Уточните артикул.'),reply_markup:nav([...found.map(r=>[b(r.article.slice(0,60),'pick'+r.nm)]),[b('Уточнить артикул','search')]])};}
  if(ctx.view==='objects'){
   const campaignIds=[...new Set([...(cache.daily||[]).map(r=>r.campaign),...(cache.current_campaigns||[]).map(r=>r.campaign),...(cache.hourly||[]).flatMap(h=>(h.ad_rows||[]).map(r=>String(r.campaign)))])].sort();
-  const rows=general?[[b('Найти товар по артикулу','search')],...products.map(([nm,article])=>[b(article||nm,'nm'+nm)])]:[...[[b(ctx.nm?'Все РК товара':'Все РК · доступное покрытие','cidAll')]],...campaignIds.slice((ctx.page||0)*8,(ctx.page||0)*8+8).map(cid=>[b('РК '+cid,'cid'+cid)])];
+  const rows=general?[[b('Найти товар по артикулу','search')]]:[...[[b(ctx.nm?'Все РК товара':'Все РК · доступное покрытие','cidAll')]],...campaignIds.slice((ctx.page||0)*8,(ctx.page||0)*8+8).map(cid=>[b('РК '+cid,'cid'+cid)])];
   if(!general){const count=campaignIds.length;if(ctx.page>0)rows.push([b('‹ Предыдущие','page'+(ctx.page-1))]);if(((ctx.page||0)+1)*8<count)rows.push([b('Следующие ›','page'+((ctx.page||0)+1))]);}
-  return {text:general?'Общая воронка\nВыберите товар. Доступно только сохранённое покрытие; недоступные товары не считаются нулевыми.':(metric==='drr'?'ДРР':'Рекламная конверсия')+(ctx.nm?' · '+(ctx.article||ctx.nm)+'\nВыберите РК товара. Каждая кампания показывается отдельно; отсутствие строки статистики не означает ноль.':'\nВсе доступные РК или одна РК. Заказы — атрибутированные, не доказанно уникальные между РК.'),reply_markup:nav([...rows,...(!general?[[b('Найти товар по артикулу','search')],[b('Все РК кабинета','cabinetCampaigns')]]:[]),...(metric==='drr'?[]:[[b('‹ Источники','types')]])])};
+  return {text:general?'Общая воронка\nНайдите товар по артикулу, названию или nmID, затем выберите период.':(metric==='drr'?'ДРР':'Рекламная конверсия')+(ctx.nm?' · '+(ctx.article||ctx.nm)+'\nВыберите РК товара. Каждая кампания показывается отдельно; отсутствие строки статистики не означает ноль.':'\nВсе доступные РК или одна РК. Заказы — атрибутированные, не доказанно уникальные между РК.'),reply_markup:nav([...rows,...(!general?[[b('Найти товар по артикулу','search')],[b('Все РК кабинета','cabinetCampaigns')]]:[]),...(metric==='drr'?[]:[[b('‹ Источники','types')]])])};
  }
  if(ctx.view==='period')return {text:(general?'Общая воронка · '+(ctx.article||products.find(p=>p[0]===ctx.nm)?.[1]||ctx.nm):(metric==='drr'?'ДРР':'Рекламная конверсия')+' · '+(ctx.nm?(ctx.article||ctx.nm)+' · ':'')+(ctx.cid?'РК '+ctx.cid:'все доступные РК'))+'\nВыберите период.',reply_markup:nav([[b('7 полных дней','range7')],[b('14 полных дней','range14')],[b('Выбрать даты','calendar')],[b('Сегодня к тому же часу','today')],[b(objectLabel,'objects')]])};
  if(ctx.view==='calendar'){
@@ -209,7 +209,26 @@ export async function handleAdvertisingPath(config,update,deps){
    cache=await deps.database(product?'rpc/china_menu_product_ad_cache':'rpc/china_menu_conversion_cache','POST',{p_start:shift(ctx.start||shift(day(now),-7),-7),p_end:ctx.end||shift(day(now),-1),...(product?{p_nm:Number(ctx.nm)}:{})});
    if(cache?.cabinet!=='token_3'||product&&cache.nm!==ctx.nm)throw Error('Product or conversion source unavailable');
   }
-  view=await conversionView(cache,ctx,sid,now);
+  let requestedFunnel=false;
+  if(ctx.kind==='general'&&ctx.nm&&ctx.period==='range'&&['graph','table'].includes(ctx.view)){
+   const source='china_agent:menu_funnel:v1:'+ctx.nm+':'+ctx.start+':'+ctx.end,saved=await get(source);
+   if(saved?.status==='complete'&&saved.cabinet==='token_3'&&saved.nm===ctx.nm)cache={...cache,general_days:saved.rows};
+   if(dailyPoints(cache,ctx).some(p=>p.missing)){
+    const claim=ROOT+'funnel_request:'+a.id+':'+ctx.nm+':'+ctx.start+':'+ctx.end,prior=await get(claim);
+    let jobId=prior?.job_id;
+    if(!prior){
+     if(!await insert(claim,{status:'requesting',actor:a.id,created_at:now.toISOString(),wb_writes:0}))throw Error('Funnel request already claimed');
+     const result=await deps.requestAnalysis('Общая воронка · запрос меню: '+ctx.nm+' '+ctx.start+' '+ctx.end,update);
+     if(result?.status!==200)throw Error('Funnel request not accepted');
+     const jobs=await deps.database('business_agent_jobs?agent_id=eq.china&update_id=eq.'+update.update_id+'&chat_id=eq.'+CHAT+'&sender_id=eq.'+a.id+'&select=id,status&limit=1');
+     if(jobs?.length!==1)throw Error('Funnel job not verified');
+     jobId=jobs[0].id;await put(claim,{status:'accepted',job_id:jobId,actor:a.id,created_at:now.toISOString(),wb_writes:0});
+    }
+    requestedFunnel=true;
+    view={text:'Общая воронка · '+(ctx.article||ctx.nm)+'\\n'+ctx.start+' — '+ctx.end+'\\n'+(prior?'Запрос уже сохранён':'Запрос сохранён')+' · №'+jobId+'. Результат по выбранному товару придёт отдельной таблицей PNG. Сейчас он ещё не доставлен.',reply_markup:{inline_keyboard:[[b('Изменить период','period')],[b('Другой товар','objects')],[ads],[home]]},source_keys:[claim]};
+   }
+  }
+  if(!requestedFunnel)view=await conversionView(cache,ctx,sid,now);
  }
  if(!await insert(ROOT+'session:'+sid,{actor:a.id,context:ctx,expires_at:new Date(now.getTime()+86400000).toISOString()}))throw Error('Advertising session claimed');
  const base={chat_id:CHAT,reply_markup:view.reply_markup};let receipt;

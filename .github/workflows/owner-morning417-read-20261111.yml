@@ -1,0 +1,44 @@
+name: Owner morning complete417 read
+on:
+  push:
+    paths: ['.github/workflows/owner-morning417-read-20261111.yml']
+permissions:
+  contents: read
+concurrency:
+  group: china-advertising-daily
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Bounded read with control campaign and independent history
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: unused-no-telegram
+          PYTHONPATH: scripts
+        run: |
+          python - <<'PY'
+          import requests,time
+          from datetime import datetime,timezone
+          from china_price_apply import IO
+          io=IO();K='china_agent:owner_morning417:2026-11-11:v1:read'
+          if io.get(K):raise SystemExit('Existing read; no replay')
+          e=dict(status='reading',wb_writes=0,telegram_calls=0,observed_at=datetime.now(timezone.utc).isoformat());assert io.create(K,e)
+          calls=[('batch_history','https://advert-api.wildberries.ru/adv/v3/fullstats',{'ids':'40964981,41756218','beginDate':'2026-11-08','endDate':'2026-11-10'}),('cn_history','https://advert-api.wildberries.cn/adv/v3/fullstats',{'ids':'41756218','beginDate':'2026-11-10','endDate':'2026-11-10'}),('lifetime','https://advert-api.wildberries.ru/adv/v3/fullstats',{'ids':'41756218','beginDate':'2026-11-10','endDate':'2026-11-11'}),('states','https://advert-api.wildberries.ru/api/advert/v2/adverts',{'ids':'40964981,41155909,41332083,41756218'})]
+          for i,(label,url,params) in enumerate(calls):
+           if i:time.sleep(21)
+           try:
+            r=requests.get(url,params=params,headers={'Authorization':io.token},timeout=25)
+            e[label]={'http':r.status_code,'data':r.json() if r.content else None}
+           except Exception as ex:e[label]={'error':type(ex).__name__}
+           io.put(K,e)
+          e['status']='read';io.put(K,e);print('Dated bounded read saved')
+          PY

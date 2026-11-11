@@ -83,7 +83,8 @@ def deliver(w):
                     body['text']=part['text']
                     from china_agent.price_brief import plain_payload
                     entities=plain_payload(answer,w.get('china_agent:prices:v1')) or {}
-                    for k,v in entities.items():body[k]=json.dumps(v,ensure_ascii=False)
+                    for k,v in entities.items():
+                        if k!='reply_markup':body[k]=json.dumps(v,ensure_ascii=False)
                 receipt=tg(part['method'],body,files)
                 if receipt.get('chat',{}).get('id')!=w.chat or type(receipt.get('message_id'))is not int:
                     w.uncertain=True;raise RuntimeError('Telegram price receipt mismatch')

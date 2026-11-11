@@ -1,19 +1,18 @@
-name: Owner verify approved report contract11Nov
+name: Recover owner confirmed report299
 on:
   push:
     paths: ['.github/workflows/owner-unified-apply11.yml']
 permissions:
   contents: read
 concurrency:
-  group: china-price-reports
+  group: china-dialog-queue
   cancel-in-progress: false
 jobs:
-  report:
-    if: github.run_attempt == 1
+  watches:
     runs-on: ubuntu-latest
     timeout-minutes: 18
     concurrency:
-      group: china-price-report-data
+      group: china-dialog-data
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +25,9 @@ jobs:
             /scripts/
             /.github/
             /*request*.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -42,46 +44,55 @@ jobs:
             /china_agent/
             /tests/
             /*.py
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install pinned transport and existing worker dependencies
-        run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 openai==3.42.1 > "$RUNNER_TEMP/install.log" 2>&1
-      - name: Deliver exact China intraday report
-        working-directory: source
+      - name: Install pinned read transport
+        run: pip install requests==2.32.5 Pillow==12.3.0 openai==3.42.1 > "$RUNNER_TEMP/watch-dependencies.log" 2>&1
+      - name: Adapt isolated dialog and test without credentials
+        run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_buyout_policy.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_search_analytics.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_control.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_loss_ads.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_order_decline.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_new_ads.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_free_diagnostics.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_ad_retest.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_free_ads.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_sol_proposals.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_proposal_final_review.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_codex_ad_review.py
+          node --test scripts/test_codex_inbox.mjs scripts/test_codex_route.mjs
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_experience.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_analytic_dialog.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_profit_forecast31.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_conversion_context.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_analytic_evidence.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_product_diagnosis.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_growth_candidates.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_advertising_plans.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_bid_proposals.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_agent_reports.py
+          python scripts/china_chat_migration.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_conversion_watches.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_once_report.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_advertising_scheduled_png.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_advertising_report_autonomy.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p 'test_china_reply_*.py'
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_catalog_price_command.py
+          PYTHONPATH=scripts:source python -m unittest discover -s scripts -p test_china_zero_orders_stock.py
+      - name: Process only existing confirmed report299 and deliver native result
         env:
+          DIALOG_JOB_ID: "299"
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          PYTHONPATH: ../scripts:.
-          REPORT_ACTION: verify
+          OPENAI_API_KEY: ""
+          CHINA_ANALYSIS_BACKEND: managed_codex
+          PYTHONPATH: scripts:source
         run: |
-          python ../scripts/china_chat_migration.py --root .
-          python ../scripts/install_china_codex_price.py --root .
-          python ../scripts/install_china_order_coverage.py
-          python ../scripts/install_china_buyout.py
-          python ../scripts/check_china_installed_price_step.py china_agent/demand.py
-          python ../scripts/test_china_price_pending.py
-          python ../scripts/test_china_price_delivery.py
-          python ../scripts/test_price_repair_install.py
-          python ../scripts/test_price_review_blocks.py
-          python ../scripts/test_price_period.py
-          python ../scripts/test_price_selection.py
-          cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
-          cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
-          cp ../scripts/china_price_brief.py china_agent/price_brief.py
-          cp ../scripts/china_buyer_price_forecast.py china_agent/buyer_price_forecast.py
-          cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
-          cp ../scripts/china_price_aggregate_control.py china_agent/price_aggregate_control.py
-          cp ../scripts/china_daily_expected_control.py china_agent/daily_expected_control.py
-          cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py
-          cp ../scripts/china_expected_order_profit.py china_agent/expected_order_profit.py
-          cp ../scripts/china_price_experiment_result.py china_agent/price_experiment_result.py
-          cp ../scripts/china_price_economic_target.py china_agent/price_economic_target.py
-          python ../scripts/test_price_linked_period.py
-          PYTHONPATH=../scripts:. python -m unittest discover -s ../scripts -p 'test_china_advertising_*.py'
-          python ../scripts/owner_price_full_recalculation11.py
+          python scripts/conversion_watches.py --dialog-job 299
+          python scripts/owner_finish_confirmed_report299.py

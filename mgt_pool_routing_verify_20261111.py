@@ -11,7 +11,7 @@ with runtime_db() as db:
  store=Store(db,postgres=True)
  raw=store.sql('SELECT snapshot FROM stock_runs WHERE id=?',('technical:stock-daily:2026-11-11:0700',)).fetchone()
  original=json.loads(raw[0]);source=original['source'];original_digest=digest(source)
- filtered=msk_view(g,source);assigned=set(routes()['articles']);evidence=filtered.get('physical_pool_routing',{})
+ filtered=msk_view(g,source,now=source['received_at']);assigned=set(routes()['articles']);evidence=filtered.get('physical_pool_routing',{})
  if set(evidence.get('articles',[]))!=assigned:raise Stopped('Real saved source did not route all18 exact identities')
  if assigned&set(filtered['moscow_raw']) or any(assigned&set(s) for s in filtered['fbs']):raise Stopped('China-only identity still in MSK candidates')
  if digest(source)!=original_digest:raise Stopped('Historical source mutated')

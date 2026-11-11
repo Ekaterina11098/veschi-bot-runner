@@ -53,11 +53,19 @@ function contextTotals(ctx,data){
  const len=dates(ctx.start,ctx.end).length;
  return {current:periodTotal(data.days,ctx.start,ctx.end,ctx.nm),previous:periodTotal(data.days,shift(ctx.start,-len),shift(ctx.end,-len),ctx.nm),week:periodTotal(data.days,shift(ctx.start,-7),shift(ctx.end,-7),ctx.nm),labels:[len===1?'Предыдущий день':'Предыдущие '+len+' дней','Неделей ранее · те же даты со сдвигом7 дней'],window:ctx.start+' — '+ctx.end+' · полные дни МСК'};
 }
+function freshness(ctx,data){
+ const values=ctx.period==='today'?(data.hourly?[data.hourly.p.observed_at]:[]):dates(ctx.start,ctx.end).map(d=>data.days.get(d)?.observed_at).filter(v=>v&&Number.isFinite(Date.parse(v)));
+ if(!values.length)return 'Дата получения данных не подтверждена.';
+ values.sort();const f=t=>{const s=new Date(Date.parse(t)+10800000).toISOString();return s.slice(8,10)+'.'+s.slice(5,7)+' '+s.slice(11,16);};
+ return 'Срезы получены: '+f(values[0])+(values[0]!==values.at(-1)?' — '+f(values.at(-1)):'')+' МСК';
+}
+
 function lines(ctx,data){
  const t=contextTotals(ctx,data),title=ctx.nm?(data.names.get(ctx.nm)||ctx.nm):'Продажи';
  const out=[title,'Созданные заказы FBS · CNY после скидок WB',t.window,'',amounts(t.current)];
  [t.previous,t.week].forEach((b,i)=>out.push(t.labels[i]+': '+amounts(b),'Изменение: '+change(t.current,b)));
  if(ctx.period==='today'&&data.hourly){const h=data.hourly,age=Date.now()-Date.parse(h.p.observed_at);out.push('Срез: '+h.p.observed_at.slice(0,10)+' '+new Date(Date.parse(h.p.observed_at)+10800000).toISOString().slice(11,16)+' МСК'+(age>80*60000?' · данные отстают':''));}
+ if(ctx.period!=='today')out.push(freshness(ctx,data));
  return out;
 }
 const footer='Сумма заказов — не прибыль и не выкупы. Покрытие: FBS; не доказанно весь кабинет.';
@@ -97,6 +105,7 @@ export async function renderSales(ctx,data,sid,now=new Date()){
   const page=Math.max(0,ctx.page||0),selectedRows=rows.slice(page*5,page*5+5),out=['По товарам · '+(ctx.query?'поиск «'+ctx.query+'»':ctx.sort==='growth'?'вклад в рост':ctx.sort==='decline'?'вклад в снижение':'лидеры по сумме'),contextTotals(ctx,data).window];
   for(const x of selectedRows)out.push('',x.article+': '+amounts(x.current),'К предыдущей базе: '+change(x.current,x.previous),'К неделе: '+change(x.current,x.week)+(x.delta!==null?'\nВклад к предыдущей базе: '+(x.delta>=0?'+':'')+n(x.delta)+' CNY; '+(x.current.count-x.previous.count>=0?'+':'')+(x.current.count-x.previous.count)+' шт.':''));
   if(!rows.length)out.push('Нет совпадений либо нет сопоставимых данных для выбранного списка.');
+  out.push('','Созданные заказы FBS · CNY после скидок WB',freshness(ctx,data),footer);
   const buttons=selectedRows.map(x=>[b(x.article,'item'+x.nm)]),paging=[];
   if(page>0)paging.push(b('‹ Назад','page'+(page-1)));if((page+1)*5<rows.length)paging.push(b('Далее ›','page'+(page+1)));if(paging.length)buttons.push(paging);
   buttons.push([b('Другой товар','products'),b('Изменить период','period')]);return {text:out.join('\n'),reply_markup:nav(buttons)};
@@ -108,10 +117,11 @@ export async function renderSales(ctx,data,sid,now=new Date()){
   if(ctx.nm)rows.push([b('Другой товар','products'),b('Изменить период','period')]);
   if(ctx.view==='days'){
    const missing=points.filter(p=>p.count===null).length;
-   return {text:((ctx.nm?data.names.get(ctx.nm)+'\n':'')+'Динамика по дням · '+ctx.start+' — '+ctx.end+'\nДва графика: количество и сумма созданных FBS-заказов, CNY после скидок WB.\n'+(missing?'Нет данных за '+missing+' дней; пропуски не заменены нулями.':'Все дни завершены, МСК.')+'\n'+footer).slice(0,950),photo:await salesChart(points),reply_markup:nav(rows)};
+   return {text:((ctx.nm?data.names.get(ctx.nm)+'\n':'')+'Динамика по дням · '+ctx.start+' — '+ctx.end+'\nДва графика: количество и сумма созданных FBS-заказов, CNY после скидок WB.\n'+(missing?'Нет данных за '+missing+' дней; пропуски не заменены нулями.':'Все дни завершены, МСК.')+'\n'+freshness(ctx,data)+'\n'+footer).slice(0,950),photo:await salesChart(points),reply_markup:nav(rows)};
   }
   const page=ctx.page||0,out=['Таблица по дням · '+(ctx.nm?data.names.get(ctx.nm):'все товары')];
   for(const p of points.slice(page*5,page*5+5)){const a=data.days.get(p.date),prev=data.days.get(shift(p.date,-1)),week=data.days.get(shift(p.date,-7)),t=a?selected(a,ctx.nm):null;out.push('',p.date+': '+amounts(t),'К предыдущему дню: '+change(t,prev?selected(prev,ctx.nm):null),'К неделе: '+change(t,week?selected(week,ctx.nm):null));}
+  out.push('','Созданные заказы FBS · CNY после скидок WB',freshness(ctx,data),footer);
   const paging=[];if(page>0)paging.push(b('‹','tablepage'+(page-1)));if((page+1)*5<points.length)paging.push(b('›','tablepage'+(page+1)));if(paging.length)rows.unshift(paging);
   rows.push([b('‹ К графикам','days'),b('Сегодня','today')]);
   return {text:out.join('\n'),reply_markup:nav(rows)};

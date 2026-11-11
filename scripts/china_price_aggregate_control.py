@@ -6,7 +6,32 @@ Missing inputs stay unknown and cannot generate a decrease.
 from datetime import datetime,timedelta
 from decimal import Decimal
 
+
+def ensure_fresh_cards(worker):
+    """Scheduled price controls need a current linked-card composition before qualification."""
+    import os
+    from business_agents.data import Data
+    read=lambda table,params:worker.db('GET',table,params=params)
+    current=Data('china',read).snapshot('cards','token_3')
+    if current.get('available') and current.get('fresh'):return current
+    import analytics.collect as collector
+    original=collector.fetch
+    def immediate(*args,**kwargs):
+        kwargs['max_retry_wait']=0
+        return original(*args,**kwargs)
+    collector.fetch=immediate
+    try:
+        collector.cards('token_3',os.environ['WB_TOKEN_3'].strip())
+    finally:
+        collector.fetch=original
+    current=Data('china',read).snapshot('cards','token_3')
+    if not current.get('available') or not current.get('fresh'):
+        raise RuntimeError('Fresh linked-card composition unavailable after bounded collection')
+    worker.audit['linked_cards_observed_at']=current['observed_at']
+    return current
+
 def build(worker):
+    ensure_fresh_cards(worker)
     from china_agent.morning_pair import tracked_rows
     from china_agent.daily_expected_control import comparison_windows
     from china_agent.price_economic_target import verified_price_history,canonical_change_days,baseline_after_last_change,choose_target

@@ -1,4 +1,4 @@
-import sys, types, unittest
+import sys, types, unittest, asyncio
 from unittest.mock import patch
 from china_codex_runtime import Tools, SPECS, final_report_answer
 
@@ -31,5 +31,21 @@ class ReportContract(unittest.TestCase):
   s=next(x for x in SPECS if x['name']=='collect_general_funnel')
   self.assertEqual(set(s['inputSchema']['required']),{'nm_id','date_from','date_to'})
   self.assertFalse(s['inputSchema']['additionalProperties'])
+ def test_dependency_failure_is_recorded_before_any_model_start(self):
+  from china_codex_runtime import execute, CHAT, ROOT
+  from contextlib import nullcontext
+  class BrokenWorker:
+   def __init__(self):self.state={}
+   def get(self,key):return self.state.get(key)
+   def save(self,key,value,**kw):self.state[key]=value;return True
+   def catalog(self):raise ModuleNotFoundError('business_agents')
+  w=BrokenWorker();job={'id':305,'chat_id':CHAT,'sender_id':5122667182}
+  modules={'china_analytic_dialog':types.SimpleNamespace(Analyst=lambda *a:None,reading=nullcontext)}
+  with patch.dict(sys.modules,modules),patch('china_codex_runtime.Client') as client:
+   with self.assertRaises(ModuleNotFoundError):execute(w,job,{'job_id':305}).send(None)
+   client.assert_not_called()
+  self.assertEqual(w.state[ROOT+'job:305']['status'],'blocked_before_model')
+  self.assertFalse(w.state[ROOT+'job:305']['model_request_started'])
+  self.assertEqual(w.state[ROOT+'job:305']['model_calls'],0)
 
 if __name__=='__main__':unittest.main()

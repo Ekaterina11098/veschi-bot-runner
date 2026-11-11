@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {stableAdCache,advertisingMenu,handleAdvertisingPath,dailyPoints,hourlyRows,candidateRequest,conversionView} from './china_advertising_ui.mjs';
+import {stableAdCache,advertisingMenu,handleAdvertisingPath,dailyPoints,hourlyRows,candidateRequest,conversionView,drrValue,metricHeadline} from './china_advertising_ui.mjs';
 import {handleSalesPath} from './china_sales_ui.mjs';
 const CHAT=-1004342917488,BOT=8780468043,now=new Date('2026-11-11T10:30:00Z'),config={active:true,chat_id:CHAT,bot_id:BOT};
 const c=new Map(),messages=new Map(),calls=[],jobs=new Map();let u=10,next=1000,requests=0;
@@ -16,10 +16,10 @@ c.set(key,snapshot);c.set('china_agent:hourly_sales_api:v1:latest',{source_key:k
 const cache={cabinet:'token_3',daily:[],general_days:[],hourly:[]};
 for(let day=21;day<=41;day++){
  const date=new Date(Date.parse('2026-10-01T00:00:00Z')+(day-1)*86400000).toISOString().slice(0,10);
- cache.daily.push({date,campaign:'12345678',clicks:100,orders:2,carts:4,expected_ids:[12345678],archived_missing:[],source_key:'daily-source',observed_at:'2026-11-11T05:00:00Z'});
+ cache.daily.push({date,campaign:'12345678',clicks:100,orders:2,carts:4,views:1000,spend:5,amount:200,expected_ids:[12345678],archived_missing:[],source_key:'daily-source',observed_at:'2026-11-11T05:00:00Z'});
  cache.general_days.push({date,nm:'1473245494',article:'143',metrics:{scope:'all_sources',period_from:date,period_to:date,clicks:200,orders:4,cart_count:10},source_key:'funnel-source',observed_at:'2026-11-11T05:00:00Z'});
 }
-for(const [offset,date] of [[0,'2026-11-11'],[1,'2026-11-10'],[7,'2026-11-04']])cache.hourly.push({offset,source_key:'hourly'+offset,slot_msk:date+'T13:00:00+03:00',observed_at:date+'T10:22:00Z',ad_observed_at:date+'T10:22:00Z',ad_status:'complete',ad_missing:[],ad_rows:[{campaign:12345678,clicks:100,orders:2,carts:4}],general:{status:'complete',observed_at:date+'T10:22:00Z',rows:[{nm_id:1473245494,article:'143',selected:{scope:'all_sources',period_from:date,period_to:date,clicks:200,orders:4,cart_count:10}}]}});
+for(const [offset,date] of [[0,'2026-11-11'],[1,'2026-11-10'],[7,'2026-11-04']])cache.hourly.push({offset,source_key:'hourly'+offset,slot_msk:date+'T13:00:00+03:00',observed_at:date+'T10:22:00Z',ad_observed_at:date+'T10:22:00Z',ad_status:'complete',ad_missing:[],ad_rows:[{campaign:12345678,clicks:100,orders:2,carts:4,views:1000,spend:5,amount:200}],general:{status:'complete',observed_at:date+'T10:22:00Z',rows:[{nm_id:1473245494,article:'143',selected:{scope:'all_sources',period_from:date,period_to:date,clicks:200,orders:4,cart_count:10}}]}});
 const deps={now:()=>now,telegram:async(method,b)=>{
  calls.push({method,b});
  if(method==='getChatMember')return{user:{id:b.user_id,is_bot:false},status:'member'};
@@ -30,6 +30,8 @@ const deps={now:()=>now,telegram:async(method,b)=>{
  messages.set(id,m);return m;
 },database:async(path,method='GET',body,prefer)=>{
  const [table,q]=path.split('?'),args=new URLSearchParams(q);
+ if(table==='rpc/china_menu_product_lookup')return {cabinet:'token_3',rows:body.p_query.includes('204')?[{nm:'1111111111',article:'204-test'}]:[],truncated:false};
+ if(table==='rpc/china_menu_product_ad_cache'){assert.equal(body.p_nm,1111111111);return {cabinet:'token_3',nm:'1111111111',daily:cache.daily.concat(cache.daily.map(r=>({...r,campaign:'87654321',spend:100,amount:1000}))),hourly:cache.hourly,current_campaigns:[{campaign:'12345678'},{campaign:'87654321'}]};}
  if(table==='rpc/china_menu_conversion_cache'){assert.equal(method,'POST');assert.ok(body.p_start<body.p_end);return structuredClone(cache);}
  if(table==='business_agent_jobs'){assert.equal(method,'GET','No executions or direct job insertion in UI');const id=args.get('id')?.slice(3),update=args.get('update_id')?.slice(3);return [...jobs.values()].filter(j=>id?j.id===+id:j.update_id===+update);}
  assert.equal(table,'telegram_api_cache');
@@ -43,16 +45,16 @@ const deps={now:()=>now,telegram:async(method,b)=>{
 let m={message_id:5,chat:{id:CHAT,type:'supergroup'},from:{id:BOT,is_bot:true},text:'Реклама'};
 async function raw(data,actor=7,updateId=null){const up={update_id:updateId??u++,callback_query:{id:'cb'+u,data,from:{id:actor,is_bot:false},message:m}};const r=await handleAdvertisingPath(config,up,deps)||await handleSalesPath(config,up,deps);return r;}
 async function click(text){const b=m.reply_markup.inline_keyboard.flat().find(b=>b.text===text);assert.ok(b,'Missing '+text);const r=await raw(b.callback_data);assert.ok(r);assert.doesNotMatch(await r.text(),/"show_alert":true/);m=[...messages.values()].at(-1);return m;}
-const menu=advertisingMenu();assert.deepEqual(menu.reply_markup.inline_keyboard.map(r=>r[0].text),['Предложить кандидатов','Конверсии и воронка','Кто вырос','Кто упал','‹ Главное меню']);
+const menu=advertisingMenu();assert.deepEqual(menu.reply_markup.inline_keyboard.map(r=>r[0].text),['Предложить кандидатов','Конверсии и воронка','ДРР','Кто вырос','Кто упал','‹ Главное меню']);
 await raw('cmn1:growth');m=[...messages.values()].at(-1);assert.match(m.text,/Растёт/);assert.doesNotMatch(m.text,/Падает:/);assert.match(m.text,/К неделе/);
 await click('К неделе');await click('По количеству');assert.match(m.text,/по количеству/);
 await raw('cmn1:decline');m=[...messages.values()].at(-1);assert.match(m.text,/Падает/);assert.doesNotMatch(m.text,/Растёт:/);
 await click('Падает');assert.match(m.text,/Падает/);assert.ok(m.reply_markup.inline_keyboard.flat().some(b=>b.text==='‹ Реклама'));
 await raw('cmn1:conversions');m=[...messages.values()].at(-1);await click('Рекламная конверсия');await click('РК 12345678');await click('7 полных дней');assert.ok(m.photo);assert.match(m.caption,/CR/);assert.ok(calls.at(-1).b.photo_bytes instanceof Uint8Array);
 fs.writeFileSync('work/advertising-menu11/conversion-test.png',calls.at(-1).b.photo_bytes);
-await click('Таблица по дням');assert.match(m.text,/CR вчера/);assert.match(m.text,/неделей ранее/);
+await click('Таблица по дням');assert.ok(m.photo);assert.match(m.caption,/CR/);fs.writeFileSync('work/advertising-menu11/conversion-table-test.png',calls.at(-1).b.photo_bytes);
 await click('Изменить период');await click('Сегодня к тому же часу');assert.match(m.text,/Вчера/);assert.match(m.text,/Неделю назад/);assert.match(m.text,/2%/);
-await raw('cmn1:conversions');m=[...messages.values()].at(-1);await click('Общая воронка товара');await click('143');await click('Выбрать даты');await click('1');await click('3');await click('Показать');assert.match(m.caption,/2026-11-01 — 2026-11-03/);await click('Таблица по дням');assert.match(m.text,/Открытия/);
+await raw('cmn1:conversions');m=[...messages.values()].at(-1);await click('Общая воронка товара');await click('143');await click('Выбрать даты');await click('1');await click('3');await click('Показать');assert.match(m.caption,/2026-11-01 — 2026-11-03/);await click('Таблица по дням');assert.ok(m.photo);assert.match(m.caption,/Открытия/);
 const foreign=await raw(m.reply_markup.inline_keyboard[0][0].callback_data,8);assert.match(await foreign.text(),/своей кнопкой/);
 await raw('cmn1:candidates');m=[...messages.values()].at(-1);assert.equal(requests,1);assert.match(m.text,/ещё не доставлен/);await raw('cmn1:candidates');m=[...messages.values()].at(-1);assert.equal(requests,1,'Repeated request must reuse same daily actor/filter job');
 await click('Добавить товары');assert.equal(requests,2);await click('Все направления');assert.equal(requests,2);
@@ -70,3 +72,18 @@ const cohortFixture=structuredClone(cache);cohortFixture.daily.push({date:'2026-
 const stable=stableAdCache(cohortFixture,{start:'2026-11-04',end:'2026-11-10'});assert.deepEqual(stable.ids,['12345678']);assert.match(stable.note,/не весь кабинет/);
 const stableView=await conversionView(cohortFixture,{view:'graph',kind:'ad',period:'range',start:'2026-11-04',end:'2026-11-10'},'a'.repeat(16),now);assert.match(stableView.text,/Постоянная выборка/);assert.match(stableView.text,/2%/);assert.doesNotMatch(stableView.text,/Итог за весь период недоступен/);
 console.log('PASS stable campaign intersection preserves real graph despite incomplete other campaigns; no fabricated zero or changing cohort.');
+
+assert.equal(drrValue({spend:150,amount:0,orders:0}),null);
+assert.equal(metricHeadline({spend:150,amount:0,orders:0},'ad','drr'),'Нет заказов · расход 150 CNY');
+assert.equal(drrValue({spend:100,amount:100,orders:1}),100);
+assert.equal(drrValue({spend:1,amount:null,orders:1}),null);
+await raw('cmn1:drrview');m=[...messages.values()].at(-1);assert.match(m.text,/ДРР/);
+await click('Найти товар по артикулу');const prompt=m;assert.equal(prompt.reply_markup.force_reply,true);
+const reply={update_id:u++,message:{message_id:800,text:'204',from:{id:7,is_bot:false},chat:{id:CHAT,type:'supergroup'},reply_to_message:prompt}};
+await handleAdvertisingPath(config,reply,deps);m=[...messages.values()].at(-1);await click('204-test');assert.match(m.text,/кампания показывается отдельно/);assert.equal(m.reply_markup.inline_keyboard.flat().filter(b=>b.text.startsWith('РК ')).length,2);
+await click('РК 12345678');await click('7 полных дней');assert.match(m.caption,/204-test/);assert.match(m.caption,/ДРР 2,5%/);await click('Таблица по дням');assert.ok(m.photo);fs.writeFileSync('work/advertising-menu11/drr-table-test.png',calls.at(-1).b.photo_bytes);
+const width=new DataView(calls.at(-1).b.photo_bytes.buffer).getUint32(16),height=new DataView(calls.at(-1).b.photo_bytes.buffer).getUint32(20);assert.ok(width>height,'Daily table must be landscape');
+assert.equal(await handleAdvertisingPath(config,{...reply,update_id:u++,message:{...reply.message,reply_to_message:{...prompt,message_id:999999}}},deps),null,'Unbound reply must not consume arbitrary questions');
+assert.equal(await handleAdvertisingPath(config,{...reply,update_id:u++,message:{...reply.message,from:{id:8,is_bot:false}}},deps),null,'Other actor cannot use search prompt');
+await raw('cmn1:conversions');m=[...messages.values()].at(-1);await click('Рекламная конверсия');await click('Найти товар по артикулу');const cp=m;await handleAdvertisingPath(config,{update_id:u++,message:{message_id:801,text:'204',from:{id:7,is_bot:false},chat:{id:CHAT,type:'supergroup'},reply_to_message:cp}},deps);m=[...messages.values()].at(-1);await click('204-test');await click('РК 87654321');await click('7 полных дней');assert.match(m.caption,/CR 2%/);assert.doesNotMatch(m.caption,/ДРР 2,5%/);
+console.log('PASS DRR navigation; zero orders shows no orders plus spend; numeric100 only for equal expense/order amount; article search is actor/prompt bound; separate campaign metrics; preserved product/period; horizontal PNG daily tables.');

@@ -1,0 +1,46 @@
+import sys,types,unittest
+from unittest.mock import patch
+import china_menu_analytics as m
+class W:
+ def __init__(self):self.data={}
+ def get(self,k):return self.data.get(k)
+ def save(self,k,v,insert=False):
+  if insert and k in self.data:return False
+  self.data[k]=v;return True
+class TestMenu(unittest.TestCase):
+ def test_selected_directions(self):
+  self.assertEqual(m.directions(m.CANDIDATES+'Новые товары для добавления. Новые повышения ставок.'),['add','raise'])
+  with self.assertRaises(ValueError):m.directions('Не выбран фильтр')
+ def test_history_identity_and_missing(self):
+  raw={'data':[{'product':{'nmId':455,'vendorCode':'455'},'history':[{'date':'2026-11-10','openCount':100,'cartCount':4,'orderCount':2}]}]}
+  rows=m.history_rows(raw,455,'2026-11-01','2026-11-10','source','now')
+  self.assertEqual(len(rows),1);self.assertEqual(rows[0]['metrics']['orders'],2)
+  with self.assertRaises(ValueError):m.history_rows(raw,143,'2026-11-01','2026-11-10','source','now')
+  del raw['data'][0]['history'][0]['openCount']
+  with self.assertRaises(ValueError):m.history_rows(raw,455,'2026-11-01','2026-11-10','source','now')
+ def test_prepare_once_no_promise(self):
+  w=W();job={'id':303,'chat_id':-1004342917488};inbox={'request_text':m.CANDIDATES+'Новые повышения ставок.','input_message_id':918,'thread_id':'thread'}
+  with patch.object(m,'candidate',return_value='Проверенный результат')as work:
+   self.assertTrue(m.prepare(w,job,inbox));self.assertTrue(m.prepare(w,job,inbox));self.assertEqual(work.call_count,1)
+  out=w.get(m.ROOT+'outbox:303');self.assertEqual(out['answer'],'Проверенный результат');self.assertEqual(out['model_calls'],0)
+ def test_blocker_is_terminal_truth_not_ack(self):
+  w=W();job={'id':303,'chat_id':-1004342917488};inbox={'request_text':m.CANDIDATES+'Новые повышения ставок.','input_message_id':918,'thread_id':'thread'}
+  with patch.object(m,'candidate',side_effect=ValueError('Нет точной ставки')):m.prepare(w,job,inbox)
+  self.assertIn('Готового результата нет',w.get(m.ROOT+'outbox:303')['answer']);self.assertEqual(w.get('china_agent:menu_analytics:v1:303')['status'],'blocked')
+ def test_unrelated_dialogue_not_intercepted(self):
+  w=W();self.assertFalse(m.prepare(w,{}, {'request_text':'Сколько заказов?'}));self.assertFalse(w.data)
+ def test_candidate_plan_keeps_only_selected_directions(self):
+  w=W();job={'id':303,'chat_id':-1004342917488,'sender_id':5122667182}
+  actions={k:dict(id=k,kind='ad_add_sku'if k=='add'else'ad_set_bid',campaign_id=123,nm_id=i+1,target_minor=30,old_minor=28 if k=='raise'else 32)for i,k in enumerate(m.LABELS)}
+  bundle={'days':['2026-11-08','2026-11-09','2026-11-10'],'recommendation_directions':{k:dict(status='checked',rows=[{'ready':True,'action':a}],count=1)for k,a in actions.items()},'campaigns':[{'id':123,'focus':[{'action':a}for a in actions.values()],'attention':[]}]}
+  def module(**values):return types.SimpleNamespace(**values)
+  rendered=[]
+  def render(b):
+   rendered.append(b);return [{'family':'drr','bytes':b'PNG'}]
+  mods={'china_loss_execute':module(IO=lambda:object()),'china_advertising_v2':module(prepare=lambda io,day:bundle),'china_advertising_v2_png':module(render=render),'china_loss_control':module(PLAN='plan:',digest=lambda x:str(len(x))),'china_morning_rules_review':module(enabled=lambda io:True),'china_table_png':module(KEY='table:',PREFIX='PNG:')}
+  with patch.dict(sys.modules,mods):answer=m.candidate(w,job,m.CANDIDATES+'Новые товары для добавления. Новые повышения ставок.')
+  self.assertEqual({a['id']for a in w.get('plan:dialog-menu-303')['items']},{'add','raise'})
+  self.assertEqual(rendered[0]['recommendation_directions']['reduce']['rows'],[])
+  self.assertEqual(w.get('table:303')['parts'][0],answer)
+  self.assertEqual(w.get('china_agent:codex_ad_review:v1:303')['answer'],answer)
+if __name__=='__main__':unittest.main()

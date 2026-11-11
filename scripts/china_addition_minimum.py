@@ -1,10 +1,13 @@
 """Exact per-product placement minimum through an existing, verified campaign membership."""
 import time
+class MinimumMembershipUnavailable(ValueError):
+ """A checked structural blocker, not a transient API failure or a zero bid."""
+ pass
 def read_quote(io,inputs,item):
  from china_advertising_v2 import http
  nm=item['nm_id'];target=item['campaign_id']
  valid=[c for c in inputs['campaigns']if c['status']in[9,11]and c['currency']=='CNY'and c['settings']['payment_type']=='cpc'and any(n['nm_id']==nm and n['subject']['id']==item['subject_id']for n in c['nm_settings'])]
- if not valid:raise ValueError('No verified membership context for exact per-product minimum')
+ if not valid:raise MinimumMembershipUnavailable('No verified membership context for exact per-product minimum')
  context=next((c for c in valid if c['id']==target),min(valid,key=lambda c:c['id']))
  typ='search'if item['placement']=='search'else'recommendation'
  time.sleep(1.6)

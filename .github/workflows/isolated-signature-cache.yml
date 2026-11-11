@@ -101,3 +101,5 @@ jobs:
           name: restore-result-${{ matrix.cabinet }}
           path: cache-result-restore-*.json
 
+
+# Second isolated workflow run verifies cross-run restore keys.

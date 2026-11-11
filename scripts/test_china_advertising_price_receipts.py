@@ -28,7 +28,7 @@ class MinimumReadScopeTests(unittest.TestCase):
   row={'nm':123,'decision':'Сохранить ставку','pending_first_day':pending}
   bundle={'campaigns':[{'id':1,'status':9,'payment':'cpc','zone':'поиск','focus':[row]}]}
   response={'bids':[{'nm_id':123,'bids':[{'type':'search','currency':'CNY','value':28}]}]}
-  with patch('china_advertising_v2.include_archived',side_effect=lambda io,s,day:s),patch('china_advertising_directions.attach',side_effect=lambda b,s:b),patch('china_advertising_v2.collect',return_value={}),patch('china_advertising_v2.refresh_budget_context',side_effect=lambda io,s,day:s),patch('china_morning_readiness.enrich_economics',side_effect=lambda io,s,b,day:s),patch('china_advertising_economic_review.apply',side_effect=lambda b,s,m:b),patch('china_advertising_v2.save'),patch('china_advertising_v2.build',return_value=bundle),patch('china_advertising_v2.http',return_value=response) as transport,patch.dict(sys.modules,{'china_advertising_cards':types.SimpleNamespace(enhance=lambda b,s:b)}):
+  with patch('china_advertising_v2.include_archived',side_effect=lambda io,s,day:s),patch('china_advertising_directions.attach',side_effect=lambda b,s:b),patch('china_advertising_v2.collect',return_value={'batches':{'0':{'campaigns':{'adverts':[{'id':1,'nm_settings':[{'nm_id':123}]}]}}}}),patch('china_advertising_v2.refresh_budget_context',side_effect=lambda io,s,day:s),patch('china_morning_readiness.enrich_economics',side_effect=lambda io,s,b,day:s),patch('china_advertising_economic_review.apply',side_effect=lambda b,s,m:b),patch('china_advertising_v2.save'),patch('china_advertising_v2.build',return_value=bundle),patch('china_advertising_v2.http',return_value=response) as transport,patch.dict(sys.modules,{'china_advertising_cards':types.SimpleNamespace(enhance=lambda b,s:b)}):
    prepare(io,'2026-10-29');return transport
  def test_waiting_for_first_full_day_does_not_poll_minimum(self):
   self.run_prepare(True).assert_not_called()
@@ -70,7 +70,6 @@ class DailySourceSizeTests(unittest.TestCase):
   self.assertEqual(result['status'],'complete');self.assertEqual(result['experience'],[projected])
   self.assertLess(len(json.dumps(io.saved)),10000)
 if __name__=='__main__':unittest.main()
-
 
 
 

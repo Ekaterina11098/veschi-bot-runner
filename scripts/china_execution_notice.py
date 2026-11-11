@@ -60,10 +60,12 @@ def deliver_result(io,a,p,e):
  record=dict(status='sending',phase=phase,text=text,plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],execution_key='china_agent:daily_ad_execution:v2:'+p['plan_id'],job_id=a['job_id'],chat_id=CHAT,bot_id=BOT,created_at=now)
  if not io.create(key,record):return None
  try:
-  r=io.tg('sendMessage',dict(chat_id=CHAT,text=text,reply_parameters=dict(message_id=a['input_message_id'],allow_sending_without_reply=True)))
+  if a.get('result_message_id'):
+   r=io.tg('editMessageText',dict(chat_id=CHAT,message_id=a['result_message_id'],text=text,reply_markup=dict(inline_keyboard=[])))
+  else:
+   r=io.tg('sendMessage',dict(chat_id=CHAT,text=text,reply_parameters=dict(message_id=a['input_message_id'],allow_sending_without_reply=True)))
   if r.get('chat',{}).get('id')!=CHAT or r.get('from',{}).get('id')!=BOT or not r.get('message_id'):raise ValueError('Telegram receipt identity')
   record.update(status='sent',message_id=r['message_id'],receipt=r,sent_at=datetime.now(timezone.utc).isoformat());io.put(key,record)
  except Exception:
   record.update(status='uncertain');io.put(key,record)
  return record
-

@@ -10,7 +10,7 @@ from china_advertising_v2_png import render
 from china_owner_budget_final import apply_review
 from china_held_evidence import merge_held
 def run():
- io=IO();K='china_agent:owner_budget_final:2026-11-11:v1:prepared'
+ io=IO();K='china_agent:owner_budget_final:2026-11-11:v2:prepared'
  if io.get(K):raise SystemExit('Already prepared')
  read=io.get('china_agent:owner_budget_complete:2026-11-11:v1:read');assert read['status']=='read'
  b=copy.deepcopy(read['bundle']);s=copy.deepcopy(io.get('china_agent:advertising_source:2026-11-11:v2'));v=merge_held(s['full_growth_inputs'])
@@ -24,8 +24,8 @@ def run():
  decisions={}
  for cid in[41332083,41680341,41680449]:
   c=next(c for c in b['campaigns']if c['id']==cid);ref=c['budget_period']['spend'];assert c['balance']>=ref
-  decisions[str(cid)]=dict(decision='no_fund',reference_cny=ref,reference_label='Расход8–10ноября (справка): ',text='Не пополнять: остаток '+str(c['balance'])+'CNY выше расходов8–10ноября '+str(round(ref,2))+'CNY.')
- decisions['41756218']=dict(decision='no_fund',text='Не пополнять: новая РК10.11, остаток300CNY. Первый полный день11.11; оценка12.11.')
+  decisions[str(cid)]=dict(decision='no_fund',reference_cny=ref,reference_label='Расход 8–10 ноября (справка): ',text='Не пополнять: остаток '+str(c['balance'])+' CNY выше расходов 8–10 ноября '+format(ref,'.2f').replace('.',',')+' CNY.')
+ decisions['41756218']=dict(decision='no_fund',text='Не пополнять: новая РК от 10.11, остаток 300 CNY. Первый полный день — 11.11; оценка 12.11.')
  decisions['40892162']=dict(decision='no_fund',hide=True,text='Не пополнять: РК не запускалась.')
  c=next(c for c in b['campaigns']if c['id']==41296363);e=copy.deepcopy(c['campaign_budget_economics'])
  if e['status']=='positive'and e.get('ready')and e['stress_after_ads_cny']>0:
@@ -53,6 +53,8 @@ def run():
    if change['kind']=='ad_set_bid':expected[str(change['nm_id'])][change['placement']]=change['target_minor']
   a['nm_ids']=sorted(map(int,expected));a['depends_on_ad_actions']=[x['id']for x in ad_actions if x['campaign_id']==c['id']]
   c['campaign_budget_economics']=evidence
+ b['budget_balance_observed_at']=datetime.fromisoformat(read['observed_at']).astimezone(ZoneInfo('Europe/Moscow')).strftime('%H:%M МСК')
+ b['owner_unified_approval']=True
  files=render(b)
  budgets=[f for f in files if f['family']=='budgets'];assert len(budgets)==1
  acts=budgets[0]['actions'];assert len(acts)>=6

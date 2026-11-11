@@ -154,6 +154,8 @@ jobs:
             PYTHONPATH=scripts:source python scripts/china_free_ad_work.py --job-id "$DIALOG_JOB_ID"
           elif [ "$MODE" = codex_setup ]; then
             PYTHONPATH=scripts:source python scripts/china_codex_runtime.py --setup-notice
+          elif [ "$MODE" = moscow_fur_read ]; then
+            PYTHONPATH=scripts:source python scripts/china_moscow_fur_read.py
           elif [ "$MODE" = economics_complete ]; then
             PYTHONPATH=scripts:source python scripts/china_codex_runtime.py --economics-only
           elif [ "$MODE" = codex_probe ]; then

@@ -79,7 +79,7 @@ def _candidate(w,job,text):
  freeze(w,job,answer,[f['bytes']for f in files])
  return answer
 def history_rows(raw,nm,first,last,key,observed):
- data=raw.get('data')
+ data=raw if isinstance(raw,list)else raw.get('data')
  if not isinstance(data,list) or len(data)!=1 or data[0].get('product',{}).get('nmId')!=nm:raise ValueError('WB не вернул историю выбранного товара')
  history=data[0].get('history')
  if not isinstance(history,list):raise ValueError('WB не вернул дневные строки воронки')
@@ -100,14 +100,22 @@ def _funnel(w,job,text):
  if not match:raise ValueError('Некорректный запрос периода')
  nm=int(match[1]);first=date.fromisoformat(match[2]);last=date.fromisoformat(match[3]);today=datetime.now(ZoneInfo('Europe/Moscow')).date()
  if not 0<=(last-first).days<31 or last>=today or nm not in {int(n)for n,a in w.catalog()}:raise ValueError('Товар или завершённый период не подтверждены')
- start=str(first-timedelta(days=7));end=str(last);key='china_agent:menu_funnel:v1:'+str(nm)+':'+str(first)+':'+end
- cached=w.get(key)
+ # Official history API covers only the most recent week. Older dates stay n/d.
+ start=str(max(first,today-timedelta(days=7)));end=str(last);key='china_agent:menu_funnel:v1:'+str(nm)+':'+str(first)+':'+end
+ history=w.db('GET','telegram_api_cache',params={'cache_key':'like.china_agent:menu_funnel_day:v1:'+str(nm)+':*','select':'payload','limit':100,'order':'cache_key.desc'})or[]
+ previous=[r['payload']for r in history if str(first-timedelta(days=7))<=r['payload'].get('date','')<=end]
+ if last<today-timedelta(days=7):
+  if not previous:raise ValueError('Дневная история WB доступна только за последнюю неделю; за выбранный период сохранённых данных нет')
+  rows=previous;cached=dict(status='complete',observed_at=datetime.now(timezone.utc).isoformat(),rows=rows)
+ else:cached=w.get(key)
  if cached and cached.get('status')=='complete' and (datetime.now(timezone.utc)-datetime.fromisoformat(cached['observed_at'])).total_seconds()<7200:rows=cached['rows']
  else:
   response=Reports(w).request(FUNNEL+'/history',dict(selectedPeriod=dict(start=start,end=end),nmIds=[nm],skipDeletedNm=False,aggregationLevel='day'))
   if not response.get('available'):raise ValueError('WB '+str(response.get('status','недоступен'))+(' · повтор после '+response['retry_at']if response.get('retry_at')else''))
   rawkey=key+':raw:'+response['observed_at'];w.save(rawkey,dict(request_nm_id=nm,period_from=start,period_to=end,response=response['data']))
   rows=history_rows(response['data'],nm,start,end,rawkey,response['observed_at'])
+  for r in rows:w.save('china_agent:menu_funnel_day:v1:'+str(nm)+':'+r['date'],r)
+  rows=list({r['date']:r for r in previous+rows}.values())
   w.save(key,dict(status='complete',cabinet='token_3',nm=str(nm),rows=rows,observed_at=response['observed_at'],wb_writes=0))
  byday={r['date']:r['metrics']for r in rows};fmt=lambda x:str(x).replace('.',',')
  def cr(r):return round(r['orders']*100/r['clicks'],2)if r and r['clicks']else None

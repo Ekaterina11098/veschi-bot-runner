@@ -57,13 +57,13 @@ def build(worker):
         key=(t,json.dumps(p,sort_keys=True))
         if key not in read_cache:read_cache[key]=worker.db('GET',t,params=p)
         return read_cache[key]
-    datasets={};sources=[]
+    datasets={};sources=[];period_markers={}
     for a,b in sorted(windows):
         rows,marker=period(worker,a,b)
         grouped={}
         for row in rows:grouped.setdefault(str(row['nm_id']),[]).append(row)
         datasets[a,b]={nm:values[0] for nm,values in grouped.items() if len(values)==1}
-        if marker:sources.append(marker['id'])
+        if marker:sources.append(marker['id']);period_markers[a,b]=marker
     rates=datasets[str(rate_start),str(end)]
     costs={r['article'].casefold():r for r in read('analytics_costs',dict(select='article,cost,observed_at,source',limit=5000)) or [] if r.get('article')}
     inputs=worker.get('china_agent:advertising_full_growth:'+str(worker.day)+':v1:inputs') or {}
@@ -117,6 +117,8 @@ def build(worker):
                 from business_agents.data import Data
                 from china_agent.linked import compare,qualify
                 context=compare(linked_data,nm,pair[0][0],pair[0][1],pair[1][0],pair[1][1],datetime.now(MSK),(e.get('increase') or {}).get('baseline_group'))
+                from china_price_linked_period import repair as exact_linked_period
+                context=exact_linked_period(context,datasets,period_markers,{r['article']:r['cost']for r in costs.values()if r.get('cost')is not None})
                 qualified=qualify(dict(action='lower'),context,baseline_known=bool((e.get('increase') or {}).get('baseline_group',{}).get('available')))
                 item['linked_context']=qualified['linked_context']
                 if qualified['action']=='lower':

@@ -5,18 +5,18 @@ const join=parts=>{const r=new Uint8Array(parts.reduce((n,p)=>n+p.length,0));let
 function chunk(type,data){const t=new TextEncoder().encode(type),body=join([t,data]);let c=0xffffffff;for(const v of body)c=crcTable[(c^v)&255]^(c>>>8);return join([u(data.length),body,u((c^0xffffffff)>>>0)]);}
 const masks=new Map();
 function glyph(ch){ch=ch==='\u00a0'||ch==='\u202f'?' ':ch;const f=FONT[ch]||FONT['?'];if(!masks.has(ch))masks.set(ch,{w:f[0],bits:Uint8Array.from(atob(f[1]),c=>c.charCodeAt(0))});return masks.get(ch);}
-export async function tablePng({title,subtitle,columns,rows,total,footnotes=[]}){
- const widths=columns.map(c=>c.width||180),W=80+widths.reduce((a,b)=>a+b,0),top=170,header=76,rowH=58,all=[...rows,...(total?[total]:[])],footY=top+header+all.length*rowH+35,H=Math.max(520,footY+footnotes.length*37+30);
+export async function tablePng({title,subtitle,columns,rows,total,footnotes=[],note='Полные дни МСК · итоговые проценты рассчитаны по суммам'}){
+ const widths=columns.map(c=>c.width||180),W=80+widths.reduce((a,b)=>a+b,0),top=170,header=110,rowH=Math.max(58,...rows.flatMap(r=>r.map(v=>String(v).split('\n').length*29+20))),all=[...rows,...(total?[total]:[])],footY=top+header+all.length*rowH+35,H=Math.max(520,footY+footnotes.length*37+30);
  const p=new Uint8Array(W*H*3).fill(255),ink=[32,62,82],bg=[238,244,247],headerColor=[217,233,242];
  const dot=(x,y,c)=>{x=Math.floor(x);y=Math.floor(y);if(x>=0&&x<W&&y>=0&&y<H)p.set(c,(y*W+x)*3);};
  const rect=(x,y,w,h,c)=>{for(let yy=Math.floor(y);yy<y+h;yy++)for(let xx=Math.floor(x);xx<x+w;xx++)dot(xx,yy,c);};
  const width=s=>[...String(s)].reduce((n,c)=>n+glyph(c).w,0);
  const text=(x,y,s,bold=false,color=ink,maxWidth=Infinity)=>{let used=0;for(const ch of String(s)){const g=glyph(ch);if(used+g.w>maxWidth)break;for(let j=0;j<30;j++)for(let i=0;i<g.w;i++){const bit=j*g.w+i;if(g.bits[bit>>3]&(1<<(7-(bit&7)))){dot(x+used+i,y+j,color);if(bold)dot(x+used+i+1,y+j,color);}}used+=g.w;}};
- rect(0,0,W,H,bg);text(40,23,title,true,ink,W-80);text(40,74,subtitle,false,ink,W-80);text(40,116,'Полные дни МСК · итоговые проценты рассчитаны по суммам',false,[83,120,141]);
+ rect(0,0,W,H,bg);text(40,23,title,true,ink,W-80);text(40,74,subtitle,false,ink,W-80);text(40,116,note,false,[83,120,141]);
  rect(40,top,W-80,header,headerColor);let x=40;
- for(let i=0;i<columns.length;i++){const ls=columns[i].label.split('\n');ls.forEach((s,j)=>text(x+(widths[i]-width(s))/2,top+12+j*29,s,true));x+=widths[i];}
+ for(let i=0;i<columns.length;i++){const ls=columns[i].label.split('\n');ls.forEach((s,j)=>text(x+Math.max(8,(widths[i]-width(s))/2),top+12+j*29,s,true,ink,widths[i]-16));x+=widths[i];}
  for(let r=0;r<all.length;r++){const y=top+header+r*rowH+5,isTotal=!!total&&r===all.length-1;rect(40,y,W-80,rowH-5,isTotal?headerColor:[255,255,255]);let x=40;
-  for(let i=0;i<columns.length;i++){const value=String(all[r][i]??'н/д');text(x+Math.max(8,(widths[i]-width(value))/2),y+11,value,isTotal,value==='Нет заказов'?[152,80,44]:ink,widths[i]-12);x+=widths[i];}
+  for(let i=0;i<columns.length;i++){const value=String(all[r][i]??'н/д');value.split('\n').forEach((line,j)=>text(x+Math.max(8,(widths[i]-width(line))/2),y+11+j*29,line,isTotal,line==='Нет заказов'?[152,80,44]:ink,widths[i]-16));x+=widths[i];}
  }
  footnotes.forEach((s,i)=>text(40,footY+i*37,s,false,ink,W-80));
  const raw=new Uint8Array(H*(1+W*3));for(let y=0;y<H;y++)raw.set(p.subarray(y*W*3,(y+1)*W*3),y*(1+W*3)+1);

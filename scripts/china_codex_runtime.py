@@ -38,7 +38,7 @@ class Tools:
   if name=='read_campaign':return self.analyst.campaign(**args)
   if name=='read_recent_actions':return self.analyst.actions()
   if name=='read_saved_data':
-   prefixes=('china_agent:hourly_sales_api:v1:','china_agent:advertising_source:','china_agent:advertising_full_growth:','china_agent:verified_campaign_state:','china_agent:daily_ad_execution:','china_agent:owner_','china_agent:menu_funnel:','china_agent:article_inputs:','china_agent:analytic_read:','china_agent:owner_economics_recovery:','china_agent:new_ad_economics_policy:','china_agent:expected_profit_delivery_model:')
+   prefixes=('china_agent:owner_moscow_fur:','china_agent:hourly_sales_api:v1:','china_agent:advertising_source:','china_agent:advertising_full_growth:','china_agent:verified_campaign_state:','china_agent:daily_ad_execution:','china_agent:owner_','china_agent:menu_funnel:','china_agent:article_inputs:','china_agent:analytic_read:','china_agent:owner_economics_recovery:','china_agent:new_ad_economics_policy:','china_agent:expected_profit_delivery_model:')
    key=args['cache_key']
    if not key.startswith(prefixes)or any(x in key for x in ('token','secret','auth','credential')):raise PermissionError('Ключ вне рабочих аналитических источников')
    value=self.w.get(key)
@@ -67,7 +67,9 @@ class Tools:
    return dict(answer=candidate(self.w,self.job,CANDIDATES+' '.join(labels[k]for k in args['directions'])),prepared_for_exact_job=self.job['id'])
   if name=='collect_missing_economics':
    from china_economics_recovery import collect
-   return collect(self.w,self.job)
+   result=collect(self.w,self.job)
+   model=self.w.get('china_agent:owner_moscow_fur:'+str(datetime.now(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date())+':v1:calculation_resolved')
+   return dict(result,dated_planning_model=model)if model else result
   raise PermissionError('Инструмент не разрешён')
 async def execute(w,job,inbox,probe=False):
  from china_analytic_dialog import reading

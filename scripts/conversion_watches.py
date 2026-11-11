@@ -547,6 +547,13 @@ class Worker:
                 # Memory availability must not restart or duplicate an already prepared reply.
                 trace.append(dict(name='shared_memory_record',available=False,note='Рабочая история не сохранена; повторная доставка не запускается.'))
             if not question_allowed(job,self.config()):raise PermissionError('Question registration changed')
+            # Owner11Nov: approvals must not clutter Telegram with acceptance/progress notices.
+            notice_policy=self.get('china_agent:execution_notice_policy:v1')or{}
+            approval=self.get('china_agent:loss_plan_approval:v1:'+str(job_id))if execution_only else None
+            if notice_policy.get('final_only')is True and approval and approval.get('status')in('approved','completed')and any(t.get('name')=='daily_ad_actions_approval'for t in trace):
+                self.save('china_agent:execution_ack_suppressed:v1:'+str(job_id),dict(status='suppressed',reason='owner_final_result_only',job_id=job_id,plan_id=approval['plan_id']))
+                patch({'status':'done','error':None,'completed_at':self.now.isoformat(),'lease_until':None})
+                return 'approved_without_intermediate_notice'
             self.active_question_id=job_id
             self.reply_id=marker.get('message_id');outcome='sent'
             from china_table_png import delivery_parts

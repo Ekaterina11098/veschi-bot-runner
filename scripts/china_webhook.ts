@@ -1,3 +1,4 @@
+import {handleAdvertisingPath} from './china_advertising_ui.mjs';
 import {handleSalesPath} from './china_sales_ui.mjs';
 import {handleMainMenu} from './china_main_menu.mjs';
 import {handleReportButtons} from './china_report_buttons.mjs';
@@ -277,6 +278,8 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     }
     const callback=update.callback_query;
     if(callback){
+      const advertisingResponse=await handleAdvertisingPath(config,update,{database,telegram,requestAnalysis:async(text:string,u:any)=>{const c=u.callback_query;const r=await acceptCodex(config,{...c.message,from:c.from,reply_to_message:c.message},text,u.update_id,database,(job:number)=>launch(job,'dialog_free'));return r.response??new Response('Analysis route unavailable',{status:503});}});
+      if(advertisingResponse)return advertisingResponse;
       const salesResponse=await handleSalesPath(config,update,{database,telegram});
       if(salesResponse)return salesResponse;
       const menuResponse=await handleMainMenu(config,update,{database,telegram});
@@ -333,4 +336,3 @@ Deno.serve(async(request:Request):Promise<Response>=>{
     return new Response('OK');
   }catch(error){console.error('china_webhook_error', ['Bot unavailable','State unavailable','Telegram verification failed','Dispatch pending','Price dispatch pending','Price dispatch unavailable','China catalogue unavailable','Approval readback mismatch'].includes(String(error?.message))?error.message:String(error?.name??'Unknown'));return new Response('Queue unavailable',{status:503});}
 });
-

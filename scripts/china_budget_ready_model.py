@@ -100,7 +100,10 @@ def validate_funding(io,item,before):
   nm=str(r['nm_id']);old=evidence['member_inputs'][nm];st=rows[r['article'].casefold()]
   if r['seller_price']!=old['price']:raise ValueError('Funding seller price changed')
   current_free=st['stock']-st['reserve'];current_pub=pub['amounts'][nm]
-  if (old['stock_free']is not None and old['stock_free']<=0 or old['published_stock']==0)and evidence['attributed_orders_by_nm'].get(nm,0)==0:
+  # A continuously unavailable member may not contribute hypothetical profit.
+  # A known unknown was already excluded from contribution and charged in stress.
+  unknown_unmodeled=int(nm)in evidence.get('unknown_nm_ids',[])and evidence.get('coverage',0)>=.9 and evidence.get('stress_after_ads_cny',0)>0
+  if (old['stock_free']is not None and old['stock_free']<=0 or old['published_stock']==0)and (evidence['attributed_orders_by_nm'].get(nm,0)==0 or unknown_unmodeled):
    if current_free>0 and current_pub>0:raise ValueError('Previously unavailable product changed; fresh model required')
    continue
   published_required=(io.get('china_agent:analysis_backend:v1')or{}).get('require_published_stock',True)is not False

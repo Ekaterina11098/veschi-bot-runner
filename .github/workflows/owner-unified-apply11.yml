@@ -1,4 +1,4 @@
-name: Owner recover missing midday report11Nov cache-only
+name: Owner recover midday report11Nov verified cache
 on:
   push:
     paths: ['.github/workflows/owner-unified-apply11.yml']

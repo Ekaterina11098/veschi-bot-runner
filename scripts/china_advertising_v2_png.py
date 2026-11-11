@@ -40,6 +40,7 @@ def recommendations(c):
 def budget_column(c):
  """Owner-approved display only; execution conditions remain in the structured plan."""
  if c.get('owner_budget_refused'):return 'Пока не пополнять'
+ if c.get('budget_audit_state')=='owner_decided_no_fund':return c['budget_short_note']
  if c.get('budget_audit_state')in('paused_zero','paused_review','budget_pause_review','owner_paused','draft_review','starter_review','data_blocked'):
   return c['budget_short_note']
  if c.get('budget_audit_state')=='funding_blocked':return 'Пополнение не готово.\n'+(c.get('budget_economics_reason')or'Нужна проверка экономики РК.')
@@ -116,6 +117,8 @@ def _render_legacy(bundle):
  # Owner-approved three columns; no row without a known cash shortfall.
  from china_budget_reserve import apply
  bundle=apply(bundle,bundle.get('budget_minimum_topup_cny',100))
+ from china_owner_budget_final import apply_review
+ bundle=apply_review(bundle)
  im,d=canvas('Китай · бюджеты и суммы пополнения');y=240;actions=[]
  selected=[c for c in bundle['campaigns'] if c.get('budget_review_required')]
  for c in selected:

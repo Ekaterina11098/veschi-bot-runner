@@ -2,7 +2,7 @@
 import os,json,base64,hashlib,io as bio
 from datetime import datetime,timezone,timedelta,date
 from PIL import Image,ImageDraw
-from china_advertising_v2 import collect,build,http,price_map,history,daily_metrics,sums,ratio,MSK,never_started_draft,event_time
+from china_advertising_v2 import collect,build,http,price_map,history,daily_metrics,sums,ratio,MSK,never_started_draft,event_time,save
 from china_advertising_v2_png import font,money,pct,color
 ZERO=dict(spend=0,amount=0,orders=0,views=0,clicks=0)
 

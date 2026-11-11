@@ -1,0 +1,28 @@
+name: OOO dated morning PNG pair delivery
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ooo-send-morning11.yml']
+permissions: {contents: read}
+concurrency:
+  group: ooo-morning-2026-11-11-delivery
+  cancel-in-progress: false
+jobs:
+  deliver:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 60017ed6f91cf7324354f39e283174ed3a659832
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 --quiet
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OOO_TELEGRAM_BOT_TOKEN: ${{ secrets.OOO_TELEGRAM_BOT_TOKEN }}
+        run: python scripts/ooo_send_morning11.py

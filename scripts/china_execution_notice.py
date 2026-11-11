@@ -18,6 +18,11 @@ def proven(item,state):
   return isinstance(state.get('before_budget'),(int,float)) and state['after_budget']>=state['before_budget']+item['amount_cny']-2
  expected=copy.deepcopy(before.get('nm_settings',[]))
  if kind=='ad_exclude_sku':expected=[x for x in expected if x['nm_id']!=item['nm_id']]
+ elif kind=='ad_add_sku':
+  old_ids={n['nm_id']for n in expected};new=after.get('nm_settings',[])
+  added=[n for n in new if n['nm_id']==item['nm_id']]
+  if item['nm_id']in old_ids:return bool(state.get('already_done'))and len(added)==1 and added[0]['bids_kopecks'].get(item['placement'])==item['target_minor']and sorted(expected,key=lambda x:x['nm_id'])==sorted(new,key=lambda x:x['nm_id'])
+  return len(added)==1 and added[0].get('subject',{}).get('id')==item['subject_id']and added[0]['bids_kopecks'].get(item['placement'])==item['target_minor']and sorted(expected,key=lambda x:x['nm_id'])==sorted([n for n in new if n['nm_id']!=item['nm_id']],key=lambda x:x['nm_id'])
  elif kind=='ad_set_bid':
   found=False
   for n in expected:

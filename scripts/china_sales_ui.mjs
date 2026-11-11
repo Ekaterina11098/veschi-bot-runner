@@ -30,7 +30,7 @@ export async function source(deps,get,ctx,now){
  if(catalog?.cabinet==='token_3')for(const r of catalog.rows||[])if(Number.isSafeInteger(r.nmID)&&typeof r.vendorCode==='string')names.set(String(r.nmID),r.vendorCode);
  const records=await deps.database('telegram_api_cache?cache_key=like.'+DAILY+'*&select=cache_key,payload&order=cache_key.desc&limit=70');
  const days=new Map(),source_keys=[];
- for(const row of records||[]){const d=row.cache_key.slice(DAILY.length);if(/^\d{4}-\d{2}-\d{2}$/.test(d)&&verifiedDaily(row.payload,d,now)){days.set(d,row.payload);source_keys.push(row.cache_key);}}
+ for(const row of records||[]){const d=row.cache_key.slice(DAILY.length);if(/^\d{4}-\d{2}-\d{2}$/.test(d)&&verifiedDaily(row.payload,d,now)){days.set(d,row.payload);source_keys.push(row.cache_key);for(const nm of Object.keys(row.payload.by_nm))if(!names.has(nm))names.set(nm,'nmID '+nm);}}
  let hourly=null;
  if(ctx.period==='today'){
   const latest=await get('china_agent:hourly_sales_api:v1:latest');
@@ -149,7 +149,7 @@ export async function handleSalesPath(config,update,deps){
  const match=/^csl1:([a-f0-9]{16}):([A-Za-z0-9]+)$/.exec(cb?.data||'');
  const possibleReply=!cb&&m?.reply_to_message?.from?.id===BOT&&typeof text==='string'&&text.length<=80;
  if(!initial&&!match&&!possibleReply)return null;
- if(!config.active||config.chat_id!==CHAT||config.bot_id!==BOT||!Number.isSafeInteger(update.update_id)||update.update_id<0||m?.chat?.id!==CHAT||!['group','supergroup'].includes(m.chat.type)||!Number.isSafeInteger(actor?.id)||actor.is_bot!==false||m.sender_chat||m.forward_origin||(cb&&m.from?.id!==BOT))return new Response('OK');
+ if(!config.active||config.chat_id!==CHAT||config.bot_id!==BOT||!Number.isSafeInteger(update.update_id)||update.update_id<0||m?.chat?.id!==CHAT||!['group','supergroup'].includes(m.chat.type)||!Number.isSafeInteger(actor?.id)||actor.id<=0||actor.is_bot!==false||m.sender_chat||m.forward_origin||(cb&&m.from?.id!==BOT))return new Response('OK');
  const get=async k=>(await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(k)+'&select=payload&limit=1'))?.[0]?.payload;
  const insert=async(k,v)=>!!(await deps.database('telegram_api_cache?on_conflict=cache_key','POST',{cache_key:k,payload:v,expires_at:'2036-11-11T00:00:00Z'},'resolution=ignore-duplicates,return=representation'))?.length;
  const put=async(k,v)=>{if((await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(k),'PATCH',{payload:v,updated_at:new Date().toISOString()},'return=representation'))?.length!==1)throw Error('Sales state unavailable');};
@@ -176,7 +176,7 @@ export async function handleSalesPath(config,update,deps){
   const markup=view.reply_markup,base={chat_id:CHAT,reply_markup:markup};
   if(view.photo)receipt=await deps.telegram(cb?'editMessageMedia':'sendPhoto',{...base,...(cb?{message_id:m.message_id,media:{type:'photo',media:'attach://chart',caption:view.text}}:{caption:view.text}),photo_bytes:view.photo});
   else if(cb&&!m.photo)receipt=await deps.telegram('editMessageText',{...base,message_id:m.message_id,text:view.text});
-  else receipt=await deps.telegram('sendMessage',{...base,text:view.text,...(ctx.view==='search'?{reply_parameters:{message_id:m.message_id,allow_sending_without_reply:true}}:{})});
+  else {const name=String(actor.first_name||'Участник');receipt=await deps.telegram('sendMessage',{...base,text:ctx.view==='search'?name+', '+view.text:view.text,...(ctx.view==='search'?{entities:[{type:'text_mention',offset:0,length:name.length,user:{id:actor.id,first_name:name,is_bot:false}}]}:{})});}
   if(receipt?.chat?.id!==CHAT||receipt?.from?.id!==BOT||!Number.isSafeInteger(receipt.message_id))throw Error('Sales delivery receipt mismatch');
  }catch(e){await put(key,{...entry,status:'uncertain'});throw e;}
  await put(ROOT+'session:'+sid,{actor:actor.id,context:ctx,message_id:receipt.message_id,expires_at:new Date(now.getTime()+86400000).toISOString()});

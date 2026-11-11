@@ -91,10 +91,10 @@ def _candidate(w,job,text):
    current.update({c['id']:c for c in states})
   from china_morning_readiness import current_prices,published_stock
   from china_moysklad_read import read_stock
-  wanted=sorted({a['nm_id']for a in selected})
-  fresh_prices=current_prices(io,wanted)
+  wanted_nm=sorted({a['nm_id']for a in selected})
+  fresh_prices=current_prices(io,wanted_nm)
   fresh_stock=read_stock(list(dict.fromkeys(a['article']for a in selected)))
-  fresh_published=published_stock(io,fresh_prices,wanted)
+  fresh_published=published_stock(io,fresh_prices,wanted_nm)
   if not fresh_stock.get('coverage_complete'):raise ValueError('Current selected-SKU stock/COGS incomplete')
   w.save('china_agent:menu_current_inputs:v1:'+str(job['id']),dict(prices=fresh_prices,stock=fresh_stock,published_stock=fresh_published,observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0))
   price_map={r['nm_id']:r for r in fresh_prices['rows']}

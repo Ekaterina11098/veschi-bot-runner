@@ -1,3 +1,4 @@
+import {handleInlineSearch} from './china_inline_search.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {stableAdCache,advertisingMenu,handleAdvertisingPath,dailyPoints,hourlyRows,candidateRequest,conversionView,drrValue,metricHeadline} from './china_advertising_ui.mjs';
@@ -22,6 +23,7 @@ for(let day=21;day<=41;day++){
 for(const [offset,date] of [[0,'2026-11-11'],[1,'2026-11-10'],[7,'2026-11-04']])cache.hourly.push({offset,source_key:'hourly'+offset,slot_msk:date+'T13:00:00+03:00',observed_at:date+'T10:22:00Z',ad_observed_at:date+'T10:22:00Z',ad_status:'complete',ad_missing:[],ad_rows:[{campaign:12345678,clicks:100,orders:2,carts:4,views:1000,spend:5,amount:200}],general:{status:'complete',observed_at:date+'T10:22:00Z',rows:[{nm_id:1473245494,article:'143',selected:{scope:'all_sources',period_from:date,period_to:date,clicks:200,orders:4,cart_count:10}}]}});
 const deps={now:()=>now,telegram:async(method,b)=>{
  calls.push({method,b});
+ if(method==='answerInlineQuery')return true;
  if(method==='getChatMember')return{user:{id:b.user_id,is_bot:false},status:'member'};
  if(method==='editMessageReplyMarkup')return true;
  assert.ok(['sendMessage','editMessageText','sendPhoto','editMessageMedia'].includes(method));
@@ -30,6 +32,7 @@ const deps={now:()=>now,telegram:async(method,b)=>{
  messages.set(id,m);return m;
 },database:async(path,method='GET',body,prefer)=>{
  const [table,q]=path.split('?'),args=new URLSearchParams(q);
+ if(table==='rpc/china_menu_inline_products')return {cabinet:'token_3',rows:[{nm:'1111111111',article:'204-test',campaigns:['12345678','87654321']}],truncated:false};
  if(table==='rpc/china_menu_product_lookup')return {cabinet:'token_3',rows:body.p_query.includes('204')?[{nm:'1111111111',article:'204-test'}]:[],truncated:false};
  if(table==='rpc/china_menu_product_ad_cache'){assert.equal(body.p_nm,1111111111);return {cabinet:'token_3',nm:'1111111111',daily:cache.daily.concat(cache.daily.map(r=>({...r,campaign:'87654321',spend:100,amount:1000}))),hourly:cache.hourly,current_campaigns:[{campaign:'12345678'},{campaign:'87654321'}]};}
  if(table==='rpc/china_menu_conversion_cache'){assert.equal(method,'POST');assert.ok(body.p_start<body.p_end);return structuredClone(cache);}
@@ -87,3 +90,17 @@ assert.equal(await handleAdvertisingPath(config,{...reply,update_id:u++,message:
 assert.equal(await handleAdvertisingPath(config,{...reply,update_id:u++,message:{...reply.message,from:{id:8,is_bot:false}}},deps),null,'Other actor cannot use search prompt');
 await raw('cmn1:conversions');m=[...messages.values()].at(-1);await click('Рекламная конверсия');await click('Найти товар по артикулу');const cp=m;await handleAdvertisingPath(config,{update_id:u++,message:{message_id:801,text:'204',from:{id:7,is_bot:false},chat:{id:CHAT,type:'supergroup'},reply_to_message:cp}},deps);m=[...messages.values()].at(-1);await click('204-test');await click('РК 87654321');await click('7 полных дней');assert.match(m.caption,/CR 2%/);assert.doesNotMatch(m.caption,/ДРР 2,5%/);
 console.log('PASS DRR navigation; zero orders shows no orders plus spend; numeric100 only for equal expense/order amount; article search is actor/prompt bound; separate campaign metrics; preserved product/period; horizontal PNG daily tables.');
+
+c.set('china_agent:main_menu:v1:policy',{enabled:true,inline_search_enabled:true});
+await raw('cmn1:drrview');m=[...messages.values()].at(-1);
+const searchButton=m.reply_markup.inline_keyboard.flat().find(b=>b.text==='Найти товар по артикулу');assert.equal(searchButton.switch_inline_query_current_chat,'ДРР ');assert.equal(searchButton.callback_data,undefined);
+const iq={update_id:u++,inline_query:{id:'inline1',from:{id:7,is_bot:false},chat_type:'supergroup',query:'ДРР 204 сумка',offset:''}};
+await handleInlineSearch(config,iq,deps);const response=calls.at(-1);assert.equal(response.method,'answerInlineQuery');assert.equal(response.b.is_personal,true);assert.equal(response.b.cache_time,1);assert.equal(response.b.results[0].title,'204-test');
+const result=response.b.results[0],button=result.reply_markup.inline_keyboard[0][0];assert.match(button.callback_data,/cai1:/);
+const beforeSend=calls.filter(x=>x.method==='sendMessage').length;
+await handleInlineSearch(config,{update_id:u++,callback_query:{id:'inlinePick',from:{id:7,is_bot:false},inline_message_id:'opaque-inline-id',data:button.callback_data}},deps);m=[...messages.values()].at(-1);assert.match(m.text,/ДРР.*204-test/);assert.equal(m.chat.id,CHAT);assert.equal(calls.filter(x=>x.method==='sendMessage').length,beforeSend+1,'Inline selection must continue only in work group');
+const cross=await handleInlineSearch(config,{update_id:u++,callback_query:{id:'cross',from:{id:8,is_bot:false},inline_message_id:'opaque-inline-id',data:button.callback_data}},deps);assert.match(await cross.text(),/поиск заново/);
+const inlineForeign=await handleInlineSearch(config,{...iq,update_id:u++,inline_query:{...iq.inline_query,id:'private',chat_type:'private'}},deps);assert.equal(calls.at(-1).b.results.length,0);
+await handleInlineSearch(config,{...iq,update_id:u++,inline_query:{...iq.inline_query,id:'unknownActor',from:{id:8,is_bot:false}}},deps);assert.equal(calls.at(-1).b.results.length,0);
+const record=c.get('china_agent:advertising_ui:v1:inline_result:'+result.id);record.expires_at='2026-11-10T00:00:00Z';const expired=await handleInlineSearch(config,{update_id:u++,callback_query:{id:'expired',from:{id:7,is_bot:false},inline_message_id:'opaque-inline-id',data:button.callback_data}},deps);assert.match(await expired.text(),/поиск заново/);
+console.log('PASS native inline switch; personal per-actor results; section/period preserved; native campaign continuation only in bound work group; foreign chat, wrong actor and expired selection rejected; no ForceReply needed.');

@@ -105,6 +105,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           DIALOG_JOB_ID: ${{ inputs.job_id }}
+          PYTHONPATH: scripts:source
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           WB_FINANCE_TOKEN_3: ${{ secrets.WB_FINANCE_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}

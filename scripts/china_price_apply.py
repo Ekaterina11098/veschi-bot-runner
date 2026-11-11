@@ -47,6 +47,16 @@ def plan(s,p):
     if base*Decimal(100-discount)/100!=target:raise ValueError('Несовпадение расчёта')
     return dict(nmID=int(s['nm_id']),price=int(base),discount=discount)
 
+def report_contains_selection(answer,s):
+    # Decimal punctuation is display formatting, not a different approved price.
+    pattern=r'^(Повышение|Снижение) · (.+?) Продавец: ([0-9]+(?:[.,][0-9]+)?) → ([0-9]+(?:[.,][0-9]+)?) ¥$'
+    matches=[]
+    for line in answer.splitlines():
+        match=re.fullmatch(pattern,line)
+        if match and match[2]==s['article']:
+            matches.append((match[1],dec(match[3].replace(',','.')),dec(match[4].replace(',','.'))))
+    return matches==[(s['action'],dec(s['current_cny']),dec(s['target_cny']))]
+
 class IO:
     def __init__(self):
         self.url=os.environ['SUPABASE_URL'].rstrip('/')
@@ -130,9 +140,7 @@ class IO:
         if j['request_text'] not in ['/china_morning_pair_candidates','/china_price_intraday_raise'] or sha(j['answer'])!=a['report_sha256']:raise ValueError('Отчёт изменился')
         if not any(t.get('name')=='china_price_daily_report' and t.get('report_date')==a['report_date'] for t in j['tool_trace']):raise ValueError('Дата отчёта не подтверждена')
         for s in a['selections']:
-            def fmt(v):return format(dec(v).normalize(),'f').replace('.',',')
-            expected=s['action']+' · '+s['article']+' Продавец: '+fmt(s['current_cny'])+' → '+fmt(s['target_cny'])+' ¥'
-            if expected not in j['answer'].splitlines():raise ValueError('Согласованные цены отсутствуют в отчёте')
+            if not report_contains_selection(j['answer'],s):raise ValueError('Согласованные цены отсутствуют в отчёте')
 
 def validate_approval(key,a):
     if not re.fullmatch(re.escape(PREFIX)+r'-1004342917488:\d+:\d+:[0-9a-f]{64}',key):raise ValueError('Invalid approval key')

@@ -54,7 +54,7 @@ def run():
  v['addition_candidates']=[r for r in v['addition_candidates']if r['nm_id']in ids]
  s['full_growth_inputs']=v;s['addition_bid_quotes']={}
  for r in v['addition_candidates']:
-  label='panamas_search'if r['placement']=='search'else'umbrella_recommendations';cp=40945478 if label=='panamas_search'else41325637
+  label='panamas_search'if r['placement']=='search'else'umbrella_recommendations';cp=40945478 if label=='panamas_search'else 41325637
   response=q[label];assert response['http']==200
   typ='search'if r['placement']=='search'else'recommendation'
   values=[bid['value']for row in response['data']['bids']if row['nm_id']==r['nm_id']for bid in row['bids']if bid['type']==typ and bid['currency']=='CNY']

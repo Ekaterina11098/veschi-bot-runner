@@ -23,9 +23,10 @@ jobs:
           node scripts/test_sales_full_path.mjs
           node scripts/test_direct_ads.mjs
           node scripts/test_advertising_ui.mjs
+          node --experimental-strip-types scripts/test_inline_ingress.mjs
       - name: Deliver exact owner approved menu once without marketplace calls
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: node scripts/owner_inline_search_preflight11.mjs
+        run: node scripts/owner_inline_search_activate11.mjs

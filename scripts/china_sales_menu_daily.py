@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from decimal import Decimal
 import requests
 from china_cloud_cost_control import Cache,WB,validate_identity,stamp
-ROOT='china_agent:sales_menu:v1:'
+ROOT='china_agent:sales_menu:v2:'
 MSK=ZoneInfo('Europe/Moscow')
 BASIS='FBS created units, all statuses, dedup id; native CNY buyer-discounted amount; not buyouts or all sales models'
 def aggregate(rows):
@@ -47,7 +47,7 @@ def collect(days=1):
     if ident in raw and raw[ident]!=r:raise ValueError('Conflicting FBS row')
     raw[ident]=r
    nxt=page.get('next')
-   if not batch or nxt in (None,0) or len(batch)<1000:break
+   if not batch or nxt in (None,0):break
    if nxt==cursor or pages>=30:raise ValueError('Incomplete FBS pagination')
    cursor=nxt
   new=get('/api/v3/orders/new')['orders']
@@ -59,7 +59,7 @@ def collect(days=1):
     t=datetime.fromisoformat(r['createdAt'].replace('Z','+00:00')).astimezone(MSK)
     if a<=t<b:rows.append(r)
    totals,by=aggregate(rows);key=ROOT+'day:'+a.date().isoformat()
-   value=dict(status='complete'if not totals['unknown_amount_ids']else'partial',cabinet='token_3',currency='CNY',basis=BASIS,date=str(a.date()),start_msk=a.isoformat(),end_msk=b.isoformat(),observed_at=observed,totals=totals,by_nm=by,source=dict(endpoint='/api/v3/orders + /api/v3/orders/new',period_from=begin.isoformat(),period_to=end.isoformat(),pages=pages,scope='created_at exact full Moscow days, all statuses, id dedup'),wb_writes=0)
+   value=dict(status='complete'if not totals['unknown_amount_ids']else'partial',cabinet='token_3',currency='CNY',basis=BASIS,date=str(a.date()),start_msk=a.isoformat(),end_msk=b.isoformat(),observed_at=observed,totals=totals,by_nm=by,source=dict(endpoint='/api/v3/orders + /api/v3/orders/new',period_from=begin.isoformat(),period_to=end.isoformat(),pages=pages,pagination_complete=True,scope='created_at exact full Moscow days, all statuses, id dedup'),wb_writes=0)
    assert c.create(key,value);written.append(key)
   c.put(lease,dict(status='complete',source_keys=written,observed_at=observed,wb_writes=0));return dict(status='complete',completed_days=len(written),wb_writes=0)
  except Exception:

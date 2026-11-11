@@ -9,7 +9,8 @@ w=CoverageWorker('intraday')
 try:
  w.control_preview=True
  w.prepare(preview=True)
- review=build(w)
+ review=w.get('china_agent:daily_expected_candidates:'+str(w.day)+':verify')
+ if not review:raise RuntimeError('Full recalculation receipt missing')
  omitted=[]
  ready=lowering(review,w.day,w.get('china_agent:prices:v1'),omitted=omitted)
  result=dict(status='calculated',report_date=str(w.day),review=review,lowering_ready=ready,omitted=omitted,source_cards_observed_at=w.audit.get('linked_cards_observed_at'),telegram_calls=0,wb_writes=0)

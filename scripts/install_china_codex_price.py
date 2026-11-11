@@ -15,9 +15,9 @@ def install(root):
  preview="            answer, trace = self.prepare(preview=True)\n"
  live="                answer, trace = self.prepare()\n"
  if text.count(preview)!=1 or text.count(live)!=1:raise RuntimeError('Price worker analysis hook changed; review source')
- guarded_preview="            try:\n                answer, trace = self.prepare(preview=True)\n            except RuntimeError as exc:\n                if str(exc) not in ('Completed period mismatch','Daily report was not generated'):raise\n                self.audit['source_blocker']=str(exc)\n                answer='Ценовые изменения не предлагаю: нет проверенного среза за требуемые завершённые дни. Сравнение с вчера и неделей ранее: нет сопоставимых данных.'\n                trace=[dict(name='china_price_source_unavailable',reason=str(exc))]\n"
+ guarded_preview=preview # Owner11Nov: no diagnostic report substitution; source failures stop delivery.
  text=text.replace(preview,guarded_preview+"            "+marker+"\n            from china_codex_reports import review_price\n            answer, trace = review_price(self, answer, trace)\n")
- guarded_live="                try:\n                    answer, trace = self.prepare()\n                except RuntimeError as exc:\n                    if str(exc) not in ('Completed period mismatch','Daily report was not generated'):raise\n                    self.audit['source_blocker']=str(exc)\n                    answer='Ценовые изменения не предлагаю: нет проверенного среза за требуемые завершённые дни. Сравнение с вчера и неделей ранее: нет сопоставимых данных.'\n                    trace=[dict(name='china_price_source_unavailable',reason=str(exc))]\n"
+ guarded_live=live
  text=text.replace(live,guarded_live+"                from china_codex_reports import review_price\n                answer, trace = review_price(self, answer, trace)\n")
  # An old prepared answer may be reused only if delivery already started; never regenerate uncertain parts.
  needle="            import business_agents.conversation as conv\n"

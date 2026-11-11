@@ -47,4 +47,14 @@ class TestMenu(unittest.TestCase):
   self.assertEqual(w.get('table:303')['parts'][0],answer)
   self.assertEqual(w.get('china_agent:codex_ad_review:v1:303')['answer'],answer)
   self.assertEqual(set(checks),{'add','raise'})
+ def test_zero_ready_actions_is_brief_and_discloses_missing_economics(self):
+  from contextlib import nullcontext
+  w=W();job={'id':304,'chat_id':-1004342917488};bundle={'recommendation_directions':{k:{'status':'checked','rows':[]}for k in m.LABELS},'full_cabinet_growth_review':{'missing_economics':{'1':'missing'}}}
+  class FakeIO:pass
+  mod=lambda **values:types.SimpleNamespace(**values)
+  def forbidden(*args):raise AssertionError('No empty diagnostic PNG')
+  modules={'china_analytic_dialog':mod(reading=nullcontext),'china_loss_execute':mod(IO=FakeIO),'china_advertising_v2':mod(prepare=lambda *args:bundle),'china_advertising_v2_png':mod(render=forbidden),'china_morning_rules_review':mod(enabled=lambda io:True),'china_loss_control':mod(PLAN='plan:',digest=str)}
+  with patch.dict(sys.modules,modules):answer=m.candidate(w,job,m.CANDIDATES+'Новые повышения ставок.')
+  self.assertIn('не хватает данных собственной экономики',answer);self.assertNotIn('все товары не подходят',answer)
+  self.assertEqual(w.get('china_agent:menu_analytics:v1:304')['report_kind'],'no_ready_actions')
 if __name__=='__main__':unittest.main()

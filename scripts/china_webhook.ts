@@ -301,6 +301,8 @@ Deno.serve(async(request:Request):Promise<Response>=>{
       return Response.json({method:'answerCallbackQuery',callback_query_id:callback.id,text:'Напишите вопрос обычным сообщением в группе.'});
     }
     if(!Number.isSafeInteger(message?.chat?.id)||!Number.isSafeInteger(message?.from?.id)||message.from.id<=0||message.from.is_bot||message.sender_chat||message.chat.id!==config.chat_id||!['group','supergroup'].includes(message.chat.type))return new Response('OK');
+    // A selected native inline result is a picker card, not a new cloud question.
+    if(message.via_bot?.id===config.bot_id)return new Response('OK');
     let text=typeof message.text==='string'?message.text.trim():'';
     if(!text)return new Response('OK');
     const first=text.split(/\s+/,1)[0];const parsed=/^\/(\S+?)(?:@([a-z0-9_]+))?$/i.exec(first);const cmd=parsed?.[1].toLowerCase();

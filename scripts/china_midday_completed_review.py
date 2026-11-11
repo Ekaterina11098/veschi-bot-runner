@@ -39,9 +39,10 @@ def merge_completed(bundle,review,source_ref):
  if review.get('codex_analysis'):out['codex_analysis']=copy.deepcopy(review['codex_analysis'])
  if review.get('midday_review'):out['midday_review']=copy.deepcopy(review['midday_review'])
  out['pending_first_day_unknown_history']=copy.deepcopy(review.get('pending_first_day_unknown_history',{}))
+ out['creation_holds']=copy.deepcopy(review.get('creation_holds',{}))
  for cp in out['campaigns']:
-  if str(cp['id'])in out['pending_first_day_unknown_history']:
-   cp['attention']=[];cp['owner_review_note']='Сохраняем тест до оценки первого полного дня. История до запуска не подменяется нулями.'
+  if str(cp['id'])in out['creation_holds']:
+   cp['attention']=[];cp['owner_review_note']='Сохраняем тест до оценки полного дня после последнего подтверждённого изменения.'
  if review.get('sales_growth_review'):out['sales_growth_review']=copy.deepcopy(review['sales_growth_review'])
  for c in out['campaigns']:
   c['codex_research_recommendations']=copy.deepcopy((closed.get(c['id'])or{}).get('codex_research_recommendations',[]))
@@ -112,7 +113,16 @@ def attach(io,bundle,day):
   active=[c for c in batch['campaigns']['adverts']if c['id']in ids]
   saved_stats=completed_campaign_stats(io,active,saved_stats,source['period_from'],end,pending_unknown=pending_unknown)
   batch['stats']=[copy.deepcopy(saved_stats[cid]) for cid in ids if cid in saved_stats]
+ creation_holds={}
+ for batch in source['batches'].values():
+  for cp in batch['campaigns']['adverts']:
+   try:
+    at=datetime.fromisoformat(cp['timestamps']['created'].replace('Z','+00:00'))
+    if at.tzinfo is None:raise ValueError('Creation timezone required')
+    if at.astimezone(MSK).date()>=date.fromisoformat(end):creation_holds[cp['id']]=dict(status='pending_first_full_day',created_at=cp['timestamps']['created'])
+   except (KeyError,ValueError,TypeError,AttributeError):pass
  source['pending_first_day_unknown_history']={str(cid):v for cid,v in pending_unknown.items()}
+ source['creation_holds']={str(cid):v for cid,v in creation_holds.items()}
  source['config']=copy.deepcopy(current['config'])
  source['executions']=copy.deepcopy(current.get('executions',source.get('executions',[])))
  records,context=__import__('china_advertising_midday').current_report_context(io,source,day)
@@ -176,7 +186,7 @@ def attach(io,bundle,day):
   from china_advertising_full_growth import enrich as full_review
   review=full_review(MiddayFullIO(),source,review)
  else:review=growth_enrich(MiddayGrowthIO(),source,review)
- pending_nms={n['nm_id']for batch in source['batches'].values()for cp in batch['campaigns']['adverts']if cp['id']in pending_unknown for n in cp.get('nm_settings',[])}
+ pending_nms={n['nm_id']for batch in source['batches'].values()for cp in batch['campaigns']['adverts']if cp['id']in creation_holds for n in cp.get('nm_settings',[])}
  for cp in review['campaigns']:
   cp['attention']=[r for r in cp.get('attention',[])if (r.get('action')or{}).get('nm_id')not in pending_nms]
   for row in cp.get('focus',[]):
@@ -184,6 +194,7 @@ def attach(io,bundle,day):
     row['action']=None;row['pending_first_day']=True;row['decision']='Сохраняем тест до оценки полного дня.'
  review=attach_directions(review,source)
  review['pending_first_day_unknown_history']=source['pending_first_day_unknown_history']
+ review['creation_holds']=source['creation_holds']
  from china_midday_rules_review import enabled as no_model_enabled,review as no_model_review
  if no_model_enabled(io):review=no_model_review(review,source)
  else:

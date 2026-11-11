@@ -9,6 +9,7 @@ def proven(item,state):
  if not isinstance(before,dict) or not isinstance(after,dict) or before.get('id')!=item['campaign_id'] or after.get('id')!=item['campaign_id']:return False
  kind=item['kind']
  if before.get('settings')!=after.get('settings'):return False
+ if kind=='archive_campaign':return after.get('status')==7 and before.get('nm_settings')==after.get('nm_settings')
  if kind=='pause_campaign':return after.get('status')==11 and before.get('nm_settings')==after.get('nm_settings')
  if before.get('status')!=after.get('status'):return False
  if kind=='topup_campaign':

@@ -1,10 +1,14 @@
 """Finish explicitly requested economics and all-direction analysis; no WB mutations/sends."""
 import copy,json,os
 from datetime import datetime,timezone
-import requests
 ROOT='china_agent:owner_moscow_fur:2026-11-11:v1'
 def overlay(value,calculation,observed):
  v=copy.deepcopy(value);economics=v.setdefault('economics',dict(rows={},missing={}))
+ # Actual ad spend is assessed separately; reserve3% must also be present before ads.
+ for e in economics.get('rows',{}).values():
+  if all(type(e.get(k))in(int,float)for k in ('buyout','seller_price_cny','expected_margin_before_ads_cny'))and not e.get('payment_reserve_pct'):
+   e['expected_margin_before_ads_cny']-=e['buyout']*e['seller_price_cny']*.03
+   e['payment_reserve_pct']=3
  for r in calculation:
   nm=str(r['nm_id']);pr=next((p for p in v['prices']['rows']if p['nm_id']==r['nm_id']),None)
   if not pr or pr['seller_price']!=r['price_cny']:continue
@@ -12,15 +16,20 @@ def overlay(value,calculation,observed):
   economics['rows'][nm]=e;economics.setdefault('missing',{}).pop(nm,None)
  return v
 def main():
+ import requests
  from conversion_watches import runtime
  from china_menu_analytics import candidate,CANDIDATES
  import china_loss_execute
- w=runtime();inputs=w.get(ROOT+':inputs');calc=w.get(ROOT+':calculation');at=datetime.now(timezone.utc).isoformat()
+ w=runtime();inputs=w.get(ROOT+':inputs');calc=w.get('china_agent:owner_moscow_fur:2026-11-11:v2:calculation');at=datetime.now(timezone.utc).isoformat()
  if not inputs or calc.get('status')!='calculated':raise ValueError('Exact tariff/card calculation absent')
  if (datetime.now(timezone.utc)-datetime.fromisoformat(inputs['observed_at'])).total_seconds()>7200:raise ValueError('Exact card inputs stale')
  cards=inputs['cards'];headers={'Authorization':os.environ['WB_TOKEN_3']};chrt=[s['chrtID']for c in cards for s in c['sizes']]
  stocks={};raw={}
+ previous=w.get(ROOT+':warehouse_stock:2026-11-11T18:59:02.028590+00:00')or{}
  for warehouse in (2126188,2308581):
+  old=previous.get(str(warehouse))or{}
+  if old.get('status')==200 and (datetime.now(timezone.utc)-datetime.fromisoformat(old['observed_at'])).total_seconds()<1800:
+   raw[str(warehouse)]=old;stocks[warehouse]=old['data']['stocks'];continue
   response=requests.post('https://marketplace-api.wildberries.ru/api/v3/stocks/'+str(warehouse),headers=headers,json={'chrtIds':chrt},timeout=75,allow_redirects=False)
   raw[str(warehouse)]=dict(status=response.status_code,observed_at=at)
   if response.status_code!=200:raise ValueError('Exact warehouse stock HTTP '+str(response.status_code))
@@ -34,8 +43,9 @@ def main():
    if len(found)!=len(sizes):return None
    return sum(s['amount']for s in found)
   r['warehouse_MSK_published']=amount(2126188);r['warehouse_Guangzhou_published']=amount(2308581)
-  if r['warehouse_MSK_published']is None or r['warehouse_Guangzhou_published']is None:raise ValueError('Exact stock coverage incomplete')
-  if r['warehouse_Guangzhou_published']>0 and r['subject_id']!=4377:continue
+  if r['warehouse_MSK_published']is None:raise ValueError('Exact MSK stock coverage incomplete')
+  r['other_warehouse_missing_is_not_zero']=r['warehouse_Guangzhou_published']is None
+  if (r['warehouse_Guangzhou_published']or 0)>0 and r['subject_id']!=4377:continue
   r['published_stock']=r['warehouse_MSK_published'];r['route']='Moscow_FBS';models.append(r)
  calc.update(rows=[r for r in models if r['subject_id']==4377],resolved_models=models,warehouse_observed_at=at)
  w.save(ROOT+':calculation_resolved',calc)

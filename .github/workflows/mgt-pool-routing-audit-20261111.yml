@@ -1,9 +1,6 @@
 name: Read-only China MSK pool routing audit11Nov
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/mgt-pool-routing-audit-20261111.yml']
 permissions:
   contents: read
 concurrency:

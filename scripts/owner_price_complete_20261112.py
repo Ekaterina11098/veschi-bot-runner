@@ -13,3 +13,5 @@ def main():
   import requests
   requests.sessions.Session.request=w.original_http
 if __name__=='__main__':main()
+
+# Verify positive-profit zero-order rollback scenarios before final owner report.

@@ -1,3 +1,4 @@
+from moysklad_warehouses import select_store
 """Owner-requested budget inputs29Oct. Reads only; private cache; no Telegram."""
 import os,json,requests
 from datetime import datetime,timezone,timedelta
@@ -37,7 +38,7 @@ def main():
    return response.json()
   stores=get('/entity/store',dict(limit=1000))
   if stores.get('meta',{}).get('size',1001)>len(stores.get('rows',[])):raise ValueError('Warehouse coverage')
-  selected=[r for r in stores['rows'] if r.get('name')=='МСК' and not r.get('archived')]
+  selected=[select_store(stores['rows'])]
   if len(selected)!=1:raise ValueError('MSK warehouse ambiguous')
   rows=[];offset=0
   while True:

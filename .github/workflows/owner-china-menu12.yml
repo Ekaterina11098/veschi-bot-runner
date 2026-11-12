@@ -1,5 +1,8 @@
-name: Recover owner requested compact1030 price candidates12Nov
+name: Audit complete owner price recommendations12Nov
 on:
+  push:
+    branches: [main]
+    paths: ['scripts/owner_price_complete_20261112.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -58,7 +61,8 @@ jobs:
           cp ../scripts/china_price_economic_target.py china_agent/price_economic_target.py
           python ../scripts/test_china_price_delivery.py
           python ../scripts/test_china_price_schedule_identity.py
-      - name: Recalculate and deliver only compact candidates
+          python ../scripts/test_price_rules31.py
+      - name: Collect and verify complete price recommendations without sending
         working-directory: source
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -69,4 +73,4 @@ jobs:
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           OPENAI_API_KEY: ""
           PYTHONPATH: ../scripts:.
-        run: python ../scripts/owner_price1030_recovery_20261112.py
+        run: python ../scripts/owner_price_complete_20261112.py

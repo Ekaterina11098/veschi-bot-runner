@@ -1,8 +1,5 @@
 name: Owner bind MoySklad warehouse IDs 20261112
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-ms-warehouse-ids12.yml']
   workflow_dispatch:
 permissions: {}
 concurrency:

@@ -1,4 +1,4 @@
-name: Deliver checked original311 growth report without model
+name: Bind checked original311 selection controls without resending
 on:
   push:
     branches: [main]

@@ -9,7 +9,7 @@ export function keyboard(token,p,selected=[],page=0){
  }else for(const[g,label]of GROUPS){const all=p.items.filter(i=>i.group===g);if(all.length){const n=all.filter(i=>set.has(i.id)).length;rows.push([{text:(n===all.length?'[x] ':n?'[−] ':'[ ] ')+label+' · '+n+'/'+all.length,callback_data:pre+'g'+g}]);}}
  rows.push([{text:'Выбрать всё',callback_data:pre+'all'},{text:'Сбросить',callback_data:pre+'clear'}]);
  const money=p.items.filter(i=>set.has(i.id)).reduce((n,i)=>n+(i.amount_cny||0),0);
- rows.push([{text:'Посмотреть выбранное · '+selected.length+(money?' · '+money+' CNY':''),callback_data:pre+'review'}]);return {inline_keyboard:rows};
+ rows.push([{text:'Посмотреть выбранное · '+selected.length+(money?' · '+money+' CNY':''),callback_data:pre+'review'}]);rows.push([{text:'‹ Главное меню',callback_data:'cmn1:home'}]);return {inline_keyboard:rows};
 }
 export async function handleReportButtons(config,cb,updateId,deps){
  const match=/^cab1:([a-f0-9]{24}):(all|clear|review|g(?:up|add|down|exclude|archive)|i\d+|p\d+|confirm[a-f0-9]{12}|back)$/.exec(cb?.data??'');if(!match)return null;

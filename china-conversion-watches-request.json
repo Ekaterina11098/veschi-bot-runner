@@ -1,1 +1,5 @@
-{"action":"menu_result","job_id":305,"native_funnel_scope":{"nm_id":1473244991,"date_from":"2026-11-05","date_to":"2026-11-11"},"nonce":"owner-finish-native-funnel305-png-no-model-20261112-v2"}
+{
+  "action": "dialog",
+  "job_id": 311,
+  "nonce": "owner-one-native-retry311-stream-fixed-20261112"
+}

@@ -1,15 +1,15 @@
-name: Owner scoped reserve diagnosis 637
+name: Offline native stream regression
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-china-menu12.yml']
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: owner-reserve637-read
-  cancel-in-progress: false
 jobs:
-  read:
+  offline:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,40 +17,4 @@ jobs:
           sparse-checkout: scripts
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install requests==2.32.5
-      - env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
-          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-        run: |
-          PYTHONPATH=scripts python - <<'PY'
-          from datetime import datetime,timezone
-          from china_advertising_state import AdvertisingIO
-          from china_advertising_v2 import http
-          import unittest
-          from china_advertising_reserve import filter_bundle
-          suite=unittest.defaultTestLoader.discover('scripts',pattern='test_china_advertising_reserve.py')
-          assert unittest.TextTestRunner().run(suite).wasSuccessful()
-          io=AdvertisingIO();key='china_agent:owner_reserve637:2026-11-12:v1:current'
-          if not io.get(key):
-              budget=http(io,'/api/advert/v2/budget','POST',dict(advertIds=[41298169]))
-              adverts=http(io,'/api/advert/v2/adverts?ids=41298169')['adverts']
-              assert len(adverts)==1 and adverts[0]['id']==41298169
-              v=dict(observed_at=datetime.now(timezone.utc).isoformat(),campaign_id=41298169,budget=budget,sku_present=any(n['nm_id']==1473242577 for n in adverts[0]['nm_settings']),campaign_status=adverts[0]['status'],required_cny=1392.34,wb_writes=0,telegram_calls=0,model_calls=0)
-              assert io.create(key,v)
-              assert io.get(key)==v
-          shadow='china_agent:owner_reserve637:2026-11-12:v1:pre_send_verified'
-          if not io.get(shadow):
-              original=io.get('china_agent:advertising_artifacts:2026-11-12:v2')['bundle']
-              before=[r['action']['id'] for cp in original['campaigns'] for r in cp.get('focus',[]) if r.get('action')]
-              assert '41298169:add:1473242577' in before
-              revised,check=filter_bundle(io,original,'send')
-              after=[r['action']['id'] for cp in revised['campaigns'] for r in cp.get('focus',[]) if r.get('action')]
-              scoped=[r for r in check['items'] if r['id']=='41298169:add:1473242577']
-              assert len(scoped)==1
-              if scoped[0]['status']!='ready':
-                  assert scoped[0]['id'] not in after
-              assert io.create(shadow,dict(status='verified',checked_at=datetime.now(timezone.utc).isoformat(),reserve_receipt=check['receipt_key'],target=scoped[0],original_action_count=len(before),filtered_action_count=len(after),original_unchanged=original==io.get('china_agent:advertising_artifacts:2026-11-12:v2')['bundle'],tests_passed=6,wb_writes=0,telegram_calls=0,model_calls=0))
-          print(dict(status='saved_and_verified',wb_writes=0,telegram_calls=0,model_calls=0))
-          PY
+      - run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_native_large_packet.py'

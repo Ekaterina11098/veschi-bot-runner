@@ -158,3 +158,5 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           PYTHONPATH: scripts:source
         run: python scripts/china_change_observation.py --budget 60
+
+# Scoped recovery: validate each new campaign from its actual launch date.

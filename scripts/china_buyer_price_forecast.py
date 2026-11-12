@@ -38,7 +38,9 @@ def build(rows,marker,catalogue,day):
    before_spp=positive(raw['price_after_discount'])
    spp=Decimal(str(raw['price_spp']))
    if not spp.is_finite() or not 0<=spp<100:continue
-   if abs(before_spp*(1-spp/100)-rub)>2:continue
+   spp_rounding=before_spp*Decimal('0.005') if spp==spp.to_integral_value() else Decimal(0)
+   # MPStats reports SPP as a rounded whole percent; validate its interval.
+   if abs(before_spp*(1-spp/100)-rub)>max(Decimal(2),spp_rounding):continue
    result['rows'][nm]=dict(article=raw['sa_name'],current_cny=str(cny),buyer_rub=str(rub),spp_percent=str(spp))
   except (KeyError,TypeError,ValueError,InvalidOperation):continue
  return result

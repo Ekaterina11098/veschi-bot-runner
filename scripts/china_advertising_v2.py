@@ -92,6 +92,42 @@ def refresh_budget_context(io,source,day):
  s['economics']=read_economics(io)
  return s
 
+def collect_alternative_zero_statistics(io,campaign,day):
+ """Scoped no-model fallback. Import only explicit dated zero counters, never absent rows."""
+ import os
+ from analytics.mpstats_probe import discover,unpack_tool
+ cid=campaign['id'];key='china_agent:morning_alt_campaign_stats:'+day+':v1:'+str(cid)
+ attempt=key+':read'
+ if io.get(attempt):return {}
+ last=date.fromisoformat(day)-timedelta(days=1);first=last-timedelta(days=2)
+ wanted=[str(first+timedelta(days=i))for i in range(3)]
+ result_rows={}
+ def read(call,checks,seen):
+  def tool(name,args):return unpack_tool(call('tools/call',dict(name=name,arguments=args)))
+  cabinets=tool('wbbidder_cabinets',{}).get('data',[])
+  matches=[c for c in cabinets if c.get('name')=='VESCHI Гонконг' and c.get('info',{}).get('currency')=='CNY' and not c.get('api_token_expired')]
+  if len(matches)!=1:raise ValueError('Alternative China cabinet identity ambiguous')
+  token=matches[0]['id']
+  listing=tool('wbbidder_campaigns',dict(tokens=[token],report='stats',d1=str(first),d2=str(last),search=campaign['settings']['name'],limit=100))
+  rows=[r for r in listing.get('data',[])if r.get('wb_id')==cid and r.get('user_token_id')==token]
+  if len(rows)!=1:raise ValueError('Alternative campaign identity missing')
+  daily=tool('wbbidder_campaign_stats',dict(campaign_id=rows[0]['id'],report='days',d1=str(first),d2=str(last),zone='all'))
+  result_rows.update(identity=rows[0],days=daily)
+  return result_rows
+ try:
+  probe=discover(os.environ.get('MPSTATS_API_TOKEN',''),read_checks=True,extra_reader=read)
+  audit=dict(status=probe.get('status'),raw=result_rows,observed_at=stamp(),wb_writes=0,model_calls=0)
+  save(io,attempt,audit)
+  rows=result_rows.get('days',{}).get('data',[])
+  fields=dict(sum='ac_spending_sum',sum_price='ac_orders_sum',orders='ac_orders',clicks='ac_clicks',views='ac_views',atbs='ac_add_to_cart')
+  if len(rows)!=3 or sorted(r.get('date','')for r in rows)!=wanted:return {}
+  if any(type(r.get(f))not in(int,float)or r[f]!=0 for r in rows for f in fields.values()):return {}
+  days=[dict(date=r['date']+'T00:00:00Z',apps=[],**{k:r[f]for k,f in fields.items()})for r in sorted(rows,key=lambda r:r['date'])]
+  value=dict(status='validated_source',cabinet='token_3',report_day=day,campaign_id=cid,currency='CNY',period_from=str(first),period_to=str(last),days=days,source='MPStats explicit dated campaign counters',source_key=attempt,sku_statistics_available=False,recommendations_allowed=False,grants_action_permission=False,observed_at=stamp())
+  save(io,key,value);return value
+ except Exception as ex:
+  save(io,attempt,dict(status='unavailable',error=type(ex).__name__,observed_at=stamp(),wb_writes=0,model_calls=0));return {}
+
 def collect(io,day,current=False):
  policy=io.get(FORMAT)
  if not policy or policy.get('status')!='approved' or policy.get('version')!=VERSION:raise ValueError('Approved daily advertising format missing')
@@ -120,7 +156,7 @@ def collect(io,day,current=False):
     save(io,rawkey,dict(campaign_id=cid,period_from=first,period_to=s['period_to'],response=rows,observed_at=stamp(),wb_writes=0))
     if rows is None:rows=[]
     if not rows:
-     alt=io.get('china_agent:morning_alt_campaign_stats:'+day+':v1:'+str(cid))or{}
+     alt=io.get('china_agent:morning_alt_campaign_stats:'+day+':v1:'+str(cid))or collect_alternative_zero_statistics(io,campaign,day)
      expected=[str(date.fromisoformat(s['period_to'])-timedelta(days=i))for i in(2,1,0)]
      dates=[r.get('date','')[:10]for r in alt.get('days',[])]
      if alt.get('status')=='validated_source' and alt.get('cabinet')=='token_3' and alt.get('report_day')==day and alt.get('campaign_id')==cid and alt.get('currency')=='CNY' and dates==expected:

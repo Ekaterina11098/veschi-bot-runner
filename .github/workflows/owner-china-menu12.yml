@@ -1,8 +1,5 @@
 name: Bind checked original311 selection controls without resending
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-china-menu12.yml']
   workflow_dispatch:
 permissions:
   contents: read

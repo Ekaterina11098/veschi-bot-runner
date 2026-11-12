@@ -1,3 +1,4 @@
+from moysklad_warehouses import select_store
 """Read-only, bounded MoySklad stock/COGS transport; missing rows are never zero.
 Product filters: https://raw.githubusercontent.com/moysklad/api-remap-1.2-doc/master/md/reports/_report_stock.md
 """
@@ -38,11 +39,12 @@ class Reader:
    rows+=part;offset+=len(part)
    if offset==size:return rows
    if not part or offset>=50000:raise MoySkladReadError('MoySklad pagination incomplete')
- def stock(self,articles):
+ def stock(self,articles,warehouse_role='msk'):
   if not isinstance(articles,(list,tuple)) or not articles or len(articles)>1000 or any(not isinstance(a,str) or not a.strip() or any(ch in a for ch in ';=\r\n') for a in articles):raise MoySkladReadError('Exact article scope required')
   wanted={a.casefold():a for a in articles}
   if len(wanted)!=len(articles):raise MoySkladReadError('Duplicate article scope')
-  stores=[s for s in self.pages('/entity/store',{}) if s.get('name')=='МСК' and not s.get('archived')]
+  try:stores=[select_store(self.pages('/entity/store',{}),warehouse_role)]
+  except ValueError as ex:raise MoySkladReadError(str(ex)) from None
   if len(stores)!=1:raise MoySkladReadError('MSK warehouse ambiguous')
   store=stores[0].get('meta',{}).get('href','')
   if not re.fullmatch(re.escape(BASE)+r'/entity/store/[0-9a-f-]{36}',store):raise MoySkladReadError('Invalid MSK store identity')
@@ -71,5 +73,5 @@ class Reader:
    if len(matched)!=1:missing.append({'article':wanted[key],'reason':'report_row_missing' if not matched else 'report_row_ambiguous'});continue
    r=matched[0]
    out.append({k:r.get(k) for k in ['article','stock','reserve','price']})
-  return {'rows':out,'missing_articles':missing,'observed_at':datetime.now(timezone.utc).isoformat(),'warehouse':'МСК','warehouse_id':stores[0].get('id'),'read_attempts':self.read_attempts,'coverage_complete':not missing,'moysklad_writes':0,'wb_calls':0,'telegram_calls':0}
-def read_stock(articles):return Reader().stock(articles)
+  return {'rows':out,'missing_articles':missing,'observed_at':datetime.now(timezone.utc).isoformat(),'warehouse':stores[0].get('name'),'warehouse_role':warehouse_role,'warehouse_id':stores[0].get('id'),'read_attempts':self.read_attempts,'coverage_complete':not missing,'moysklad_writes':0,'wb_calls':0,'telegram_calls':0}
+def read_stock(articles,warehouse_role='msk'):return Reader().stock(articles,warehouse_role)

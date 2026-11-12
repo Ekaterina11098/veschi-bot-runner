@@ -3,6 +3,7 @@ import asyncio,base64,gzip,hashlib,json,os,re,tempfile,time
 from pathlib import Path
 from datetime import datetime,timezone
 ROOT='china_agent:codex_appserver:v1:'
+RPC_STREAM_LIMIT=16*1024*1024  # Native JSON-RPC events may contain full tool results, not only short text.
 def stamp():return datetime.now(timezone.utc).isoformat()
 def encode(data):return base64.b64encode(gzip.compress(data)).decode()
 def decode(text):return gzip.decompress(base64.b64decode(text,validate=True))
@@ -25,7 +26,7 @@ class Client:
   env={k:v for k,v in os.environ.items()if k in ('PATH','HOME','TMPDIR','TEMP','TMP','SYSTEMROOT','WINDIR','OPENAI_API_KEY','SSL_CERT_FILE','HTTPS_PROXY','HTTP_PROXY','NO_PROXY')}
   env['CODEX_HOME']=str(self.home)
   self.log=open(self.home/'transport.log','w',encoding='utf-8')
-  self.proc=await asyncio.create_subprocess_exec('codex','app-server','--listen','stdio://','-c','features.shell_tool=false','-c','features.unified_exec=false','-c','features.multi_agent=false','-c','web_search="disabled"',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=self.log,env=env)
+  self.proc=await asyncio.create_subprocess_exec('codex','app-server','--listen','stdio://','-c','features.shell_tool=false','-c','features.unified_exec=false','-c','features.multi_agent=false','-c','web_search="disabled"',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=self.log,env=env,limit=RPC_STREAM_LIMIT)
   self.reader=asyncio.create_task(self.read())
   await self.rpc('initialize',{'clientInfo':{'name':'veschi_telegram_codex','title':'VESCHI Telegram Codex','version':'1.0.0'},'capabilities':{'experimentalApi':True}})
   await self.send({'method':'initialized','params':{}})

@@ -10,7 +10,7 @@ concurrency:
 jobs:
   create:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - name: Create authorized cards and sync barcodes
         env:
@@ -98,7 +98,7 @@ jobs:
             response=call(host+'/content/v2/cards/upload',wh,payload);state['response']=response
             assert not response.get('error'),json.dumps(response,ensure_ascii=False)
             state['status']='awaiting_creation';save(key,state)
-           for attempt in range(12):
+           for attempt in range(90):
             guard();live=cards();found=[c for c in live if c.get('vendorCode') in articles]
             state['products']=[{k:c.get(k) for k in ('nmID','imtID','vendorCode','sizes','title','description','characteristics','dimensions','photos','needKiz','kizMarked')} for c in found]
             state['found_count']=len(found);save(key,state)
@@ -120,7 +120,7 @@ jobs:
             verified=call(ms+'entity/product/'+product['id'],mh);attrs={a['name']:a.get('value') for a in verified.get('attributes',[])}
             assert verified.get('barcodes')==new and attrs.get('Цвет')==p['color_ru']
             state['ms_sync'].append({'article':p['article'],'id':product['id'],'barcode':bc,'barcodes':new,'verified':True});save(key,state)
-           state['status']='complete';save(key,state);print('21 separate WB China cards and MS barcode links verified; no price, stock or receipt writes.')
+           state.pop('error',None);state['status']='complete';save(key,state);print('21 separate WB China cards and MS barcode links verified; no price, stock or receipt writes.')
           except Exception as e:
            state['error']=str(e);state['status']='awaiting_creation' if state.get('status')=='awaiting_creation' else 'stopped';save(key,state);raise RuntimeError('Stopped; detailed state saved privately') from None
           

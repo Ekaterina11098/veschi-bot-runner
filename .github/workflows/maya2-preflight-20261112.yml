@@ -34,6 +34,9 @@ jobs:
            req(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",sh,{"cache_key":key,"payload":payload,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2026-12-31T23:59:59Z"})
           out=req(sb+"/rest/v1/telegram_api_cache?cache_key=eq.maya2:preflight:20261112&select=payload",sh)[0]["payload"]
           out["run_id"]=os.environ["GITHUB_RUN_ID"];out["errors"]=[]
+          for cabinet in out["cabinets"].values():
+           for kind in ("cards","trash"):
+            cabinet[kind]=[{k:p.get(k) for k in ("nmID","vendorCode","subjectID","subjectName","sizes")} for p in cabinet[kind]]
           save("maya2:preflight:20261112",out)
           for n in ("3",):
            token=os.environ.get("WB_TOKEN_"+n,"")
@@ -46,7 +49,7 @@ jobs:
              cursor={"limit":100}
              for _ in range(30):
               page=req(host+endpoint,headers,{"settings":{"cursor":cursor,"filter":{"withPhoto":-1}}})
-              for p in page.get("cards",[]):destination.append({k:p.get(k) for k in ("nmID","vendorCode","subjectID","subjectName","photos","sizes")})
+              for p in page.get("cards",[]):destination.append({k:p.get(k) for k in ("nmID","vendorCode","subjectID","subjectName","sizes")})
               c=page.get("cursor",{})
               if c.get("total",0)<100:break
               cursor={k:c[k] for k in (("trashedAt","nmID") if endpoint.endswith("trash") else ("updatedAt","nmID")) if k in c};cursor["limit"]=100;time.sleep(0.8)
@@ -60,7 +63,7 @@ jobs:
             offset=0
             while True:
              page=req("https://api.moysklad.ru/api/remap/1.2/entity/product?"+urllib.parse.urlencode({"filter":"archived="+archived,"limit":1000,"offset":offset}),mh)
-             out["ms"].extend([{k:p.get(k) for k in ("id","article","code","name","externalCode","archived","description")} for p in page["rows"]]);offset+=len(page["rows"])
+             out["ms"].extend([{k:p.get(k) for k in ("id","article","code","name","externalCode","archived")} for p in page["rows"]]);offset+=len(page["rows"])
              if offset>=page["meta"]["size"]:break
              if not page["rows"]:raise RuntimeError("MS pagination incomplete")
           except Exception as e:out["errors"].append({"source":"MS","error":type(e).__name__+":"+str(e)})

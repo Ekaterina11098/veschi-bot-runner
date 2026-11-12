@@ -1,0 +1,31 @@
+name: Authorized one-time Guangzhou supply 309138172
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/guangzhou-309138172-approved.yml']
+permissions:
+  contents: read
+concurrency:
+  group: fbs-document-chain-production
+  cancel-in-progress: false
+jobs:
+  one-supply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Process exact approved WB supply with live safeguards
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          FBS_EXECUTION_KIND: manual
+          FBS_OWNER_APPROVAL_ID: guangzhou-309138172-20261112
+        run: python scripts/execute_approved_guangzhou_309138172.py

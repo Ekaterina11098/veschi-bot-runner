@@ -20,9 +20,13 @@ jobs:
           h={'Authorization':os.environ['WB_TOKEN_3']}
           r=requests.get('https://seller-analytics-api.wildberries.cn/api/v1/analytics/banned-products/blocked',params={'sort':'nmId','order':'asc'},headers=h,timeout=(10,35));r.raise_for_status();b=r.json()
           print('BLOCKED_REPORT',json.dumps(b,ensure_ascii=False),flush=True)
-          for row in b['report']:
-           r=requests.post('https://content-api.wildberries.cn/content/v2/get/cards/list',headers=h,json={'settings':{'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':row['vendorCode']}}},timeout=(10,35));r.raise_for_status();d=r.json();d=d.get('data',d) if 'cards' not in d else d
-           found=[c for c in d['cards'] if c['nmID']==row['nmId']]
-           assert len(found)==1,'Exact card missing'
-           print('BLOCKED_CARD',json.dumps(found[0],ensure_ascii=False),flush=True);time.sleep(1)
-          print('READ_COMPLETE',len(b['report']),flush=True)
+          blocked={int(x['nmId']) for x in b['report']};cursor={'limit':100};found=set()
+          for page in range(12):
+           r=requests.post('https://content-api.wildberries.cn/content/v2/get/cards/list',headers=h,json={'settings':{'sort':{'ascending':True},'cursor':cursor,'filter':{'withPhoto':-1}}},timeout=(10,35));r.raise_for_status();d=r.json();d=d.get('data',d) if 'cards' not in d else d
+           print('PAGE',page,len(d['cards']),flush=True)
+           for c in d['cards']:
+            if int(c['nmID']) in blocked:
+             print('BLOCKED_CARD',json.dumps(c,ensure_ascii=False),flush=True);found.add(int(c['nmID']))
+           if len(d['cards'])<100:break
+           cursor={'limit':100,'updatedAt':d['cursor']['updatedAt'],'nmID':d['cursor']['nmID']};time.sleep(2)
+          print('READ_COMPLETE',json.dumps({'found':len(found),'missing':list(blocked-found)}),flush=True)

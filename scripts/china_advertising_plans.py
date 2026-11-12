@@ -1,3 +1,4 @@
+from moysklad_warehouses import select_store
 """Typed conversational advertising proposals, reply-bound consent and isolated execution."""
 import copy,math,re,json
 from datetime import datetime,timedelta,timezone
@@ -179,7 +180,7 @@ def execute(io,a,p):
   root='https://api.moysklad.ru/api/remap/1.2'
   r=requests.get(root+'/entity/store',headers=headers,params={'limit':1000},timeout=45)
   if not r.ok:raise RuntimeError('МойСклад: склад недоступен')
-  stores=[s for s in r.json().get('rows',[]) if s.get('name')=='МСК' and not s.get('archived')]
+  stores=[select_store(r.json().get('rows',[]))]
   if len(stores)!=1:raise ValueError('Склад МСК неоднозначен')
   r=requests.get(root+'/report/stock/all',headers=headers,params={'filter':'store='+stores[0]['meta']['href'],'stockMode':'all','limit':1000},timeout=55)
   if not r.ok:raise RuntimeError('МойСклад: остаток недоступен')

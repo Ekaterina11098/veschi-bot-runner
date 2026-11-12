@@ -4,7 +4,8 @@ on:
     branches: [main]
     paths: ['.github/workflows/china-advertising-daily.yml']
   schedule:
-    - cron: '15,30,45 4 * * *'
+    - cron: '55 3 * * *'
+    - cron: '0,15,30,45 4 * * *'
     - cron: '0,15 5 * * *'
   workflow_dispatch:
 permissions:
@@ -67,7 +68,7 @@ jobs:
     needs: prepare
     if: github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
         with:

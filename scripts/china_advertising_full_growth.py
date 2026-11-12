@@ -293,8 +293,8 @@ def validate_addition(io,item,before):
  q=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=quote_cid,nm_ids=[nm],payment_type='cpc',placement_types=[typ]))
  vals=[b['value']for row in q.get('bids',[])if row['nm_id']==nm for b in row['bids']if b['currency']=='CNY'and b['type']==typ]
  if len(vals)!=1 or vals[0]>item['target_minor']:raise ValueError('Exact addition minimum changed')
- balance=http(io,'/api/advert/v2/budget','POST',dict(advertIds=[cid]))['adverts']
- if len(balance)!=1 or balance[0]['currency']!='CNY'or balance[0]['total']<e['campaign_reserve_required_cny']:raise ValueError('Addition three-day reserve unavailable')
+ from china_advertising_reserve import require as require_current_reserve
+ require_current_reserve(io,item)
 
 def enrich(io,s,bundle):
  from china_advertising_growth import merge
@@ -309,5 +309,7 @@ def enrich(io,s,bundle):
   cp.setdefault('focus',[]).append(row);cp.setdefault('attention',[]).append(copy.deepcopy(row))
  result['growth_review']=dict(status='complete',observed_at=s['full_growth_inputs']['observed_at'],period_to=s['period_to'],scope=s['full_growth_review'])
  result['full_cabinet_growth_review']=dict(s['full_growth_review'],raise_candidates=len(actions),addition_candidates=len(additions),unready=unready,automatic_actions=False,funding_is_growth=False,new_placement_scope=True)
+ from china_advertising_reserve import filter_bundle
+ result,_=filter_bundle(io,result,'prepare')
  return result
 

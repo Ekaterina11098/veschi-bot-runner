@@ -33,10 +33,10 @@ export function reportProposals(answer:string) {
 
 async function resolveBoundPriceReply(config:any,message:any,deps:any):Promise<any>{
  const quoted=message?.reply_to_message;
- if(quoted?.from?.id!==config.bot_id||!Number.isSafeInteger(quoted.message_id))return message;
+ if(quoted?.from?.id!==config.bot_id||!Number.isSafeInteger(quoted.message_id))return {message,job:null};
  const key='china_agent:price_report_message:v1:'+quoted.message_id;
  const records=await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(key)+'&select=payload&limit=1');
- if(!records?.length)return message;
+ if(!records?.length)return {message,job:null};
  const binding=records[0].payload;
  const now=deps.now?deps.now():new Date();
  const today=new Date(now.getTime()+3*3600000).toISOString().slice(0,10);
@@ -48,13 +48,17 @@ async function resolveBoundPriceReply(config:any,message:any,deps:any):Promise<a
  if(jobs?.length!==1||typeof jobs[0].answer!=='string'||await deps.digest(jobs[0].answer)!==binding.report_sha256||
     !jobs[0].tool_trace?.some((t:any)=>t.name==='china_report_delivery'&&t.message_ids?.includes(quoted.message_id)))
   throw Error('Не удалось проверить состав этого ценового отчёта. Подтверждение не принято.');
- return {...message,reply_to_message:{...quoted,text:jobs[0].answer}};
+ const receipt=(await deps.database('telegram_api_cache?cache_key=eq.'+encodeURIComponent(binding.receipt_key)+'&select=payload&limit=1'))?.[0]?.payload;
+ if(receipt?.status!=='sent'||receipt.message_id!==quoted.message_id||receipt.receipt?.chat?.id!==config.chat_id)
+  throw Error('Доставка этого ценового отчёта не подтверждена.');
+ return {message:{...message,reply_to_message:{...quoted,text:jobs[0].answer}},job:jobs[0]};
 }
 
 export async function handlePriceApproval(config:any,message:any,text:string,updateId:number,deps:any):Promise<Response|null>{
  const intent=priceApprovalIntent(text);
  if(!intent)return null;
- try{message=await resolveBoundPriceReply(config,message,deps);}
+ let boundJob:any=null;
+ try{const resolved=await resolveBoundPriceReply(config,message,deps);message=resolved.message;boundJob=resolved.job;}
  catch(error){return Response.json({method:'sendMessage',chat_id:config.chat_id,text:error instanceof Error?error.message:'Не удалось проверить ценовой отчёт.'});}
  const natural=/^(?:(?:да|хорошо|ок|ладно)[, ]+)?(?:сделай(?:\s+вс[её])?|делай|выполни(?:\s+вс[её])?|выполняй|примени(?:\s+вс[её])?|применяй|подтверждаю|согласен|согласна|запускай|да)[.!]?$/iu.test(text.trim());
  if(natural && (message?.reply_to_message?.from?.id!==config.bot_id || !/^(?:Повышение|Снижение) · .+ Продавец:/mu.test(message?.reply_to_message?.text??'')))return null;
@@ -74,7 +78,9 @@ export async function handlePriceApproval(config:any,message:any,text:string,upd
  const now=deps.now?deps.now():new Date();
  const day=new Date(now.getTime()+3*3600000).toISOString().slice(0,10);
  const start=new Date(day+'T00:00:00+03:00').toISOString();
- const jobs=await deps.database('business_agent_jobs?agent_id=eq.china&chat_id=eq.'+config.chat_id+'&status=eq.done&request_text=in.(/china_morning_pair_candidates,/china_price_intraday_raise)&created_at=gte.'+encodeURIComponent(start)+'&select=id,request_text,answer,tool_trace,created_at&order=id.desc&limit=20');
+ // A delivered report's exact binding is authoritative, including corrected/recovered jobs.
+ // Legacy text reports retain the narrow old-command fallback; no broad answer search.
+ const jobs=boundJob?[boundJob]:await deps.database('business_agent_jobs?agent_id=eq.china&chat_id=eq.'+config.chat_id+'&status=eq.done&request_text=in.(/china_morning_pair_candidates,/china_price_intraday_raise)&created_at=gte.'+encodeURIComponent(start)+'&select=id,request_text,answer,tool_trace,created_at&order=id.desc&limit=20');
  const matching=jobs.filter((j:any)=>j.answer===quoted.text&&j.tool_trace?.some((t:any)=>t.name==='china_price_daily_report'&&t.report_date===day)&&j.tool_trace.some((t:any)=>t.name==='china_report_delivery'&&t.sent_parts>0));
  if(matching.length!==1)return answer('Не удалось однозначно связать ответ с полным сегодняшним ценовым отчётом. Ответьте на актуальный краткий отчёт бота.');
  const job=matching[0];

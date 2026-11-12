@@ -49,6 +49,7 @@ def prepare(io,p,family):
   if len(items)>6:rows.append([dict(text='Следующие РК ›',callback_data=prefix+'p1')])
  else:rows=[[dict(text='[ ] '+label+' · '+str(sum(category(i)==g for i in items)),callback_data=prefix+'g'+g)]for g,label in GROUPS if any(category(i)==g for i in items)]
  rows.extend([[dict(text='Выбрать всё',callback_data=prefix+'all'),dict(text='Сбросить',callback_data=prefix+'clear')],[dict(text='Посмотреть выбранное',callback_data=prefix+'review')]])
+ rows.append([dict(text='‹ Главное меню',callback_data='cmn1:home')])
  return dict(inline_keyboard=rows)
 def bind(io,f,receipt):
  if not(io.get(ROOT+'policy')or{}).get('enabled'):return

@@ -1,17 +1,59 @@
-name: Offline native stream regression
+name: Diagnose exact311 analytics without model or delivery
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-china-menu12.yml']
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: china-dialog-queue
+  cancel-in-progress: false
 jobs:
-  offline:
+  diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
         with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          path: source
           persist-credentials: false
-          sparse-checkout: scripts
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_native_large_packet.py'
+      - run: pip install requests==2.32.5 Pillow==12.3.0 openai==3.42.1
+      - run: |
+          python scripts/install_china_dialog.py
+          python scripts/install_china_buyout.py --root source
+          python scripts/china_chat_migration.py
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          OPENAI_API_KEY: ""
+          PYTHONPATH: scripts:source
+        run: |
+          python - <<'PY'
+          import traceback
+          from datetime import datetime,timezone
+          from conversion_watches import runtime,saved_network_guard
+          from china_codex_runtime import Tools
+          w=runtime();job,=w.db('GET','business_agent_jobs',params=dict(id='eq.311',select='id,chat_id,sender_id,request_text'))
+          assert job['chat_id']==-1004342917488 and job['sender_id']==5122667182
+          key='china_agent:owner_retry311:2026-11-12:v1:typed_diagnostic'
+          try:
+              with saved_network_guard():
+                  answer=Tools(w,job)('review_candidates',dict(directions=['add','raise']))
+              result=dict(status='prepared',result=answer,observed_at=datetime.now(timezone.utc).isoformat(),model_calls=0,wb_writes=0,telegram_calls=0)
+          except Exception as e:
+              result=dict(status='blocked',error_type=type(e).__name__,error=str(e),trace=traceback.format_exc()[-4500:],observed_at=datetime.now(timezone.utc).isoformat(),model_calls=0,wb_writes=0,telegram_calls=0)
+          w.save(key,result)
+          print(dict(status=result['status'],model_calls=0,wb_writes=0,telegram_calls=0))
+          PY

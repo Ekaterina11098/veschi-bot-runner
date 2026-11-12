@@ -39,8 +39,8 @@ def lowering(review, day, catalogue=None, omitted=None):
         if item.get('full_days',0)<1:raise RuntimeError('Premature rollback')
         if item.get('full_days',0)<4 and not item.get('result',{}).get('early_review_criteria_met'):
             raise RuntimeError('Early rollback evidence missing')
-        if item.get('buyout_fallback') or item.get('buyout_sample',0)<10:
-            if omitted is not None:omitted.append(dict(article=item['article'],status='own_buyout_evidence_insufficient'))
+        if item.get('buyout_fallback') and item.get('buyout_source') not in ('approved_plan','approved_category_plan'):
+            if omitted is not None:omitted.append(dict(article=item['article'],status='buyout_source_unverified'))
             continue
         matches=[r for r in (catalogue or {}).get('rows',[]) if r.get('vendorCode','').casefold()==item['article'].casefold()]
         if len(matches)!=1:raise RuntimeError('Current China price missing for five percent decrease')

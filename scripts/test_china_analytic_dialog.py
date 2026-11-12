@@ -77,4 +77,13 @@ class Rules(unittest.TestCase):
  def test_source_summaries_mark_truncation(self):
   v=a.copy_summary(dict(rows=list(range(30)),note='period23Sep22Oct'));self.assertEqual(v['rows_total'],30);self.assertEqual(len(v['rows']),20);self.assertTrue(v['truncated'])
 
+class PublishedStockRead(unittest.TestCase):
+ def test_exact_stock_query_is_read_only(self):
+  url='https://marketplace-api.wildberries.ru/api/v3/stocks/2126188'
+  with a.reading():
+   self.assertTrue(a.allowed_read('POST',url,{'chrtIds':[123]}))
+   self.assertFalse(a.allowed_read('PUT',url,{'stocks':[{'chrtId':123,'amount':1}]}))
+   self.assertFalse(a.allowed_read('POST',url,{'chrtIds':[]}))
+   self.assertFalse(a.allowed_read('POST',url,{'chrtIds':[True]}))
+
 if __name__=='__main__':unittest.main()

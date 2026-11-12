@@ -8,14 +8,18 @@ permissions:
   contents: read
 concurrency:
   group: china-dialog-queue
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   diagnose:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: scripts
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
@@ -23,6 +27,15 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: source
           persist-credentials: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /analytics/
+            /business_agents/
+            /advertising_agent/
+            /china_agent/
+            /*.py
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 Pillow==12.3.0 openai==3.42.1

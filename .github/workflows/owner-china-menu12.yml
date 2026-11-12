@@ -1,5 +1,8 @@
 name: Recover owner requested compact1030 price candidates12Nov
 on:
+  push:
+    branches: [main]
+    paths: ['scripts/owner_price1030_recovery_20261112.py']
   workflow_dispatch:
 permissions:
   contents: read

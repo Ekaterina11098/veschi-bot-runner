@@ -1,0 +1,30 @@
+name: Owner seven budget deposits1100CNY 12Nov
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-fund-seven12.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-fund-seven12
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Verify owner, cabinet and exact funding scope; apply once and read WB back
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: PYTHONPATH=scripts python scripts/owner_fund_seven12.py

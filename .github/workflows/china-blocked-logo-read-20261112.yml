@@ -1,0 +1,38 @@
+name: China blocked logo read 20261112
+on:
+  push:
+    paths: ['.github/workflows/china-blocked-logo-read-20261112.yml']
+permissions:
+  contents: read
+jobs:
+  read:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Read blocked report and current galleries
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        shell: python
+        run: |
+          import os,json,time,urllib.request
+          token=os.environ['WB_TOKEN_3']
+          def request(url,body=None):
+           data=None if body is None else json.dumps(body).encode()
+           req=urllib.request.Request(url,data=data,headers={'Authorization':token,'Content-Type':'application/json'})
+           with urllib.request.urlopen(req,timeout=90) as r:return json.load(r)
+          report=request('https://seller-analytics-api.wildberries.ru/api/v1/analytics/banned-products/blocked?sort=nmId&order=asc')
+          assert isinstance(report.get('report'),list)
+          print('BLOCKED_REPORT',json.dumps(report,ensure_ascii=False),flush=True)
+          blocked={int(r['nmId']) for r in report['report']}
+          cursor={'limit':100};found=set()
+          for page in range(40):
+           b=request('https://content-api.wildberries.cn/content/v2/get/cards/list',{'settings':{'sort':{'ascending':True},'cursor':cursor,'filter':{'withPhoto':-1}}})
+           b=b.get('data',b) if 'cards' not in b else b
+           for c in b['cards']:
+            if c['nmID'] in blocked:
+             print('BLOCKED_CARD',json.dumps(c,ensure_ascii=False),flush=True);found.add(c['nmID'])
+           if len(b['cards'])<100:break
+           cursor={'limit':100,'updatedAt':b['cursor']['updatedAt'],'nmID':b['cursor']['nmID']};time.sleep(2)
+          else:raise RuntimeError('Pagination ceiling')
+          print('READ_SUMMARY',json.dumps({'blocked':len(blocked),'found':len(found),'missing':list(blocked-found),'writes':0,'paid_calls':0}),flush=True)

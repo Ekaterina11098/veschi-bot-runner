@@ -93,7 +93,7 @@ def render_control_table(value):
         cells=[p['article'],number(p.get('before_price'))+' → '+number(p.get('after_price')),period,pair(p,'orders_per_day'),pair(p,'conversion',True),pair(p,'expected_profit_per_day'),number(p.get('buyout_percent'))+'%'+(' · план' if p.get('buyout_fallback') else ' · собственный') if p.get('buyout_percent')is not None else 'н/д',verdict]
         lines.append('| '+' | '.join(str(c).replace('|','/').replace('\\n',' ')for c in cells)+' |')
     lines+=['','Прогноз по учтённым расходам, не закрытая прибыль. Конверсия = суммарные заказы воронки / суммарные открытия. День изменения исключён. н/д не означает ноль. Изменения — только после отдельного согласования.']
-    return '\\n'.join(lines)
+    return '\n'.join(lines)
 
 class PairWorker(CoverageWorker):
     def __init__(self,section):
@@ -134,10 +134,12 @@ class PairWorker(CoverageWorker):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--verify',action='store_true')
+    parser.add_argument('--send-now',action='store_true')
     parser.add_argument('--section',choices=('all','candidates','control'),default='all')
     args=parser.parse_args()
     for section in (('candidates','control') if args.section=='all' else (args.section,)):
         w=PairWorker(section)
+        w.manual=args.send_now
         try:
             w.run(preview=args.verify)
             w.save('china_agent:morning_pair:'+str(w.day)+':'+section+(':verify' if args.verify else ''),w.audit)

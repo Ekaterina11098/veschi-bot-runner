@@ -323,6 +323,10 @@ class Worker:
             if not isinstance(article, str) or not article.strip():
                 raise Stop("WB article missing")
             counts[article.strip()] += 1
+        # Keep the WB source warehouse IDs for every non-cancelled order.
+        # Supply names are user-editable and MUST NOT determine source storage.
+        self._source_warehouse_supply_id = supply["id"]
+        self._source_warehouse_ids = {oid: found[oid].get("warehouseId") for oid in ids if oid not in cancelled}
         positions = []
         if not hasattr(self, "_product_index"):
             self._product_index = {}
@@ -439,6 +443,56 @@ class Worker:
         if current.get("done") is not True or sorted(current_ids) != state["order_ids"]:
             raise Stop("Supply composition/status changed")
 
+    def china_warehouse_routing(self, state, key):
+        """Choose the China document warehouses using WB order warehouseId, never supply name."""
+        supply = state["supply"]
+        if self.c.get("cabinet") != "token_3":
+            return None
+        local_date = stamp(supply["closedAt"]).astimezone(dt.timezone(dt.timedelta(hours=3))).date()
+        if local_date < dt.date(2026, 11, 12):
+            return None  # Keep historical documents and recovery unchanged.
+        if getattr(self, "_source_warehouse_supply_id", None) != supply["id"]:
+            # When resuming a partial chain, re-read the frozen pick list.
+            positions, order_ids = self.positions(supply)
+            if order_ids != state["order_ids"] or positions != state["positions"]:
+                raise Stop("WB pick list drift before warehouse routing")
+        origin_by_order = getattr(self, "_source_warehouse_ids", {})
+        if set(origin_by_order) != set(state["order_ids"]):
+            raise Stop("WB origin warehouse missing for one or more included orders")
+        warehouse_ids = set(origin_by_order.values())
+        if len(warehouse_ids) != 1:
+            raise Stop("Mixed or unknown WB origin warehouses; manual reconciliation required")
+        warehouse_id = warehouse_ids.pop()
+        origin_store_by_wb_id = {
+            2126188: ("3c67619d-f25d-11ee-0a80-0c6f000a027a", "МСК"),
+            2308581: ("2233c6a7-d906-11f1-0a80-197e004df0d2", "Гуанджоу"),
+        }
+        if warehouse_id not in origin_store_by_wb_id:
+            raise Stop("Unapproved WB origin warehouse ID: " + str(warehouse_id))
+        origin_id, origin_name = origin_store_by_wb_id[warehouse_id]
+        return_id = "c599b096-a784-11f1-0a80-15f1000f8193"
+        # Confirm the configured store and live warehouse identity before making documents.
+        for ident, name in ((origin_id, origin_name), (return_id, "Гонконг WB FBO")):
+            live = self.t.request(MS, "entity/store/" + ident)
+            if live.get("name", "").strip().casefold() != name.casefold() or live.get("archived"):
+                raise Stop("MoySklad warehouse identity/active state mismatch: " + name)
+        expected_return = MS + "entity/store/" + return_id
+        if href(self.c["templates"]["salesreturn"]["store"]) != expected_return:
+            raise Stop("China configured return warehouse differs from approved Hong Kong FBO")
+        route = {"wb_warehouse_id": warehouse_id, "source_store_id": origin_id,
+                 "source_store": origin_name, "return_store_id": return_id,
+                 "return_store": "Гонконг WB FBO"}
+        if state.get("warehouse_routing") and state["warehouse_routing"] != route:
+            raise Stop("Frozen warehouse routing changed; stop to prevent wrong-stock movement")
+        # Freeze routing before creation so any later re-run uses the same warehouse.
+        state["warehouse_routing"] = route
+        self.db.put(key, state)
+        return {
+            "customerorder": MS + "entity/store/" + origin_id,
+            "demand": MS + "entity/store/" + origin_id,
+            "salesreturn": expected_return,
+        }
+
     def process(self, state):
         supply = state["supply"]
         self.require_execution_permission(supply["id"])
@@ -449,9 +503,18 @@ class Worker:
             state["status"] = "prepared"
             self.db.put(key, state)
         self.validate_source(state)
+        route = self.china_warehouse_routing(state, key)
+        # Preflight the exact source warehouse before writing the first document.
+        if route:
+            stock_payload = json.loads(json.dumps(self.c["templates"]["demand"]))
+            stock_payload["store"]["meta"]["href"] = route["demand"]
+            stock_payload["positions"] = state["positions"]
+            self.require_available_stock(stock_payload, state)
         links = {}
         for typ in TYPES:
             payload = json.loads(json.dumps(self.c["templates"][typ]))
+            if route:
+                payload["store"]["meta"]["href"] = route[typ]
             payload.update(positions=state["positions"], applicable=True,
                            description="WB FBS China " + supply["id"] + " / " + supply.get("name", ""),
                            moment=stamp(supply["closedAt"]).astimezone(dt.timezone(dt.timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S"))

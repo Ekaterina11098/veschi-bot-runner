@@ -65,7 +65,7 @@ jobs:
           import os
           from analytics.mpstats_probe import discover,unpack_tool
           from china_advertising_state import AdvertisingIO
-          io=AdvertisingIO();key='china_agent:owner_morning_alt_sources:2026-11-12:v2'
+          io=AdvertisingIO();key='china_agent:owner_morning_alt_sources:2026-11-12:v3'
           if io.get(key):print('Existing alternative evidence preserved');raise SystemExit(0)
           def read(call,checks,seen):
               def tool(name,args):return unpack_tool(call('tools/call',{'name':name,'arguments':args}))
@@ -81,6 +81,11 @@ jobs:
                   for report in ('days','products'):
                       output[str(c['wb_id'])][report]=tool('wbbidder_campaign_stats',dict(campaign_id=cid,report=report,d1='2026-11-09',d2='2026-11-11',zone='all'))
                       io.create(key+':campaign:'+str(c['wb_id'])+':'+report,output[str(c['wb_id'])])
+              import requests
+              response=requests.get('https://advert-api.wildberries.ru/adv/v1/upd',headers={'Authorization':os.environ['WB_TOKEN_3']},params={'from':'2026-11-10','to':'2026-11-11'},timeout=60)
+              response.raise_for_status()
+              billing=response.json()
+              io.create(key+':billing',dict(period_from='2026-11-10',period_to='2026-11-11',rows=[r for r in billing if r.get('advertId') in (41756218,41779660)],wb_writes=0))
               return dict(campaigns=output)
           result=discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=read)
           io.create(key,{k:v for k,v in result.items() if k!='tools'})

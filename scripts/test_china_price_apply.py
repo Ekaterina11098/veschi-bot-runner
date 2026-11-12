@@ -92,3 +92,29 @@ class BulkReadTests(unittest.TestCase):
     def test_missing_bulk_card_fails(self):
         io=IO.__new__(IO);io.wb=lambda path:dict(listGoods=[])
         with self.assertRaises(ValueError):io.prices([str(n) for n in range(11)])
+
+class BoundSourceTests(unittest.TestCase):
+    def fixture(self):
+        io=IO.__new__(IO)
+        answer='Повышение · A Продавец: 100 → 110 ¥\nПокупатель: 1000 → 1100 ₽'
+        a=dict(report_job_id=316,report_message_id=1001,report_sha256=sha(answer),report_date=day(),actor_user_id=7,selections=[dict(action='Повышение',article='A',current_cny='100',target_cny='110')])
+        binding=dict(status='sent',chat_id=CHAT,bot_id=BOT,message_id=1001,report_job_id=316,report_sha256=sha(answer),report_date=day(),expires_at=(now()+timedelta(hours=1)).isoformat(),receipt_key='receipt')
+        cache={'china_agent:price_report_message:v1:1001':binding,'receipt':dict(status='sent',message_id=1001,receipt={'chat':{'id':CHAT}})}
+        job=dict(answer=answer,request_text='/china_owner_complete_price_report_20261112',tool_trace=[dict(name='china_price_daily_report',report_date=day()),dict(name='china_report_delivery',message_ids=[1001],sent_parts=1)])
+        io.get=lambda key:cache.get(key)
+        io.db=lambda path: [dict(active=True,chat_id=CHAT,bot_id=BOT)]if path.startswith('business_agent_config')else[job]
+        io.tg=lambda method,body:dict(status='member',user=dict(id=7,is_bot=False))
+        return io,a,cache
+    def test_recovered_report_accepts_verified_binding_without_command_whitelist(self):
+        io,a,cache=self.fixture();io.validate(a)
+    def test_recovered_report_without_binding_cannot_execute(self):
+        io,a,cache=self.fixture();cache.clear()
+        with self.assertRaises(ValueError):io.validate(a)
+    def test_superseded_or_missing_receipt_cannot_execute(self):
+        for mode in ('hash','job','receipt','expiry'):
+            io,a,cache=self.fixture();b=cache['china_agent:price_report_message:v1:1001']
+            if mode=='hash':b['report_sha256']='changed'
+            if mode=='job':b['report_job_id']=315
+            if mode=='receipt':cache.pop('receipt')
+            if mode=='expiry':b['expires_at']=(now()-timedelta(seconds=1)).isoformat()
+            with self.subTest(mode=mode),self.assertRaises(ValueError):io.validate(a)

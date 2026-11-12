@@ -1,8 +1,5 @@
 name: Restore China report menu navigation
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-china-menu12.yml']
   workflow_dispatch:
 permissions:
   contents: read

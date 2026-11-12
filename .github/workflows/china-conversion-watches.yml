@@ -116,6 +116,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_codex_native.py
+          PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_native_large_packet.py
           PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_menu_analytics.py
           PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_codex_cloud.py
           PYTHONPATH=scripts python -m unittest discover -s scripts -p test_china_no_paid.py

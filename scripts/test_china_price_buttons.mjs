@@ -34,3 +34,21 @@ for(const mutate of [b=>b.from.is_bot=true,b=>b.message.chat.id=-999,b=>b.messag
 }
 assert.equal(await handlePriceButtons(config,{data:'agent:ask'},91,{}),null);
 console.log('Price callback directions, exact sent/hash/expiry binding, actor audit, replay and invalid-message cases passed; zero WB/TG calls');
+
+{
+ const c=setup();c.p.report_job_id=316;c.b.report_job_id=316;
+ const base=c.deps.database;
+ c.deps.database=async(path,method='GET',body)=>{
+  if(path.startsWith('business_agent_jobs')){
+   assert.equal(new URL('https://test/'+path).searchParams.get('id'),'eq.316','must use exact bound job, never old command search');
+   return [{id:316,request_text:'/china_owner_complete_price_report_20261112',answer:report,tool_trace:[{name:'china_price_daily_report',report_date:day},{name:'china_report_delivery',sent_parts:1,message_ids:[61]}]}];
+  }
+  return base(path,method,body);
+ };
+ const ack=await(await handlePriceButtons(config,c.callback('all'),92,c.deps)).json();
+ assert.equal(ack.show_alert,false);assert.equal(c.launches.length,1);
+ const record=[...c.db.entries()].find(([k])=>k.startsWith('china_agent:price_recommendation_approval:v2:'));
+ assert.equal(record[1].report_job_id,316);
+ assert.equal(record[1].report_message_id,61);
+}
+console.log('Corrected custom-command PNG callback uses exact bound job all the way to approval; no WB calls');

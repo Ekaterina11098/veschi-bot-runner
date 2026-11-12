@@ -65,15 +65,25 @@ jobs:
           import os
           from analytics.mpstats_probe import discover,unpack_tool
           from china_advertising_state import AdvertisingIO
-          io=AdvertisingIO();key='china_agent:owner_morning_alt_sources:2026-11-12:v1'
+          io=AdvertisingIO();key='china_agent:owner_morning_alt_sources:2026-11-12:v2'
           if io.get(key):print('Existing alternative evidence preserved');raise SystemExit(0)
           def read(call,checks,seen):
               def tool(name,args):return unpack_tool(call('tools/call',{'name':name,'arguments':args}))
-              cabinets=tool('wbbidder_cabinets',{})
-              io.create(key+':cabinets',dict(cabinets=cabinets,wb_writes=0))
-              return dict(cabinets=cabinets)
+              cabinets=io.get('china_agent:owner_morning_alt_sources:2026-11-12:v1:cabinets')['cabinets']['data']
+              assert any(c['id']==939742 and c['name']=='VESCHI Гонконг' and c['info']['currency']=='CNY' for c in cabinets)
+              listing=tool('wbbidder_campaigns',dict(tokens=[939742],report='stats',d1='2026-11-09',d2='2026-11-11',limit=100))
+              io.create(key+':listing',dict(result=listing,wb_writes=0))
+              rows=listing.get('data',[])
+              output={}
+              for c in rows:
+                  if c.get('wb_id') not in (41756218,41779660):continue
+                  cid=c['id'];output[str(c['wb_id'])]=dict(identity=c)
+                  for report in ('days','products'):
+                      output[str(c['wb_id'])][report]=tool('wbbidder_campaign_stats',dict(campaign_id=cid,report=report,d1='2026-11-09',d2='2026-11-11',zone='all'))
+                      io.create(key+':campaign:'+str(c['wb_id'])+':'+report,output[str(c['wb_id'])])
+              return dict(campaigns=output)
           result=discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=read)
-          io.create(key,result)
+          io.create(key,{k:v for k,v in result.items() if k!='tools'})
           print({'status':result['status'],'model_calls':0,'wb_writes':0})
           PY
       - name: Prepare and freeze the existing daily identity without Telegram calls

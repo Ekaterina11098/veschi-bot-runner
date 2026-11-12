@@ -54,12 +54,12 @@ class Delivery(unittest.TestCase):
         w=self.worker(1);db,_=self.run_delivery(w)
         body=next(b for method,b in w.transport_bodies if method=='sendMessage')
         modes=[r[0]['callback_data'].rsplit(':',1)[1] for r in json.loads(body['reply_markup'])['inline_keyboard']]
-        self.assertEqual(modes,['all','up'])
+        self.assertEqual(modes,['all','up','home'])
         self.assertTrue(any(k.startswith('china_agent:price_buttons:v1:')for k in db))
     def test_empty_report_has_no_execution_keyboard(self):
         w=self.worker(0);db,_=self.run_delivery(w)
         body=next(b for method,b in w.transport_bodies if method=='sendMessage')
-        self.assertNotIn('reply_markup',body)
+        self.assertEqual(json.loads(body['reply_markup']),{'inline_keyboard':[[{'text':'‹ Главное меню','callback_data':'cmn1:home'}]]})
         self.assertFalse(any(k.startswith('china_agent:price_buttons:v1:')for k in db))
     def test_two_line_rows_preserve_buyer(self):
         w=self.worker(1)

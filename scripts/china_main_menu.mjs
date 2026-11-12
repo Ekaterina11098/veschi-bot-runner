@@ -89,7 +89,7 @@ async function advertisingPage(get,family,now=new Date(),actorId=null,provided=n
   const reg=b?.token?await get('china_agent:report_buttons:v1:plan:'+b.token):null;
   if(b?.status==='sent'&&b.plan_id===p.plan_id&&b.plan_sha256===p.plan_sha256&&b.family===family&&b.chat_id===CHAT&&b.receipt?.message_id===index.message_id&&reg?.status==='active'&&reg.plan_id===p.plan_id&&reg.plan_sha256===p.plan_sha256&&reg.family===family){
    const state=actorId?await get('china_agent:report_buttons:v1:selection:'+b.token+':'+actorId):null;
-   actionRows=reportKeyboard(b.token,reg,state?.selected_ids||[]).inline_keyboard;mode='active';binding={token:b.token,family,source_message_id:index.message_id};
+   actionRows=reportKeyboard(b.token,reg,state?.selected_ids||[]).inline_keyboard.filter(row=>!row.some(button=>button.callback_data==='cmn1:home'));mode='active';binding={token:b.token,family,source_message_id:index.message_id};
   }
  }
  const status={complete:'Все действия этого плана выполнены и проверены WB. Повторный запуск закрыт.',processed:'Этот план уже обрабатывался. Повторное подтверждение закрыто; смотрите результат.',expired:'Срок действия плана истёк. Изменения недоступны.',empty:'Готовых новых действий нет.',active:'Отметьте нужные действия под PNG. Первое нажатие ничего не исполняет.',unavailable:'Кнопки действий для этого отчёта не подтверждены; изменения недоступны.'}[mode];

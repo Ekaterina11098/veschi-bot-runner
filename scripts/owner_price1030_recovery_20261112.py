@@ -36,3 +36,5 @@ def main():
   import requests
   requests.sessions.Session.request=w.original_http
 if __name__=='__main__':main()
+
+# Caption-only completion after offline status rendering checks passed.

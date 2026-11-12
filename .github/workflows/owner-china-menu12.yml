@@ -58,11 +58,13 @@ jobs:
           from datetime import datetime,timezone
           from conversion_watches import runtime,saved_network_guard
           from china_codex_runtime import Tools
+          from china_analytic_dialog import reading
           w=runtime();job,=w.db('GET','business_agent_jobs',params=dict(id='eq.311',select='id,chat_id,sender_id,request_text'))
           assert job['chat_id']==-1004342917488 and job['sender_id']==5122667182
-          key='china_agent:owner_retry311:2026-11-12:v1:typed_diagnostic'
+          key='china_agent:owner_retry311:2026-11-12:v1:typed_prepared'
+          job=dict(job,id='native-growth-311')
           try:
-              with saved_network_guard():
+              with saved_network_guard(),reading():
                   answer=Tools(w,job)('review_candidates',dict(directions=['add','raise']))
               result=dict(status='prepared',result=answer,observed_at=datetime.now(timezone.utc).isoformat(),model_calls=0,wb_writes=0,telegram_calls=0)
           except Exception as e:

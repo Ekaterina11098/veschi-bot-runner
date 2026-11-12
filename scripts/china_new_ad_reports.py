@@ -1,3 +1,4 @@
+from moysklad_warehouses import select_store
 """On-demand candidate collection and two-purpose PNGs; no WB write endpoints."""
 import base64,hashlib,json,os,re
 from datetime import datetime,timedelta,timezone
@@ -26,7 +27,7 @@ def source(io):
   return r.json()
  base='https://api.moysklad.ru/api/remap/1.2';token='Bearer '+os.environ['MOYSKLAD_API_TOKEN']
  stores=get(base+'/entity/store',token,{'limit':1000}).get('rows',[])
- stores=[s for s in stores if s.get('name')=='МСК' and not s.get('archived')]
+ stores=[select_store(stores)]
  if len(stores)!=1:raise ValueError('Склад МСК в МойСклад не найден однозначно')
  stock=[];offset=0
  while True:

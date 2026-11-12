@@ -21,6 +21,7 @@ class Selection(unittest.TestCase):
             return [dict(nm_id=nm,open_card_count=100,funnel_orders_count=cr*100)],{'id':2}
         modules={
             'china_agent':types.SimpleNamespace(demand=demand),
+            'china_agent.control_owner_preview':types.SimpleNamespace(Preview=types.SimpleNamespace(acquire=lambda *a:None)),
             'china_agent.daily_report_worker':types.SimpleNamespace(MSK=timezone(timedelta(hours=3))),
             'china_agent.price_economic_target':types.SimpleNamespace(verified_price_history=lambda w:{}),
             'china_price_period':types.SimpleNamespace(period=period),

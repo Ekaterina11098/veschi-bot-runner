@@ -32,9 +32,10 @@ jobs:
            return json.loads(raw) if raw else None
           def save(key,payload):
            req(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",sh,{"cache_key":key,"payload":payload,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2026-12-31T23:59:59Z"})
-          out={"run_id":os.environ["GITHUB_RUN_ID"],"status":"in_progress","cabinets":{},"ms":[],"errors":[]}
+          out=req(sb+"/rest/v1/telegram_api_cache?cache_key=eq.maya2:preflight:20261112&select=payload",sh)[0]["payload"]
+          out["run_id"]=os.environ["GITHUB_RUN_ID"];out["errors"]=[]
           save("maya2:preflight:20261112",out)
-          for n in ("1","2","3"):
+          for n in ("3",):
            token=os.environ.get("WB_TOKEN_"+n,"")
            if not token:out["errors"].append({"cabinet":n,"error":"Token missing"});continue
            headers={"Authorization":token,"Content-Type":"application/json","Accept-Encoding":"gzip"}
@@ -43,12 +44,12 @@ jobs:
            try:
             for endpoint,destination in (("/content/v2/get/cards/list",rows),("/content/v2/get/cards/trash",trash)):
              cursor={"limit":100}
-             for _ in range(100):
+             for _ in range(30):
               page=req(host+endpoint,headers,{"settings":{"cursor":cursor,"filter":{"withPhoto":-1}}})
-              for p in page.get("cards",[]):destination.append({k:p.get(k) for k in ("nmID","vendorCode","subjectID","subjectName","title","description","photos","characteristics","dimensions","sizes")})
+              for p in page.get("cards",[]):destination.append({k:p.get(k) for k in ("nmID","vendorCode","subjectID","subjectName","photos","sizes")})
               c=page.get("cursor",{})
               if c.get("total",0)<100:break
-              cursor={k:c[k] for k in ("updatedAt","nmID") if k in c};cursor["limit"]=100;time.sleep(0.8)
+              cursor={k:c[k] for k in (("trashedAt","nmID") if endpoint.endswith("trash") else ("updatedAt","nmID")) if k in c};cursor["limit"]=100;time.sleep(0.8)
              else:raise RuntimeError("Pagination incomplete")
             out["cabinets"][n]={"cards":rows,"trash":trash,"complete":True}
            except Exception as e:out["errors"].append({"cabinet":n,"error":type(e).__name__+":"+str(e)})

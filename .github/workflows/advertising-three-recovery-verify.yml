@@ -1,0 +1,34 @@
+name: Isolated three-SKU recovery preparation
+on:
+  push:
+    branches: [prepare-three-sku-recovery-20261016]
+    paths: ['.github/workflows/advertising-three-recovery-verify.yml']
+permissions:
+  contents: read
+concurrency:
+  group: advertising-three-recovery-offline-verification
+  cancel-in-progress: false
+jobs:
+  isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 16d50b733d05bdf90d775be319575af256415467
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Fault verification with no production credentials or real actions
+        env:
+          ADVERTISING_EXECUTION_ENABLED: 'false'
+        run: |
+          cp private-source/tests/test_sku_membership_recovery.py .
+          cp -a private-source/advertising_agent .
+          python verify_three_recovery.py
+          python advertising_sku57_recovery_owner.py

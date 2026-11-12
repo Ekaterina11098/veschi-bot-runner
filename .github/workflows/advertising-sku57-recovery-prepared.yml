@@ -1,4 +1,4 @@
-name: Prepared SKU57 recovery executor, execution disabled
+name: Prepared exact three-SKU recovery executor, execution disabled
 on:
   push:
     branches: [main]
@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: sku57-membership-writer
+  group: wb-ip-advertising-agent
   cancel-in-progress: false
 jobs:
   prepared:
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ekaterina11098/VESCHI_AI
-          ref: 8f681eb3403c66b3428e5e7d77c8a1861ed02d31
+          ref: 16d50b733d05bdf90d775be319575af256415467
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           persist-credentials: false
           path: private-source

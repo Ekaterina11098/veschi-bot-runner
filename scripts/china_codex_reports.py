@@ -132,6 +132,10 @@ def price_parts(draft):
   index+=1
  return candidates,tables,plain
 def review_price(worker,draft,trace,force=False,core=None):
+ if getattr(worker,'mode',None)=='control':
+  value=getattr(worker,'control_value',None)or{}
+  if value.get('model_version')!='wb_profit_floor_price_hypothesis_v4' or value.get('report_date')!=str(worker.day):raise ValueError('Control report canonical scope missing')
+  return draft,list(trace)+[dict(name='china_control_canonical_report',model_calls=0,read_only=True)]
  if core is None and not force and (worker.get(POLICY)or{}).get('status')!='active':return draft,trace
  core=core or Core()
  if not force and not active(core.db):return draft,trace

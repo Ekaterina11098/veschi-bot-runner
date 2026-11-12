@@ -1,8 +1,5 @@
 name: Owner seven budget deposits1100CNY 12Nov
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-fund-seven12.yml']
   workflow_dispatch:
 permissions:
   contents: read

@@ -13,8 +13,12 @@ windows=pure_function('china_daily_expected_control.py','comparison_windows',dic
 DAY=date(2026,11,1)
 CAT=dict(cabinet='token_3',rows=[dict(vendorCode='143-ReginaBag-black',nmID=1473245494,currencyIsoCode4217='CNY',discount=45,sizes=[dict(price=901,discountedPrice=495.55)])])
 def review(days=1):
- return dict(report_date=str(DAY),status='complete_disclosed_forecast_model',model_version='wb_profit_floor_price_hypothesis_v4',products=[dict(article='143-ReginaBag-black',before_price=450.5,after_price=495.55,full_days=days,buyout_fallback=False,buyout_sample=94,result=dict(status='rollback_review',early_review_criteria_met=True),economic_target=dict(basis='profit_floor_demand_hypothesis',status='recommended',price_cny=450.5,base_cny=901,discount=50,expected_profit_advantage_per_day=100))])
+ return dict(report_date=str(DAY),status='complete_disclosed_forecast_model',model_version='wb_profit_floor_price_hypothesis_v4',products=[dict(article='143-ReginaBag-black',before_price=450.5,after_price=495.55,full_days=days,buyout_fallback=False,buyout_sample=94,result=dict(status='rollback_review',early_review_criteria_met=True),economic_target=dict(basis='profit_floor_demand_hypothesis',status='recommended',price_cny=450.5,base_cny=901,discount=50,expected_profit_advantage_per_day=100,predicted_profit_per_day=200))])
 class PriceRules(unittest.TestCase):
+ def test_loss_making_target_is_not_delivered_even_above_negative_old_floor(self):
+  r=review(4);r['products'][0]['economic_target'].update(predicted_profit_per_day=-1,expected_profit_advantage_per_day=99)
+  self.assertEqual(brief.lowering(r,DAY,CAT),[])
+
  def test_small_own_sample_keeps_actual_rate_after_four_full_days(self):
   r=review(4);r['products'][0]['buyout_sample']=2
   self.assertEqual(len(brief.lowering(r,DAY,CAT)),1)

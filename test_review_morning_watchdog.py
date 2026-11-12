@@ -18,4 +18,9 @@ class MorningRecovery(unittest.TestCase):
  def test_disabled(self):self.assertIsNone(choose(self.now,{}, {},{}))
  def test_outside_window(self):self.assertIsNone(choose(self.now.replace(hour=12),self.cfg,{},{}))
  def test_unknown_dispatch_cooldown(self):self.assertIsNone(choose(self.now,self.cfg,{}, {},self.now.timestamp()-60))
+ def test_0730_start_boundary(self):
+  before=datetime(2026,11,13,4,29,tzinfo=timezone.utc)
+  start=datetime(2026,11,13,4,30,tzinfo=timezone.utc)
+  self.assertIsNone(choose(before,self.cfg,{},{}))
+  self.assertEqual(choose(start,self.cfg,{},{}),'reviews')
 if __name__=='__main__':unittest.main()

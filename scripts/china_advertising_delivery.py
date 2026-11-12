@@ -44,7 +44,7 @@ def telegram_sender(io):
    p=io.get('china_agent:loss_plan:v1:'+f['plan_id'])
    if p:markup=prepare(io,p,f['family'])
   data={'chat_id':str(CHAT),'caption':caption}
-  if markup:data['reply_markup']=json.dumps(markup,ensure_ascii=False)
+  data['reply_markup']=json.dumps(markup or {'inline_keyboard':[[{'text':'‹ Главное меню','callback_data':'cmn1:home'}]]},ensure_ascii=False)
   r=requests.post('https://api.telegram.org/bot'+io.bot+'/sendPhoto',data=data,files={'photo':(f['kind']+'.png',f['bytes'],'image/png')},timeout=60)
   j=r.json()
   if not r.ok or not j.get('ok'):raise RuntimeError('Telegram send failed')

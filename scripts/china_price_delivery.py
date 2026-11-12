@@ -15,7 +15,7 @@ def deliver(w):
     from china_cloud_cost_control import Cache,stamp
     from china_table_png import render
     c=Cache();answer=w.job['answer']
-    mode=getattr(w,'mode','morning');day=str(w.day)
+    mode=getattr(w,'delivery_mode',getattr(w,'mode','morning'));day=str(w.day)
     root='china_agent:price_delivery:v2:'+day+':'+mode
     prepared=c.get(root+':prepared')
     if not prepared and mode!='control':

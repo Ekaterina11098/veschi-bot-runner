@@ -119,6 +119,13 @@ def collect(io,day,current=False):
     rawkey=key+':missing_campaign:'+str(cid)+':'+stamp()
     save(io,rawkey,dict(campaign_id=cid,period_from=first,period_to=s['period_to'],response=rows,observed_at=stamp(),wb_writes=0))
     if rows is None:rows=[]
+    if not rows:
+     alt=io.get('china_agent:morning_alt_campaign_stats:'+day+':v1:'+str(cid))or{}
+     expected=[str(date.fromisoformat(s['period_to'])-timedelta(days=i))for i in(2,1,0)]
+     dates=[r.get('date','')[:10]for r in alt.get('days',[])]
+     if alt.get('status')=='validated_source' and alt.get('cabinet')=='token_3' and alt.get('report_day')==day and alt.get('campaign_id')==cid and alt.get('currency')=='CNY' and dates==expected:
+      rows=[dict(advertId=cid,currency='CNY',days=alt['days'],source=alt['source'],source_key=alt['source_key'],sku_statistics_available=False)]
+      s.setdefault('alternative_statistics',{})[str(cid)]=dict(source=alt['source'],source_key=alt['source_key'],sku_statistics_available=False)
     if not isinstance(rows,list) or any(r.get('advertId')!=cid for r in rows):raise ValueError('Scoped campaign statistics identity mismatch')
     for b in s['batches'].values():
      if any(c['id']==cid for c in b['campaigns']['adverts']):b['stats']+=rows
@@ -589,6 +596,13 @@ def prepare(io,day):
  result=sales_review(result)
  result['mandatory_campaign_format']=(io.get(FORMAT)or{}).get('mandatory') is True
  from china_new_campaign_reporting import attach as attach_new_campaign_reporting
+ for c in result['campaigns']:
+  if str(c['id'])in s.get('alternative_statistics',{}):
+   c['name']+=' · MPStats'
+   c['statistics_source']=s['alternative_statistics'][str(c['id'])]
+   c['budget_action']=None;c['budget_recommendation']='Без пополнения.'
+   c['direction_recommendations']=['Без изменений.']
+   for r in c.get('focus',[]):r['action']=None;r['decision']='Без изменений.'
  return attach_new_campaign_reporting(io,result)
 
 

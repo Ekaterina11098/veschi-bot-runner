@@ -27,7 +27,7 @@ class Delivery(unittest.TestCase):
         w.original_http=http
         modules={'requests':types.SimpleNamespace(Session=lambda:None),
                  'china_cloud_cost_control':types.SimpleNamespace(Cache=Cache,stamp=lambda:'2026-11-09T16:00:00Z'),
-                 'china_table_png':types.SimpleNamespace(render=lambda *a,**kw:[b'PNG'],blocks=lambda answer:[('table',(['Артикул'],[['Товар']]))]),
+                 'china_table_png':types.SimpleNamespace(render=lambda *a,**kw:(setattr(w,'rendered_rows',a[1])or[b'PNG']),blocks=lambda answer:[('table',(['Артикул'],[['Товар']]))]),
                  'china_price_current_check':types.SimpleNamespace(check=lambda w,a:a),
                  'china_agent':types.ModuleType('china_agent'),
                  'china_agent.price_brief':types.SimpleNamespace(plain_payload=lambda *a:{})}
@@ -76,6 +76,11 @@ class Delivery(unittest.TestCase):
         self.assertEqual(calls,['getMe','sendPhoto'])
         self.assertIn('china_agent:price_delivery:v2:2026-11-09:control-manual',db)
         self.assertNotIn('china_agent:price_delivery:v2:2026-11-09:control',db)
+    def test_png_keeps_unavailable_direction_without_creating_action(self):
+        w=self.worker(6);w.job['answer']+='\n\nСнижение: нет данных'
+        db,_=self.run_delivery(w)
+        self.assertEqual(w.rendered_rows[-1],('Снижение','—','нет данных','—'))
+        self.assertEqual(db['china_agent:price_report_message:v1:900']['selection_count'],6)
     def test_two_line_rows_preserve_buyer(self):
         w=self.worker(1)
         self.assertEqual(rows(w.job['answer'])[0],['Повышение','0-Bag-black','100 → 105 ¥','1000 → 1050 ₽'])

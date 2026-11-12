@@ -135,11 +135,17 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--verify',action='store_true')
     parser.add_argument('--send-now',action='store_true')
+    parser.add_argument('--correct-candidates',action='store_true')
     parser.add_argument('--section',choices=('all','candidates','control'),default='all')
     args=parser.parse_args()
     for section in (('candidates','control') if args.section=='all' else (args.section,)):
         w=PairWorker(section)
         w.manual=args.send_now
+        if args.correct_candidates and section=='candidates':
+            w.command='/china_morning_pair_candidates_corrected'
+            w.update_id=-9700000000-(w.day-date(2020,1,1)).days
+            w.delivery_mode='morning-corrected'
+
         try:
             w.run(preview=args.verify)
             w.save('china_agent:morning_pair:'+str(w.day)+':'+section+(':verify' if args.verify else ''),w.audit)

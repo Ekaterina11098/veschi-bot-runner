@@ -1,0 +1,28 @@
+name: China blocked regional read 20261112
+on:
+  push:
+    paths: ['.github/workflows/china-blocked-cn-read-20261112.yml']
+permissions:
+  contents: read
+jobs:
+  read:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: pip install requests==2.32.5
+      - name: Read only regional blocked report and exact galleries
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        shell: python
+        run: |
+          import os,json,time,requests
+          h={'Authorization':os.environ['WB_TOKEN_3']}
+          r=requests.get('https://seller-analytics-api.wildberries.cn/api/v1/analytics/banned-products/blocked',params={'sort':'nmId','order':'asc'},headers=h,timeout=(10,35));r.raise_for_status();b=r.json()
+          print('BLOCKED_REPORT',json.dumps(b,ensure_ascii=False),flush=True)
+          for row in b['report']:
+           r=requests.post('https://content-api.wildberries.cn/content/v2/get/cards/list',headers=h,json={'settings':{'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':row['vendorCode']}}},timeout=(10,35));r.raise_for_status();d=r.json();d=d.get('data',d) if 'cards' not in d else d
+           found=[c for c in d['cards'] if c['nmID']==row['nmId']]
+           assert len(found)==1,'Exact card missing'
+           print('BLOCKED_CARD',json.dumps(found[0],ensure_ascii=False),flush=True);time.sleep(1)
+          print('READ_COMPLETE',len(b['report']),flush=True)

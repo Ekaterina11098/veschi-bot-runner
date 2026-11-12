@@ -21,13 +21,14 @@ def main():
         except (OSError,ValueError):pass
     if allowed and not preview:
         update=-(9800000000 if a.mode=='morning' else 9600000000)-(now.date()-date(2020,1,1)).days
-        q=urllib.parse.urlencode(dict(agent_id='eq.china',update_id='eq.'+str(update),select='id,status,tool_trace',limit=2))
+        updates=[update,-9900000000-(now.date()-date(2020,1,1)).days] if a.mode=='morning' else [update]
+        q=urllib.parse.urlencode(dict(agent_id='eq.china',update_id='in.('+','.join(map(str,updates))+')',select='id,update_id,status,tool_trace',limit=3))
         secret=os.environ['SUPABASE_SECRET_KEY']
         req=urllib.request.Request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/business_agent_jobs?'+q,headers={'apikey':secret,'Authorization':'Bearer '+secret})
         with urllib.request.urlopen(req,timeout=30) as response:jobs=json.load(response)
-        if len(jobs)>1:raise RuntimeError('Price report identity ambiguous')
-        if jobs and jobs[0]['status']=='done':
-            delivered=any(e.get('name')=='china_report_delivery' and e.get('sent_parts') and e.get('message_ids') for e in jobs[0].get('tool_trace',[]))
+        if len(jobs)>len(updates) or len({j['update_id']for j in jobs})!=len(jobs):raise RuntimeError('Price report identity ambiguous')
+        if len(jobs)==len(updates) and all(j['status']=='done'for j in jobs):
+            delivered=all(any(e.get('name')=='china_report_delivery' and e.get('sent_parts') and e.get('message_ids') for e in j.get('tool_trace',[]))for j in jobs)
             if not delivered:raise RuntimeError('Completed price job lacks visible receipt')
             allowed=False;reason='already_delivered'
     with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('allowed='+str(allowed).lower()+'\n')

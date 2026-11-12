@@ -1,4 +1,4 @@
-name: MAYA 2 create MS articles only
+name: MAYA 2 creation stopped
 on:
   push:
     branches: [main]
@@ -6,82 +6,9 @@ on:
 permissions: {}
 concurrency:
   group: maya2-ms-products-20261112
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
-  correct:
+  stopped:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
-      - name: Create articles and label fields only
-        env:
-          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        shell: python
-        run: |
-          import os,json,gzip,datetime,urllib.request,urllib.parse,urllib.error
-          class NoRedirect(urllib.request.HTTPRedirectHandler):
-           def redirect_request(self,*a,**k):raise RuntimeError("Redirect blocked")
-          opener=urllib.request.build_opener(NoRedirect)
-          sb=os.environ["SUPABASE_URL"].rstrip("/")
-          base="https://api.moysklad.ru/api/remap/1.2/"
-          sh={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json"}
-          mh={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept-Encoding":"gzip","Accept":"application/json;charset=utf-8","Content-Type":"application/json"}
-          def call(url,headers,method="GET",body=None):
-           try:
-            with opener.open(urllib.request.Request(url,headers=headers,method=method,data=None if body is None else json.dumps(body,ensure_ascii=False).encode()),timeout=60) as r:
-             raw=r.read()
-             if not raw:return None
-             if r.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
-             return json.loads(raw)
-           except urllib.error.HTTPError as e:
-            raw=e.read()
-            if "api.moysklad.ru" in url:
-             payload={"http_status":e.code,"body":raw.decode("utf-8","replace")}
-             stamp=datetime.datetime.now(datetime.timezone.utc).isoformat()
-             h=dict(sh);h["Prefer"]="resolution=merge-duplicates,return=minimal"
-             request=urllib.request.Request(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",headers=h,method="POST",data=json.dumps({"cache_key":"maya2:ms_error:20261112","payload":payload,"updated_at":stamp,"expires_at":"2026-12-31T23:59:59Z"}).encode())
-             with opener.open(request,timeout=30) as stored:stored.read()
-            raise RuntimeError("Remote HTTP "+str(e.code)) from None
-          reqdata=call(sb+"/rest/v1/telegram_api_cache?cache_key=eq.maya2:create_request:20261112&select=payload",sh)[0]["payload"]
-          assert reqdata["status"]=="approved" and len(reqdata["products"])==21 and reqdata["no_prices"] and reqdata["no_stock"]
-          fields=call(base+"entity/product/metadata/attributes",mh)["rows"]
-          fieldmap={f["name"]:f for f in fields}
-          assert all(fieldmap[k]["type"]=="string" for k in ("Цвет","ВендорКод","Категория товара"))
-          existing=[]
-          for archived in ("false","true"):
-           offset=0
-           while True:
-            page=call(base+"entity/product?"+urllib.parse.urlencode({"filter":"archived="+archived,"limit":1000,"offset":offset}),mh)
-            existing.extend(page["rows"]);offset+=len(page["rows"])
-            if offset>=page["meta"]["size"]:break
-            assert page["rows"]
-          out={"status":"in_progress","run_id":os.environ["GITHUB_RUN_ID"],"products":[]}
-          def save():
-           h=dict(sh);h["Prefer"]="resolution=merge-duplicates,return=minimal"
-           call(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",h,"POST",{"cache_key":"maya2:create_result:20261112","payload":out,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2099-01-01T00:00:00Z"})
-          def norm(s):return str(s or "").strip().casefold().lstrip("0")
-          try:
-           for item in reqdata["products"]:
-            ext="veschi-maya2-20261112-"+item["article"]
-            found=[p for p in existing if p.get("article","").casefold()==item["article"].casefold()]
-            collisions=[p for p in existing if norm(p.get("code"))==norm(item["code"]) and p.get("externalCode")!=ext]
-            assert not collisions,"Product code already occupied"
-            if found:
-             assert len(found)==1 and found[0].get("externalCode")==ext,"Article belongs to another product"
-             p=found[0];action="reused"
-            else:
-             desc="Заказ ORDER MAYA 2 от 12.11.2026. Модель поставщика: "+item["supplier_model"]+". Материал: "+item["material_ru"]+". Размеры товара Д×Ш×В: "+str(item["length_cm"])+"×"+str(item["width_cm"])+"×"+str(item["height_cm"])+" см. Цвет поставщика: "+item["color_zh"]+". Вес и габариты упаковки ожидают замеров."
-             attrs=[{"meta":fieldmap[name]["meta"],"value":value} for name,value in (("Цвет",item["color_ru"]),("ВендорКод",item["number"]),("Категория товара","Сумка"))]
-             body={"name":item["name"],"article":item["article"],"code":item["code"],"externalCode":ext,"description":desc,"attributes":attrs}
-             assert set(body)=={"name","article","code","externalCode","description","attributes"}
-             p=call(base+"entity/product",mh,"POST",body);existing.append(p);action="created"
-            v=call(base+"entity/product/"+p["id"],mh)
-            values={a.get("name"):a.get("value") for a in v.get("attributes",[])}
-            assert v["article"]==item["article"] and v["code"]==item["code"] and v["name"]==item["name"]
-            assert values["Цвет"]==item["color_ru"] and values["ВендорКод"]==item["number"] and values["Категория товара"]=="Сумка"
-            out["products"].append({"id":v["id"],"article":v["article"],"name":v["name"],"code":v["code"],"barcodes":v.get("barcodes",[]),"action":action,"verified":True})
-            save()
-           out["status"]="complete";save();print("21 MS products verified. No receipts, stock or price writes.")
-          except Exception as e:
-           out["status"]="stopped";out["error"]=type(e).__name__+": "+str(e);save();raise RuntimeError("Product creation stopped; private result saved") from None
+      - run: echo 'Creation stopped pending owner numbering correction'

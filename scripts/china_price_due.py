@@ -17,7 +17,7 @@ def main():
     if os.environ.get('EVENT_NAME')=='push':
         try:
             with open('china-price-'+a.mode+'-request.json',encoding='utf8') as f:request=json.load(f)
-            preview=request.get('action')=='verify' and request.get('report_date')==str(now.date()) and request.get('mode')==a.mode
+            preview=(request.get('action')=='verify' or request.get('correct_candidates') is True and request.get('owner_id')==5122667182) and request.get('report_date')==str(now.date()) and request.get('mode')==a.mode
         except (OSError,ValueError):pass
     if allowed and not preview:
         update=-(9800000000 if a.mode=='morning' else 9600000000)-(now.date()-date(2020,1,1)).days

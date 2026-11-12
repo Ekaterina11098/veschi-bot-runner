@@ -1,0 +1,34 @@
+name: China logo removal readback 20261112
+on:
+  push:
+    paths: ['.github/workflows/china-logo-readback-20261112.yml']
+permissions:
+  contents: read
+jobs:
+  read:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - run: pip install requests==2.32.5
+      - name: Read current galleries and block status only
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        shell: python
+        run: |
+          import os,json,time,requests
+          h={'Authorization':os.environ['WB_TOKEN_3']};wanted={1473244992,1473244989,1473244985,1473243449,1473243829}
+          cursor={'limit':100};found=set()
+          for page in range(12):
+           for attempt in range(4):
+            r=requests.post('https://content-api.wildberries.cn/content/v2/get/cards/list',headers=h,json={'settings':{'sort':{'ascending':True},'cursor':cursor,'filter':{'withPhoto':-1}}},timeout=(15,70))
+            if r.status_code in [500,502,503,504]:time.sleep(10);continue
+            r.raise_for_status();break
+           else:raise RuntimeError('Content API unavailable after 4 read attempts')
+           b=r.json();b=b.get('data',b) if 'cards' not in b else b
+           for c in b['cards']:
+            if c['nmID'] in wanted:print('AFTER_CARD',json.dumps(c,ensure_ascii=False),flush=True);found.add(c['nmID'])
+           if len(b['cards'])<100:break
+           cursor={'limit':100,'updatedAt':b['cursor']['updatedAt'],'nmID':b['cursor']['nmID']};time.sleep(2)
+          assert found==wanted
+          r=requests.get('https://seller-analytics-api.wildberries.cn/api/v1/analytics/banned-products/blocked',headers=h,params={'sort':'nmId','order':'asc'},timeout=(15,60));r.raise_for_status();print('BLOCKED_AFTER',json.dumps(r.json(),ensure_ascii=False),flush=True)

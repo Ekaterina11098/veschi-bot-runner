@@ -179,10 +179,9 @@ def render_plain(answer,mode,review,day,catalogue,buyer=None,omitted=None):
                 rub=lambda value:format(value,',').replace(',',' ')
                 buyer_text=rub(before)+' → '+rub(after)+' ₽'
             blocks.append(action+' · '+article+' Продавец: '+old+' → '+new+' ¥\nПокупатель: '+buyer_text)
-    if not blocks:
-        blocks.append('Повышение: нет')
-        if down is not None:blocks.append('Снижение: нет')
+    if not up:blocks.append('Повышение: нет')
     if down is None:blocks.append('Снижение: нет данных')
+    elif not down:blocks.append('Снижение: нет')
     return '\n\n'.join(blocks)
 
 def plain_payload(text,catalogue):

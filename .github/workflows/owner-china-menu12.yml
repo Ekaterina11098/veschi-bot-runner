@@ -1,8 +1,5 @@
 name: Owner scoped reserve diagnosis 637
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-china-menu12.yml']
   workflow_dispatch:
 permissions:
   contents: read

@@ -2,6 +2,7 @@ name: Morning reviews and safe automatic five-star replies
 on:
   workflow_dispatch:
   schedule:
+    - cron: '30,50 4 * * *'
     - cron: '0,20,40 5-7 * * *'
 permissions:
   contents: read

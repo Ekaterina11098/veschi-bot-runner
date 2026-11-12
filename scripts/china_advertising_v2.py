@@ -114,6 +114,8 @@ def collect(io,day,current=False):
    for offset in range(0,len(missing),50):
     ids=missing[offset:offset+50]
     rows=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,ids))+'&beginDate='+s['period_from']+'&endDate='+s['period_to'])
+    if rows is None:rows=[] # WB explicitly returned no statistics; keep unknown, never zero.
+    if not isinstance(rows,list):raise ValueError('Scoped campaign statistics response invalid')
     if any(r.get('advertId') not in ids for r in rows):raise ValueError('Scoped missing campaign identity mismatch')
     for b in s['batches'].values():
      wanted={c['id']for c in b['campaigns'].get('adverts',[])}

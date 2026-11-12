@@ -1,6 +1,6 @@
 import copy,unittest
 import china_moysklad_read as m
-A='00000000-0000-0000-0000-000000000001';B='00000000-0000-0000-0000-000000000002'
+A='3c67619d-f25d-11ee-0a80-0c6f000a027a';B='00000000-0000-0000-0000-000000000002'
 def page(rows):return {'meta':{'size':len(rows)},'rows':rows}
 STORE={'id':A,'name':'МСК','meta':{'href':m.BASE+'/entity/store/'+A}}
 PRODUCT={'article':'SKU-A','meta':{'href':m.BASE+'/entity/product/'+B}}
@@ -19,6 +19,13 @@ class ReadTests(unittest.TestCase):
   return m.Reader(token='not-a-real-token',get=get,sleep=lambda _:None),calls
  def test_exact_stock_reserve_and_cost(self):
   r,c=self.reader();v=r.stock(['SKU-A']);self.assertEqual(v['rows'][0]['stock']-v['rows'][0]['reserve'],7);self.assertEqual(v['rows'][0]['price'],1200);self.assertTrue(v['coverage_complete']);self.assertEqual(len(c),3)
+ def test_renamed_store_and_same_named_impostor(self):
+  renamed=dict(STORE,name='Renamed warehouse');impostor=dict(STORE,id=B)
+  r,_=self.reader(stores=[impostor,renamed]);v=r.stock(['SKU-A']);self.assertEqual(v['warehouse_id'],A);self.assertEqual(v['warehouse'],'Renamed warehouse')
+ def test_guangzhou_is_separate(self):
+  from moysklad_warehouses import STORE_IDS
+  g=STORE_IDS['guangzhou'];store=dict(STORE,id=g,name='Renamed Guangzhou',meta={'href':m.BASE+'/entity/store/'+g})
+  r,_=self.reader(stores=[STORE,store]);v=r.stock(['SKU-A'],'guangzhou');self.assertEqual(v['warehouse_id'],g)
  def test_missing_row_not_zero(self):
   r,_=self.reader(report=[]);v=r.stock(['SKU-A']);self.assertEqual(v['rows'],[]);self.assertEqual(v['missing_articles'][0]['reason'],'report_row_missing');self.assertFalse(v['coverage_complete'])
  def test_zero_is_preserved(self):

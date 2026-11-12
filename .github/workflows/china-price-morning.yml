@@ -140,6 +140,15 @@ jobs:
           if [ "$REPORT_ACTION" = verify ]; then
             python -m china_agent.morning_pair --verify
           else
-            python -m china_agent.morning_pair
+            python - <<'PY'
+          import json,sys
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          request=json.load(open('../china-price-morning-request.json'))
+          early=request.get('send_now') is True and request.get('owner_id')==5122667182 and request.get('report_date')==str(datetime.now(ZoneInfo('Europe/Moscow')).date())
+          sys.argv=['morning_pair']+(['--send-now']if early else[])
+          from china_agent.morning_pair import main
+          main()
+          PY
           fi
 

@@ -1,3 +1,4 @@
+from moysklad_warehouses import select_store
 """Reply-bound new China campaigns. Reports never authorize marketplace writes."""
 import base64,copy,hashlib,json,re,time
 from datetime import datetime,timedelta,timezone
@@ -90,7 +91,7 @@ class Transport:
   headers={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN']};base='https://api.moysklad.ru/api/remap/1.2'
   r=requests.get(base+'/entity/store',headers=headers,params={'limit':1000},timeout=45)
   if not r.ok:raise RuntimeError('MoySklad warehouse unavailable')
-  stores=[s for s in r.json().get('rows',[]) if s.get('name')=='МСК' and not s.get('archived')]
+  stores=[select_store(r.json().get('rows',[]))]
   if len(stores)!=1:raise ValueError('MoySklad warehouse not unique')
   r=requests.get(base+'/report/stock/all',headers=headers,params={'filter':'store='+stores[0]['meta']['href'],'stockMode':'all','limit':1000},timeout=60)
   if not r.ok:raise RuntimeError('MoySklad stock unavailable')

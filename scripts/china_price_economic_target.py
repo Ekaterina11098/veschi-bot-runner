@@ -83,9 +83,29 @@ def choose_target(previous,current,before,after,*,buyout_probability,retention,c
         nb=float(before['orders_per_day']);na=float(after['orders_per_day'])
         vb=float(before['views'])/before['days'];va=float(after['views'])/after['days']
         values=(old,now,q,keep,c,d,fx,floor,ads,nb,na,vb,va)
-        if not all(math.isfinite(v) for v in values) or not (0<old<now and 0<q<=1 and 0<keep<=1 and fx>0 and c>=0 and d>=0 and ads>=0 and nb>0 and na>0 and vb>0 and va>0):raise ValueError()
+        if not all(math.isfinite(v) for v in values) or not (0<old<now and 0<=q<=1 and 0<keep<=1 and fx>0 and c>=0 and d>=0 and ads>=0 and nb>=0 and na>=0 and vb>=0 and va>=0):raise ValueError()
     except (KeyError,TypeError,ValueError,ZeroDivisionError):
         return dict(result,status='incomplete_economic_inputs')
+    if q==0:return dict(result,status='no_positive_buyout_economics')
+    if nb<=0 or vb<=0 or va<=0:return dict(result,status='no_supported_demand_estimate')
+    if na==0:
+        # Log-elasticity is undefined at zero. Only test the exact previous price,
+        # with the prior own order/opening ratio at current traffic; never invent epsilon orders.
+        choices=[p for p in feasible_prices(previous,current) if p['price_cny']==old]
+        contribution=q*(old*fx*keep-c)-d
+        if not choices or contribution<=0:return dict(result,status='no_positive_unit_economics')
+        orders=va*nb/vb;profit=orders*contribution-ads
+        candidate=dict(choices[0],predicted_orders_per_day=orders,
+                       required_orders_per_day=max(0,(max(0,floor)+ads)/contribution),
+                       predicted_profit_per_day=profit,expected_profit_advantage_per_day=profit-floor)
+        evidence=dict(profit_floor_per_day=floor,traffic_per_day=va,fixed_advertising_per_day=ads,
+                      demand_basis='exact_previous_price_prior_own_order_rate_at_current_traffic',
+                      assumptions=['prior own order/opening ratio recovers only as a test hypothesis',
+                                   'same current traffic, advertising, own/planned buyout and verified costs',
+                                   'not a causal estimate or guaranteed sales recovery'])
+        if profit>0 and profit>=floor:
+            return dict(result,**candidate,**evidence,status='recommended',profit_currency='RUB',price_currency='CNY')
+        return dict(result,**evidence,status='profit_floor_not_reached',best_scenario=candidate)
     # Relative order intensity is normalized by traffic, not an average of CRs.
     elasticity=math.log((nb/vb)/(na/va))/math.log(old/now)
     result.update(profit_floor_per_day=floor,demand_elasticity_hypothesis=elasticity,

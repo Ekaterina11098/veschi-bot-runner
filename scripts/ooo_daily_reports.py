@@ -11,7 +11,9 @@ def worker(slot,day=None,verify=False):
  db=DB();day=day or datetime.datetime.now(MSK).date().isoformat();date=datetime.date.fromisoformat(day)
  root='ooo_agent:'+('morning:'+day if slot=='morning' else 'midday:'+day+':1500')
  delivery=db.get(root+':telegram:execution')or{}
- if delivery and not verify:return {'status':'already_'+delivery.get('status','attempted'),'root':root}
+ if delivery and not verify:
+  if delivery.get('status')!='verified':raise RuntimeError('Existing delivery attempt needs attention; never replay')
+  return {'status':'already_verified','root':root}
  policy=db.get('ooo_agent:daily_reports:v1:policy')or{}
  if policy.get('enabled')is not True:raise PermissionError('Report delivery policy disabled')
  assets=json.loads((Path(__file__).parent/'ooo_report_templates.json').read_text(encoding='utf-8'))
@@ -91,5 +93,20 @@ def run():
  now=datetime.datetime.now(MSK);due=[]
  if(now.hour,now.minute)>=(7,30):due.append('morning')
  if(now.hour,now.minute)>=(15,0):due.append('midday')
- for slot in due:print(json.dumps(worker(slot)))
+ for slot in due:
+  try:print(json.dumps(worker(slot)))
+  except Exception:
+   db=DB();day=now.date().isoformat();key='ooo_agent:daily_reports:v1:attention:'+day+':'+slot
+   if not db.get(key):
+    import requests
+    binding=db.get('ooo_agent:telegram_group:v1')or{}
+    if binding.get('status')=='verified'and binding.get('chat_id')==-1003987998401:
+     receipt={'status':'submitting','at':stamp(),'chat_id':-1003987998401};db.once(key,receipt)
+     try:
+      r=requests.post('https://api.telegram.org/bot'+os.environ['OOO_TELEGRAM_BOT_TOKEN']+'/sendMessage',json={'chat_id':-1003987998401,'text':'Отчёт ООО '+day+(' утренний'if slot=='morning'else' дневной')+': подготовка или доставка требует проверки. Принятые и неопределённые отправки не повторяются.'},timeout=(10,30),allow_redirects=False)
+      result=r.json().get('result',{})if r.status_code==200 else{}
+      receipt.update(status='sent'if type(result.get('message_id'))is int and result.get('chat',{}).get('id')==-1003987998401 else'uncertain',message_id=result.get('message_id'))
+     except Exception:receipt.update(status='uncertain')
+     db.update(key,receipt)
+   raise
 if __name__=='__main__':run()

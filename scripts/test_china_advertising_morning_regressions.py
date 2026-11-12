@@ -103,7 +103,7 @@ class DeliverySlotTests(unittest.TestCase):
    @classmethod
    def now(cls,tz=None):return cls.at
   page=dict(kind='drr:001',family='drr',page=1,total=1,bytes=b'PNG',actions=[])
-  with patch.dict(os.environ,{'GITHUB_REPOSITORY':'Ekaterina11098/veschi-bot-runner','GITHUB_REF':'refs/heads/main','CHINA_AD_PREPARE_ONLY':'false'}),patch.object(daily,'datetime',Clock),patch.object(daily,'IO',return_value=cache),patch.object(daily,'telegram_sender',return_value=lambda _:None),patch('china_advertising_v2.prepare',return_value={'presentation':'three_day_attention_table_v4'}) as collect,patch('china_advertising_v2_png.render',return_value=[page]),patch.object(daily,'deliver',return_value={'status':'delivered','parts':[]}) as send:
+  with patch.dict(os.environ,{'GITHUB_REPOSITORY':'Ekaterina11098/veschi-bot-runner','GITHUB_REF':'refs/heads/main','CHINA_AD_PREPARE_ONLY':'false'}),patch.object(daily,'datetime',Clock),patch.object(daily,'IO',return_value=cache),patch.object(daily,'telegram_sender',return_value=lambda _:None),patch('china_advertising_v2.prepare',return_value={'presentation':'three_day_attention_table_v4','campaigns':[]}) as collect,patch('china_advertising_v2_png.render',return_value=[page]),patch.object(daily,'deliver',return_value={'status':'delivered','parts':[]}) as send:
    daily.run()
    self.assertIsNotNone(cache.get('china_agent:advertising_artifacts:2026-10-28:v2'))
    send.assert_not_called()

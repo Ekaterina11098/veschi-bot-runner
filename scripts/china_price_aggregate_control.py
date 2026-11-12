@@ -77,18 +77,25 @@ def build(worker):
         item=dict(nm_id=nm,article=article,before_price=(c.get('before_price') or {}).get('current_cny'),after_price=(c.get('after_price') or {}).get('current_cny'),detected_at=str(d),full_days=max(0,(worker.day-d).days-1))
         if not pair:
             item.update(status='zero_full_days',result_action='Нет сопоставимого полного периода после последнего изменения.');output.append(item);continue
-        own=rates.get(nm)
+        own=rates.get(nm);model=current_models.get(nm,{})
         try:q=buyout_from_product(own)
-        except ValueError:
-            item.update(status='insufficient_economics',result=dict(status='incomplete'),missing='Own completed buyout source missing');output.append(item);continue
-        model=current_models.get(nm,{})
+        except ValueError:q=None
+        if q is None or q.get('source')=='fallback':
+            planned=model.get('buyout')
+            if model.get('fx_date')!=str(worker.day) or not model.get('buyout_fallback') or type(planned)not in(int,float)or not 0<=planned<=1:
+                item.update(status='insufficient_economics',result=dict(status='incomplete'),missing='Own or approved planned buyout source missing');output.append(item);continue
+            q=dict(probability=Decimal(str(planned)),percent=100*planned,sample_size=0,source='approved_plan')
+            item['buyout_source']='approved_category_plan'
+
         cost=model.get('own_cogs_rub');delivery=model.get('logistics_cny')
-        item.update(buyout_sample=q['sample_size'],buyout_fallback=q['source']=='fallback',buyout_percent=q['percent'])
+        item.update(buyout_sample=q['sample_size'],buyout_fallback=q['source']!='own_article',buyout_percent=q['percent'])
         try:
-            if model.get('fx_date')!=str(worker.day) or model.get('buyout_fallback') or model.get('commission_policy_fallback'):raise ValueError('current own economics unavailable')
+            if model.get('fx_date')!=str(worker.day) or model.get('commission_policy_fallback'):raise ValueError('current own economics unavailable')
             commission=model.get('commission_pct');tax=model.get('tax_pct');handling=model.get('handling_rub')
             if not all(num(v) for v in (commission,tax,handling,cost,delivery)):raise ValueError('own economics missing')
-            retention=1-(commission+tax)/100;fx=float(model['fx_rub_per_cny']);dispatch=float(delivery)*fx+float(handling)
+            payment_reserve=model.get('payment_reserve_pct',3)
+            if not num(payment_reserve):raise ValueError('Payment reserve missing')
+            retention=1-(commission+tax+payment_reserve)/100;fx=float(model['fx_rub_per_cny']);dispatch=float(delivery)*fx+float(handling)
             if not 0<retention<=1 or fx<=0 or q['source']=='fallback':raise ValueError('own economics unverified')
             for label,(a,b),field in zip(('before','after'),pair,('before_price','after_price')):
                 raw=datasets[str(a),str(b)].get(nm) or {}

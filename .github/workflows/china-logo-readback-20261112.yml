@@ -32,3 +32,5 @@ jobs:
            cursor={'limit':100,'updatedAt':b['cursor']['updatedAt'],'nmID':b['cursor']['nmID']};time.sleep(2)
           assert found==wanted
           r=requests.get('https://seller-analytics-api.wildberries.cn/api/v1/analytics/banned-products/blocked',headers=h,params={'sort':'nmId','order':'asc'},timeout=(15,60));r.raise_for_status();print('BLOCKED_AFTER',json.dumps(r.json(),ensure_ascii=False),flush=True)
+
+# Second read after asynchronous media processing; no writes.

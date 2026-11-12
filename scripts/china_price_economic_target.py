@@ -105,7 +105,7 @@ def choose_target(previous,current,before,after,*,buyout_probability,retention,c
                             required_orders_per_day=(floor+ads)/contribution,
                             predicted_profit_per_day=profit,
                             expected_profit_advantage_per_day=profit-floor))
-    acceptable=[v for v in options if v['predicted_profit_per_day']>=floor]
+    acceptable=[v for v in options if v['predicted_profit_per_day']>0 and v['predicted_profit_per_day']>=floor]
     if not acceptable:
         return dict(result,status='profit_floor_not_reached',best_scenario=max(options,key=lambda v:v['predicted_profit_per_day']) if options else None)
     # Nearest nonnegative gap to the requested profit floor. At equal profit,

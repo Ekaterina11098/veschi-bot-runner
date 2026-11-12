@@ -77,7 +77,7 @@ class Client:
   else:result=await self.rpc('thread/start',dict(params,dynamicTools=specs,historyMode='legacy',serviceName='veschi_telegram'))
   self.thread=result['thread'];self.finished=asyncio.get_running_loop().create_future()
   await self.rpc('turn/start',{'threadId':self.thread['id'],'input':[{'type':'text','text':prompt}],'effort':'medium'})
-  await asyncio.wait_for(self.finished,420)
+  await asyncio.wait_for(self.finished,900)  # One turn may wait for bounded current-data preflights; never restart it.
   if not self.final:raise RuntimeError('Codex completed without final answer')
   return '\n'.join(self.final)
  async def snapshot(self):

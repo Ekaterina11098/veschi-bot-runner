@@ -120,6 +120,7 @@ jobs:
           python ../scripts/check_china_installed_price_step.py china_agent/demand.py
           python ../scripts/test_china_price_pending.py
           python ../scripts/test_china_price_delivery.py
+          python ../scripts/test_china_price_schedule_identity.py
           python ../scripts/test_price_repair_install.py
           python ../scripts/test_price_review_blocks.py
           python ../scripts/test_price_period.py

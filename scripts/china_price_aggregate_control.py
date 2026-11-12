@@ -77,6 +77,13 @@ def build(worker):
         item=dict(nm_id=nm,article=article,before_price=(c.get('before_price') or {}).get('current_cny'),after_price=(c.get('after_price') or {}).get('current_cny'),detected_at=str(d),full_days=max(0,(worker.day-d).days-1))
         if not pair:
             item.update(status='zero_full_days',result_action='Нет сопоставимого полного периода после последнего изменения.');output.append(item);continue
+        # Preserve observed sales/funnel facts even when profit inputs are unavailable.
+        for label,(a,b) in zip(('before','after'),pair):
+            raw=datasets[str(a),str(b)].get(nm) or {};n=(b-a).days+1
+            orders=raw.get('orders_count');views=raw.get('open_card_count');fo=raw.get('funnel_orders_count')
+            item[label]=dict(period_from=str(a),period_to=str(b),days=n,
+                orders_per_day=orders/n if num(orders) else None,
+                conversion=fo/views if num(views) and views>0 and num(fo) and fo<=views else None)
         own=rates.get(nm);model=current_models.get(nm,{})
         try:q=buyout_from_product(own)
         except ValueError:q=None

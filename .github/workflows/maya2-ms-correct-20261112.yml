@@ -59,10 +59,10 @@ jobs:
           out={"status":"in_progress","run_id":os.environ["GITHUB_RUN_ID"],"products":[]}
           def save():
            h=dict(sh);h["Prefer"]="resolution=merge-duplicates,return=minimal"
-           call(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",h,"POST",{"cache_key":"maya2:corrected_result:20261112","payload":out,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2099-01-01T00:00:00Z"})
+           call(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",h,"POST",{"cache_key":"maya2:model_name_correction:20261112","payload":out,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2099-01-01T00:00:00Z"})
           def norm(s):return str(s or "").strip().casefold().lstrip("0")
           try:
-           for item in reqdata["products"]:
+           for item in [p for p in reqdata["products"] if p["number"] in ("345","346")]:
             guard=call(sb+"/rest/v1/telegram_api_cache?cache_key=eq.maya2:corrected_request:20261112&select=payload",sh)[0]["payload"]
             assert guard["status"]=="approved","Owner stopped processing"
             ext="veschi-maya2-20261112-row-"+str(item["order_no"]).zfill(2)
@@ -92,6 +92,6 @@ jobs:
             assert values["Цвет"]==item["color_ru"] and values["ВендорКод"]==item["number"] and values["Категория товара"]=="Сумка"
             out["products"].append({"id":v["id"],"article":v["article"],"name":v["name"],"code":v["code"],"barcodes":v.get("barcodes",[]),"action":action,"verified":True})
             save()
-           out["status"]="complete";save();print("21 MS products verified. No receipts, stock or price writes.")
+           out["status"]="complete";save();print("2 MS model names verified. No receipts, stock or price writes.")
           except Exception as e:
            out["status"]="stopped";out["error"]=type(e).__name__+": "+str(e);save();raise RuntimeError("Product creation stopped; private result saved") from None

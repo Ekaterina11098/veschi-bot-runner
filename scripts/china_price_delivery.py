@@ -18,7 +18,7 @@ def deliver(w):
     mode=getattr(w,'mode','morning');day=str(w.day)
     root='china_agent:price_delivery:v2:'+day+':'+mode
     prepared=c.get(root+':prepared')
-    if not prepared:
+    if not prepared and mode!='control':
         from china_price_current_check import check
         try:checked=check(w,answer)
         except (RuntimeError,ValueError,KeyError) as exc:
@@ -31,7 +31,14 @@ def deliver(w):
     offers=rows(answer);scope=hashlib.sha256(answer.encode()).hexdigest()
     if prepared and prepared['answer_sha256']!=scope:raise RuntimeError('Frozen price report changed')
     parts=[]
-    if len(offers)>5:
+    if mode=='control':
+        from china_table_png import blocks
+        pictures=[pic for kind,data in blocks(answer) if kind=='table' for pic in render(*data)]
+        if not pictures:raise RuntimeError('Control report PNG missing')
+        for data in pictures:
+            if isinstance(data,dict):data=data['bytes']
+            parts.append(dict(method='sendPhoto',b64=base64.b64encode(data).decode(),sha256=hashlib.sha256(data).hexdigest()))
+    elif len(offers)>5:
         pictures=render(['Действие','Арт','Цена продавца','Цена покупателя (новая — прогноз)'],offers,title='Китай · рекомендации по ценам · '+w.day.strftime('%d.%m.%Y'))
         if isinstance(pictures,bytes):pictures=[pictures]
         for pic in pictures:
@@ -44,6 +51,7 @@ def deliver(w):
         from china_price_buttons import prepare as prepare_buttons
         markup,registry=prepare_buttons(answer,offers,w.job['id'],day,prepared['expires_at'])
         if markup:prepared.update(reply_markup=markup,button_registry=registry)
+        else:prepared['reply_markup']={'inline_keyboard':[[{'text':'‹ Главное меню','callback_data':'cmn1:home'}]]}
         if not c.create(root+':prepared',prepared):raise RuntimeError('Price preparation claimed')
     if prepared.get('button_registry'):
         registry=prepared['button_registry'];old_registry=c.get(registry['key'])
@@ -78,6 +86,7 @@ def deliver(w):
                     data=base64.b64decode(part['b64'],validate=True)
                     if hashlib.sha256(data).hexdigest()!=part['sha256']:raise RuntimeError('Price PNG changed')
                     body['caption']='Китай · цены · '+w.day.strftime('%d.%m.%Y')+'. Подтвердите кнопкой под отчётом или ответом «Сделай всё». Новая цена покупателя — прогноз.'
+                    if mode=='control':body['caption']='Китай · результаты изменений цен · '+w.day.strftime('%d.%m.%Y')+'. Завершённые дни МСК. Прибыль — условный прогноз.'
                     files={'photo':('prices.png',data,'image/png')}
                 else:
                     body['text']=part['text']

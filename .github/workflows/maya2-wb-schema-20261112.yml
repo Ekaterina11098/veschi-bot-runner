@@ -1,0 +1,31 @@
+name: MAYA 2 WB China schema read
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/maya2-wb-schema-20261112.yml']
+permissions: {}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import os,json,urllib.request,datetime,gzip
+          host="https://content-api.wildberries.cn"
+          def call(url,headers,body=None):
+           with urllib.request.urlopen(urllib.request.Request(url,headers=headers,data=None if body is None else json.dumps(body).encode()),timeout=50) as r:
+            raw=r.read()
+            if r.headers.get("Content-Encoding")=="gzip":raw=gzip.decompress(raw)
+            return json.loads(raw)
+          wh={"Authorization":os.environ["WB_TOKEN_3"],"Content-Type":"application/json","Accept-Encoding":"gzip"}
+          out={"characteristics":call(host+"/content/v2/object/charcs/50?locale=ru",wh),"colors":call(host+"/content/v2/directory/colors?locale=ru",wh)}
+          out["example"]=call(host+"/content/v2/get/cards/list",wh,{"settings":{"cursor":{"limit":10},"filter":{"textSearch":"025-madisonbag-zblack","withPhoto":-1}}})
+          sb=os.environ["SUPABASE_URL"].rstrip("/")
+          sh={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"}
+          call(sb+"/rest/v1/telegram_api_cache?on_conflict=cache_key",sh,{"cache_key":"maya2:wb_schema:20261112","payload":out,"updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"expires_at":"2099-01-01T00:00:00Z"})
+          print("Schema read recorded privately.")

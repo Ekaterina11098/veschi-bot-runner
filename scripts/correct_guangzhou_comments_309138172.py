@@ -24,7 +24,7 @@ docs={}
 for typ in m.TYPES:
     info=state["documents"][typ]
     d=t.request(m.MS, "entity/"+typ+"/"+info["id"])
-    expected_ext=config["document_prefix"]+":"+SID+":"+typ
+    expected_ext=config.get("document_prefix","fbs-china")+":"+SID+":"+typ
     if d.get("externalCode") != expected_ext or d.get("name") != info["name"]:
         raise m.Stop("MoySklad document identity mismatch")
     payload=copy.deepcopy(config["templates"][typ])

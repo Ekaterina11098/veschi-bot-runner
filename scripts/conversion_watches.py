@@ -773,7 +773,7 @@ def saved_network_guard():
             diagnostic=diagnostic_read(method,url,kwargs.get('json'))
             from china_report_keyboard import allowed_transport as keyboard_transport
             report_keyboard=keyboard_transport(method,url,kwargs.get('json'))
-            if not (database or model or telegram or search or advertising or rule_read or analytical or diagnostic or report_keyboard):raise PermissionError('Saved question network scope')
+            if not (database or model or telegram or search or advertising or rule_read or analytical or diagnostic or report_keyboard):raise PermissionError('Saved question network scope: '+method+' '+(u.hostname or '')+' '+('/'+u.path.rsplit('/',1)[-1] if u.hostname=='api.telegram.org' else u.path))
             return original(session,method,url,*args,**kwargs)
         requests.sessions.Session.request=bounded
         try:yield

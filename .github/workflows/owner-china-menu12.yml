@@ -1,8 +1,5 @@
 name: Audit complete owner price recommendations12Nov
 on:
-  push:
-    branches: [main]
-    paths: ['scripts/owner_price_complete_20261112.py']
   workflow_dispatch:
 permissions:
   contents: read

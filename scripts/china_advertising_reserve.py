@@ -23,19 +23,19 @@ def checks(io, items, stage):
               'currency_mismatch' if found[0].get('currency')!='CNY' else
               'budget_invalid' if not valid(actual) else
               'reserve_invalid' if not valid(required) or required<=0 else
-              'insufficient_balance' if Decimal(str(actual))<Decimal(str(required)) else 'ready')
-        shortfall=float(max(Decimal(0),Decimal(str(required))-Decimal(str(actual)))) if valid(actual) and valid(required) else None
+              'reserve_shortfall' if Decimal(str(actual)).quantize(Decimal('0.01'))<Decimal(str(required)).quantize(Decimal('0.01')) else 'ready')
+        shortfall=float(max(Decimal(0),Decimal(str(required)).quantize(Decimal('0.01'))-Decimal(str(actual)).quantize(Decimal('0.01')))) if valid(actual) and valid(required) else None
         out.append(dict(id=a['id'],campaign_id=cid,nm_id=a['nm_id'],status=code,balance_cny=actual,
             required_cny=required,shortfall_cny=shortfall,observed_at=now))
     key='china_agent:reserve_preflight:v1:'+stage+':'+str(uuid.uuid4())
-    value=dict(status='ready' if all(r['status']=='ready' for r in out) else 'blocked',stage=stage,
+    value=dict(status=('ready_with_shortfall' if any(r['status']=='reserve_shortfall' for r in out) else 'ready') if all(r['status'] in ('ready','reserve_shortfall') for r in out) else 'blocked',stage=stage,
         observed_at=now,items=out,budget_response=body,read_error=failure,wb_writes=0,telegram_calls=0)
     if not io.create(key,value) or io.get(key)!=value:raise RuntimeError('Reserve audit readback failed')
     return dict(value,receipt_key=key)
 
 def require(io,item):
     result=checks(io,[item],'execute');r=result['items'][0]
-    if r['status']=='ready':return result
+    if r['status'] in ('ready','reserve_shortfall'):return result
     if r['status']=='insufficient_balance':
         raise ValueError('Недостаточно резерва РК '+str(r['campaign_id'])+': баланс '+format(r['balance_cny'],'.2f')+' CNY, требуется '+format(r['required_cny'],'.2f')+' CNY, не хватает '+format(r['shortfall_cny'],'.2f')+' CNY.')
     raise ValueError('Резерв РК '+str(r['campaign_id'])+' не подтверждён: '+r['status']+'. Изменения не выполнены.')
@@ -44,7 +44,7 @@ def filter_bundle(io,bundle,stage):
     result=copy.deepcopy(bundle)
     actions={r['action']['id']:r['action'] for c in result['campaigns'] for r in c.get('focus',[]) if (r.get('action')or{}).get('kind')=='ad_add_sku'}
     evidence=checks(io,list(actions.values()),stage)
-    failed={r['id']:r for r in evidence['items'] if r['status']!='ready'}
+    failed={r['id']:r for r in evidence['items'] if r['status'] not in ('ready','reserve_shortfall')}
     for c in result['campaigns']:
         for r in c.get('focus',[]):
             a=r.get('action')or{}
@@ -60,7 +60,7 @@ def refresh_before_send(io,day,saved,key):
     delivery=io.get('china_agent:advertising_delivery:'+day+':v1')or{}
     if delivery.get('parts'):return saved
     bundle,evidence=filter_bundle(io,saved['bundle'],'send')
-    if evidence['status'] in ('ready','not_required'):return saved
+    if evidence['status'] in ('ready','ready_with_shortfall','not_required'):return saved
     from china_advertising_v2_png import render
     from china_daily_ad_actions import plan
     import base64,hashlib,json

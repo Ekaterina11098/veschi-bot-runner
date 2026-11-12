@@ -1,0 +1,57 @@
+name: Inspect China WB order warehouse identifiers read-only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/inspect-china-wb-origin-20261112.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Inspect warehouse fields for verified historical WB supplies
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          import sys,json,datetime
+          sys.path.insert(0,"scripts")
+          import fbs_document_chain as m
+          ids=("WB-GI-309138172","WB-GI-308622860","WB-GI-308442566")
+          t=m.Transport();db=m.Cache(t)
+          now=datetime.datetime.now(datetime.timezone.utc)
+          begin=now-datetime.timedelta(days=8)
+          orders={}
+          cursor=0
+          for _ in range(80):
+            result=t.request(m.WB,"api/v3/orders",params={"limit":1000,"next":cursor,"dateFrom":int(begin.timestamp()),"dateTo":int(now.timestamp())})
+            for o in result.get("orders",[]):orders[o["id"]]=o
+            if not result.get("next") or not result.get("orders"):break
+            cursor=result["next"]
+          output={}
+          for sid in ids:
+            members=t.request(m.WB,"api/marketplace/v3/supplies/"+sid+"/order-ids").get("orderIds",[])
+            rows=[orders.get(i) for i in members]
+            sample=next((r for r in rows if r is not None),None)
+            origins={}
+            for r in rows:
+              if not r:continue
+              for key in ("warehouseId","warehouseName","warehouse_id","warehouse","officeId","address","deliveryType"):
+                if key in r:
+                  origins.setdefault(key,{})
+                  val=json.dumps(r[key],ensure_ascii=False,sort_keys=True)
+                  origins[key][val]=origins[key].get(val,0)+1
+            output[sid]={"orders":len(members),"matched":sum(r is not None for r in rows),"sample_keys":list(sample or {}),"origins":origins}
+          db.put("fbs_document_chain:china:origin_inspection:20261112:v1",output)
+          print(json.dumps(output,ensure_ascii=False))

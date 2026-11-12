@@ -412,7 +412,7 @@ class Worker:
         self.db.put(key, state)
         return meta(doc)
 
-    def order_annotation(self, supply):
+    def order_annotation(self, supply, route=None):
         rule = self.c.get("order_annotation")
         if not rule:
             return None
@@ -434,6 +434,8 @@ class Worker:
         if not label or label == "Китай":
             raise Stop("Supply category missing for customer order comment")
         date = stamp(supply["closedAt"]).astimezone(dt.timezone(dt.timedelta(hours=3))).strftime("%d %m %y")
+        if self.c.get("cabinet") == "token_3" and route and route.get("source_store") == "Гуанджоу":
+            return {"description": date + " Китай Гуанджоу", "state": meta(states[0])}
         return {"description": date + "  " + rule.get("comment_prefix", "Гонконг") + " " + label, "state": meta(states[0])}
 
     def validate_source(self, state):
@@ -497,13 +499,13 @@ class Worker:
         supply = state["supply"]
         self.require_execution_permission(supply["id"])
         key = PREFIX + supply["id"]
-        annotation = self.order_annotation(supply)
         if "positions" not in state:
             state["positions"], state["order_ids"] = self.positions(supply)
             state["status"] = "prepared"
             self.db.put(key, state)
         self.validate_source(state)
         route = self.china_warehouse_routing(state, key)
+        annotation = self.order_annotation(supply, state.get("warehouse_routing") if route else None)
         # Preflight the exact source warehouse before writing the first document.
         if route:
             stock_payload = json.loads(json.dumps(self.c["templates"]["demand"]))

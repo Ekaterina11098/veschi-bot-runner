@@ -30,5 +30,7 @@ def placement_candidates(source,inputs):
   for zone in ['search','recommendations']:
    if (nm,zone)in occupied:continue
    choices=[cid for z,subject,cid in targets if z==zone and subject==o.get('subject_id')]
-   if choices:out.append(dict(nm_id=nm,campaign_id=min(choices),placement=zone,subject_id=o['subject_id']))
+   for cid in sorted(set(choices)):
+    # Keep alternatives until exact quotes and shared campaign capacity are checked.
+    out.append(dict(nm_id=nm,campaign_id=cid,placement=zone,subject_id=o['subject_id']))
  return out

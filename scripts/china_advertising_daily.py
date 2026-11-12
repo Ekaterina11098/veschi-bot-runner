@@ -34,6 +34,8 @@ def run():
  if saved.get('day')!=day or saved.get('status')!='frozen':raise ValueError('Frozen image scope invalid')
  if prepare_only:
   print(json.dumps(dict(status='prepared',day=day,telegram_calls=0,wb_writes=0)));return
+ from china_advertising_reserve import refresh_before_send
+ saved=refresh_before_send(io,day,saved,key)
  from china_daily_ad_actions import bind
  files=[]
  for f in saved['files']:

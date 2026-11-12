@@ -4,6 +4,7 @@ on:
   push:
     paths: ['.github/workflows/review-morning-watchdog.yml']
   schedule:
+    - cron: '30,40,50 4 * * *'
     - cron: '5,15,25,35,45,55 5-9 * * *'
   workflow_run:
     workflows: ['Morning reviews and safe automatic five-star replies', 'Morning question cards for three cabinets', 'Keep approved review and question publishing alive']

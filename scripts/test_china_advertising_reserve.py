@@ -16,20 +16,20 @@ def response(total):return dict(adverts=[dict(advertId=41298169,currency='CNY',t
 class Reserve(unittest.TestCase):
     def api(self,body):
         return patch.dict(sys.modules,{'china_advertising_v2':types.SimpleNamespace(http=lambda *a,**kw:body)})
-    def test_current_shortfall_is_saved_before_russian_failure(self):
+    def test_current_shortfall_is_saved_but_does_not_block_execution(self):
         io=IO()
         with self.api(response(1355)):
-            with self.assertRaisesRegex(ValueError,'37.34 CNY'):require(io,addition())
+            self.assertEqual(require(io,addition())['status'],'ready_with_shortfall')
         record=next(iter(io.state.values()))
-        self.assertEqual(record['items'][0]['status'],'insufficient_balance')
+        self.assertEqual(record['items'][0]['status'],'reserve_shortfall')
         self.assertEqual(record['items'][0]['shortfall_cny'],37.34)
         self.assertEqual(record['budget_response'],response(1355))
-    def test_prepare_filters_only_unready_addition(self):
+    def test_prepare_keeps_addition_despite_reserve_shortfall(self):
         a=addition();other=dict(id='raise1',kind='ad_set_bid')
         bundle=dict(campaigns=[dict(focus=[dict(action=a),dict(action=other)],attention=[dict(action=a),dict(action=other)])])
         with self.api(response(1355)):out,ev=filter_bundle(IO(),bundle,'prepare')
-        self.assertIsNone(out['campaigns'][0]['focus'][0]['action'])
-        self.assertEqual(out['campaigns'][0]['attention'],[dict(action=other)])
+        self.assertEqual(out['campaigns'][0]['focus'][0]['action'],a)
+        self.assertEqual(out['campaigns'][0]['attention'],[dict(action=a),dict(action=other)])
         self.assertEqual(bundle['campaigns'][0]['focus'][0]['action'],a)
     def test_missing_and_wrong_currency_are_not_reported_as_shortage(self):
         for body,expected in [(dict(adverts=[]),'budget_unavailable'),(dict(adverts=[dict(advertId=41298169,currency='RUB',total=2000)]),'currency_mismatch')]:
@@ -46,14 +46,14 @@ class Reserve(unittest.TestCase):
         saved=dict(bundle={})
         with patch.dict(sys.modules,{'china_advertising_v2':types.SimpleNamespace(http=lambda *a: self.fail('Unexpected WB read'))}):
             self.assertIs(refresh_before_send(io,'2026-11-13',saved,'artifact'),saved)
-    def test_send_rebuilds_unsigned_plan_if_budget_fell_after_preparation(self):
+    def test_send_rebuilds_unsigned_plan_only_when_budget_data_missing(self):
         io=IO();a=addition();saved=dict(day='2026-11-13',status='frozen',bundle=dict(campaigns=[dict(focus=[dict(action=a)],attention=[dict(action=a)])]),files=[dict(plan_id='old')])
         io.state['china_agent:loss_plan:v1:old']=dict(report_message_ids=[])
         pages=[dict(kind='drr',family='drr',page=1,total=1,bytes=b'png',actions=[])]
         def plan(io,day,f,index,slot):
             self.assertTrue(slot.startswith('reserve-'));self.assertEqual(f['actions'],[])
             return dict(plan_id='new',plan_sha256='newhash',items=[])
-        mods={'china_advertising_v2':types.SimpleNamespace(http=lambda *a,**kw:response(1355)),
+        mods={'china_advertising_v2':types.SimpleNamespace(http=lambda *a,**kw:dict(adverts=[])),
               'china_advertising_v2_png':types.SimpleNamespace(render=lambda b:pages),
               'china_daily_ad_actions':types.SimpleNamespace(plan=plan)}
         with patch.dict(sys.modules,mods):out=refresh_before_send(io,'2026-11-13',saved,'artifact')
@@ -61,4 +61,10 @@ class Reserve(unittest.TestCase):
         self.assertIn('invalidated_at',io.state['china_agent:loss_plan:v1:old'])
         self.assertEqual(io.state['artifact'],out)
         self.assertEqual(saved['files'][0]['plan_id'],'old')
+    def test_send_does_not_remove_offer_for_shortfall(self):
+        io=IO();a=addition();saved=dict(bundle=dict(campaigns=[dict(focus=[dict(action=a)],attention=[dict(action=a)])]))
+        with self.api(response(0)):self.assertIs(refresh_before_send(io,'2026-11-13',saved,'artifact'),saved)
+    def test_currency_precision_does_not_create_false_shortfall(self):
+        a=addition();a['growth_evidence']['campaign_reserve_required_cny']=1392.3400000000001
+        with self.api(response(1392.34)):self.assertEqual(require(IO(),a)['status'],'ready')
 if __name__=='__main__':unittest.main()

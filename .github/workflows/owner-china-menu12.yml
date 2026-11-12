@@ -1,0 +1,56 @@
+name: Restore China report menu navigation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-china-menu12.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-menu12
+  cancel-in-progress: false
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          PYTHONPATH=scripts python - <<'PY'
+          from china_advertising_state import AdvertisingIO
+          io=AdvertisingIO();chat=-1004342917488;root='china_agent:owner_restore_report_menu:2026-11-12:v1'
+          assert io.tg('getMe',{})['id']==8780468043
+          delivery=io.get('china_agent:advertising_delivery:2026-11-12:v1')
+          assert delivery['status']=='delivered'
+          for part in delivery['parts']:
+              mid=part['message_id'];key=root+':'+str(mid);old=io.get(key)
+              if old:
+                  assert old['status']=='attached'
+                  continue
+              assert mid in (964,965) and part['status']=='sent'
+              receipt=part['receipt'];assert receipt['chat']['id']==chat and receipt['from']['id']==8780468043
+              markup=receipt['reply_markup'];markup['inline_keyboard'].append([dict(text='‹ Главное меню',callback_data='cmn1:home')])
+              assert io.create(key,dict(status='submitting',message_id=mid,wb_writes=0))
+              result=io.tg('editMessageReplyMarkup',dict(chat_id=chat,message_id=mid,reply_markup=markup))
+              assert result['message_id']==mid and result['chat']['id']==chat and result['reply_markup']==markup
+              io.put(key,dict(status='attached',message_id=mid,receipt=result,wb_writes=0))
+          key=root+':persistent'
+          if not io.get(key):
+              assert io.create(key,dict(status='sending',wb_writes=0))
+              keyboard=dict(keyboard=[[dict(text='☰ Меню')],[dict(text='📊 Продажи'),dict(text='📣 Реклама')]],resize_keyboard=True,is_persistent=True,one_time_keyboard=False,input_field_placeholder='Выберите раздел или напишите вопрос')
+              receipt=io.tg('sendMessage',dict(chat_id=chat,text='Главное меню\nВыберите раздел:',reply_markup=keyboard))
+              assert receipt['chat']['id']==chat and receipt['from']['id']==8780468043 and receipt['message_id']
+              io.put(key,dict(status='sent',message_id=receipt['message_id'],receipt=receipt,wb_writes=0))
+          print(dict(status='verified',wb_writes=0,model_calls=0))
+          PY

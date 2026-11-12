@@ -12,4 +12,5 @@ def prepare(answer,offers,job_id,day,expires_at):
   if any(r[0]==action for r in offers):
    modes.append(mode);buttons.append([dict(text=label,callback_data='cpb1:'+token+':'+mode)])
  registry=dict(status='active',chat_id=CHAT,bot_id=BOT,report_job_id=job_id,report_sha256=sha,report_date=day,expires_at=expires_at,allowed_modes=modes,execution_authorized=False)
+ buttons.append([dict(text='‹ Главное меню',callback_data='cmn1:home')])
  return dict(inline_keyboard=buttons),dict(key='china_agent:price_buttons:v1:'+token,payload=registry)

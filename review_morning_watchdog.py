@@ -6,7 +6,7 @@ ACTIVE={'queued','in_progress','waiting','pending','requested'}
 TARGETS=(('reviews','reviews-morning.yml'),('questions','questions-morning.yml'))
 def choose(now,cfg,states,runs,last_attempt=0):
     local=now.astimezone(ZoneInfo('Europe/Moscow'))
-    if not 480<=local.hour*60+local.minute<780:return None
+    if not 450<=local.hour*60+local.minute<780:return None
     if not all(cfg.get(k) for k in ('enabled','new_notices_enabled','destination_verified')):return None
     if now.timestamp()-last_attempt<300:return None
     if any(r.get('status') in ACTIVE for rs in runs.values() for r in rs):return None

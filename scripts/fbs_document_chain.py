@@ -457,8 +457,8 @@ class Worker:
             if order_ids != state["order_ids"] or positions != state["positions"]:
                 raise Stop("WB pick list drift before warehouse routing")
         origin_by_order = getattr(self, "_source_warehouse_ids", {})
-        if set(origin_by_order) != set(state["order_ids"]):
-            raise Stop("WB origin warehouse missing for one or more included orders")
+        if not origin_by_order or not set(origin_by_order).issubset(set(state["order_ids"])):
+            raise Stop("WB origin warehouse missing or outside the frozen pick list")
         warehouse_ids = set(origin_by_order.values())
         if len(warehouse_ids) != 1:
             raise Stop("Mixed or unknown WB origin warehouses; manual reconciliation required")

@@ -1,8 +1,5 @@
 name: Owner two campaign budget economics read 12Nov
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-two-budget-review12.yml']
   workflow_dispatch:
 permissions:
   contents: read

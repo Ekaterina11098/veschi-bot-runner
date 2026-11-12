@@ -70,6 +70,12 @@ class Delivery(unittest.TestCase):
         body=next(b for method,b in w.transport_bodies if method=='sendPhoto')
         self.assertIn('результаты изменений цен',body['caption'])
         self.assertEqual(json.loads(body['reply_markup'])['inline_keyboard'][0][0]['callback_data'],'cmn1:home')
+    def test_manual_control_keeps_png_and_separate_delivery_identity(self):
+        w=self.worker(0);w.mode='control';w.section='control';w.delivery_mode='control-manual';w.job['answer']='Checked control table'
+        db,calls=self.run_delivery(w)
+        self.assertEqual(calls,['getMe','sendPhoto'])
+        self.assertIn('china_agent:price_delivery:v2:2026-11-09:control-manual',db)
+        self.assertNotIn('china_agent:price_delivery:v2:2026-11-09:control',db)
     def test_two_line_rows_preserve_buyer(self):
         w=self.worker(1)
         self.assertEqual(rows(w.job['answer'])[0],['Повышение','0-Bag-black','100 → 105 ¥','1000 → 1050 ₽'])

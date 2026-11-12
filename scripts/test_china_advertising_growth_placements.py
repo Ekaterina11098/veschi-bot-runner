@@ -44,7 +44,10 @@ class PlacementTests(unittest.TestCase):
   self.assertEqual([],addition_actions(s,[]))
  def test_three_day_reserve_includes_new_traffic_not_just_topup(self):
   s,v=self.action_source();v['budgets']['adverts'][0]['total']=100
-  self.assertEqual([],addition_actions(s,[]))
+  a=addition_actions(s,[])
+  self.assertEqual(1,len(a))
+  self.assertAlmostEqual(a[0]['growth_evidence']['campaign_reserve_required_cny'],125.2)
+  self.assertGreater(a[0]['growth_evidence']['campaign_reserve_required_cny'],v['budgets']['adverts'][0]['total'])
  def test_raise_and_new_placement_cannot_compound_same_sku(self):
   s,v=self.action_source()
   a=dict(nm_id=1,campaign_id=20,old_minor=28,target_minor=30,growth_evidence=dict(metrics=dict(clicks=30),decision_days=['2026-11-08']))

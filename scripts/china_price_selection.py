@@ -99,8 +99,12 @@ def choose(worker,preview=False):
         lines+=['',article,'Заказы по дням: '+('/'.join(map(str,values))),
                 'Цена продавца после скидки: '+fmt(offer['current_cny'])+' → '+fmt(offer['target_cny'])+' ¥.']
     lines+=['','Повторное повышение включено по общей конверсии.']
+    from china_agent.control_owner_preview import Preview
+    Preview.acquire(worker,{(str(end),str(end))})
+    worker.now=datetime.now(MSK)
     buyer=load_buyer(worker);omitted=[]
     answer=render_plain('\n'.join(lines),'morning',review,worker.day,prices,buyer,omitted=omitted)
+    if 'Покупатель: нет данных' in answer:raise RuntimeError('Buyer price forecast unavailable after scoped exact-day collection')
     worker.audit['price_proposal_exclusions']=omitted
     return answer,[dict(name='china_price_daily_report',report_date=str(worker.day),period_from=str(start),period_to=str(end),source_snapshot_id=marker['id'],status='complete_orders',ready_rises=len(rises),execution_authorized=False)]
 

@@ -1,0 +1,58 @@
+name: Read-only WB China Guangzhou pilot WB-GI-309138172
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/inspect-guangzhou-309138172.yml']
+permissions:
+  contents: read
+concurrency:
+  group: fbs-document-chain-production
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read exact WB supply, shipment origins, MS warehouses, and prior documents
+        shell: python
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          import sys,json,collections
+          sys.path.insert(0,'scripts')
+          import fbs_document_chain as m
+          SID="WB-GI-309138172"
+          class ReadOnly(m.Transport):
+            def request(self,base,path,method="GET",body=None,params=None):
+              if base==m.MS and method!="GET":raise m.Stop("MS writes disabled")
+              return super().request(base,path,method,body,params)
+          t=ReadOnly();db=m.Cache(t);w=m.Worker(t,db,{})
+          root="fbs_document_chain:china:guangzhou_pilot:309138172:"
+          supplies=[s for s in w.supplies() if s.get("id")==SID]
+          if len(supplies)!=1:raise m.Stop("Supply not uniquely visible in WB")
+          supply=supplies[0]
+          stores=w.ms_rows("entity/store")
+          allowed=[{"id":s.get("id"),"name":s.get("name"),"href":m.href(s)} for s in stores if "гуанджоу" in (s.get("name") or "").casefold() or "гонконг" in (s.get("name") or "").casefold()]
+          docs={}
+          for typ in m.TYPES:
+            rows=w.ms_rows("entity/"+typ,{"filter":"externalCode=fbs-china:"+SID+":"+typ})
+            docs[typ]=[{"id":x.get("id"),"name":x.get("name"),"store":m.href(x.get("store",{}))} for x in rows]
+          state=db.get("fbs_document_chain:china:supply:v1:"+SID)
+          result={"status":"inspected","supply":supply,"warehouses":allowed,"documents":docs,"journal_status":state.get("status") if state else None}
+          if supply.get("done") and supply.get("closedAt"):
+            ps,ids=w.positions(supply)
+            result.update(positions=len(ps),quantity=sum(p["quantity"] for p in ps),order_count=len(ids))
+            result["order_ids"]=ids
+            result["positions"]=ps
+          db.put(root+"read_only:v1",result)
+          print(json.dumps({k:v for k,v in result.items() if k not in ("positions","order_ids")},ensure_ascii=False))

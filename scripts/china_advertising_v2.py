@@ -111,15 +111,17 @@ def collect(io,day,current=False):
    # identities on the next preparation; never replace their missing data by zero.
    returned={r['advertId'] for b in s['batches'].values() for r in b.get('stats',[])}
    missing=[c['id'] for b in s['batches'].values() for c in b['campaigns'].get('adverts',[]) if c['status']==9 and c['id'] not in returned]
-   for offset in range(0,len(missing),50):
-    ids=missing[offset:offset+50]
-    rows=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,ids))+'&beginDate='+s['period_from']+'&endDate='+s['period_to'])
-    if rows is None:rows=[] # WB explicitly returned no statistics; keep unknown, never zero.
-    if not isinstance(rows,list):raise ValueError('Scoped campaign statistics response invalid')
-    if any(r.get('advertId') not in ids for r in rows):raise ValueError('Scoped missing campaign identity mismatch')
+   for cid in missing:
+    campaign=next(c for b in s['batches'].values() for c in b['campaigns']['adverts'] if c['id']==cid)
+    first=max(s['period_from'],campaign.get('timestamps',{}).get('created',s['period_from'])[:10])
+    time.sleep(20)
+    rows=http(io,'/adv/v3/fullstats?ids='+str(cid)+'&beginDate='+first+'&endDate='+s['period_to'])
+    rawkey=key+':missing_campaign:'+str(cid)+':'+stamp()
+    save(io,rawkey,dict(campaign_id=cid,period_from=first,period_to=s['period_to'],response=rows,observed_at=stamp(),wb_writes=0))
+    if rows is None:rows=[]
+    if not isinstance(rows,list) or any(r.get('advertId')!=cid for r in rows):raise ValueError('Scoped campaign statistics identity mismatch')
     for b in s['batches'].values():
-     wanted={c['id']for c in b['campaigns'].get('adverts',[])}
-     b['stats'] += [r for r in rows if r['advertId']in wanted]
+     if any(c['id']==cid for c in b['campaigns']['adverts']):b['stats']+=rows
    save(io,key,s)
    from china_morning_readiness import ensure
    ensure(io,s,day,key)

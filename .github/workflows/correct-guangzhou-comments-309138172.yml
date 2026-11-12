@@ -26,3 +26,5 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
         run: python scripts/correct_guangzhou_comments_309138172.py
+
+# Repeat after prewrite validation fix; exact same scope.

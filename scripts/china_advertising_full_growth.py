@@ -258,7 +258,8 @@ def addition_actions(s,raises):
   if margin<=0:continue
   # New traffic has no proven CPA. Reserve a disclosed diagnostic forecast, not a technical SKU cap.
   reserve_extra=90*target/100
-  if balances.get(cid,-1)<reserve.get(cid,1e99)+reserve_extra:continue
+  # Owner12Nov: reserve shortfall is a funding recommendation, not an addition veto.
+  if cid not in reserve or not finite_number(reserve[cid]):continue
   reserve[cid]+=reserve_extra
   evidence=dict(e,cabinet='token_3',currency='CNY',article=prices[nm]['article'],observed_at=v['observed_at'],price_cny=e['seller_price_cny'],minimum_minor=target,minimum_quote_campaign_id=quote.get('quote_campaign_id',cid),period_to=s['period_to'],period_from=v['own']['period_from'],subject_id=o['subject_id'],ad_cpa_unknown=True,preliminary=True,unknown_costs=True,manual_strategy_proposal=True,source_key=ROOT+str(date.fromisoformat(s['period_to'])+timedelta(days=1))+':v1:inputs',test_review_after_first_completed_day=True,ad_traffic_forecast_clicks_per_day=30,campaign_reserve_required_cny=reserve[cid],forecast_not_a_spend_cap=True)
   result.append(dict(id=str(cid)+':add:'+str(nm),kind='ad_add_sku',direction='add',campaign_id=cid,nm_id=nm,article=prices[nm]['article'],placement=placement,target_minor=target,subject_id=o['subject_id'],manual_experiment=True,exact_addition_quote=True,growth_evidence=evidence))

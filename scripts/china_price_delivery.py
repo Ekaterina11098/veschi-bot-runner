@@ -17,8 +17,9 @@ def deliver(w):
     c=Cache();answer=w.job['answer']
     mode=getattr(w,'delivery_mode',getattr(w,'mode','morning'));day=str(w.day)
     root='china_agent:price_delivery:v2:'+day+':'+mode
+    control=mode=='control' or getattr(w,'section',None)=='control'
     prepared=c.get(root+':prepared')
-    if not prepared and mode!='control':
+    if not prepared and not control:
         from china_price_current_check import check
         try:checked=check(w,answer)
         except (RuntimeError,ValueError,KeyError) as exc:
@@ -31,7 +32,7 @@ def deliver(w):
     offers=rows(answer);scope=hashlib.sha256(answer.encode()).hexdigest()
     if prepared and prepared['answer_sha256']!=scope:raise RuntimeError('Frozen price report changed')
     parts=[]
-    if mode=='control':
+    if control:
         from china_table_png import blocks
         pictures=[pic for kind,data in blocks(answer) if kind=='table' for pic in render(*data)]
         if not pictures:raise RuntimeError('Control report PNG missing')

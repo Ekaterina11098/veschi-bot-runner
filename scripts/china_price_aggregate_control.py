@@ -70,11 +70,37 @@ def build(worker):
     costs={r['article'].casefold():r for r in read('analytics_costs',dict(select='article,cost,observed_at,source',limit=5000)) or [] if r.get('article')}
     inputs=worker.get('china_agent:advertising_full_growth:'+str(worker.day)+':v1:inputs') or {}
     current_models=(inputs.get('economics') or {}).get('rows',{})
+    catalogue=worker.get('china_agent:prices:v1') or {}
+    live_ids={str(r['nmID']) for r in catalogue.get('rows',[])}
+    unresolved=[(str(nm),e['article']) for nm,e,c,d in tracked if str(nm) in live_ids
+                and not all(type(current_models.get(str(nm),{}).get(k)) in (int,float)
+                            for k in ('own_cogs_rub','logistics_cny','commission_pct','tax_pct','handling_rub'))]
+    availability={}
+    if unresolved:
+        from china_advertising_state import AdvertisingIO
+        from china_morning_readiness import current_prices,published_stock
+        from china_moysklad_read import read_stock
+        io=AdvertisingIO();ids=[int(nm) for nm,article in unresolved]
+        fresh_prices=current_prices(io,ids)
+        fresh_stock=read_stock([article for nm,article in unresolved])
+        fresh_wb=published_stock(io,fresh_prices,ids)
+        stock_map={r['article'].casefold():r for r in fresh_stock['rows']}
+        for nm,article in unresolved:
+            row=stock_map.get(article.casefold())
+            if row and all(type(row.get(k)) in (int,float) for k in ('stock','reserve')):
+                availability[nm]=dict(stock_free=row['stock']-row['reserve'],published_stock=fresh_wb['amounts'].get(nm))
+        worker.save('china_agent:price_control_availability:'+str(worker.day)+':v1',
+                    dict(prices=fresh_prices,stock=fresh_stock,published_stock=fresh_wb,wb_writes=0,model_calls=0))
     output=[]
     def num(v):return type(v) in (int,float) and v>=0
     for nm,e,c,d in tracked:
         nm=str(nm);article=e['article'];pair=pairs[nm]
         item=dict(nm_id=nm,article=article,before_price=(c.get('before_price') or {}).get('current_cny'),after_price=(c.get('after_price') or {}).get('current_cny'),detected_at=str(d),full_days=max(0,(worker.day-d).days-1))
+        if nm not in live_ids:
+            item.update(status='not_current_catalogue',result=dict(status='not_actionable'),result_action='Нет в текущем каталоге цен; изменение не предлагается.');output.append(item);continue
+        fresh=availability.get(nm,{})
+        if fresh and (fresh.get('stock_free',1)<=0 or fresh.get('published_stock')==0):
+            item.update(status='no_available_stock',availability=fresh,result=dict(status='not_actionable'),result_action='Нет доступного остатка; изменение цены не предлагается.');output.append(item);continue
         if not pair:
             item.update(status='zero_full_days',result_action='Нет сопоставимого полного периода после последнего изменения.');output.append(item);continue
         # Preserve observed sales/funnel facts even when profit inputs are unavailable.
@@ -84,6 +110,10 @@ def build(worker):
             item[label]=dict(period_from=str(a),period_to=str(b),days=n,
                 orders_per_day=orders/n if num(orders) else None,
                 conversion=fo/views if num(views) and views>0 and num(fo) and fo<=views else None)
+        # Exact zero orders in both completed periods is not missing economics.
+        if all(item[label]['orders_per_day']==0 for label in ('before','after')):
+            item.update(status='no_orders_both_periods',result=dict(status='no_orders'),
+                        result_action='Заказов в обоих периодах нет; влияние цены не подтверждено.');output.append(item);continue
         own=rates.get(nm);model=current_models.get(nm,{})
         try:q=buyout_from_product(own)
         except ValueError:q=None
@@ -132,7 +162,7 @@ def build(worker):
             if after['orders_per_day']>=before['orders_per_day']:
                 result.update(status='hold_orders_maintained',result_action='Заказы держатся; цену сохраняем.')
             item['result']=result
-            if result.get('status')=='rollback_review' and q['sample_size']>=10 and item['before_price']<item['after_price']:
+            if result.get('status')=='rollback_review' and item['before_price']<item['after_price']:
                 from business_agents.data import Data
                 from china_agent.linked import compare,qualify
                 context=compare(linked_data,nm,pair[0][0],pair[0][1],pair[1][0],pair[1][1],datetime.now(MSK),(e.get('increase') or {}).get('baseline_group'))
@@ -142,7 +172,7 @@ def build(worker):
                 item['linked_context']=qualified['linked_context']
                 if qualified['action']=='lower':
                     item['economic_target']=choose_target(c['before_price'],c['after_price'],before,after,buyout_probability=q['probability'],retention=retention,cost=cost,dispatch=dispatch,fx=fx)
-            item.update(status='expected_model',unknown_reverse_and_shared_costs=True,
+            item.update(status='expected_model',buyout_source=q['source'],unknown_reverse_and_shared_costs=True,
                         own_cogs_rub=cost,economics_note='Own completed buyout, dated CBR, COGS/tax/commission and historical logistics. Unknown reverse/shared expenses are not zero; not settled profit.',model_source='china_agent:advertising_full_growth:'+str(worker.day)+':v1:inputs')
         except (KeyError,TypeError,ValueError,ZeroDivisionError) as exc:
             item.update(status='insufficient_economics',result=dict(status='incomplete'),missing=str(exc))

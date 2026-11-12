@@ -137,7 +137,23 @@ class IO:
         if a.get('basis')=='explicit_zero_order_percent':
             from china_zero_order_price_command import validate_command
             validate_command(self,a,j);return
-        if j['request_text'] not in ['/china_morning_pair_candidates','/china_price_intraday_raise'] or sha(j['answer'])!=a['report_sha256']:raise ValueError('Отчёт изменился')
+        if sha(j['answer'])!=a['report_sha256']:raise ValueError('Отчёт изменился')
+        binding=self.get('china_agent:price_report_message:v1:'+str(a.get('report_message_id')))
+        if binding:
+            if (binding.get('status')!='sent' or binding.get('chat_id')!=CHAT or binding.get('bot_id')!=BOT
+                or binding.get('message_id')!=a.get('report_message_id')
+                or binding.get('report_job_id')!=a['report_job_id'] or binding.get('report_sha256')!=a['report_sha256']
+                or binding.get('report_date')!=a['report_date']
+                or datetime.fromisoformat(binding['expires_at'].replace('Z','+00:00'))<=now()):
+                raise ValueError('Ценовой отчёт отозван, изменён или устарел')
+            receipt=self.get(binding.get('receipt_key'))
+            if (not receipt or receipt.get('status')!='sent' or receipt.get('message_id')!=a.get('report_message_id')
+                or (receipt.get('receipt')or{}).get('chat',{}).get('id')!=CHAT):
+                raise ValueError('Доставка ценового отчёта не подтверждена')
+            if not any(t.get('name')=='china_report_delivery' and a['report_message_id']in t.get('message_ids',[]) for t in j['tool_trace']):
+                raise ValueError('Квитанция отчёта не связана с задачей')
+        elif j['request_text'] not in ['/china_morning_pair_candidates','/china_price_intraday_raise']:
+            raise ValueError('У отчёта нет проверенной привязки сообщения')
         if not any(t.get('name')=='china_price_daily_report' and t.get('report_date')==a['report_date'] for t in j['tool_trace']):raise ValueError('Дата отчёта не подтверждена')
         for s in a['selections']:
             if not report_contains_selection(j['answer'],s):raise ValueError('Согласованные цены отсутствуют в отчёте')

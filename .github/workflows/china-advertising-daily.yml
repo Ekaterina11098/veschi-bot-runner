@@ -53,6 +53,29 @@ jobs:
       - run: pip install requests==2.32.5 pillow==11.3.0 python-dotenv simplejson==4.2.0 openai==3.42.1
       - name: Check advertising arithmetic and duplicate safeguards
         run: PYTHONPATH=scripts python -m unittest discover -s scripts -p 'test_china_advertising_*.py'
+      - name: Read alternative China campaign evidence once
+        env:
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          PYTHONPATH=scripts:source python - <<'PY'
+          import os
+          from analytics.mpstats_probe import discover,unpack_tool
+          from china_advertising_state import AdvertisingIO
+          io=AdvertisingIO();key='china_agent:owner_morning_alt_sources:2026-11-12:v1'
+          if io.get(key):print('Existing alternative evidence preserved');raise SystemExit(0)
+          def read(call,checks,seen):
+              def tool(name,args):return unpack_tool(call('tools/call',{'name':name,'arguments':args}))
+              cabinets=tool('wbbidder_cabinets',{})
+              io.create(key+':cabinets',dict(cabinets=cabinets,wb_writes=0))
+              return dict(cabinets=cabinets)
+          result=discover(os.environ['MPSTATS_API_TOKEN'],read_checks=True,extra_reader=read)
+          io.create(key,result)
+          print({'status':result['status'],'model_calls':0,'wb_writes':0})
+          PY
       - name: Prepare and freeze the existing daily identity without Telegram calls
         env:
           CHINA_AD_PREPARE_ONLY: 'true'

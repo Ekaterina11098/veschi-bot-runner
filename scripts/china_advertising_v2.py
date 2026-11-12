@@ -107,6 +107,18 @@ def collect(io,day,current=False):
    s=None
  if s and s.get('status')=='complete':
   if not current:
+   # A complete transport response can omit active campaigns. Refresh only those
+   # identities on the next preparation; never replace their missing data by zero.
+   returned={r['advertId'] for b in s['batches'].values() for r in b.get('stats',[])}
+   missing=[c['id'] for b in s['batches'].values() for c in b['campaigns'].get('adverts',[]) if c['status']==9 and c['id'] not in returned]
+   for offset in range(0,len(missing),50):
+    ids=missing[offset:offset+50]
+    rows=http(io,'/adv/v3/fullstats?ids='+','.join(map(str,ids))+'&beginDate='+s['period_from']+'&endDate='+s['period_to'])
+    if any(r.get('advertId') not in ids for r in rows):raise ValueError('Scoped missing campaign identity mismatch')
+    for b in s['batches'].values():
+     wanted={c['id']for c in b['campaigns'].get('adverts',[])}
+     b['stats'] += [r for r in rows if r['advertId']in wanted]
+   save(io,key,s)
    from china_morning_readiness import ensure
    ensure(io,s,day,key)
   return s

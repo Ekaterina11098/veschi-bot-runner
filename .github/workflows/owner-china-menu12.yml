@@ -1,4 +1,4 @@
-name: Diagnose exact311 analytics without model or delivery
+name: Deliver checked original311 growth report without model
 on:
   push:
     branches: [main]
@@ -54,21 +54,34 @@ jobs:
           PYTHONPATH: scripts:source
         run: |
           python - <<'PY'
-          import traceback
           from datetime import datetime,timezone
           from conversion_watches import runtime,saved_network_guard
-          from china_codex_runtime import Tools
-          from china_analytic_dialog import reading
-          w=runtime();job,=w.db('GET','business_agent_jobs',params=dict(id='eq.311',select='id,chat_id,sender_id,request_text'))
-          assert job['chat_id']==-1004342917488 and job['sender_id']==5122667182
-          key='china_agent:owner_retry311:2026-11-12:v1:typed_prepared'
-          job=dict(job,id='native-growth-311')
-          try:
-              with saved_network_guard(),reading():
-                  answer=Tools(w,job)('review_candidates',dict(directions=['add','raise']))
-              result=dict(status='prepared',result=answer,observed_at=datetime.now(timezone.utc).isoformat(),model_calls=0,wb_writes=0,telegram_calls=0)
-          except Exception as e:
-              result=dict(status='blocked',error_type=type(e).__name__,error=str(e),trace=traceback.format_exc()[-4500:],observed_at=datetime.now(timezone.utc).isoformat(),model_calls=0,wb_writes=0,telegram_calls=0)
-          w.save(key,result)
-          print(dict(status=result['status'],model_calls=0,wb_writes=0,telegram_calls=0))
+          from china_codex_ad_review import bind
+          from china_loss_control import digest
+          w=runtime();original,=w.db('GET','business_agent_jobs',params=dict(id='eq.311',select='id,chat_id,sender_id,request_text'))
+          assert original['chat_id']==-1004342917488 and original['sender_id']==5122667182
+          assert 'пришли готовый PNG' in original['request_text']
+          key='china_agent:owner_retry311:2026-11-12:v1:typed_delivery'
+          old=w.get(key)
+          if old and old.get('status')=='sent':
+              print(dict(status='already_sent',message_ids=old['message_ids']));raise SystemExit(0)
+          prepared=w.get('china_agent:owner_retry311:2026-11-12:v1:typed_prepared')
+          assert prepared['status']=='prepared' and prepared['model_calls']==0
+          answer=prepared['result']['answer'];artifact_id='native-growth-311'
+          frozen=w.get('china_agent:table_png:v1:'+artifact_id);assert frozen['status']=='frozen' and len(frozen['files'])==1
+          plan=w.get('china_agent:loss_plan:v1:dialog-menu-native-growth-311')
+          assert plan['plan_sha256']==digest(plan['items']) and len(plan['items'])==10
+          assert all(a['kind']=='ad_add_sku' and a['nm_id'] not in (1473242577,1473245494,1473245510) for a in plan['items'])
+          assert datetime.now(timezone.utc)<datetime.fromisoformat(plan['expires_at'])
+          w.active_question_id=artifact_id;w.reply_id=990;ids=[];keys=[]
+          with saved_network_guard():
+              for i,part in enumerate(frozen['parts']):
+                  receipt_key='menu_result:311:native_growth:'+str(i)
+                  assert w.send_once(receipt_key,original['chat_id'],part)=='sent'
+                  receipt=w.get('china_agent:conversion_watch_delivery:v1:'+receipt_key)
+                  assert receipt['status']=='sent' and receipt.get('message_id')
+                  ids.append(receipt['message_id']);keys.append('china_agent:conversion_watch_delivery:v1:'+receipt_key)
+              bind(w,artifact_id,ids,answer)
+          w.save(key,dict(status='sent',original_job_id=311,original_message_id=990,artifact_id=artifact_id,answer=answer,message_ids=ids,receipt_keys=keys,plan_id=plan['plan_id'],plan_sha256=plan['plan_sha256'],completed_at=datetime.now(timezone.utc).isoformat(),model_calls=0,wb_writes=0))
+          print(dict(status='sent',message_ids=ids,model_calls=0,wb_writes=0))
           PY

@@ -1,0 +1,163 @@
+name: Detach eleven owner-approved cards 20261112
+on:
+  push:
+    branches: ['audit/group-detach-readonly-20261112']
+    paths: ['.github/workflows/detach-eleven-approved-20261112.yml']
+permissions:
+  contents: read
+concurrency:
+  group: vesсhi-eleven-approved-card-detach-20261112
+  cancel-in-progress: false
+jobs:
+  detach:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 cryptography
+      - name: Detach only eleven approved cards and verify
+        shell: python
+        env:
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+        run: |
+          import os,json,time,gzip,secrets,base64,traceback,collections
+          from datetime import datetime,timezone
+          from urllib.parse import urlparse
+          import requests
+          from cryptography.hazmat.primitives import serialization,hashes
+          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+          TARGETS={"IP":[{"article":"296-ZariahBag-brown","nmID":348735580,"source":2997085761,"group":"Связка 6"},{"article":"9-FurPanama-lblue","nmID":493938325,"source":501368892,"group":"Панамы"}],"OOO":[{"article":"32-Zont-black","nmID":863551850,"source":970726360,"group":"Зонты 3"},{"article":"35-Zont-Iblue","nmID":863551853,"source":970726360,"group":"Зонты 3"},{"article":"36-Zont-blue","nmID":863551854,"source":970726360,"group":"Зонты 3"},{"article":"43-Zont-tiffany","nmID":863551859,"source":953303641,"group":"Зонты 1"},{"article":"45-Zont-blue","nmID":863551856,"source":953303641,"group":"Зонты 1"},{"article":"47-Zont-pink","nmID":863551862,"source":953303641,"group":"Зонты 1"},{"article":"543-AnikaBag-coffee","nmID":863207383,"source":3312489789,"group":"Связка 9"},{"article":"591-AllaBag-coffee","nmID":1138652467,"source":3312798918,"group":"Связка 6"}],"CN":[{"article":"400-CymeBag-brown","nmID":1473243932,"source":4014566306,"group":"Связка 10 Эко"}]}
+          PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAx9PR+d9KEzaPALBZKGjn\n11fPM3ys8sizyeONkF+2SrmH5QV+NlDXLdbShpmL8W6MlqfGpYzIlXHiDG2eImP9\n6ayqEuaIR7NLknDDe2aBfE2QEjNZmtXcqntqAkpZqWIeSQI8IPhYtdwliO3Ona2m\n9VqUUSqFAqetkLHtdahAYEoBr8p5SkSoE6lFpkgoNeoSqW93hRNEo3qqzDXomIqa\n+QVgGddHm447R4QGZdzC5xHpBkT3NIOfSJSmjYF8VJwPZBxwAXgtEZlldy8EDJqd\nUohN+iy++crNsIqHcZAQrOpfUspsSovF/Bl2eDSL/rH1wi3S4gm0D/mwBcBl4Un3\nzUp0hYgVndOUjWeuaroYYZCh/mXtIQ5A/px5eEGsDGMgSYhBdbdzynmoqGjm/hhh\nVPMoEfT/YV7YKAlbetC6mpA04PnzKj1NfXkV2EPc2LCwUUEKAirsJxHq8b2Dijao\nk7NXp3MRSLUSptCNEuWF3rmamPfYWm72vmEEDfudZ05jAgMBAAE=\n-----END PUBLIC KEY-----\n"
+          TOKENS={'IP':os.environ['WB_TOKEN_2'],'OOO':os.environ['WB_TOKEN_1'],'CN':os.environ['WB_TOKEN_3']}
+          HOSTS={'IP':'https://content-api.wildberries.ru','OOO':'https://content-api.wildberries.ru','CN':'https://content-api.wildberries.cn'}
+          REPORT={'authorizedCount':11,'before':{},'after':{},'requests':[],'changes':[],'verified':False}
+          def seal(tag,value):
+              key=secrets.token_bytes(32);nonce=secrets.token_bytes(12)
+              pub=serialization.load_pem_public_key(PUBLIC_KEY.encode())
+              raw=gzip.compress(json.dumps(value,ensure_ascii=False,default=str).encode())
+              wrapped=pub.encrypt(key,padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
+              b=lambda value:base64.b64encode(value).decode()
+              encoded=b(json.dumps({'key':b(wrapped),'nonce':b(nonce),'ciphertext':b(AESGCM(key).encrypt(nonce,raw,None))}).encode())
+              for i in range(0,len(encoded),20000): print(tag+' '+str(i//20000)+' '+encoded[i:i+20000],flush=True)
+          def read_page(cab,body):
+              for attempt in range(4):
+                  time.sleep(.8)
+                  try:
+                      r=requests.post(HOSTS[cab]+'/content/v2/get/cards/list',headers={'Authorization':TOKENS[cab]},json=body,timeout=60)
+                  except requests.RequestException:
+                      if attempt==3:raise RuntimeError('Catalog read network failure '+cab)
+                      time.sleep(2);continue
+                  if r.status_code==429:
+                      wait=int(float(r.headers.get('X-Ratelimit-Retry') or r.headers.get('Retry-After') or 65))+2
+                      if wait>180:raise RuntimeError('Catalog cooldown '+cab+' '+str(wait))
+                      time.sleep(wait);continue
+                  if not r.ok:raise RuntimeError('Catalog HTTP '+str(r.status_code)+' '+cab)
+                  data=r.json()
+                  if data.get('error'):raise RuntimeError('Catalog error '+cab)
+                  if not isinstance(data.get('cards'),list):data=data.get('data',{})
+                  assert isinstance(data.get('cards'),list) and isinstance(data.get('cursor'),dict),'Incomplete catalog'
+                  return data
+              raise RuntimeError('Catalog read retries exhausted '+cab)
+          def catalog(cab):
+              for attempt in range(3):
+                  cards=[];cursor={'limit':100};seen=set()
+                  for page in range(50):
+                      d=read_page(cab,{'settings':{'sort':{'ascending':True},'cursor':cursor,'filter':{'withPhoto':-1}}})
+                      cards.extend(d['cards'])
+                      if len(d['cards'])<100:break
+                      mark=(d['cursor'].get('updatedAt'),d['cursor'].get('nmID'))
+                      assert all(mark) and mark not in seen,'Unstable catalog cursor'
+                      seen.add(mark);cursor={'limit':100,'updatedAt':mark[0],'nmID':mark[1]}
+                  else:raise RuntimeError('Catalog pagination limit')
+                  if cards and len({c['nmID'] for c in cards})==len(cards):return cards
+                  time.sleep(3)
+              raise RuntimeError('Duplicate cards across catalog pages '+cab)
+          def detach(cab,nm):
+              assert nm in {t['nmID'] for t in TARGETS[cab]},'Unapproved card'
+              body={'nmIDs':[nm]}
+              assert set(body)=={'nmIDs'} and len(body['nmIDs'])==1
+              for attempt in range(4):
+                  time.sleep(.9)
+                  record={'cabinet':cab,'nmID':nm,'requestedAt':datetime.now(timezone.utc).isoformat(),'payload':body}
+                  REPORT['requests'].append(record)
+                  try:
+                      r=requests.post(HOSTS[cab]+'/content/v2/cards/moveNm',headers={'Authorization':TOKENS[cab]},json=body,timeout=60)
+                  except requests.RequestException:
+                      record['status']='network_outcome_unknown'
+                      return
+                  record['http']=r.status_code
+                  if r.status_code==429:
+                      record['status']='rate_limited'
+                      wait=int(float(r.headers.get('X-Ratelimit-Retry') or r.headers.get('Retry-After') or 65))+2
+                      if wait>180:raise RuntimeError('Write cooldown '+cab+' '+str(wait))
+                      time.sleep(wait);continue
+                  try:answer=r.json()
+                  except ValueError:
+                      record['status']='response_outcome_unknown';return
+                  record['response']=answer
+                  record['status']='accepted' if r.ok and not answer.get('error') else 'rejected'
+                  if record['status']=='rejected':raise RuntimeError('Detach rejected '+cab+' '+str(nm))
+                  return
+              raise RuntimeError('Write rate limit retries exhausted')
+          def canonical(card):
+              data={k:v for k,v in card.items() if k not in ('imtID','updatedAt','createdAt')}
+              data['characteristics']=sorted(data.get('characteristics',[]),key=lambda v:v.get('id',0))
+              data['sizes']=sorted(data.get('sizes',[]),key=lambda v:v.get('chrtID',0))
+              return data
+          try:
+              assert len({t for t in TOKENS.values()})==3 and all(TOKENS.values()),'Invalid cabinet credentials'
+              for cab,targets in TARGETS.items():
+                  cards=catalog(cab);REPORT['before'][cab]=cards
+                  index={c['nmID']:c for c in cards}
+                  for target in targets:
+                      c=index.get(target['nmID'])
+                      assert c and c['vendorCode'].casefold()==target['article'].casefold(),'Target identity changed '+cab
+                      size=sum(x['imtID']==c['imtID'] for x in cards)
+                      assert size==1 or c['imtID']==target['source'],'Target moved to unexpected group '+cab+' '+target['article']
+                      target['beforeIMT']=c['imtID'];target['beforeSize']=size
+                  print('DETACH_PREFLIGHT_OK '+cab,flush=True)
+              REPORT['plan']=TARGETS
+              seal('VESCHI_DETACH_BACKUP',{'before':REPORT['before'],'plan':TARGETS})
+              for cab,targets in TARGETS.items():
+                  before=REPORT['before'][cab];before_index={c['nmID']:c for c in before}
+                  ids={t['nmID'] for t in targets}
+                  for target in targets:
+                      if target['beforeSize']>1:detach(cab,target['nmID'])
+                  after=None
+                  for attempt in range(18):
+                      time.sleep(8)
+                      after=catalog(cab);REPORT['after'][cab]=after
+                      index={c['nmID']:c for c in after}
+                      if all(t['nmID'] in index and sum(c['imtID']==index[t['nmID']]['imtID'] for c in after)==1 for t in targets):break
+                  else:raise RuntimeError('Singleton verification did not complete '+cab)
+                  assert set(before_index).issubset(index),'Cards missing after detachment '+cab
+                  for old in before:
+                      now=index[old['nmID']]
+                      if old['nmID'] not in ids:
+                          assert old['imtID']==now['imtID'],'Unapproved group membership changed '+cab
+                  for old_imt in {t['beforeIMT'] for t in targets if t['beforeSize']>1}:
+                      remaining={c['nmID'] for c in before if c['imtID']==old_imt}-ids
+                      actual={c['nmID'] for c in after if c['imtID']==old_imt}
+                      assert actual==remaining,'Remaining group composition changed '+cab
+                  for t in targets:
+                      old=before_index[t['nmID']];now=index[t['nmID']]
+                      equal=canonical(old)==canonical(now)
+                      diff=[k for k in set(canonical(old))|set(canonical(now)) if canonical(old).get(k)!=canonical(now).get(k)]
+                      change={'cabinet':cab,'article':now['vendorCode'],'nmID':t['nmID'],'sourceGroup':t['group'],'beforeIMT':old['imtID'],'afterIMT':now['imtID'],'beforeSize':t['beforeSize'],'afterSize':1,'contentEqual':equal,'differentFields':diff,'checkedAt':datetime.now(timezone.utc).isoformat(),'status':'detached' if t['beforeSize']>1 else 'already_single'}
+                      REPORT['changes'].append(change)
+                      assert equal,'Target content differs '+cab+' '+t['article']
+                  print('DETACH_VERIFIED '+cab+' '+str(len(targets)),flush=True)
+              REPORT['verified']=len(REPORT['changes'])==11
+          except Exception as exc:
+              REPORT['error']={'type':type(exc).__name__,'message':str(exc),'trace':traceback.format_exc()}
+          finally:
+              REPORT['finishedAt']=datetime.now(timezone.utc).isoformat()
+              seal('VESCHI_DETACH_RESULT',REPORT)
+              print('DETACH_FINISHED',flush=True)
+          

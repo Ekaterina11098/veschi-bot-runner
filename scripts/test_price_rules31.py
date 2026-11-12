@@ -15,6 +15,16 @@ CAT=dict(cabinet='token_3',rows=[dict(vendorCode='143-ReginaBag-black',nmID=1473
 def review(days=1):
  return dict(report_date=str(DAY),status='complete_disclosed_forecast_model',model_version='wb_profit_floor_price_hypothesis_v4',products=[dict(article='143-ReginaBag-black',before_price=450.5,after_price=495.55,full_days=days,buyout_fallback=False,buyout_sample=94,result=dict(status='rollback_review',early_review_criteria_met=True),economic_target=dict(basis='profit_floor_demand_hypothesis',status='recommended',price_cny=450.5,base_cny=901,discount=50,expected_profit_advantage_per_day=100))])
 class PriceRules(unittest.TestCase):
+ def test_small_own_sample_keeps_actual_rate_after_four_full_days(self):
+  r=review(4);r['products'][0]['buyout_sample']=2
+  self.assertEqual(len(brief.lowering(r,DAY,CAT)),1)
+ def test_explicit_approved_plan_can_support_four_day_economic_scenario(self):
+  r=review(4);r['products'][0].update(buyout_sample=0,buyout_fallback=True,buyout_source='approved_plan')
+  self.assertEqual(len(brief.lowering(r,DAY,CAT)),1)
+ def test_unapproved_fallback_cannot_create_price_action(self):
+  r=review(4);r['products'][0].update(buyout_sample=0,buyout_fallback=True,buyout_source='fallback')
+  self.assertEqual(brief.lowering(r,DAY,CAT),[])
+
  def test_telegram_keeps_exact_compact_proposal(self):
   import sys, types
   from unittest.mock import patch

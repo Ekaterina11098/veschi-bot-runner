@@ -1,3 +1,4 @@
+from moysklad_warehouses import select_store
 """Current MoySklad stock split for an all-source zero-order report."""
 import math,os
 from datetime import datetime,timezone
@@ -14,7 +15,7 @@ def collect_stock(w):
   return r.json()
  stores=get('/entity/store',{'limit':1000})
  if stores.get('meta',{}).get('size',1001)>len(stores.get('rows',[])):raise ValueError('Store pagination incomplete')
- selected=[s for s in stores.get('rows',[]) if s.get('name')=='МСК' and not s.get('archived')]
+ selected=[select_store(stores.get('rows',[]))]
  if len(selected)!=1:raise ValueError('Warehouse identity ambiguous')
  rows=[];offset=0
  while True:

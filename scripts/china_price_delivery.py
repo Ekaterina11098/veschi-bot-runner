@@ -47,6 +47,14 @@ def deliver(w):
     else:
         parts=[dict(method='sendMessage',text=answer)]
     if not prepared:
+        for index,part in enumerate(parts):
+            if 'b64' not in part:continue
+            image_key=root+':image:'+str(index)+':'+part['sha256'][:16]
+            image=dict(b64=part['b64'],sha256=part['sha256'])
+            old_image=c.get(image_key)
+            if old_image and old_image!=image:raise RuntimeError('Frozen price image identity changed')
+            if not old_image and not c.create(image_key,image):raise RuntimeError('Frozen price image claimed')
+            part['image_key']=image_key;part.pop('b64')
         prepared=dict(status='prepared',answer_sha256=scope,answer=answer,parts=parts,selection_count=len(offers),expires_at=datetime.combine(w.day+timedelta(days=1),datetime.min.time(),w.now.tzinfo).isoformat(),execution_authorized=False,wb_writes=0)
         from china_price_buttons import prepare as prepare_buttons
         markup,registry=prepare_buttons(answer,offers,w.job['id'],day,prepared['expires_at'])
@@ -83,10 +91,13 @@ def deliver(w):
                 body=dict(chat_id=w.chat);files=None
                 if prepared.get('reply_markup'):body['reply_markup']=json.dumps(prepared['reply_markup'],ensure_ascii=False)
                 if part['method']=='sendPhoto':
-                    data=base64.b64decode(part['b64'],validate=True)
+                    picture=c.get(part['image_key']) if part.get('image_key') else part
+                    if not picture or picture.get('sha256')!=part['sha256']:raise RuntimeError('Frozen image receipt missing')
+                    data=base64.b64decode(picture['b64'],validate=True)
                     if hashlib.sha256(data).hexdigest()!=part['sha256']:raise RuntimeError('Price PNG changed')
                     body['caption']='Китай · цены · '+w.day.strftime('%d.%m.%Y')+'. Подтвердите кнопкой под отчётом или ответом «Сделай всё». Новая цена покупателя — прогноз.'
                     if mode=='control':body['caption']='Китай · результаты изменений цен · '+w.day.strftime('%d.%m.%Y')+'. Завершённые дни МСК. Прибыль — условный прогноз.'
+                    if len(parts)>1:body['caption']+=' Часть '+str(i+1)+'/'+str(len(parts))+'.'
                     files={'photo':('prices.png',data,'image/png')}
                 else:
                     body['text']=part['text']

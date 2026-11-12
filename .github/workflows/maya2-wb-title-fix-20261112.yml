@@ -1,0 +1,93 @@
+name: MAYA 2 correct WB China titles
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/maya2-wb-title-fix-20261112.yml']
+permissions: {}
+concurrency:
+  group: maya2-wb-title-fix-20261112
+  cancel-in-progress: false
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Correct only authorized product titles
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import os,json,gzip,time,datetime,urllib.request,urllib.parse,urllib.error,re
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*a,**k): raise RuntimeError('Unexpected redirect')
+          opener=urllib.request.build_opener(NoRedirect)
+          sb=os.environ['SUPABASE_URL'].rstrip('/');host='https://content-api.wildberries.cn';ms='https://api.moysklad.ru/api/remap/1.2/'
+          sh={'apikey':os.environ['SUPABASE_SECRET_KEY'],'Authorization':'Bearer '+os.environ['SUPABASE_SECRET_KEY'],'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}
+          wh={'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json','Accept-Encoding':'gzip'}
+          mh={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN'],'Content-Type':'application/json','Accept-Encoding':'gzip'}
+          def call(url,headers,body=None,method=None):
+           try:
+            req=urllib.request.Request(url,headers=headers,data=None if body is None else json.dumps(body,ensure_ascii=False).encode(),method=method)
+            with opener.open(req,timeout=60) as r:
+             raw=r.read()
+             if r.headers.get('Content-Encoding')=='gzip':raw=gzip.decompress(raw)
+             return json.loads(raw) if raw else None
+           except urllib.error.HTTPError as e:
+            raw=e.read()
+            if e.headers.get('Content-Encoding')=='gzip':raw=gzip.decompress(raw)
+            raise RuntimeError('HTTP '+str(e.code)+': '+raw.decode('utf-8','replace')[:6000]) from None
+          def get(key):
+           rows=call(sb+'/rest/v1/telegram_api_cache?'+urllib.parse.urlencode({'cache_key':'eq.'+key,'select':'payload'}),sh)
+           return rows[0]['payload'] if rows else None
+          def save(key,payload):
+           call(sb+'/rest/v1/telegram_api_cache?on_conflict=cache_key',sh,{'cache_key':key,'payload':payload,'updated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'expires_at':'2099-01-01T00:00:00Z'})
+          def cards(trash=False):
+           cur={'limit':100};out=[]
+           for _ in range(30):
+            page=call(host+('/content/v2/get/cards/trash' if trash else '/content/v2/get/cards/list'),wh,{'settings':{'sort':{'ascending':True},'cursor':cur,'filter':{'withPhoto':-1}}})
+            out.extend(page.get('cards',[]));c=page.get('cursor',{})
+            if c.get('total',0)<100:return out
+            cur={k:c[k] for k in (('trashedAt','nmID') if trash else ('updatedAt','nmID'))};cur['limit']=100;time.sleep(.7)
+           raise RuntimeError('Incomplete card pagination')
+          request=get('maya2:title_fix_request:20261112');assert request['status']=='approved' and request['scope']=='titles_only' and len(request['products'])==21
+          wanted={p['article']:p['title'] for p in request['products']}
+          original=get('maya2:wb_create:20261112');assert original['status']=='complete'
+          ids={p['vendorCode']:p['nmID'] for p in original['products']}
+          live=cards();before={p['vendorCode']:p for p in live if p.get('vendorCode') in wanted}
+          assert len(before)==21 and all(before[a]['nmID']==ids[a] for a in wanted)
+          state={'status':'prepared','before':before,'wanted':wanted,'verified_count':0,'run_id':os.environ['GITHUB_RUN_ID']}
+          key='maya2:title_fix_result:20261112';save(key,state)
+          try:
+           payload=[]
+           for a,title in wanted.items():
+            p=before[a]
+            assert len(title)<=60 and 'женск' not in title.casefold()
+            q={k:p[k] for k in ('nmID','vendorCode','brand','description','characteristics','sizes') if k in p}
+            q['title']=title
+            if any(p.get('dimensions',{}).get(k,0) for k in ('width','height','length','weightBrutto')):q['dimensions']={k:p['dimensions'][k] for k in ('width','height','length','weightBrutto')}
+            for k in ('gtin','kizMarked','wholesale'):
+             if k in p:q[k]=p[k]
+            assert q['vendorCode']==a and q['nmID']==ids[a];payload.append(q)
+           assert get('maya2:title_fix_request:20261112')['status']=='approved'
+           state['status']='updating';save(key,state)
+           result=call(host+'/content/v2/cards/update',wh,payload);state['response']=result;save(key,state)
+           assert not result.get('error'),json.dumps(result,ensure_ascii=False)
+           for attempt in range(24):
+            now={p['vendorCode']:p for p in cards() if p.get('vendorCode') in wanted}
+            assert len(now)==21
+            matched=[a for a,t in wanted.items() if now[a].get('title')==t]
+            state['verified_count']=len(matched);state['titles']=[{'article':a,'nmID':now[a]['nmID'],'title':now[a]['title']} for a in wanted]
+            save(key,state)
+            if len(matched)==21:
+             for a in wanted:
+              for k in ('vendorCode','brand','description','sizes','dimensions','photos','imtID','needKiz','kizMarked'):
+               assert before[a].get(k)==now[a].get(k),'Unexpected change: '+a+' '+k
+              assert sorted(before[a].get('characteristics',[]),key=lambda x:x['id'])==sorted(now[a].get('characteristics',[]),key=lambda x:x['id'])
+             state['status']='complete';save(key,state);print('21 titles corrected. Articles, barcodes, descriptions and characteristics preserved.');break
+            state['status']='awaiting_sync';save(key,state);time.sleep(15)
+           else:raise RuntimeError('Title verification pending')
+          except Exception as e:
+           state['status']='stopped';state['error']=str(e);save(key,state);raise RuntimeError('Stopped; private diagnostic saved') from None

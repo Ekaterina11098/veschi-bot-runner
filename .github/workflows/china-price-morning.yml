@@ -146,7 +146,8 @@ jobs:
           from zoneinfo import ZoneInfo
           request=json.load(open('../china-price-morning-request.json'))
           early=request.get('send_now') is True and request.get('owner_id')==5122667182 and request.get('report_date')==str(datetime.now(ZoneInfo('Europe/Moscow')).date())
-          sys.argv=['morning_pair']+(['--send-now']if early else[])
+          correction=early and request.get('correct_candidates') is True
+          sys.argv=['morning_pair']+(['--send-now']if early else[])+(['--correct-candidates']if correction else[])
           from china_agent.morning_pair import main
           main()
           PY

@@ -1,0 +1,126 @@
+name: MAYA 2 create WB China cards
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/maya2-wb-create-20261112.yml']
+permissions: {}
+concurrency:
+  group: maya2-wb-create-20261112
+  cancel-in-progress: false
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Create authorized cards and sync barcodes
+        env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import os,json,gzip,time,datetime,urllib.request,urllib.parse,urllib.error,re
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*a,**k): raise RuntimeError('Unexpected redirect')
+          opener=urllib.request.build_opener(NoRedirect)
+          sb=os.environ['SUPABASE_URL'].rstrip('/');host='https://content-api.wildberries.cn';ms='https://api.moysklad.ru/api/remap/1.2/'
+          sh={'apikey':os.environ['SUPABASE_SECRET_KEY'],'Authorization':'Bearer '+os.environ['SUPABASE_SECRET_KEY'],'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}
+          wh={'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json','Accept-Encoding':'gzip'}
+          mh={'Authorization':'Bearer '+os.environ['MOYSKLAD_API_TOKEN'],'Content-Type':'application/json','Accept-Encoding':'gzip'}
+          def call(url,headers,body=None,method=None):
+           try:
+            req=urllib.request.Request(url,headers=headers,data=None if body is None else json.dumps(body,ensure_ascii=False).encode(),method=method)
+            with opener.open(req,timeout=60) as r:
+             raw=r.read()
+             if r.headers.get('Content-Encoding')=='gzip':raw=gzip.decompress(raw)
+             return json.loads(raw) if raw else None
+           except urllib.error.HTTPError as e:
+            raw=e.read()
+            if e.headers.get('Content-Encoding')=='gzip':raw=gzip.decompress(raw)
+            raise RuntimeError('HTTP '+str(e.code)+': '+raw.decode('utf-8','replace')[:6000]) from None
+          def get(key):
+           rows=call(sb+'/rest/v1/telegram_api_cache?'+urllib.parse.urlencode({'cache_key':'eq.'+key,'select':'payload'}),sh)
+           return rows[0]['payload'] if rows else None
+          def save(key,payload):
+           call(sb+'/rest/v1/telegram_api_cache?on_conflict=cache_key',sh,{'cache_key':key,'payload':payload,'updated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'expires_at':'2099-01-01T00:00:00Z'})
+          def cards(trash=False):
+           cur={'limit':100};out=[]
+           for _ in range(30):
+            page=call(host+('/content/v2/get/cards/trash' if trash else '/content/v2/get/cards/list'),wh,{'settings':{'sort':{'ascending':True},'cursor':cur,'filter':{'withPhoto':-1}}})
+            out.extend(page.get('cards',[]));c=page.get('cursor',{})
+            if c.get('total',0)<100:return out
+            cur={k:c[k] for k in (('trashedAt','nmID') if trash else ('updatedAt','nmID'))};cur['limit']=100;time.sleep(.7)
+           raise RuntimeError('Incomplete card pagination')
+          key='maya2:wb_create:20261112';request=get('maya2:corrected_request:20261112')
+          assert request['status']=='approved' and len(request['products'])==21
+          items=request['products'];articles={p['article'] for p in items};numbers={int(p['number']) for p in items}
+          assert len(articles)==21 and request['no_prices'] and request['no_stock']
+          state=get(key) or {'status':'preflight','products':[],'run_id':os.environ['GITHUB_RUN_ID'],'barcodes':{},'submitted':False}
+          def guard():assert get('maya2:corrected_request:20261112')['status']=='approved','Owner stopped processing'
+          try:
+           live=cards();trash=cards(True)
+           for c in live+trash:
+            a=c.get('vendorCode','');m=re.match(r'^(\d+)[-_]',a)
+            if m and int(m[1]) in numbers:assert a in articles,'Number occupied by another article: '+a
+           assert not any(c.get('vendorCode') in articles for c in trash),'Requested card is in trash'
+           existing={c['vendorCode']:c for c in live if c.get('vendorCode') in articles}
+           assert len(existing)==len([c for c in live if c.get('vendorCode') in articles]),'Duplicate article in WB'
+           schema=call(host+'/content/v2/object/charcs/50?locale=ru',wh)['data'];cm={c['name']:c for c in schema}
+           allowed={c['name'] for c in call(host+'/content/v2/directory/colors?locale=ru',wh)['data']}
+           colors={'ebony':'эбеновое дерево','black':'черный','darkred':'темно-красный','coffee':'кофейный','green':'зеленый'}
+           assert set(colors.values())<=allowed
+           named={'Цвет','Состав','Пол','Высота предмета','Глубина предмета','Ширина предмета'}
+           assert all(k in cm for k in named)
+           assert not [c['name'] for c in schema if c['required'] and not c['existNamedField'] and c['name'] not in named],'Unexpected required characteristic'
+           missing=[p for p in items if p['article'] not in existing]
+           if missing and not state['submitted']:
+            limits=call(host+'/content/v2/cards/limits',wh)['data'];assert limits['freeLimits']+limits['paidLimits']-len(live)-len(trash)>=len(missing),'Not enough available card slots'
+            unallocated=[p for p in missing if p['article'] not in state['barcodes']]
+            if unallocated:
+             guard();gen=call(host+'/content/v2/barcodes',wh,{'count':len(unallocated)})
+             assert not gen.get('error') and len(gen['data'])==len(unallocated)
+             for p,b in zip(unallocated,gen['data']):state['barcodes'][p['article']]=str(b)
+             state['status']='barcodes_reserved';save(key,state)
+            payload=[]
+            for p in missing:
+             col=colors[p['color_en']]
+             title='Сумка женская из натуральной кожи '+p['model']
+             desc='Женская сумка '+p['model']+' из натуральной кожи. Цвет: '+col+'. Размеры сумки: ширина '+str(int(p['length_cm']))+' см, глубина '+str(int(p['width_cm']))+' см, высота '+str(int(p['height_cm']))+' см. '
+             if p['supplier_model']=='9289':desc+='Ширина верхнего края — 30 см. '
+             desc+='Для повседневных образов, прогулок и встреч. Кожаная сумка дополнит городской гардероб. Размеры указаны для самого изделия.'
+             vals={'Цвет':[col],'Состав':['натуральная кожа'],'Пол':['Женский'],'Высота предмета':p['height_cm'],'Глубина предмета':p['width_cm'],'Ширина предмета':p['length_cm']}
+             chars=[{'id':cm[n]['charcID'],'value':v} for n,v in vals.items()]
+             card={'vendorCode':p['article'],'title':title,'description':desc,'brand':'','characteristics':chars,'sizes':[{'skus':[state['barcodes'][p['article']]]}]}
+             assert len(title)<=60 and 'dimensions' not in card and 'price' not in card['sizes'][0]
+             payload.append({'subjectID':50,'variants':[card]})
+            state['payload']=payload;state['submitted']=True;state['status']='submission_started';guard();save(key,state)
+            response=call(host+'/content/v2/cards/upload',wh,payload);state['response']=response
+            assert not response.get('error'),json.dumps(response,ensure_ascii=False)
+            state['status']='awaiting_creation';save(key,state)
+           for attempt in range(12):
+            guard();live=cards();found=[c for c in live if c.get('vendorCode') in articles]
+            state['products']=[{k:c.get(k) for k in ('nmID','imtID','vendorCode','sizes','title','description','characteristics','dimensions','photos','needKiz','kizMarked')} for c in found]
+            state['found_count']=len(found);save(key,state)
+            if len(found)==21:break
+            errors=call(host+'/content/v2/cards/error/list',wh,{'cursor':{'limit':100},'order':{'ascending':False}})
+            state['creation_errors']=errors;save(key,state);time.sleep(20)
+           else:state['status']='awaiting_creation';save(key,state);raise RuntimeError('Not all cards visible yet; do not resubmit')
+           assert len({c['nmID'] for c in found})==21 and len({c['imtID'] for c in found})==21,'Cards unexpectedly merged'
+           ms_created=get('maya2:corrected_result:20261112');assert ms_created['status']=='complete'
+           by_article={p['article']:p for p in ms_created['products']};state['ms_sync']=[]
+           for p in items:
+            guard();card=next(c for c in found if c['vendorCode']==p['article']);skus=[str(b) for size in card['sizes'] for b in size.get('skus',[])]
+            assert len(skus)==1
+            if p['article'] in state['barcodes']:assert skus[0]==state['barcodes'][p['article']]
+            product=call(ms+'entity/product/'+by_article[p['article']]['id'],mh);assert product['article']==p['article']
+            old=product.get('barcodes',[]);bc=skus[0]
+            new=old if any(bc in b.values() for b in old) else old+[{'code128':bc}]
+            if new!=old:product=call(ms+'entity/product/'+product['id'],mh,{'barcodes':new},'PUT')
+            verified=call(ms+'entity/product/'+product['id'],mh);attrs={a['name']:a.get('value') for a in verified.get('attributes',[])}
+            assert verified.get('barcodes')==new and attrs.get('Цвет')==p['color_ru']
+            state['ms_sync'].append({'article':p['article'],'id':product['id'],'barcode':bc,'barcodes':new,'verified':True});save(key,state)
+           state['status']='complete';save(key,state);print('21 separate WB China cards and MS barcode links verified; no price, stock or receipt writes.')
+          except Exception as e:
+           state['error']=str(e);state['status']='awaiting_creation' if state.get('status')=='awaiting_creation' else 'stopped';save(key,state);raise RuntimeError('Stopped; detailed state saved privately') from None
+          

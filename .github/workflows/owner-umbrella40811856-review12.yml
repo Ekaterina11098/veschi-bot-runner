@@ -1,8 +1,5 @@
 name: Owner umbrella40811856 economics read12Nov
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-umbrella40811856-review12.yml']
   workflow_dispatch:
 permissions:
   contents: read

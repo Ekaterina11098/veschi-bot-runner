@@ -1,4 +1,4 @@
-import hashlib,sys,types,unittest
+import hashlib,sys,types,unittest,json
 from datetime import date,datetime,timezone
 from unittest.mock import patch
 from china_price_delivery import deliver,rows
@@ -27,7 +27,7 @@ class Delivery(unittest.TestCase):
         w.original_http=http
         modules={'requests':types.SimpleNamespace(Session=lambda:None),
                  'china_cloud_cost_control':types.SimpleNamespace(Cache=Cache,stamp=lambda:'2026-11-09T16:00:00Z'),
-                 'china_table_png':types.SimpleNamespace(render=lambda *a,**kw:[b'PNG']),
+                 'china_table_png':types.SimpleNamespace(render=lambda *a,**kw:[b'PNG'],blocks=lambda answer:[('table',(['Артикул'],[['Товар']]))]),
                  'china_price_current_check':types.SimpleNamespace(check=lambda w,a:a),
                  'china_agent':types.ModuleType('china_agent'),
                  'china_agent.price_brief':types.SimpleNamespace(plain_payload=lambda *a:{})}
@@ -61,6 +61,15 @@ class Delivery(unittest.TestCase):
         body=next(b for method,b in w.transport_bodies if method=='sendMessage')
         self.assertEqual(json.loads(body['reply_markup']),{'inline_keyboard':[[{'text':'‹ Главное меню','callback_data':'cmn1:home'}]]})
         self.assertFalse(any(k.startswith('china_agent:price_buttons:v1:')for k in db))
+    def test_control_png_uses_separate_root_and_menu_only(self):
+        w=self.worker(0);w.mode='control';w.job['answer']='Checked control table'
+        db,calls=self.run_delivery(w)
+        self.assertEqual(calls,['getMe','sendPhoto'])
+        self.assertIn('china_agent:price_delivery:v2:2026-11-09:control',db)
+        self.assertNotIn('china_agent:price_delivery:v2:2026-11-09:morning',db)
+        body=next(b for method,b in w.transport_bodies if method=='sendPhoto')
+        self.assertIn('результаты изменений цен',body['caption'])
+        self.assertEqual(json.loads(body['reply_markup'])['inline_keyboard'][0][0]['callback_data'],'cmn1:home')
     def test_two_line_rows_preserve_buyer(self):
         w=self.worker(1)
         self.assertEqual(rows(w.job['answer'])[0],['Повышение','0-Bag-black','100 → 105 ¥','1000 → 1050 ₽'])

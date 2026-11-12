@@ -1,0 +1,48 @@
+name: Owner bind MoySklad warehouse IDs 20261112
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-ms-warehouse-ids12.yml']
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: owner-ms-warehouse-ids12
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read exact store identities only and save private evidence
+        env:
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: python
+        run: |
+          import os,json,gzip,urllib.request,datetime
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+           def redirect_request(self,*args,**kwargs):raise ValueError("Redirect forbidden")
+          opener=urllib.request.build_opener(NoRedirect)
+          sh={"apikey":os.environ["SUPABASE_SECRET_KEY"],"Authorization":"Bearer "+os.environ["SUPABASE_SECRET_KEY"],"Content-Type":"application/json"}
+          root=os.environ["SUPABASE_URL"].rstrip("/")+"/rest/v1/telegram_api_cache"
+          key="china_agent:moysklad_warehouse_identity:2026-11-12:v1"
+          def call(url,headers,method="GET",body=None):
+           req=urllib.request.Request(url,headers=headers,method=method,data=None if body is None else json.dumps(body).encode())
+           with opener.open(req,timeout=45) as r:
+            raw=r.read()
+            return json.loads(gzip.decompress(raw) if r.headers.get("Content-Encoding")=="gzip" else raw) if raw else None
+          if call(root+"?cache_key=eq."+key+"&select=cache_key",sh):
+           print("Already collected; no repeated API call");raise SystemExit()
+          headers={"Authorization":"Bearer "+os.environ["MOYSKLAD_API_TOKEN"],"Accept-Encoding":"gzip"}
+          data=call("https://api.moysklad.ru/api/remap/1.2/entity/store?limit=1000",headers)
+          assert data["meta"]["size"]==len(data["rows"]) and len(data["rows"])<=1000
+          rows=[{k:s.get(k) for k in ("id","name","archived","accountId","meta")} for s in data["rows"]]
+          assert len([s for s in rows if s["name"]=="МСК" and not s["archived"]])==1
+          assert len([s for s in rows if s["name"]=="Гуанджоу" and not s["archived"]])==1
+          at=datetime.datetime.now(datetime.timezone.utc).isoformat()
+          payload=dict(status="verified",observed_at=at,rows=rows,moysklad_reads=1,moysklad_writes=0,wb_calls=0,telegram_calls=0,run_id=os.environ["GITHUB_RUN_ID"])
+          sh["Prefer"]="resolution=ignore-duplicates,return=minimal"
+          call(root+"?on_conflict=cache_key",sh,"POST",dict(cache_key=key,payload=payload,updated_at=at,expires_at="2036-11-12T00:00:00Z"))
+          print("Store identity evidence saved privately; no marketplace or Telegram operations")

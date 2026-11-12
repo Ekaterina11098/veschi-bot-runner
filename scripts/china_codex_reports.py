@@ -136,6 +136,15 @@ def review_price(worker,draft,trace,force=False,core=None):
   value=getattr(worker,'control_value',None)or{}
   if value.get('model_version')!='wb_profit_floor_price_hypothesis_v4' or value.get('report_date')!=str(worker.day):raise ValueError('Control report canonical scope missing')
   return draft,list(trace)+[dict(name='china_control_canonical_report',model_calls=0,read_only=True)]
+ from china_no_paid import require_paid_api
+ try:require_paid_api(worker.get('china_agent:codex_cloud:v1:policy')or{})
+ except PermissionError:
+  if not any(e.get('name')=='china_price_daily_report' and e.get('status')=='complete_orders' for e in trace):raise ValueError('Completed deterministic price inputs missing')
+  review=getattr(worker,'price_control_review',None)or{}
+  if review.get('status')!='complete_disclosed_forecast_model':raise ValueError('Full price reduction review incomplete')
+  from china_price_current_check import check as check_current
+  answer=check_current(worker,draft)
+  return answer,list(trace)+[dict(name='china_price_rules_review',model_calls=0,read_only=True,source='completed deterministic rules and current price/MSK/WB checks')]
  if core is None and not force and (worker.get(POLICY)or{}).get('status')!='active':return draft,trace
  core=core or Core()
  if not force and not active(core.db):return draft,trace

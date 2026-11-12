@@ -1,8 +1,5 @@
 name: Owner add only637 at agreed bid
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-china-add637.yml']
   workflow_dispatch:
 permissions:
   contents: read

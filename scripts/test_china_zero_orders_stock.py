@@ -32,7 +32,7 @@ class StockTransportTests(unittest.TestCase):
   def get(url,params,headers,timeout):
    calls.append((url,params))
    if headers.get('Accept-Encoding')!='gzip':raise ValueError('MoySklad HTTP 406')
-   if url.endswith('/entity/store'):return R(dict(meta=dict(size=1),rows=[dict(name='МСК',id='warehouse',meta=dict(href='store-url'))]))
+   if url.endswith('/entity/store'):return R(dict(meta=dict(size=1),rows=[dict(name='Renamed MSK',id='3c67619d-f25d-11ee-0a80-0c6f000a027a',meta=dict(href='https://api.moysklad.ru/api/remap/1.2/entity/store/3c67619d-f25d-11ee-0a80-0c6f000a027a'))]))
    return R(dict(meta=dict(size=1),rows=[dict(article='test',stock=2,reserve=1)]))
   with patch.dict(os.environ,{'MOYSKLAD_API_TOKEN':'synthetic'}),patch.dict(sys.modules,{'requests':SimpleNamespace(get=get)}):
    result=collect_stock(W())

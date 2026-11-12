@@ -1,15 +1,18 @@
-name: Remove owner-rejected price report messages
+name: Owner scoped reserve diagnosis 637
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-china-menu12.yml']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: china-owner-menu12
+  group: owner-reserve637-read
   cancel-in-progress: false
 jobs:
-  cleanup:
+  read:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,22 +28,16 @@ jobs:
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
         run: |
           PYTHONPATH=scripts python - <<'PY'
+          from datetime import datetime,timezone
           from china_advertising_state import AdvertisingIO
-          io=AdvertisingIO();chat=-1004342917488;root='china_agent:owner_remove_price_reports:2026-11-12:v1'
-          assert io.tg('getMe',{})['id']==8780468043
-          targets=[('morning',0,967),('morning-corrected',0,968)]+[('control',i,969+i) for i in range(19)]
-          for mode,part,mid in targets:
-              source='china_agent:price_delivery:v2:2026-11-12:'+mode+':part:'+str(part)
-              sent=io.get(source);receipt=sent['receipt']
-              assert sent['status']=='sent' and sent['message_id']==mid
-              assert receipt['chat']['id']==chat and receipt['from']['id']==8780468043
-              key=root+':'+str(mid);old=io.get(key)
-              if old:
-                  assert old['status']=='deleted'
-                  continue
-              assert io.create(key,dict(status='deleting',message_id=mid,source_receipt=source,owner_id=5122667182,wb_writes=0))
-              result=io.tg('deleteMessage',dict(chat_id=chat,message_id=mid))
-              assert result is True
-              io.put(key,dict(status='deleted',message_id=mid,source_receipt=source,telegram_result=result,owner_id=5122667182,wb_writes=0))
-          print(dict(status='deleted',messages=[x[2] for x in targets],wb_writes=0,model_calls=0))
+          from china_advertising_v2 import http
+          io=AdvertisingIO();key='china_agent:owner_reserve637:2026-11-12:v1:current'
+          if not io.get(key):
+              budget=http(io,'/api/advert/v2/budget','POST',dict(advertIds=[41298169]))
+              adverts=http(io,'/api/advert/v2/adverts?ids=41298169')['adverts']
+              assert len(adverts)==1 and adverts[0]['id']==41298169
+              v=dict(observed_at=datetime.now(timezone.utc).isoformat(),campaign_id=41298169,budget=budget,sku_present=any(n['nm_id']==1473242577 for n in adverts[0]['nm_settings']),campaign_status=adverts[0]['status'],required_cny=1392.34,wb_writes=0,telegram_calls=0,model_calls=0)
+              assert io.create(key,v)
+              assert io.get(key)==v
+          print(dict(status='saved',wb_writes=0,telegram_calls=0,model_calls=0))
           PY

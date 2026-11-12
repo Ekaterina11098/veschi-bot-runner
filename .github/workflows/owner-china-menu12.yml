@@ -1,21 +1,26 @@
-name: Bind checked original311 selection controls without resending
+name: Recover owner requested compact1030 price candidates12Nov
 on:
+  push:
+    branches: [main]
+    paths: ['scripts/owner_price1030_recovery_20261112.py']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: china-dialog-queue
-  cancel-in-progress: true
+  group: china-price-reports
+  cancel-in-progress: false
 jobs:
-  diagnose:
+  recover:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 18
+    concurrency:
+      group: china-price-report-data
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           fetch-depth: 1
-          filter: blob:none
           sparse-checkout: scripts
       - uses: actions/checkout@v4
         with:
@@ -24,8 +29,6 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN }}
           path: source
           persist-credentials: false
-          fetch-depth: 1
-          filter: blob:none
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /analytics/
@@ -35,50 +38,38 @@ jobs:
             /*.py
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install requests==2.32.5 Pillow==12.3.0 openai==3.42.1
-      - run: |
-          python scripts/install_china_dialog.py
-          python scripts/install_china_buyout.py --root source
-          python scripts/china_chat_migration.py
-      - env:
+      - run: pip install requests==2.32.5 python-dotenv aiogram apscheduler pillow simplejson==4.2.0 openai==3.42.1
+      - name: Install existing deterministic price pipeline
+        working-directory: source
+        env:
+          PYTHONPATH: ../scripts:.
+        run: |
+          python ../scripts/china_chat_migration.py --root .
+          python ../scripts/install_china_codex_price.py --root .
+          python ../scripts/install_china_order_coverage.py
+          python ../scripts/install_china_buyout.py
+          cp ../scripts/china_wb_order_gaps.py china_agent/wb_order_gaps.py
+          cp ../scripts/china_coverage_worker.py china_agent/coverage_worker.py
+          cp ../scripts/china_price_brief.py china_agent/price_brief.py
+          cp ../scripts/china_buyer_price_forecast.py china_agent/buyer_price_forecast.py
+          cp ../scripts/china_morning_pair.py china_agent/morning_pair.py
+          cp ../scripts/china_price_aggregate_control.py china_agent/price_aggregate_control.py
+          cp ../scripts/china_daily_expected_control.py china_agent/daily_expected_control.py
+          cp ../scripts/china_control_owner_preview.py china_agent/control_owner_preview.py
+          cp ../scripts/china_expected_order_profit.py china_agent/expected_order_profit.py
+          cp ../scripts/china_price_experiment_result.py china_agent/price_experiment_result.py
+          cp ../scripts/china_price_economic_target.py china_agent/price_economic_target.py
+          python ../scripts/test_china_price_delivery.py
+          python ../scripts/test_china_price_schedule_identity.py
+      - name: Recalculate and deliver only compact candidates
+        working-directory: source
+        env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           OPENAI_API_KEY: ""
-          PYTHONPATH: scripts:source
-        run: |
-          python - <<'PY'
-          from datetime import datetime,timezone
-          from conversion_watches import runtime,saved_network_guard
-          from china_codex_ad_review import bind
-          from china_loss_control import digest
-          w=runtime();original,=w.db('GET','business_agent_jobs',params=dict(id='eq.311',select='id,chat_id,sender_id,request_text'))
-          assert original['chat_id']==-1004342917488 and original['sender_id']==5122667182
-          assert 'пришли готовый PNG' in original['request_text']
-          key='china_agent:owner_retry311:2026-11-12:v1:typed_delivery'
-          old=w.get(key)
-          if old and old.get('status')=='sent':
-              print(dict(status='already_sent',message_ids=old['message_ids']));raise SystemExit(0)
-          prepared=w.get('china_agent:owner_retry311:2026-11-12:v1:typed_prepared')
-          assert prepared['status']=='prepared' and prepared['model_calls']==0
-          answer=prepared['result']['answer'];artifact_id='native-growth-311'
-          frozen=w.get('china_agent:table_png:v1:'+artifact_id);assert frozen['status']=='frozen' and len(frozen['files'])==1
-          plan=w.get('china_agent:loss_plan:v1:dialog-menu-native-growth-311')
-          assert plan['plan_sha256']==digest(plan['items']) and len(plan['items'])==10
-          assert all(a['kind']=='ad_add_sku' and a['nm_id'] not in (1473242577,1473245494,1473245510) for a in plan['items'])
-          assert datetime.now(timezone.utc)<datetime.fromisoformat(plan['expires_at'])
-          w.active_question_id=artifact_id;w.reply_id=990;ids=[];keys=[]
-          with saved_network_guard():
-              for i,part in enumerate(frozen['parts']):
-                  receipt_key='menu_result:311:native_growth:'+str(i)
-                  assert w.send_once(receipt_key,original['chat_id'],part)=='sent'
-                  receipt=w.get('china_agent:conversion_watch_delivery:v1:'+receipt_key)
-                  assert receipt['status']=='sent' and receipt.get('message_id')
-                  ids.append(receipt['message_id']);keys.append('china_agent:conversion_watch_delivery:v1:'+receipt_key)
-              bind(w,artifact_id,ids,answer)
-          w.save(key,dict(status='sent',original_job_id=311,original_message_id=990,artifact_id=artifact_id,answer=answer,message_ids=ids,receipt_keys=keys,plan_id=plan['plan_id'],plan_sha256=plan['plan_sha256'],completed_at=datetime.now(timezone.utc).isoformat(),model_calls=0,wb_writes=0))
-          print(dict(status='sent',message_ids=ids,model_calls=0,wb_writes=0))
-          PY
+          PYTHONPATH: ../scripts:.
+        run: python ../scripts/owner_price1030_recovery_20261112.py

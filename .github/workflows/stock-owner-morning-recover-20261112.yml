@@ -7,9 +7,6 @@ on:
         type: choice
         options: ['0700', '1630']
         default: '0700'
-  push:
-    branches: [main]
-    paths: ['.github/workflows/stock-owner-morning-recover-20261112.yml']
 permissions:
   contents: read
 concurrency:

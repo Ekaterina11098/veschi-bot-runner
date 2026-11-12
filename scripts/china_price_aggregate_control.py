@@ -90,7 +90,10 @@ def build(worker):
         cost=model.get('own_cogs_rub');delivery=model.get('logistics_cny')
         item.update(buyout_sample=q['sample_size'],buyout_fallback=q['source']!='own_article',buyout_percent=q['percent'])
         try:
-            if model.get('fx_date')!=str(worker.day) or model.get('commission_policy_fallback'):raise ValueError('current own economics unavailable')
+            if model.get('fx_date')!=str(worker.day):raise ValueError('current own economics unavailable')
+            # Owner-approved planning model uses 20% commission; disclose policy reserve.
+            if model.get('commission_policy_fallback') and model.get('commission_pct')!=20:raise ValueError('unapproved commission reserve')
+            item['commission_source']='approved_plan_20pct' if model.get('commission_policy_fallback') else 'own_actual'
             commission=model.get('commission_pct');tax=model.get('tax_pct');handling=model.get('handling_rub')
             if not all(num(v) for v in (commission,tax,handling,cost,delivery)):raise ValueError('own economics missing')
             payment_reserve=model.get('payment_reserve_pct',3)
@@ -140,4 +143,3 @@ def build(worker):
     value=dict(model_version='wb_profit_floor_price_hypothesis_v4',report_date=str(worker.day),status='complete_disclosed_forecast_model',products=output,source_snapshot_ids=sources,rate_period=[str(rate_start),str(end)],calculated_at=datetime.now(MSK).isoformat(),cohort_outcomes='unavailable_not_required_for_disclosed_expectation',wb_writes=0,telegram_calls=0)
     worker.save('china_agent:daily_expected_candidates:'+str(worker.day)+(':verify' if getattr(worker,'control_preview',False) else ''),value)
     return value
-

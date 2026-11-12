@@ -25,7 +25,7 @@ def install(root):
  patch="""            from china_codex_analysis import POLICY
             existing_trace=self.job.get('tool_trace') or []
             started=any(e.get('name')=='china_report_delivery' and e.get('sent_parts') for e in existing_trace)
-            if (self.get(POLICY)or{}).get('status')=='active' and not started and not any(e.get('name')=='china_codex_analysis' for e in existing_trace):
+            if (self.get(POLICY)or{}).get('status')=='active' and not started and not any(e.get('name') in ('china_codex_analysis','china_price_rules_review','china_control_canonical_report') for e in existing_trace):
                 from china_codex_reports import review_price
                 answer,trace=review_price(self,self.job['answer'],existing_trace)
                 saved=self.patch(dict(answer=answer,tool_trace=trace))

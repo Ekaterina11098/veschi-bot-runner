@@ -1,0 +1,45 @@
+name: OOO daily reports without model API
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ooo-daily-reports.yml', 'scripts/ooo_daily_reports.py', 'scripts/ooo_daily_review.py', 'scripts/ooo_report_templates.json']
+  schedule:
+    - cron: '30 4 * * *'
+    - cron: '0 12 * * *'
+permissions: {contents: read}
+concurrency:
+  group: ooo-daily-reports-single-consumer
+  cancel-in-progress: false
+jobs:
+  reports:
+    runs-on: ubuntu-latest
+    timeout-minutes: 140
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, sparse-checkout: scripts}
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 3708405208147b76cb76ad9ae9b432377f652bee
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5 Pillow==12.3.0 --quiet
+      - name: Verify current cached report rendering without delivery
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OOO_REPORT_VERIFY_ONLY: '1'
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then python -u scripts/ooo_daily_reports.py; fi
+      - name: Collect review render and deliver due report once
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          OOO_TELEGRAM_BOT_TOKEN: ${{ secrets.OOO_TELEGRAM_BOT_TOKEN }}
+        run: python -u scripts/ooo_daily_reports.py

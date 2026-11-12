@@ -1,0 +1,24 @@
+name: Validate China WB FBS warehouse routing without MS writes
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/validate-china-warehouse-routing.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline warehouse selection, regression and duplicate protections
+        run: |
+          python -m unittest discover -s scripts -p test_fbs_china_warehouse_routing.py -v
+          python -m unittest discover -s scripts -p test_fbs_daily_schedule.py -v
+          python -m unittest discover -s scripts -p test_fbs_picking_scope.py -v

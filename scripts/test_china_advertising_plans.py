@@ -92,7 +92,7 @@ class ExecTests(unittest.TestCase):
    def __init__(self,value):self.value=value
    def json(self):return self.value
   def get(url,**kwargs):
-   if url.endswith('/entity/store'):return Response(dict(rows=[dict(name='МСК',meta=dict(href='https://api.moysklad.ru/store'))]))
+   if url.endswith('/entity/store'):return Response(dict(rows=[dict(name='Renamed MSK',id='3c67619d-f25d-11ee-0a80-0c6f000a027a',meta=dict(href='https://api.moysklad.ru/api/remap/1.2/entity/store/3c67619d-f25d-11ee-0a80-0c6f000a027a'))]))
    return Response(dict(rows=[dict(article='one-bag',stock=3,reserve=0,price=1000)]))
   mod=types.ModuleType('china_cloud_cost_control');mod.WB=lambda:wb
   req=types.ModuleType('requests');req.get=get

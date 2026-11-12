@@ -1,5 +1,6 @@
 """Continuously reconcile comments on ledger-owned, completed FBS chains only."""
 import argparse
+import copy
 import json
 from fbs_document_chain import Cache, Transport, Worker, Stop, MS, TYPES, href, now
 
@@ -18,7 +19,11 @@ def audit_chain(t, db, cabinet, state):
     docs = {typ: t.request(MS, "entity/" + typ + "/" + state["documents"][typ]["id"]) for typ in TYPES}
     payloads = {}
     for typ in TYPES:
-        payload = dict(config["templates"][typ], positions=state["positions"], description=docs[typ].get("description"))
+        payload = dict(copy.deepcopy(config["templates"][typ]), positions=state["positions"], description=docs[typ].get("description"))
+        routing = state.get("warehouse_routing") if cabinet == "china" else None
+        if routing:
+            store_id = routing["return_store_id"] if typ == "salesreturn" else routing["source_store_id"]
+            payload["store"]["meta"]["href"] = MS + "entity/store/" + store_id
         if typ == "demand":
             payload["customerOrder"] = state["documents"]["customerorder"]
         elif typ == "salesreturn":

@@ -18,7 +18,7 @@ def attach(w,p,mid,send=None):
   if old.get('status')!='blocked_before_network':raise ValueError('Existing keyboard delivery requires reconciliation')
  keyboard=prepare(w,p,'drr')
  if not keyboard:return None
- if any(not re.fullmatch(r'cab1:[a-f0-9]{24}:[a-z0-9]+',b.get('callback_data',''))for row in keyboard['inline_keyboard']for b in row):raise ValueError('Unexpected report callback')
+ if any(b.get('callback_data')!='cmn1:home' and not re.fullmatch(r'cab1:[a-f0-9]{24}:[a-z0-9]+',b.get('callback_data',''))for row in keyboard['inline_keyboard']for b in row):raise ValueError('Unexpected report callback')
  record=dict(status='submitting',plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],message_id=mid,chat_id=CHAT,observed_at=datetime.now(timezone.utc).isoformat(),wb_writes=0)
  if not w.save(key,record,insert=old is None):raise ValueError('Concurrent keyboard attachment')
  if send is None:

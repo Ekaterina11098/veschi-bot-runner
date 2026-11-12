@@ -3,8 +3,6 @@
   "action": "run",
   "report_date": "2026-11-12",
   "source_commit": "b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c",
-  "nonce": "owner-price-control-canonical-model-20261112",
-  "send_now": true,
-  "correct_candidates": true,
+  "nonce": "scheduled-only-no-owner-unrequested-recovery-20261112",
   "owner_id": 5122667182
 }

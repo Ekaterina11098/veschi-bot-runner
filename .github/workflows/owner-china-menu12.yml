@@ -1,5 +1,8 @@
 name: Restore China report menu navigation
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-china-menu12.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -49,5 +52,14 @@ jobs:
               receipt=io.tg('sendMessage',dict(chat_id=chat,text='Главное меню\nВыберите раздел:',reply_markup=keyboard))
               assert receipt['chat']['id']==chat and receipt['from']['id']==8780468043 and receipt['message_id']
               io.put(key,dict(status='sent',message_id=receipt['message_id'],receipt=receipt,wb_writes=0))
+          key='china_agent:owner_price_reports12:v1:supersede967'
+          if not io.get(key):
+              corrected=io.get('china_agent:price_delivery:v2:2026-11-12:morning-corrected:part:0')
+              assert corrected['status']=='sent' and corrected['message_id']==968
+              assert io.create(key,dict(status='submitting',message_id=967,replacement_message_id=968,wb_writes=0))
+              markup=dict(inline_keyboard=[[dict(text='Открыть исправленный отчёт',url='https://t.me/c/4342917488/968')],[dict(text='‹ Главное меню',callback_data='cmn1:home')]])
+              receipt=io.tg('editMessageCaption',dict(chat_id=chat,message_id=967,caption='Заменён исправленным отчётом с ценами покупателя. Используйте отчёт ниже.',reply_markup=markup))
+              assert receipt['message_id']==967 and receipt['chat']['id']==chat
+              io.put(key,dict(status='superseded',message_id=967,replacement_message_id=968,receipt=receipt,wb_writes=0))
           print(dict(status='verified',wb_writes=0,model_calls=0))
           PY

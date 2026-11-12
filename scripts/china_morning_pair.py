@@ -77,10 +77,29 @@ def render_control(state, day, read, now):
             'Все изменения цены согласовываем.']
     return '\n'.join(lines)
 
+def render_control_table(value):
+    def number(v):return 'н/д' if v is None else f'{v:,.2f}'.replace(',',' ').replace('.',',')
+    def pair(p,key,percent=False):
+        def cell(v):return number(v*100)+'%' if percent and v is not None else number(v)
+        return cell(p.get('before',{}).get(key))+' → '+cell(p.get('after',{}).get(key))
+    lines=['Китай · результаты изменений цен · '+value['report_date'],'До → после. Только завершённые дни МСК.','',
+        '| Артикул | Цена продавца, CNY | Периоды до → после | Заказы/день | Общая конверсия | Прогноз прибыли, RUB/день | Выкуп | Результат |',
+        '|---|---|---|---|---|---|---|---|']
+    for p in value['products']:
+        a,b=p.get('before',{}),p.get('after',{})
+        period=a.get('period_from','н/д')+'–'+a.get('period_to','н/д')+' → '+b.get('period_from','н/д')+'–'+b.get('period_to','н/д')
+        result=p.get('result',{});status=p.get('status')
+        verdict=p.get('result_action') or result.get('result_action') or ('Расчёт не подтверждён' if status=='insufficient_economics' else 'Промежуточный результат' if p.get('full_days',0)<4 else 'Требуется оценка' if result.get('status')=='rollback_review' else 'Продолжаем наблюдение')
+        cells=[p['article'],number(p.get('before_price'))+' → '+number(p.get('after_price')),period,pair(p,'orders_per_day'),pair(p,'conversion',True),pair(p,'expected_profit_per_day'),number(p.get('buyout_percent'))+'%'+(' · план' if p.get('buyout_fallback') else ' · собственный') if p.get('buyout_percent')is not None else 'н/д',verdict]
+        lines.append('| '+' | '.join(str(c).replace('|','/').replace('\\n',' ')for c in cells)+' |')
+    lines+=['','Прогноз по учтённым расходам, не закрытая прибыль. Конверсия = суммарные заказы воронки / суммарные открытия. День изменения исключён. н/д не означает ноль. Изменения — только после отдельного согласования.']
+    return '\\n'.join(lines)
+
 class PairWorker(CoverageWorker):
     def __init__(self,section):
         super().__init__('morning')
         self.section=section
+        if section=='control':self.mode='control'
         self.command='/china_morning_pair_'+section
         self.update_id=-(9800000000 if section=='candidates' else 9900000000)-(self.day-date(2020,1,1)).days
         self.audit.update(section=section)
@@ -106,8 +125,9 @@ class PairWorker(CoverageWorker):
             return choose(self,preview)
         from china_agent.daily_expected_control import build,render
         self.control_preview=preview
-        value=build(self)
-        answer=render(value)
+        value=build(self,candidate_review=True)
+        self.control_value=value
+        answer=render_control_table(value)
         self.audit['control_model_status']=value['status']
         return answer,[dict(name='china_price_daily_report',report_date=str(self.day),mode='control',profit_basis='expected_order_date',products=len(value['products']))]
 
@@ -116,10 +136,7 @@ def main():
     parser.add_argument('--verify',action='store_true')
     parser.add_argument('--section',choices=('all','candidates','control'),default='all')
     args=parser.parse_args()
-    for section in (('candidates',) if args.section=='all' else (args.section,)):
-        if section=='control':
-            print(json.dumps(dict(section=section,status='paused_by_owner',telegram_calls=0)))
-            continue
+    for section in (('candidates','control') if args.section=='all' else (args.section,)):
         w=PairWorker(section)
         try:
             w.run(preview=args.verify)

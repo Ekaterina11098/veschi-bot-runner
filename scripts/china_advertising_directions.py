@@ -34,7 +34,7 @@ def attach(bundle,source):
  if scan.get('status')!='complete':sections['add'].update(status='unavailable',note='Полный подбор товаров без рекламы не завершён; отсутствие кандидатов не установлено.')
  else:
   sections['add']['period']=[scan['period_from'],scan['period_to']]
-  for nm in scan.get('candidate_ids',[]):
+  for nm in dict.fromkeys(scan.get('candidate_ids',[])):
    if any(r.get('nm_id')==nm and r.get('ready') for r in sections['add']['rows']):continue
    e=(source.get('economics',{}).get('rows')or{}).get(str(nm))or{}
    if e and isinstance(e.get('stock_free'),(int,float)) and e['stock_free']<=0:continue
@@ -44,10 +44,12 @@ def attach(bundle,source):
    if e.get('buyout_fallback')or e.get('sample_size',0)<5:continue
    quote=(source.get('addition_bid_quotes')or{}).get(str(nm))or{}
    sections['add']['rows'].append(dict(article=labels.get(nm,'WB '+str(nm)),nm_id=nm,campaign_id=quote.get('campaign_id'),target_minor=quote.get('target_minor'),bid_verified=quote.get('bid_verified')is True,decision='Добавить только после отдельного согласования точного плана.',economics=e,ready=False))
-  sections['add']['note']='Предварительные кандидаты; точная РК/ставка требуют проверки.'if sections['add']['rows']else'Проверены товары без активной рекламы; положительная подтверждённая экономика не выделила кандидатов.'
+  sections['add']['note']=('Есть незавершённые проверки РК/ставки.'if any(not r.get('ready')for r in sections['add']['rows'])else'Готовые предложения; исполнение только после согласования.')if sections['add']['rows']else'Проверены товары без активной рекламы; положительная подтверждённая экономика не выделила кандидатов.'
  for key,s in sections.items():
   if s['rows']and key!='add':s['note']=str(len(s['rows']))+' готовых предложений; только после согласования.'
   s['count']=len(s['rows'])
+  s['ready_count']=sum(r.get('ready')is True for r in s['rows'])
+  s['unready_count']=s['count']-s['ready_count']
  out['recommendation_directions']=sections
  archives=[c for c in out['campaigns']if c['status']==7]
  missing=[c['id']for c in archives if c.get('period')is None or c.get('missing_stats')]
@@ -119,4 +121,6 @@ def overview(bundle):
    if a and r.get('ready'):actions.append(a)
   y+=25
  finish();return files
+
+
 

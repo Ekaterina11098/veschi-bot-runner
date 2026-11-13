@@ -1,0 +1,54 @@
+name: Isolated handler v3 Linux validation
+on:
+  push:
+    branches: [codex/isolated-handler-cache-v3-linux-20261113]
+    paths: ['.github/workflows/isolated-v3-linux.yml']
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: isolated_test
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['55439:5432']
+        options: >-
+          --cpus 2 --memory 1g --memory-swap 1g
+          --health-cmd "pg_isready -U isolated_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ISOLATED_PG_CONTAINER: ${{ job.services.postgres.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python isolated-v3-bundle.py
+      - run: pip install -r v3/tests/requirements-handler-cache.txt
+      - name: NULL restore compatibility concurrency kill and checkpoint tests
+        run: python v3/tests/test_handler_cache_isolated.py > v3/isolated-results/tests.log 2>&1
+      - name: Existing publisher and handler regressions
+        run: |
+          cd v3
+          python -m unittest test_review_morning test_persistent_backup test_review_approved_worker > isolated-results/regressions.log 2>&1
+      - name: Fresh-process resource comparisons on the same constrained PostgreSQL
+        run: python v3/tests/measure_handler_resources.py > v3/isolated-results/resources.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolated-v3-linux-evidence
+          path: v3/isolated-results
+          retention-days: 7
+      - name: Compact measured summary
+        if: always()
+        run: |
+          tail -n 5 v3/isolated-results/tests.log || true
+          cat v3/isolated-results/resources.log || true
+

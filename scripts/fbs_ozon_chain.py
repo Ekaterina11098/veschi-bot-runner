@@ -56,7 +56,7 @@ class OzonWorker(m.Worker):
   super().__init__(t,db,c);self.act=act;self.scope=scope
   self.comment=", ".join(scope["included"])
   self.order_name=dt.date.fromisoformat(act["departure_date"]).strftime("%d%m%y")+" Озон"
- def order_annotation(self,supply):
+ def order_annotation(self,supply,route=None):
   metadata=self.t.request(m.MS,"entity/customerorder/metadata")
   states=[s for s in metadata.get("states",[]) if s.get("name")=="Возврат на ФБО"]
   if len(states)!=1:raise m.Stop("Required order state missing/ambiguous")

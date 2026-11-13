@@ -1,0 +1,51 @@
+name: Owner Guangzhou zero and pause 13Nov
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-guangzhou-zero-20261113.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bot-stock
+  cancel-in-progress: false
+jobs:
+  stock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 58bb827278f103b7884743bdbf5c84656e4dc442
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/guangzhou-install.log" 2>&1
+      - name: Offline safety checks before any live operation
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source
+        run: |
+          python -m py_compile private-source/stock_guangzhou_owner_zero.py private-source/stock_cloud_execution.py
+          python test_guangzhou_owner_zero_20261113.py
+          python -c "from stock_china_mgt_daily import enabled_for; assert not enabled_for('technical:stock-daily:2026-11-13'); from stock_guangzhou_owner_zero import require_pause; require_pause()"
+      - name: Save immutable live backup then zero only WB China Guangzhou
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          AUTO_STOCK_FAIL_FAST: '1'
+        run: python guangzhou_owner_zero_20261113.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-guangzhou-zero-20261113
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90

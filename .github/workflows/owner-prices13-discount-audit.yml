@@ -1,0 +1,28 @@
+name: Owner13 prices discount audit read only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-prices13-discount-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  read:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Read current13 prices, no price uploads
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          CHINA_TELEGRAM_BOT_TOKEN: ""
+        run: PYTHONPATH=scripts python scripts/owner_prices13_discount_audit.py

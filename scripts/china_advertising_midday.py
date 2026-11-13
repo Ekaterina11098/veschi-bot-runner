@@ -207,6 +207,7 @@ def run():
  from china_advertising_delivery import deliver,telegram_sender
  from china_daily_ad_actions import plan,bind
  io=IO();day=datetime.now(MSK).date().isoformat();key='china_agent:advertising_midday_delivery:'+day+':ready-v2'
+ if (io.get('china_agent:advertising_midday_delivery:'+day+':v1')or{}).get('status')=='skipped_by_owner':print('skipped_by_owner');return
  delivery_status=(io.get(key) or {}).get('status')
  if delivery_status=='skipped_by_owner':print('skipped_by_owner');return
  if delivery_status=='delivered':print('already_delivered');return

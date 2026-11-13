@@ -1,0 +1,1 @@
+Require an authenticated morning/all-three-cabinet cache restored from the preceding workflow run.

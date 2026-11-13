@@ -143,6 +143,11 @@ class CoverageWorker(ScheduledWorker):
         return result,marker
 
     def prepare(self,preview=False):
+        if self.mode=='intraday':
+            # Both scheduled recommendation slots use the same complete, current rules.
+            # Keep the intraday job/receipt identity; never use today's partial orders.
+            from china_price_selection import choose
+            return choose(self,preview)
         with self.covered_sales():
             answer,trace=super().prepare(preview)
         coverage=getattr(self,'_order_coverage',None)
@@ -152,18 +157,6 @@ class CoverageWorker(ScheduledWorker):
             if coverage.get('remaining'):
                 answer+='\nЗаказы ещё не проверены: '+', '.join(coverage['remaining'].values())+'.'
             trace.append(dict(name='china_order_catalogue_coverage',**self.audit['order_coverage']))
-        if self.audit.get('mode')=='intraday':
-            from china_agent.price_brief import render_plain as brief
-            from china_agent.price_aggregate_control import build as recalculate_control
-            self.control_preview=preview
-            review=recalculate_control(self)
-            trace.append(dict(name='china_price_control_recalculated',status=review['status'],report_date=str(self.day),source_ref='china_agent:daily_expected_candidates:'+str(self.day)+(':verify' if preview else ''),products=len(review['products'])))
-            from china_agent.buyer_price_forecast import load
-            buyer=load(self)
-            trace.append(dict(name='china_buyer_price_forecast',**buyer))
-            omitted=[]
-            answer=brief(answer,'intraday',review,self.day,self.get('china_agent:prices:v1'),buyer,omitted=omitted)
-            if omitted:trace.append(dict(name='china_price_proposal_exclusions',products=omitted))
         return answer,trace
 
 def main():

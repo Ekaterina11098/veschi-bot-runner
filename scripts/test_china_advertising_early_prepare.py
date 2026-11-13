@@ -9,7 +9,7 @@ class EarlyPrepare(unittest.TestCase):
   fn=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef)and n.name=='run')
   calls=Mock();io=types.SimpleNamespace(get=lambda key:None)
   modules={
-   'china_price_apply':types.SimpleNamespace(IO=lambda:io),
+   'china_advertising_state':types.SimpleNamespace(AdvertisingIO=lambda:io),
    'china_advertising_delivery':types.SimpleNamespace(deliver=calls.deliver,telegram_sender=calls.sender),
    'china_daily_ad_actions':types.SimpleNamespace(plan=calls.plan,bind=calls.bind),
    'china_midday_completed_review':types.SimpleNamespace(attach=Mock(return_value=dict(economic_review_complete=complete)),include_closed=lambda io,s,d:s)}

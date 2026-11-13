@@ -1,8 +1,5 @@
 name: Owner recovery morning reports13Nov
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-morning-recovery13.yml']
   workflow_dispatch:
 permissions:
   contents: read

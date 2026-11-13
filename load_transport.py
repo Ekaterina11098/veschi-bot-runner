@@ -82,10 +82,12 @@ def load():
    for workers in (1,6):
     # Independent namespaces for fair cold/restart comparisons.
     target=Path(directory)/str(workers)
+    for handler,cabinet in SCOPES:(target/(handler+'-'+cabinet)).mkdir(parents=True,exist_ok=True)
     for phase in ('full','cold','restored','restored-repeat'):
      with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
       records=list(pool.map(lambda s:capture(s,target,phase,'full' if phase=='full' else 'incremental',require=phase.startswith('restored')),SCOPES))
      results.extend(dict(x,scale=scale,clients=workers) for x in records)
+     (ROOT/'load-results.json').write_text(json.dumps(results,indent=2),encoding='utf8')
      print(json.dumps({'scale':scale,'clients':workers,'phase':phase,'all6_manifest_match':all(x['manifest_match'] for x in records),'median_total_ms':statistics.median(x['total_ms'] for x in records)}),flush=True)
   with psycopg.connect(DSN,autocommit=True) as c:print('TEMP_STATS',c.execute('select temp_files,temp_bytes from pg_stat_database where datname=current_database()').fetchone(),flush=True)
  (ROOT/'load-results.json').write_text(json.dumps(results,indent=2),encoding='utf8')

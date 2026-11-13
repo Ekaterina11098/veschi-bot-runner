@@ -6,7 +6,7 @@ on:
 permissions: {contents: read}
 jobs:
   read:
-    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner-msk-stockout13] Verify MSK stockout contribution read-only'
+    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner-msk-stockout13-case] Read only two missing article case variants'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

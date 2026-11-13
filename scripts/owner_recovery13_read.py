@@ -4,11 +4,11 @@ from datetime import datetime,timezone
 from urllib.parse import urlparse
 import requests
 from china_cloud_cost_control import Cache,WB,validate_identity,stamp
-from china_analytic_dialog import allowed_read
+from china_analytic_dialog import allowed_read,reading
 from china_product_current import read_prices
 from china_moysklad_read import read_stock
 from china_hourly_sales_read import collect_funnel,MSK
-ROOT='china_agent:owner_recovery04417741779660:2026-11-13:v1'
+ROOT='china_agent:owner_recovery04417741779660:2026-11-13:v2'
 TARGETS=[1473243894,1473244337]
 CIDS=[40933588,41298169,41779660]
 def run():
@@ -22,6 +22,7 @@ def run():
   warehouses=m=='GET' and u.hostname=='marketplace-api.wildberries.ru' and u.path=='/api/v3/warehouses'
   if not(private or warehouses or allowed_read(method,url,kw.get('json'))):raise ValueError('Read-only scope blocked')
   return original(session,method,url,**kw)
+ read_context=reading();read_context.__enter__()
  requests.sessions.Session.request=guard
  result=dict(cabinet='token_3',observed_at=stamp(),inputs={},errors={},wb_writes=0,telegram_calls=0,model_calls=0,grants_action_permission=False)
  def save():
@@ -61,7 +62,9 @@ def run():
   stage('completed_ads',lambda:wb.req('/adv/v3/fullstats?ids=40933588,41298169&beginDate=2026-11-07&endDate=2026-11-12'))
   time.sleep(21)
   stage('new_campaign_ads',lambda:wb.req('/adv/v3/fullstats?ids=41779660&beginDate=2026-11-11&endDate=2026-11-13'))
- finally:requests.sessions.Session.request=original
+ finally:
+  requests.sessions.Session.request=original
+  read_context.__exit__(None,None,None)
  result['completed_at']=stamp();result['status']='complete' if not result['errors']else'partial';save()
  if c.get(ROOT)!=json.loads(json.dumps(result)):raise ValueError('Readback mismatch')
  print(json.dumps(dict(status=result['status'],stages=list(result['inputs']),errors=result['errors'],wb_writes=0,telegram_calls=0,model_calls=0)))

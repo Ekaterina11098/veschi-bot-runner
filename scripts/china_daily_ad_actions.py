@@ -70,6 +70,10 @@ def handle(w,job):
  if conditional:return ('Принято: '+str(conditional)+' сумм резерва согласованы условно; готовых действий '+str(len(p['items'])-conditional)+'. Сумма резерва не означает выполненное пополнение. Проверю условия и сообщу результат отдельно.',[dict(name='daily_ad_actions_approval',plan_id=p['plan_id'])])
  return ('Принято: только '+str(len(p['items']))+' новых действий этого PNG. Проверю текущие параметры и результат WB. Цены и автопополнение не меняю.',[dict(name='daily_ad_actions_approval',plan_id=p['plan_id'])])
 
+def execution_order(items):
+ """Keep a live minimum-quote membership until all approved additions finish."""
+ return sorted(items,key=lambda item:item['kind']=='ad_exclude_sku')
+
 def execute(io,a,p):
  io.validate_owner(a)
  from china_report_buttons import execution_claim
@@ -128,7 +132,7 @@ def execute(io,a,p):
     if n['nm_id']==item['nm_id']:n['bids_kopecks'][item['placement']]=item['target_minor']
   state['after']=after
   return after['status']==before['status'] and after['settings']==before['settings'] and sorted(after['nm_settings'],key=lambda n:n['nm_id'])==sorted(expected,key=lambda n:n['nm_id'])
- for item in p['items']:
+ for item in execution_order(p['items']):
   state=next((x for x in e['items'] if x['id']==item['id']),None)
   if state:
    if state['status'] in ['submitting','accepted','uncertain']:

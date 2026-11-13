@@ -4,11 +4,22 @@ import requests
 from china_price_apply import IO
 
 class AdvertisingIO(IO):
+    def _completion(self,key,p):
+        if isinstance(p,dict) and p.get('completion_notice'):
+            from china_execution_notice import deliver_registered
+            deliver_registered(self,key,p)
+
+    def create(self,key,p):
+        created=super().create(key,p)
+        if created:self._completion(key,p)
+        return created
+
     def put(self,key,p):
         from urllib.parse import quote
         from datetime import datetime,timezone
         self.db('telegram_api_cache?cache_key=eq.'+quote(key,safe=''),'PATCH',dict(payload=p,updated_at=datetime.now(timezone.utc).isoformat()),'return=minimal')
         if self.get(key)!=p:raise RuntimeError('State readback mismatch')
+        self._completion(key,p)
 
     def db(self,path,method="GET",body=None,prefer=None):
         safe=method in ('GET','PATCH') and path.startswith('telegram_api_cache?')

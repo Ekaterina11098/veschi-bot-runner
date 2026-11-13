@@ -1,8 +1,5 @@
 name: Owner13 prices discount audit read only
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-prices13-discount-audit.yml']
   workflow_dispatch:
 permissions:
   contents: read

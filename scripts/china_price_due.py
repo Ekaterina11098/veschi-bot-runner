@@ -21,7 +21,7 @@ def main():
         except (OSError,ValueError):pass
     if allowed and not preview:
         update=-(9800000000 if a.mode=='morning' else 9600000000)-(now.date()-date(2020,1,1)).days
-        updates=[update,-9900000000-(now.date()-date(2020,1,1)).days] if a.mode=='morning' else [update]
+        updates=[update] # Only the brief recommendations are scheduled; control is explicit-only.
         q=urllib.parse.urlencode(dict(agent_id='eq.china',update_id='in.('+','.join(map(str,updates))+')',select='id,update_id,status,tool_trace',limit=3))
         secret=os.environ['SUPABASE_SECRET_KEY']
         req=urllib.request.Request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/business_agent_jobs?'+q,headers={'apikey':secret,'Authorization':'Bearer '+secret})

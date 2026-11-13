@@ -203,7 +203,7 @@ def render_midday(b):
  return files
 def run():
  if os.environ.get('GITHUB_REPOSITORY')!='Ekaterina11098/veschi-bot-runner' or os.environ.get('GITHUB_REF')!='refs/heads/main':raise ValueError('Public main only')
- from china_price_apply import IO
+ from china_advertising_state import AdvertisingIO as IO
  from china_advertising_delivery import deliver,telegram_sender
  from china_daily_ad_actions import plan,bind
  io=IO();day=datetime.now(MSK).date().isoformat();key='china_agent:advertising_midday_delivery:'+day+':v1'

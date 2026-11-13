@@ -136,7 +136,7 @@ def main():
     parser.add_argument('--verify',action='store_true')
     parser.add_argument('--send-now',action='store_true')
     parser.add_argument('--correct-candidates',action='store_true')
-    parser.add_argument('--section',choices=('all','candidates','control'),default='all')
+    parser.add_argument('--section',choices=('all','candidates','control'),default='candidates')
     args=parser.parse_args()
     for section in (('candidates','control') if args.section=='all' else (args.section,)):
         w=PairWorker(section)

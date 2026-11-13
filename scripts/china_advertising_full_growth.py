@@ -43,6 +43,12 @@ def collect(io,s,day):
    if method!='GET'or table!='analytics_snapshots':raise ValueError('Only own analytics reads')
    return io.db(table+'?'+urlencode(params or{}))
   def catalog(self):return [(str(r['nmID']),r['vendorCode'])for r in s['catalogue']['rows']]
+ economic_policy=io.get('china_agent:new_ad_economics_policy:v1')or{}
+ import hashlib
+ economic_signature=hashlib.sha256(json.dumps(dict(policy=economic_policy,model_revision='approved-planned-payment-reserve-v1'),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+ if v.get('economic_policy_signature')!=economic_signature:
+  v.pop('economics',None);v.pop('held_evidence',None)
+  v['economic_policy_signature']=economic_signature
  policy=io.get('china_agent:advertising_format:v2')or{}
  excluded=set(policy.get('growth_excluded_nm_ids',[1473245494,1473245510,1473244000]))
  ids=v.get('screened_nm_ids')or sorted({int(r['nmID'])for r in s['catalogue']['rows']}-excluded)

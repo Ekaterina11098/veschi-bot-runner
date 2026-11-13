@@ -1,0 +1,100 @@
+name: Audit thirteen filled cards after photo conflict
+on:
+  push:
+    branches: [madison-fill-20261105]
+    paths: ['.github/workflows/maya2-rootcause-finalcheck-20261113.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          ARTICLES=['025-MadisonBag-zblack','026-MadisonBag-zcoffee','027-MadisonBag-zdarkred']
+          def request(url,body=None,method=None,headers=None):
+              h=headers if headers is not None else {'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'}
+              req=urllib.request.Request(url,headers=h,data=None if body is None else json.dumps(body).encode(),method=method or ('POST' if body is not None else 'GET'))
+              with urllib.request.urlopen(req,timeout=45) as f:
+                  raw=f.read()
+                  return json.loads(raw) if raw else None
+          def save(key,payload):
+              now=datetime.datetime.now(datetime.timezone.utc);k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              return request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',{'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()},headers=h)
+          
+          def cache(key):
+              k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              rows=request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?cache_key=eq.'+key+'&select=payload',headers=h)
+              return rows[0]['payload'] if rows else None
+          
+          KEY='maya2_content_audit:china:20261113:rootcause_final:v1'
+          if cache(KEY):raise SystemExit('Already journaled')
+          expected={}
+          for key in ['cristine_leather_fill:china:20261113:execution:v1','elodie_fill:china:20261113:execution:v1','aurelie_fill:china:20261113:execution:v1','colette_fill:china:20261113:execution:v1','celinea_reptile_fill:china:20261113:execution:v1']:
+           prior=cache(key)
+           if not prior or prior.get('status')!='verified':raise RuntimeError('Missing verified source')
+           for p in prior['requests']:expected[p['vendorCode']]=p
+          assert len(expected)==13
+          save('wb_content_protection:maya2:20261113:v1',{'status':'approved_reference','cabinet':'China','expected':list(expected.values()),'photo_policy':'fresh_editor_no_parallel_content_writes','post_photo_audit_required':True,'automatic_restore_schedule':False})
+          def read_all():
+           found={};cursor={'limit':100}
+           for page in range(12):
+            d=request('https://content-api.wildberries.cn/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':cursor,'filter':{'withPhoto':-1}}})
+            for c in d.get('cards',[]):
+             if c.get('vendorCode') in expected:
+              assert c['nmID']==expected[c['vendorCode']]['nmID'],'Identity mismatch'
+              found[c['vendorCode']]=c
+            if len(found)==13:break
+            cur=d.get('cursor',{})
+            if cur.get('total',0)<100:break
+            cursor={'limit':100,'updatedAt':cur['updatedAt'],'nmID':cur['nmID']};time.sleep(1)
+           return found
+          def eq(a,b):return set(a)==set(b) if isinstance(a,list) and isinstance(b,list) else a==b
+          def compare(cards):
+           checks={}
+           for article,p in expected.items():
+            c=cards.get(article,{});a={x['id']:x['value'] for x in (c.get('characteristics') or [])}
+            checks[article]={'found':bool(c),'title':c.get('title')==p['title'],'description':c.get('description')==p['description'],'characteristics':all(eq(a.get(x['id']),x['value']) for x in p['characteristics']),'dimensions':all(abs(float(c.get('dimensions',{}).get(k,-1))-v)<1e-6 for k,v in p['dimensions'].items()),'brand':c.get('brand')==p['brand'],'barcodes':[(s['chrtID'],s['skus']) for s in c.get('sizes',[])]==[(s['chrtID'],s['skus']) for s in p['sizes']]}
+           return checks
+          out={'status':'reading','before':[],'after':[],'write_requests':0};save(KEY,out)
+          try:
+           cards=read_all();out['before']=list(cards.values());out['initial_checks']=compare(cards);save(KEY,out)
+           assert len(cards)==13,'Missing exact cards; no writes'
+           changed=[a for a,v in out['initial_checks'].items() if not all(v.values())]
+           out['changed']=changed;save(KEY,out)
+           if not changed:out.update(status='verified',after=list(cards.values()),checks=out['initial_checks']);save(KEY,out);raise SystemExit(0)
+           payload=[]
+           for article in changed:
+            c=cards[article];p=expected[article]
+            assert c.get('brand')=='','Unexpected brand; do not overwrite'
+            assert [(s['chrtID'],s['skus']) for s in c['sizes']]==[(s['chrtID'],s['skus']) for s in p['sizes']],'Barcodes changed; do not overwrite'
+            attrs={x['id']:{'id':x['id'],'value':x['value']} for x in (c.get('characteristics') or [])}
+            attrs.update({x['id']:{'id':x['id'],'value':x['value']} for x in p['characteristics']})
+            prices=request('https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter?limit=10&filterNmID='+str(c['nmID']))
+            goods=[g for g in prices.get('data',{}).get('listGoods',[]) if g['nmID']==c['nmID'] and g.get('currencyIsoCode4217')=='CNY']
+            assert len(goods)==1,'Price identity mismatch'
+            bysize={x['sizeID']:x['price'] for x in goods[0]['sizes']}
+            sizes=[{**{k:v for k,v in size.items() if k in ['chrtID','techSize','wbSize','skus']},'price':bysize[size['chrtID']]} for size in c['sizes']]
+            payload.append({'nmID':c['nmID'],'vendorCode':article,'brand':c['brand'],'title':p['title'],'description':p['description'],'kizMarked':c.get('kizMarked',False),'dimensions':p['dimensions'],'characteristics':list(attrs.values()),'sizes':sizes,'documents':{'excludeDocuments':c.get('documents',{}).get('excludeDocuments',False)}})
+           out.update(status='submitting',requests=payload);save(KEY,out)
+           response=request('https://content-api.wildberries.cn/content/v2/cards/update',payload)
+           out.update(status='rejected' if response.get('error') else 'accepted_pending_verification',response=response,write_requests=1);save(KEY,out)
+           if response.get('error'):raise SystemExit(0)
+           for attempt in range(18):
+            time.sleep(15)
+            cards=read_all();out['after']=list(cards.values());out['checks']=compare(cards)
+            if all(all(v.values()) for v in out['checks'].values()):out['status']='verified';save(KEY,out);break
+            if attempt in [0,8,17]:out['errors']=request('https://content-api.wildberries.cn/content/v2/cards/error/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100}}})
+            save(KEY,out)
+           else:out['status']='verification_pending';save(KEY,out)
+          except Exception as e:
+           out['error']=str(e);out['status']='uncertain' if out['status']=='submitting' else 'error';save(KEY,out)
+          
+          PY

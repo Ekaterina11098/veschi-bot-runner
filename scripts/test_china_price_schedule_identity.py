@@ -21,9 +21,12 @@ class Contract(unittest.TestCase):
   with patch.object(sys,'argv',['test']+args),patch.dict(sys.modules,{'requests':types.SimpleNamespace(sessions=types.SimpleNamespace(Session=types.SimpleNamespace(request=None)))}):main()
   return result
  def test_manual_identities_do_not_consume_scheduled_jobs(self):
-  normal=self.identities([]);manual=self.identities(['--send-now'])
+  normal=self.identities(['--section','all']);manual=self.identities(['--send-now','--section','all'])
   self.assertTrue(set(x[0]for x in normal).isdisjoint(x[0]for x in manual))
   self.assertEqual([x[1]for x in manual],['morning-manual','control-manual'])
+ def test_default_schedule_delivers_only_brief_recommendations(self):
+  self.assertEqual(self.identities([]),[(-9800002507,None)])
+  self.assertEqual(self.identities(['--send-now']),[(-9500002507,'morning-manual')])
  def test_correction_has_own_durable_identity(self):
   self.assertEqual(self.identities(['--send-now','--correct-candidates','--section','candidates']),[(-9700002507,'morning-corrected')])
  def test_paid_chat_permission_does_not_enable_price_model(self):

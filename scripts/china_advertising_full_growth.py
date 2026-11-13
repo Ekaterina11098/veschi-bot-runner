@@ -156,7 +156,8 @@ def collect(io,s,day):
   v['addition_candidates']=placement_candidates(dict(s,period_to=str(end)),v)
   for r in v['addition_candidates']:
    nm=r['nm_id'];cid=r['campaign_id'];zone=r['placement'];typ='search'if zone=='search'else'recommendation';qkey=addition_key(r)
-   if qkey not in v['addition_quotes']:
+   old_quote=v['addition_quotes'].get(qkey)or{}
+   if qkey not in v['addition_quotes']or old_quote.get('status')=='checked_unavailable':
     try:
      from china_addition_minimum import read_quote,MinimumMembershipUnavailable
      v['addition_quotes'][qkey]=read_quote(io,v,r);save()
@@ -184,7 +185,7 @@ def collect(io,s,day):
   qkey=addition_key(r);typ='search'if r['placement']=='search'else'recommendation'
   q=v['addition_quotes'].get(qkey,{})
   vals=[b['value']for row in q.get('bids',[])if row['nm_id']==r['nm_id']for b in row['bids']if b['type']==typ and b['currency']=='CNY']
-  if len(vals)==1:out['addition_bid_quotes'][qkey]=dict(campaign_id=r['campaign_id'],placement=r['placement'],target_minor=vals[0],bid_verified=True,quote_campaign_id=q.get('quote_campaign_id',r['campaign_id']),observed_at=v['observed_at'])
+  if len(vals)==1:out['addition_bid_quotes'][qkey]=dict(campaign_id=r['campaign_id'],placement=r['placement'],target_minor=vals[0],bid_verified=True,quote_campaign_id=q.get('quote_campaign_id',r['campaign_id']),quote_nm_id=q.get('quote_nm_id',r['nm_id']),quote_subject_id=q.get('quote_subject_id',r['subject_id']),quote_basis=q.get('quote_basis'),observed_at=q.get('observed_at',v['observed_at']))
  return out
 def proposed_actions(s):
  """Every current placement is evaluated; no top8/top12 truncation and no forced count."""
@@ -267,7 +268,7 @@ def addition_actions(s,raises):
   # Owner12Nov: reserve shortfall is a funding recommendation, not an addition veto.
   if cid not in reserve or not finite_number(reserve[cid]):continue
   reserve[cid]+=reserve_extra
-  evidence=dict(e,cabinet='token_3',currency='CNY',article=prices[nm]['article'],observed_at=v['observed_at'],price_cny=e['seller_price_cny'],minimum_minor=target,minimum_quote_campaign_id=quote.get('quote_campaign_id',cid),period_to=s['period_to'],period_from=v['own']['period_from'],subject_id=o['subject_id'],ad_cpa_unknown=True,preliminary=True,unknown_costs=True,manual_strategy_proposal=True,source_key=ROOT+str(date.fromisoformat(s['period_to'])+timedelta(days=1))+':v1:inputs',test_review_after_first_completed_day=True,ad_traffic_forecast_clicks_per_day=30,campaign_reserve_required_cny=reserve[cid],forecast_not_a_spend_cap=True)
+  evidence=dict(e,cabinet='token_3',currency='CNY',article=prices[nm]['article'],observed_at=v['observed_at'],price_cny=e['seller_price_cny'],minimum_minor=target,minimum_quote_campaign_id=quote.get('quote_campaign_id',cid),minimum_quote_nm_id=quote.get('quote_nm_id',nm),minimum_quote_subject_id=quote.get('quote_subject_id',o['subject_id']),minimum_quote_basis=quote.get('quote_basis'),period_to=s['period_to'],period_from=v['own']['period_from'],subject_id=o['subject_id'],ad_cpa_unknown=True,preliminary=True,unknown_costs=True,manual_strategy_proposal=True,source_key=ROOT+str(date.fromisoformat(s['period_to'])+timedelta(days=1))+':v1:inputs',test_review_after_first_completed_day=True,ad_traffic_forecast_clicks_per_day=30,campaign_reserve_required_cny=reserve[cid],forecast_not_a_spend_cap=True)
   result.append(dict(id=str(cid)+':add:'+str(nm),kind='ad_add_sku',direction='add',campaign_id=cid,nm_id=nm,article=prices[nm]['article'],placement=placement,target_minor=target,subject_id=o['subject_id'],manual_experiment=True,exact_addition_quote=True,growth_evidence=evidence))
   seen.add(nm)
   added_counts[cid]=added_counts.get(cid,0)+1
@@ -294,11 +295,15 @@ def validate_addition(io,item,before):
  if cfg['currency']!='CNY'or item['target_minor']%cfg['cpcStep']or item['target_minor']>cfg['cpcMaxBid']:raise ValueError('Addition bid step changed')
  typ='search'if item['placement']=='search'else'recommendation'
  quote_cid=e.get('minimum_quote_campaign_id',cid)
- if quote_cid!=cid:
+ quote_nm=e.get('minimum_quote_nm_id',nm)
+ from china_addition_minimum import CATEGORY_BASIS
+ category_quote=e.get('minimum_quote_basis')==CATEGORY_BASIS
+ if quote_nm!=nm and (not category_quote or e.get('minimum_quote_subject_id')!=item['subject_id']):raise ValueError('Unverified representative minimum')
+ if quote_cid!=cid or quote_nm!=nm:
   qs=http(io,'/api/advert/v2/adverts?ids='+str(quote_cid)).get('adverts',[])
-  if len(qs)!=1 or qs[0]['currency']!='CNY'or qs[0]['settings']['payment_type']!='cpc'or not any(n['nm_id']==nm and n['subject']['id']==item['subject_id']for n in qs[0]['nm_settings']):raise ValueError('Exact minimum quote membership changed')
- q=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=quote_cid,nm_ids=[nm],payment_type='cpc',placement_types=[typ]))
- vals=[b['value']for row in q.get('bids',[])if row['nm_id']==nm for b in row['bids']if b['currency']=='CNY'and b['type']==typ]
+  if len(qs)!=1 or qs[0]['status']not in[9,11]or qs[0]['currency']!='CNY'or qs[0]['settings']['payment_type']!='cpc'or (category_quote and not qs[0]['settings']['placements'].get(item['placement']))or not any(n['nm_id']==quote_nm and n['subject']['id']==item['subject_id']for n in qs[0]['nm_settings']):raise ValueError('Exact minimum quote membership changed')
+ q=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=quote_cid,nm_ids=[quote_nm],payment_type='cpc',placement_types=[typ]))
+ vals=[b['value']for row in q.get('bids',[])if row['nm_id']==quote_nm for b in row['bids']if b['currency']=='CNY'and b['type']==typ]
  if len(vals)!=1 or vals[0]>item['target_minor']:raise ValueError('Exact addition minimum changed')
  from china_advertising_reserve import require as require_current_reserve
  require_current_reserve(io,item)
@@ -319,4 +324,6 @@ def enrich(io,s,bundle):
  from china_advertising_reserve import filter_bundle
  result,_=filter_bundle(io,result,'prepare')
  return result
+
+
 

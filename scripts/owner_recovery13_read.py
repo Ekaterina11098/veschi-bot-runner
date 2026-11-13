@@ -13,7 +13,7 @@ TARGETS=[1473243894,1473244337]
 CIDS=[40933588,41298169,41779660]
 def run():
  c=Cache()
- if c.get(ROOT):return
+ if (c.get(ROOT)or{}).get('status')=='complete':return
  wb=WB();validate_identity(c,wb)
  original=requests.sessions.Session.request
  def guard(session,method,url,**kw):
@@ -25,9 +25,11 @@ def run():
  read_context=reading();read_context.__enter__()
  requests.sessions.Session.request=guard
  result=dict(cabinet='token_3',observed_at=stamp(),inputs={},errors={},wb_writes=0,telegram_calls=0,model_calls=0,grants_action_permission=False)
+ result=c.get(ROOT) or result
  def save():
-  if c.get(ROOT):c.put(ROOT,result)
-  else:c.create(ROOT,result)
+  normalized=json.loads(json.dumps(result))
+  if c.get(ROOT):c.put(ROOT,normalized)
+  else:c.create(ROOT,normalized)
  def get(url,params=None):
   r=requests.get(url,params=params,headers={'Authorization':os.environ['WB_TOKEN_3']},timeout=50)
   if r.status_code==429:
@@ -36,6 +38,7 @@ def run():
   if not r.ok:raise ValueError('Read HTTP '+str(r.status_code))
   return r.json()
  def stage(name,fn):
+  if name in result['inputs']:return
   try:result['inputs'][name]=fn()
   except Exception as ex:result['errors'][name]=str(ex)[:220] if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__
   save()
@@ -61,6 +64,7 @@ def run():
     if not r.ok:raise ValueError('Published stock HTTP '+str(r.status_code))
     return dict(observed_at=stamp(),raw=r.json(),size_to_nm=mapping)
    stage('published_stock:'+str(wid),stock)
+  stage('budgets',lambda:wb.req('/api/advert/v2/budget','POST',{'advertIds':CIDS}))
   stage('funnel',lambda:collect_funnel(c,datetime.now(MSK),TARGETS))
   stage('completed_ads',lambda:wb.req('/adv/v3/fullstats?ids=40933588,41298169&beginDate=2026-11-07&endDate=2026-11-12'))
   time.sleep(21)

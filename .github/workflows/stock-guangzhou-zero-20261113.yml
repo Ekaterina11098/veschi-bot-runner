@@ -1,11 +1,14 @@
 name: Owner Guangzhou zero and pause 13Nov
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-guangzhou-zero-20261113.yml']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: bot-stock
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   stock:
     runs-on: ubuntu-latest

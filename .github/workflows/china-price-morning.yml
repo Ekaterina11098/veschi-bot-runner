@@ -107,7 +107,7 @@ jobs:
           MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: "" # Scheduled price reports use deterministic rules, no paid model
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
           PYTHONPATH: ../scripts:.
           REPORT_ACTION: ${{ steps.request.outputs.action }}
@@ -120,6 +120,7 @@ jobs:
           python ../scripts/check_china_installed_price_step.py china_agent/demand.py
           python ../scripts/test_china_price_pending.py
           python ../scripts/test_china_price_delivery.py
+          python ../scripts/test_china_price_intraday_contract.py
           python ../scripts/test_china_price_schedule_identity.py
           python ../scripts/test_price_repair_install.py
           python ../scripts/test_price_review_blocks.py

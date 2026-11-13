@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Deliver both morning reports or preview without sending
+        description: Deliver brief up/down recommendations or preview without sending
         type: choice
         options: [run, verify]
         default: verify
@@ -140,7 +140,7 @@ jobs:
           python ../scripts/test_price_rules31.py
           python -m compileall -q china_agent/morning_pair.py china_agent/daily_expected_control.py
           if [ "$REPORT_ACTION" = verify ]; then
-            python -m china_agent.morning_pair --verify
+            python -m china_agent.morning_pair --section candidates --verify
           else
             python - <<'PY'
           import json,sys
@@ -149,7 +149,7 @@ jobs:
           request=json.load(open('../china-price-morning-request.json'))
           early=request.get('send_now') is True and request.get('owner_id')==5122667182 and request.get('report_date')==str(datetime.now(ZoneInfo('Europe/Moscow')).date())
           correction=early and request.get('correct_candidates') is True
-          sys.argv=['morning_pair']+(['--send-now']if early else[])+(['--correct-candidates']if correction else[])
+          sys.argv=['morning_pair','--section','candidates']+(['--send-now']if early else[])+(['--correct-candidates']if correction else[])
           from china_agent.morning_pair import main
           main()
           PY

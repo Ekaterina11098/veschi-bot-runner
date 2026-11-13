@@ -1,8 +1,5 @@
 name: Owner verified remainder Telegram summary13Nov
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-finish50-notice13.yml']
   workflow_dispatch:
 permissions:
   contents: read

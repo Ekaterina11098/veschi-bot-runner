@@ -6,29 +6,25 @@ on:
 permissions: {contents: read}
 jobs:
   verify:
-    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner-recovery13] Read exact recovery evidence without mutations'
+    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner-recovery13-v2] Read bounded evidence without repository clone'
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 9
     steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - uses: actions/checkout@v4
-        with:
-          repository: Ekaterina11098/VESCHI_AI
-          ref: b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c
-          token: ${{ secrets.SOURCE_READ_TOKEN }}
-          path: source
-          persist-credentials: false
-      - run: pip install requests==2.32.5 Pillow==12.3.0
-      - name: Read exact seller prices, MSK COGS and completed own cohort
+      - name: Install HTTP reader
+        run: python3 -m pip install requests==2.32.5
+      - name: Read exact owner scope without mutations
         env:
-          PYTHONPATH: scripts:source
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
-          MPSTATS_API_TOKEN: ${{ secrets.MPSTATS_API_TOKEN }}
-        run: python scripts/owner_recovery13_read.py
-
+        run: |
+          python3 - <<'PY'
+          import os,urllib.request,pathlib,subprocess,sys
+          names=['china_cloud_cost_control','china_analytic_dialog','china_product_current','china_article_diagnostic','china_moysklad_read','moysklad_warehouses','china_hourly_sales_read','china_wb_evidence','owner_recovery13_read']
+          root=pathlib.Path('reader');root.mkdir()
+          for name in names:
+              url='https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name+'.py'
+              (root/(name+'.py')).write_bytes(urllib.request.urlopen(url,timeout=45).read())
+          subprocess.run([sys.executable,str(root/'owner_recovery13_read.py')],check=True)
+          PY

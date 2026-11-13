@@ -1,0 +1,49 @@
+name: Colette current check
+on:
+  push:
+    branches: [madison-fill-20261105]
+    paths: ['.github/workflows/colette-check-20261113.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          ARTICLES=['025-MadisonBag-zblack','026-MadisonBag-zcoffee','027-MadisonBag-zdarkred']
+          def request(url,body=None,method=None,headers=None):
+              h=headers if headers is not None else {'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'}
+              req=urllib.request.Request(url,headers=h,data=None if body is None else json.dumps(body).encode(),method=method or ('POST' if body is not None else 'GET'))
+              with urllib.request.urlopen(req,timeout=45) as f:
+                  raw=f.read()
+                  return json.loads(raw) if raw else None
+          def save(key,payload):
+              now=datetime.datetime.now(datetime.timezone.utc);k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              return request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',{'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()},headers=h)
+          
+          def cache(key):
+              k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              rows=request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?cache_key=eq.'+key+'&select=payload',headers=h)
+              return rows[0]['payload'] if rows else None
+          
+          KEY='colette_check:china:20261113:visibility:v1'
+          out={'status':'reading','cards':[]}
+          save(KEY,out)
+          prior=cache('colette_fill:china:20261113:execution:v1')
+          for p in prior['requests']:
+           d=request('https://content-api.wildberries.cn/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100},'filter':{'withPhoto':-1,'textSearch':str(p['nmID'])}}})
+           for c in d.get('cards',[]):
+            if c['vendorCode']==p['vendorCode'] and c['nmID']==p['nmID']:out['cards'].append(c)
+           out['status']='reading';save(KEY,out)
+          out['errors']=request('https://content-api.wildberries.cn/content/v2/cards/error/list',{'settings':{'sort':{'ascending':False},'cursor':{'limit':100}}})
+          out['status']='received';save(KEY,out)
+          
+          PY

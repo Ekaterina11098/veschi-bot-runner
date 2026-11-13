@@ -6,7 +6,7 @@ on:
 permissions: {contents: read}
 jobs:
   verify:
-    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner-recovery13-v2] Read bounded evidence without repository clone'
+    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner-recovery13-v3] Resume missing read stages only'
     runs-on: ubuntu-latest
     timeout-minutes: 9
     steps:

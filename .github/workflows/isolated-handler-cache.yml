@@ -1,0 +1,74 @@
+name: Isolated NULL-safe handler cache validation
+on:
+  push:
+    branches: [codex/isolated-handler-cache-20261113]
+    paths: ['.github/workflows/isolated-handler-cache.yml', 'handler-cache-pass2.txt']
+permissions:
+  contents: read
+jobs:
+  handler-cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        handler: [approval, morning]
+        cabinet: [token_1, token_2, token_3]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: isolated_test
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U isolated_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ISOLATED_DSN: host=127.0.0.1 port=5432 user=isolated_test dbname=postgres connect_timeout=5
+      TEST_CACHE_DIR: .isolated-handler-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'psycopg[binary]==3.2.10' cryptography==46.0.2
+      - name: Restore only isolated process and cabinet cache
+        id: prior
+        uses: actions/cache/restore@v4
+        with:
+          path: .isolated-handler-cache/*/state.aes
+          key: isolated-null-handler-v2-${{ matrix.handler }}-${{ matrix.cabinet }}-${{ github.run_id }}-lookup
+          restore-keys: isolated-null-handler-v2-${{ matrix.handler }}-${{ matrix.cabinet }}-
+      - name: Require prior run match on second pass
+        env:
+          MATCHED_KEY: ${{ steps.prior.outputs.cache-matched-key }}
+        run: |
+          if test -f handler-cache-pass2.txt; then
+            test -n "$MATCHED_KEY"
+            test "$MATCHED_KEY" != 'isolated-null-handler-v2-${{ matrix.handler }}-${{ matrix.cabinet }}-${{ github.run_id }}'
+          fi
+      - name: Verify restored cache and preserve complete encrypted artifact
+        env:
+          MATCHED_KEY: ${{ steps.prior.outputs.cache-matched-key }}
+        run: python load_transport.py seed ${{ matrix.handler }} ${{ matrix.cabinet }}
+      - name: Verify another Python process decrypts cache and full artifact
+        run: python load_transport.py restore ${{ matrix.handler }} ${{ matrix.cabinet }}
+      - name: Save isolated encrypted cache
+        uses: actions/cache/save@v4
+        with:
+          path: .isolated-handler-cache/*/state.aes
+          key: isolated-null-handler-v2-${{ matrix.handler }}-${{ matrix.cabinet }}-${{ github.run_id }}
+      - name: Preserve complete synthetic ciphertext and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: isolated-${{ matrix.handler }}-${{ matrix.cabinet }}
+          path: |
+            transport-*.json
+            .isolated-handler-cache/**/*.aes.json
+          include-hidden-files: true
+          retention-days: 3
+

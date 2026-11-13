@@ -52,3 +52,5 @@ jobs:
           tail -n 5 v3/isolated-results/tests.log || true
           cat v3/isolated-results/resources.log || true
 
+# Recheck single-scan fresh captures; synthetic fixture insertion is batched.
+

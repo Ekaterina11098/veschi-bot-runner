@@ -21,8 +21,6 @@ jobs:
           --cpus 2 --memory 1g --memory-swap 1g
           --health-cmd "pg_isready -U isolated_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      ISOLATED_PG_CONTAINER: ${{ job.services.postgres.id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,6 +37,8 @@ jobs:
           cd v3
           python -m unittest test_review_morning test_persistent_backup test_review_approved_worker > isolated-results/regressions.log 2>&1
       - name: Fresh-process resource comparisons on the same constrained PostgreSQL
+        env:
+          ISOLATED_PG_CONTAINER: ${{ job.services.postgres.id }}
         run: python v3/tests/measure_handler_resources.py > v3/isolated-results/resources.log 2>&1
       - uses: actions/upload-artifact@v4
         if: always()

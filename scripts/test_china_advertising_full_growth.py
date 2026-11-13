@@ -46,6 +46,8 @@ class StagedCollectionTests(unittest.TestCase):
   from datetime import datetime,timezone
   now=datetime.now(timezone.utc).isoformat()
   state=dict(own=dict(rows=[],observed_at=now,period_from='2026-10-05',period_to='2026-11-03'),published_stock=dict(amounts={'1':5,'999':5},missing_nm_ids=[],observed_at=now),fx=dict(rub_per_cny=12.1816),economics=dict(rows={},missing={},observed_at=now),campaigns=[],budgets=dict(adverts=[]),config=dict(currency='CNY',cpcStep=1,cpcMaxBid=1290),minimums={})
+  import hashlib
+  state['economic_policy_signature']=hashlib.sha256(json.dumps(dict(policy={},model_revision='approved-planned-payment-reserve-v1'),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
   class IO:
    def __init__(self):self.data={'china_agent:advertising_full_growth:2026-11-04:v1:inputs':state};self.calls=0;self.fail=False
    def get(self,k):
@@ -72,6 +74,15 @@ class StagedCollectionTests(unittest.TestCase):
   self.assertEqual(first['full_growth_review']['catalogue_count'],2)
   self.assertEqual(first['full_growth_inputs']['screened_nm_ids'],[1,999])
   self.assertEqual(io.calls,1);self.assertEqual(reader.call_count,1)
+ def test_changed_approved_policy_rebuilds_only_economics(self):
+  from china_advertising_full_growth import collect
+  io,s,now=self.fake();io.data['china_agent:new_ad_economics_policy:v1']=dict(payment_reserve_pct=3)
+  stock=dict(rows=[],missing_articles=[],coverage_complete=True,observed_at=now)
+  economics=dict(rows={},missing={},observed_at=now,revision='recalculated')
+  with self.imports(),patch('china_moysklad_read.read_stock',return_value=stock),patch('china_advertising_economic_review.model_rows',return_value=economics)as models:
+   first=collect(io,s,'2026-11-04');second=collect(io,s,'2026-11-04')
+  self.assertEqual(models.call_count,1);self.assertEqual(io.calls,1)
+  self.assertEqual(second['full_growth_inputs']['economics']['revision'],'recalculated')
  def test_read_failure_preserves_stages_for_next_attempt(self):
   from china_advertising_full_growth import collect
   from china_morning_readiness import PendingAdvertisingDay

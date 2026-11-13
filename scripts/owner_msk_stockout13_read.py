@@ -13,7 +13,7 @@ MSK=ZoneInfo('Europe/Moscow')
 GZ={2128711871,2128836687,2128836688,2128972258,2128990207,2129004929,2129199357,2129199358,2129199359,2129199360,2129199361,2129309882,2129309883,2129309884,2129309885,2129309886,2129309887,2129309888}
 def main():
  c=Cache()
- if (c.get(ROOT)or{}).get('status')=='complete':return
+ if (c.get(ROOT)or{}).get('status')=='complete' and ((c.get(ROOT)or{}).get('inputs',{}).get('msk_case_recovery')or{}).get('coverage_complete'):return
  validate_identity(c,WB())
  source=c.get('china_agent:advertising_full_growth:2026-11-13:v1:inputs:midday')or{}
  catalog=[r for r in source.get('catalogue',{}).get('rows',[])if r['nmID']not in GZ]
@@ -33,7 +33,7 @@ def main():
  def guard(session,method,url,**kw):
   u=urlparse(url);m=method.upper()
   private=url.startswith(c.url)and u.path.endswith('/telegram_api_cache')and m in ['GET','POST','PATCH']
-  ms=m=='GET'and u.hostname=='api.moysklad.ru'and u.path in ['/api/remap/1.2/entity/store','/api/remap/1.2/report/stock/all']
+  ms=m=='GET'and u.hostname=='api.moysklad.ru'and u.path in ['/api/remap/1.2/entity/store','/api/remap/1.2/report/stock/all','/api/remap/1.2/entity/product']
   wb=u.hostname=='marketplace-api.wildberries.ru'and ((m=='GET'and u.path=='/api/v3/orders')or(m=='POST'and u.path=='/api/v3/stocks/2126188'and kw.get('json')=={'chrtIds':sorted(mapping)}))
   if not(private or ms or wb):raise ValueError('Read-only exact MSK audit guard')
   return original(session,method,url,**kw)
@@ -82,6 +82,10 @@ def main():
   return dict(observed_at=stamp(),period_from=str(first.date()),period_to='2026-11-12',recent7_from='2026-11-06',source='WB FBS created,all statuses,id dedup; buyer-discounted CNY,not buyouts/profit/wholecabinet',rows=list(rows.values()),all_fbs_records=len(allrows),coverage_complete=True)
  try:
   stage('msk',msk);stage('published',published);stage('orders',orders)
+  missing=result['inputs'].get('msk',{}).get('missing_articles',[])
+  if missing:
+   if len(missing)>2:raise ValueError('Case recovery scope expanded')
+   stage('msk_case_recovery',lambda:Reader().stock(missing,'msk'))
  finally:requests.sessions.Session.request=original
  result.update(status='complete'if not result['errors']else'partial',completed_at=stamp());save()
  print(json.dumps(dict(status=result['status'],errors=result['errors'],wb_writes=0,telegram_calls=0)))

@@ -1,0 +1,75 @@
+name: Isolated v4 CPU and cross-run cache gates
+on:
+  push:
+    branches: [codex/isolated-handler-cache-v4-gates-20261113]
+    paths: ['.github/workflows/isolated-v4-gates.yml', 'require-prior-v4.txt']
+permissions:
+  contents: read
+jobs:
+  suite:
+    if: github.event.head_commit.message != 'Verify second isolated v4 cache restore'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env: {POSTGRES_USER: isolated_test, POSTGRES_DB: postgres, POSTGRES_HOST_AUTH_METHOD: trust}
+        ports: ['55439:5432']
+        options: >-
+          --cpus 2 --memory 1g --memory-swap 1g
+          --health-cmd "pg_isready -U isolated_test" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python synthetic-v4-bundle.py
+      - run: pip install -r v3/tests/requirements-handler-cache.txt
+      - run: python v3/tests/test_handler_cache_isolated.py > v3/isolated-results/tests.log 2>&1
+      - run: python v3/tests/test_recovery_kit.py > v3/isolated-results/recovery-tests.log 2>&1
+      - run: cd v3 && python -m unittest test_review_morning test_persistent_backup test_review_approved_worker > isolated-results/regressions.log 2>&1
+      - name: Repeated paired resource comparisons
+        env: {ISOLATED_PG_CONTAINER: '${{ job.services.postgres.id }}'}
+        run: python v3/tests/measure_handler_resources.py > v3/isolated-results/resources.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: isolated-v4-suite, path: v3/isolated-results, retention-days: 7}
+  transport:
+    needs: suite
+    if: always() && (needs.suite.result == 'success' || needs.suite.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env: {POSTGRES_USER: isolated_test, POSTGRES_DB: postgres, POSTGRES_HOST_AUTH_METHOD: trust}
+        ports: ['55439:5432']
+        options: >-
+          --health-cmd "pg_isready -U isolated_test" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python synthetic-v4-bundle.py
+      - run: pip install -r v3/tests/requirements-handler-cache.txt
+      - uses: actions/cache/restore@v4
+        id: restored
+        with:
+          path: v3/.synthetic-v4-cache
+          key: isolated-v4-morning-all3-${{ github.run_id }}-lookup
+          restore-keys: isolated-v4-morning-all3-
+      - name: Require actual authenticated restore and full archive
+        id: transport
+        env: {MATCHED_KEY: '${{ steps.restored.outputs.cache-matched-key }}'}
+        run: |
+          if test -f require-prior-v4.txt; then cp require-prior-v4.txt v3/; test -n "$MATCHED_KEY"; fi
+          python v3/tests/cross_run_v4.py
+      - uses: actions/cache/save@v4
+        if: steps.transport.outputs.cache_written == 'true'
+        with:
+          path: v3/.synthetic-v4-cache
+          key: isolated-v4-morning-all3-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        with: {name: isolated-v4-transport, path: v3/isolated-results, retention-days: 7}
+

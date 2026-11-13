@@ -11,10 +11,13 @@ def review(bundle,source):
  if bundle.get('economic_review_complete')is not True:raise ValueError('Economic checks incomplete')
  directions=bundle.get('recommendation_directions')or{}
  if set(directions)!={'raise','add','reduce','exclude'}:raise ValueError('All four directions must be checked')
+ unresolved=[r for r in directions['add'].get('rows',[])if r.get('ready')is not True]
+ if unresolved:raise ValueError('Addition validation unfinished: '+','.join(str(r.get('nm_id'))for r in unresolved))
  out=copy.deepcopy(bundle)
  for c in out['campaigns']:
   for r in c.get('focus',[])+c.get('attention',[]):
    if r.get('action')and(r.get('data_blocker')or r.get('pending_first_day')or r.get('already_excluded')):raise ValueError('Unready action survived')
  out.pop('codex_analysis',None)
- out['midday_review']=dict(backend='owner_selected_full_checks_no_model',full_catalogue_checked=True,economics_checked=True,completed_period_to=source['period_to'],source_ref=source['full_growth_review']['input_key'],model_calls=0,wb_writes=0)
+ out['midday_review']=dict(backend='owner_selected_full_checks_no_model',validation_revision='ready_candidates_v2',full_catalogue_checked=True,economics_checked=True,completed_period_to=source['period_to'],source_ref=source['full_growth_review']['input_key'],model_calls=0,wb_writes=0)
  return out
+

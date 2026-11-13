@@ -1,4 +1,4 @@
-name: Isolated handler v3 Linux validation
+name: Isolated pilot gate and recovery kit
 on:
   push:
     branches: [codex/isolated-handler-cache-v3-linux-20261113]
@@ -8,7 +8,7 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:16
@@ -30,27 +30,23 @@ jobs:
           python-version: '3.12'
       - run: python isolated-v3-bundle.py
       - run: pip install -r v3/tests/requirements-handler-cache.txt
-      - name: NULL restore compatibility concurrency kill and checkpoint tests
-        run: python v3/tests/test_handler_cache_isolated.py > v3/isolated-results/tests.log 2>&1
-      - name: Existing publisher and handler regressions
+      - name: Opt-in gate and previous cache safety tests
+        run: python v3/tests/test_handler_cache_isolated.py > v3/isolated-results/pilot-gate-tests.log 2>&1
+      - name: Standalone v1 v2 recovery and transactional staging restore
+        run: python v3/tests/test_recovery_kit.py > v3/isolated-results/recovery-kit-tests.log 2>&1
+      - name: Existing regressions
         run: |
           cd v3
           python -m unittest test_review_morning test_persistent_backup test_review_approved_worker > isolated-results/regressions.log 2>&1
-      - name: Fresh-process resource comparisons on the same constrained PostgreSQL
-        env:
-          ISOLATED_PG_CONTAINER: ${{ job.services.postgres.id }}
-        run: python v3/tests/measure_handler_resources.py > v3/isolated-results/resources.log 2>&1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: isolated-v3-linux-evidence
+          name: isolated-pilot-recovery-evidence
           path: v3/isolated-results
           retention-days: 7
-      - name: Compact measured summary
-        if: always()
+      - if: always()
         run: |
-          tail -n 5 v3/isolated-results/tests.log || true
-          cat v3/isolated-results/resources.log || true
-
-# Recheck single-scan fresh captures; synthetic fixture insertion is batched.
+          tail -n 5 v3/isolated-results/pilot-gate-tests.log || true
+          cat v3/isolated-results/recovery-kit-tests.log || true
+          tail -n 5 v3/isolated-results/regressions.log || true
 

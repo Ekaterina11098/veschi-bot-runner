@@ -1,5 +1,5 @@
 name: Daily China midday green report 15:00 MSK
-# State recovery 13Nov: use existing idempotent Supabase retries; no model or WB writes.
+# State recovery 13Nov, isolated test adapters updated: use existing idempotent Supabase retries; no model or WB writes.
 on:
   push:
     branches: [main]

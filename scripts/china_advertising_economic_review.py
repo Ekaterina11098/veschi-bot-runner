@@ -13,7 +13,14 @@ def model_rows(inputs,policy,delivery):
  if not finite(fx) or fx<=0:raise ValueError('Verified FX missing')
  for nm,pr in prices.items():
   try:
-   p=own.get(nm);b=buyout_from_product(p)
+   p=own.get(nm);planned=(policy.get('planned_buyout_by_nm')or{}).get(str(nm))
+   if p is None and not planned:raise ValueError('Product buyout source missing')
+   b=buyout_from_product(p)if p is not None else dict(source='fallback',sample_size=0,probability=None)
+   if b['source']=='fallback'and planned:
+    probability=planned.get('probability')
+    if not finite(probability)or not 0<=probability<=1 or not planned.get('source_ref'):raise ValueError('Approved planned buyout invalid')
+    b=dict(b,probability=probability)
+   if b.get('probability')is None:raise ValueError('Product buyout source missing')
    q=float(b['probability']);st=stocks[pr['article'].casefold()]
    cost=st.get('cost_rub') if 'cost_rub' in st else st.get('price',0)/100
    free=st.get('available') if 'available' in st else st['stock']-st['reserve']
@@ -22,15 +29,17 @@ def model_rows(inputs,policy,delivery):
     out[str(nm)]=dict(stock_free=free,stock_observed_at=inputs['stock']['observed_at'],price_observed_at=inputs['prices']['observed_at'],seller_price_cny=price,observed_at=inputs['products']['observed_at'],model_unavailable='No available MSK stock; missing valuation is not zero COGS')
     continue
    if not all(finite(v) for v in [cost,free,price]) or cost<=0 or price<=0:raise ValueError('Current cost, stock or price invalid')
-   fee=p.get('total_commission_without_spp_in_sales');fee_fallback=not finite(fee) or not 0<fee<100
+   fee=(p or{}).get('total_commission_without_spp_in_sales');fee_fallback=not finite(fee) or not 0<fee<100
    if fee_fallback:fee=policy['commission_pct']
    log=policy.get('logistics_by_nm',{}).get(str(nm)) or delivery.get('rows',{}).get(pr['article'])
    if not log or not finite(log.get('delivery_cny')):raise ValueError('Logistics model missing')
-   before=q*(price*(1-(fee+policy['tax_pct'])/100)-cost/fx)-log['delivery_cny']-policy['handling_rub']/fx
+   payment_reserve=policy.get('payment_reserve_pct',0)
+   if not finite(payment_reserve)or not 0<=payment_reserve<100:raise ValueError('Payment reserve invalid')
+   before=q*(price*(1-(fee+policy['tax_pct']+payment_reserve)/100)-cost/fx)-log['delivery_cny']-policy['handling_rub']/fx
    out[str(nm)]=dict(observed_at=inputs['products']['observed_at'],own_cogs_rub=cost,seller_revenue_rub=price*fx,seller_price_cny=price,
     stock_free=free,stock_observed_at=inputs['stock']['observed_at'],price_observed_at=inputs['prices']['observed_at'],
     expected_margin_before_ads_cny=before,owner_strategy_review=True,buyout=q,sample_size=b['sample_size'],sample_reliable=b['sample_size']>=20,
-    commission_pct=fee,tax_pct=policy['tax_pct'],handling_rub=policy['handling_rub'],commission_policy_fallback=fee_fallback,buyout_fallback=b['source']=='fallback',logistics_cny=log['delivery_cny'],logistics_historical=True,
+    commission_pct=fee,tax_pct=policy['tax_pct'],payment_reserve_pct=payment_reserve,handling_rub=policy['handling_rub'],commission_policy_fallback=fee_fallback,buyout_fallback=b['source']=='fallback',logistics_cny=log['delivery_cny'],logistics_source=log.get('delivery_source'),logistics_historical=log.get('route')!='Moscow_FBS',planned_buyout_source=planned.get('source_ref')if planned and b['source']=='fallback'else None,
     period_from=inputs['products']['period_from'],period_to=inputs['products']['period_to'],source_ids=['own_buyout','seller_price_CNY','MSK_stock_reserve_COGS','CBR','historical_logistics'],
     unknown_reverse_and_shared_costs=True,preliminary=True)
   except (KeyError,ValueError,TypeError,ZeroDivisionError) as ex:missing[str(nm)]=str(ex)
@@ -75,7 +84,7 @@ def apply(bundle,source,minima):
    drr=100*spend/amount if amount>0 else None
    facts=f'{spend:.2f} ¥; {int(p["clicks"])} кликов; {int(orders)} прямых заказов; '+(f'ДРР {drr:.2f}%.' if drr is not None else 'ДРР не определена.')
    r['reason']=facts+' Экономика предварительная; ассоциированные заказы и неизвестные общие расходы не распределены.'
-   if e.get('buyout_fallback'):r['reason']+=' Нет завершённой собственной выборки: выкуп50% — допущение, не факт.'
+   if e.get('buyout_fallback'):r['reason']+=f" Нет завершённой собственной выборки: выкуп{e['buyout']*100:g}% — допущение, не факт."
    base=dict(id=str(c['id'])+':'+str(r['nm']),campaign_id=c['id'],nm_id=r['nm'],placement=zone,old_minor=old,article=r['article'])
    own_model=e.get('sample_size',0)>=5 and not e.get('buyout_fallback') and not e.get('commission_policy_fallback')
    meaningful=(p['clicks']>=100 or own_model and model_before<=0 and p['clicks']>=30) and spend>=max(0,model_before,e['seller_price_cny']*.05)

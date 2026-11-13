@@ -136,7 +136,8 @@ def fund(io,w,source,cid,amount):
   s.update(status='uncertain'if s['status']in['submitting','accepted']else'blocked',reason=str(e),finished_at=stamp());io.put(key,s)
 def main():
  assert os.environ['GITHUB_REPOSITORY']=='Ekaterina11098/veschi-bot-runner'and os.environ['GITHUB_REF']=='refs/heads/main'
- io=AdvertisingIO();w=ScopedWB();validate_identity(Cache(),w)
+ io=AdvertisingIO();assert io.get(ROOT+':notice_contract'),'A confirmed recovery must register its completion before marketplace work'
+ w=ScopedWB();validate_identity(Cache(),w)
  approval=io.get(ROOT+':approval');assert approval['owner_id']==5122667182 and approval['source_channel']=='codex'and approval['status']=='approved'
  assert approval['addition']==dict(campaign_id=CID,nm_id=NM,target_minor=BID)and approval['funding']=={'40933588':700,'41055480':100}
  assert datetime.now(timezone.utc)<datetime.fromisoformat(approval['expires_at'])
@@ -144,5 +145,7 @@ def main():
  add50(io,w,source)
  fund(io,w,source,40933588,700)
  fund(io,w,source,41055480,100)
+ from china_execution_completion import complete
+ complete(io,ROOT+':notice_contract')
  print(json.dumps({key:(io.get(ROOT+':'+key)or{}).get('status')for key in ['addition','funding:40933588','funding:41055480']}))
 if __name__=='__main__':main()

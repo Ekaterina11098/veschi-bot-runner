@@ -1,0 +1,31 @@
+name: Owner verified remainder Telegram summary13Nov
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/owner-finish50-notice13.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: china-owner-finish50-notice13
+  cancel-in-progress: false
+jobs:
+  notify:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests==2.32.5
+      - name: Send only owner-authorized verified result, no marketplace access
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ""
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: PYTHONPATH=scripts python scripts/owner_finish50_notice13.py

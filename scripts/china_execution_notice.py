@@ -42,14 +42,19 @@ def deliver_result(io,a,p,e):
  pending=any(s.get('status') in ['accepted','submitting','uncertain','running','preflight'] or s.get('status')=='verified' and not proven(byid[s['id']],s) for s in states)
  phase='verified' if ready else 'uncertain' if pending else 'partial' if any(proven(byid[s['id']],s) for s in states) else 'approved_pending_conditions' if any(s.get('status')=='approved_pending_conditions' for s in states) else 'blocked'
  key=PREFIX+p['plan_id']+(':uncertain' if phase=='uncertain' else '')
+ old=io.get(key)
+ # A partial/blocked notice must not suppress a later verified completion.
+ if old and phase=='verified' and old.get('status')=='sent' and old.get('phase') in ('partial','blocked','approved_pending_conditions'):
+  key+=':verified'
  if io.get(key):return None
  lines=['Результат команды:']
  for state in states:
-  item=byid[state['id']];label=item.get('article','')+' · РК '+str(item['campaign_id'])
+  item=byid[state['id']];label=(item['article']+' · ' if item.get('article') else '')+'РК '+str(item['campaign_id'])
   if proven(item,state):
    if item['kind']=='ad_exclude_sku':out='исключён; проверено WB. Остальные товары и ставки сохранены.'
    elif item['kind']=='ad_set_bid':out='ставка '+format(item['old_minor']/100,'.2f')+' → '+format(item['target_minor']/100,'.2f')+' ¥; проверено WB.'
-   elif item['kind']=='topup_campaign':out='пополнение подтверждено чтением бюджета WB.'
+   elif item['kind']=='topup_campaign':out='пополнена на '+str(item['amount_cny'])+' CNY; проверено WB.'
+   elif item['kind']=='ad_add_sku':out='добавлен в '+('поиск' if item['placement']=='search' else 'рекомендации')+' по '+format(item['target_minor']/100,'.2f')+' CNY; проверено WB.'
    else:out='действие подтверждено WB.'
    if state.get('already_done'):out='уже было выполнено; состояние проверено WB, повторной записи нет.'
   elif state.get('status')=='approved_pending_conditions':out='сумма '+str(item['amount_cny'])+' CNY согласована; пополнение не выполнено. '+state.get('reason','Сначала проверка условий.')
@@ -57,7 +62,7 @@ def deliver_result(io,a,p,e):
   else:out='результат пока не подтверждён WB; повторно действие не запускаю.'
   lines.append(label+': '+out)
  text='\n'.join(lines);now=datetime.now(timezone.utc).isoformat()
- record=dict(status='sending',phase=phase,text=text,plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],execution_key='china_agent:daily_ad_execution:v2:'+p['plan_id'],job_id=a['job_id'],chat_id=CHAT,bot_id=BOT,created_at=now)
+ record=dict(status='sending',phase=phase,text=text,plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],execution_key=p.get('execution_key','china_agent:daily_ad_execution:v2:'+p['plan_id']),job_id=a['job_id'],chat_id=CHAT,bot_id=BOT,created_at=now)
  if not io.create(key,record):return None
  try:
   if a.get('result_message_id'):
@@ -69,3 +74,18 @@ def deliver_result(io,a,p,e):
  except Exception:
   record.update(status='uncertain');io.put(key,record)
  return record
+
+def deliver_registered(io,key,e):
+ """A registered confirmed recovery completes by receipt save, without a monitor."""
+ contract=e.get('completion_notice') if isinstance(e,dict) else None
+ if not contract or e.get('status') not in ('verified','done','partial','attention'):return None
+ auth=io.get(contract.get('authorization_key','')) or {}
+ p=contract.get('plan') or {};a=contract.get('approval') or {}
+ from china_loss_control import digest
+ if (auth.get('status')!='approved' or auth.get('owner_id')!=5122667182 or auth.get('telegram_allowed')is not True
+     or auth.get('chat_id')!=CHAT or auth.get('bot_id')!=BOT or auth.get('execution_key')!=key
+     or auth.get('plan_sha256')!=digest(p.get('items',[])) or p.get('plan_sha256')!=auth.get('plan_sha256')
+     or a.get('job_id')!=auth.get('job_id') or a.get('input_message_id')!=auth.get('input_message_id')):
+  raise ValueError('Completion notice authorization mismatch')
+ p=dict(p,execution_key=key)
+ return deliver_result(io,a,p,e)

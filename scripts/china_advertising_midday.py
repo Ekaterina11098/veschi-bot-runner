@@ -206,7 +206,7 @@ def run():
  from china_advertising_state import AdvertisingIO as IO
  from china_advertising_delivery import deliver,telegram_sender
  from china_daily_ad_actions import plan,bind
- io=IO();day=datetime.now(MSK).date().isoformat();key='china_agent:advertising_midday_delivery:'+day+':v1'
+ io=IO();day=datetime.now(MSK).date().isoformat();key='china_agent:advertising_midday_delivery:'+day+':ready-v2'
  delivery_status=(io.get(key) or {}).get('status')
  if delivery_status=='skipped_by_owner':print('skipped_by_owner');return
  if delivery_status=='delivered':print('already_delivered');return
@@ -218,7 +218,7 @@ def run():
   prepared=attach(io,prepare_midday(io,day,current),day)
   if prepared.get('economic_review_complete')is not True:raise ValueError('Preparation requires full verification')
   print(json.dumps(dict(status='fully_prepared_no_delivery',day=day,wb_writes=0,telegram_calls=0)));return
- art='china_agent:advertising_midday_artifacts:'+day+':v1';saved=io.get(art)
+ art='china_agent:advertising_midday_artifacts:'+day+':ready-v2';saved=io.get(art)
  if not saved:
   from china_midday_completed_review import attach,include_closed,merge_completed
   current=include_closed(io,collect(io,day,current=True),day)
@@ -232,13 +232,13 @@ def run():
    return {str(c['id']):{k:c.get(k)for k in ('status','currency','bid_type','settings','nm_settings')}for batch in source.get('batches',{}).values()for c in batch.get('campaigns',{}).get('adverts',[])}
   same_campaign_state=states(current)==(done.get('campaign_states')or states(done.get('source',{})))
   from china_midday_rules_review import enabled as no_model_enabled
-  checked_review=review.get('codex_analysis',{}).get('transport')=='responses_bounded_advertising_v3_full_scope'or (no_model_enabled(io)and review.get('midday_review',{}).get('backend')=='owner_selected_full_checks_no_model')
+  checked_review=review.get('midday_review',{}).get('validation_revision')=='ready_candidates_v2'and (review.get('codex_analysis',{}).get('transport')=='responses_bounded_advertising_v3_full_scope'or (no_model_enabled(io)and review.get('midday_review',{}).get('backend')=='owner_selected_full_checks_no_model'))
   reusable=done.get('status')=='complete'and review.get('economic_review_complete')is True and checked_review and same_campaign_state and (exact_recovery or (datetime.now(timezone.utc)-datetime.fromisoformat(done['observed_at'].replace('Z','+00:00'))).total_seconds()<1200)
   prepared=prepare_midday(io,day,current)
   reusable=reusable and prepared.get('review_context',{}).get('history_sha256')==done.get('input_review_context',{}).get('history_sha256')
   b=only_completed_day_actions(merge_completed(prepared,review,completed_key)if reusable else attach(io,prepared,day));files=[]
   for i,f in enumerate(render_midday(b)):
-   p=plan(io,day,f,i,slot='midday-full-v3')
+   p=plan(io,day,f,i,slot='midday-ready-v2')
    files.append(dict(kind=f['kind'],family=f['family'],page=f['page'],total=f['total'],plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],action_count=len(p['items']),b64=base64.b64encode(f['bytes']).decode()))
   saved=dict(day=day,status='frozen',bundle=b,files=files,validation_revision='full_scope_closed_costs_v3')
   if not io.create(art,saved):saved=io.get(art)
@@ -252,11 +252,14 @@ def run():
  files=[]
  for f in saved['files']:
   cap='Китай · промежуточный отчёт · '+day+' · '+str(f['page'])+'/'+str(f['total'])+'. '
+  if (io.get('china_agent:advertising_midday_delivery:'+day+':v1')or{}).get('status')=='delivered':cap+='Уточнённые готовые рекомендации. '
   cap+=('Ответьте «Сделай всё» для '+str(f['action_count'])+' новых действий только этого PNG.' if f['action_count'] else 'Новых действий для исполнения нет.')
   files.append(dict(f,bytes=base64.b64decode(f['b64'],validate=True),caption=cap))
  r=deliver(io,day,files,telegram_sender(io),binder=lambda f,r:bind(io,f,r),delivery_key=key,expected_families={'drr'})
  print(json.dumps(dict(status=r['status'],day=day,wb_writes=0)))
 if __name__=='__main__':run()
+
+
 
 
 

@@ -30,6 +30,9 @@ def run():
   else:c.create(ROOT,result)
  def get(url,params=None):
   r=requests.get(url,params=params,headers={'Authorization':os.environ['WB_TOKEN_3']},timeout=50)
+  if r.status_code==429:
+   time.sleep(min(60,max(7,int(r.headers.get('Retry-After','7')))))
+   r=requests.get(url,params=params,headers={'Authorization':os.environ['WB_TOKEN_3']},timeout=50)
   if not r.ok:raise ValueError('Read HTTP '+str(r.status_code))
   return r.json()
  def stage(name,fn):

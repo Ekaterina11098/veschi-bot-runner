@@ -97,3 +97,5 @@ jobs:
           WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
           CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
         run: PYTHONPATH=scripts python scripts/china_advertising_daily.py
+
+# Recovery2: include cache-migration regression fixtures; preserve source and delivery identities.

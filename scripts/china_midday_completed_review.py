@@ -135,7 +135,7 @@ def attach(io,bundle,day):
   if receipt.get('status')!='verified'or not at or str(after.get('id'))!=str(cid):continue
   old={n['nm_id']for n in before.get('nm_settings',[])};new={n['nm_id']for n in after.get('nm_settings',[])}
   if before and old!=new:
-   source['verified_composition_changes'] += [dict(cid=int(cid),nm=nm,kind='relaunch',at=at,text='Изменён состав РК',source_ref=key)for nm in new]
+   source['verified_composition_changes'] += [dict(cid=int(cid),nm=nm,kind='added',at=at,text='Добавлен в РК',source_ref=key)for nm in new-old]
  source['executions']=records
  source['observed_at']=datetime.now(timezone.utc).isoformat();source['budget_balance_observed_at_iso']=current.get('completed_at',current['observed_at'])
  rough=build(source)
@@ -166,16 +166,17 @@ def attach(io,bundle,day):
  from china_advertising_growth import enrich as growth_enrich
  from china_advertising_directions import attach as attach_directions
  # Use the same four-direction review as the morning report. Missing evidence remains unavailable.
- source['addition_bid_quotes']={};source['addition_quote_errors']={}
- for nm in source.get('addition_candidate_ids',[]):
-  cid=(source.get('addition_targets')or{}).get(str(nm))
-  if not cid:continue
-  try:
-   raw=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=['recommendation']))
-   values=[v['value']for row in raw.get('bids',[])if row.get('nm_id')==nm for v in row.get('bids',[])if v.get('type')=='recommendation'and v.get('currency')=='CNY']
-   if len(values)!=1 or type(values[0])is not int or values[0]<=0 or values[0]%source['config']['cpcStep']:raise ValueError('Exact addition minimum unavailable')
-   source['addition_bid_quotes'][str(nm)]=dict(campaign_id=cid,target_minor=values[0],bid_verified=True,observed_at=source['observed_at'])
-  except Exception as ex:source['addition_quote_errors'][str(nm)]=type(ex).__name__
+ if not source.get('full_growth_inputs'):
+  source['addition_bid_quotes']={};source['addition_quote_errors']={}
+  for nm in source.get('addition_candidate_ids',[]):
+   cid=(source.get('addition_targets')or{}).get(str(nm))
+   if not cid:continue
+   try:
+    raw=http(io,'/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=[nm],payment_type='cpc',placement_types=['recommendation']))
+    values=[v['value']for row in raw.get('bids',[])if row.get('nm_id')==nm for v in row.get('bids',[])if v.get('type')=='recommendation'and v.get('currency')=='CNY']
+    if len(values)!=1 or type(values[0])is not int or values[0]<=0 or values[0]%source['config']['cpcStep']:raise ValueError('Exact addition minimum unavailable')
+    source['addition_bid_quotes'][str(nm)]=dict(campaign_id=cid,target_minor=values[0],bid_verified=True,observed_at=source['observed_at'])
+   except Exception as ex:source['addition_quote_errors'][str(nm)]=type(ex).__name__
  class MiddayGrowthIO:
   # Morning proposals can predate today's verified changes. Do not reuse that journal.
   def get(self,key):return io.get(key+':midday' if key.startswith('china_agent:daily_growth:')else key)
@@ -210,5 +211,7 @@ def attach(io,bundle,day):
  states={str(c['id']):{k:c.get(k)for k in ('status','currency','bid_type','settings','nm_settings')}for batch in source['batches'].values()for c in batch['campaigns']['adverts']}
  save(io,key,dict(source_ref=evidence_key,campaign_states=states,review=review,input_review_context=bundle.get('review_context',{}),status='complete',observed_at=source['observed_at'],model_calls=0 if no_model_enabled(io)else None,wb_writes=0))
  return merge_completed(bundle,review,key)
+
+
 
 

@@ -1,0 +1,31 @@
+name: Owner143 read-only common pool audit
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/owner-143-pool13-read.yml]
+permissions: {contents: read}
+jobs:
+  read:
+    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner143pool13] Read exact shared pool and obligations without changes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - run: python3 -m pip install requests==2.32.5
+      - name: Read only143 stock, current obligations and posted MSK debits
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os,urllib.request,pathlib,subprocess,sys
+          names=['china_cloud_cost_control','china_moysklad_read','moysklad_warehouses','owner_143_pool13_read']
+          root=pathlib.Path('reader');root.mkdir()
+          for name in names:
+              url='https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name+'.py'
+              (root/(name+'.py')).write_bytes(urllib.request.urlopen(url,timeout=45).read())
+          subprocess.run([sys.executable,str(root/'owner_143_pool13_read.py')],check=True)
+          PY

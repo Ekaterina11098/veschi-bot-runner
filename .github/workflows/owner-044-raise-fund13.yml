@@ -1,0 +1,30 @@
+name: Apply exact owner 044 bid38 and350CNY
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/owner-044-raise-fund13.yml]
+permissions: {contents: read}
+jobs:
+  apply:
+    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner04413] Apply only approved bid38 and350CNY once'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - run: python3 -m pip install requests==2.32.5
+      - name: Apply exact approved scope with WB readback and completion receipt
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os,urllib.request,pathlib,subprocess,sys
+          names=['china_cloud_cost_control','china_moysklad_read','moysklad_warehouses','china_loss_control','china_execution_notice','owner_044_raise_fund13']
+          root=pathlib.Path('executor');root.mkdir()
+          for name in names:
+              url='https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'+name+'.py'
+              (root/(name+'.py')).write_bytes(urllib.request.urlopen(url,timeout=45).read())
+          subprocess.run([sys.executable,str(root/'owner_044_raise_fund13.py')],check=True)
+          PY

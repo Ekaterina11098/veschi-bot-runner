@@ -1,8 +1,5 @@
 name: Owner remove unwanted price control13Nov
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/owner-remove-control13.yml']
   workflow_dispatch:
 permissions:
   contents: read

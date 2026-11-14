@@ -39,6 +39,8 @@ def recommendations(c):
 
 def budget_column(c):
  """Owner-approved display only; execution conditions remain in the structured plan."""
+ if (c.get('financial_action')or{}).get('kind')=='recover_campaign':return 'Пополнить на '+str(c['financial_action']['amount_cny'])+' CNY.\nВключает снижение всех ставок до '+str(c['financial_action']['target_minor']/100)+' CNY и возобновление.'
+ if (c.get('financial_action')or{}).get('kind')=='pause_campaign':return 'Не пополнять.\nПредлагается приостановить РК.'
  if c.get('owner_budget_refused'):return 'Пока не пополнять'
  if c.get('budget_audit_state')in('owner_decided_no_fund','owner_limited_test_ready'):return c['budget_short_note']
  if c.get('budget_audit_state')in('paused_zero','paused_review','budget_pause_review','owner_paused','draft_review','starter_review','data_blocked'):
@@ -94,7 +96,7 @@ def _render_legacy(bundle):
   for i,lines in enumerate(ls):
    col=color(p) if i==2 else color(day) if i==3 else INK
    for j,line in enumerate(lines):d.text((xs[i],y+18+j*35),line,font=font(27,i==5 and bool(c.get('attention'))),fill=col)
-  actions.extend(r['action'] for r in c.get('attention',[]) if r.get('action'))
+  actions.extend(r['action'] for r in c.get('attention',[]) if r.get('action')and r['action']['kind']!='recover_campaign')
   y+=h+12
  # Never sum daily percentages or double-count SKU/app totals.
  totals=[]
@@ -120,8 +122,13 @@ def _render_legacy(bundle):
  bundle=apply(bundle,bundle.get('budget_minimum_topup_cny',100))
  from china_owner_budget_final import apply_review
  bundle=apply_review(bundle)
+ for c in bundle['campaigns']:
+  a=c.get('financial_action')or{}
+  if a.get('kind')=='recover_campaign':
+   ref=a['recovery_evidence'].get('spend_cny',c.get('period',{}).get('spend'))
+   c.update(budget_reference_need=ref,budget_cash_gap=max(0,ref-c['balance'])if ref is not None else None,budget_average_daily=ref/3 if ref is not None else None,budget_reference_label='Расход за 3 дня: ')
  im,d=canvas('Китай · бюджеты и суммы пополнения');y=240;actions=[]
- selected=[c for c in bundle['campaigns'] if c.get('budget_review_required')]
+ selected=[c for c in bundle['campaigns'] if c.get('budget_review_required')or c.get('financial_action')]
  for c in selected:
   need=c.get('budget_reference_need');gap=c.get('budget_cash_gap')
   title=wrap(d,'РК '+str(c['id'])+' · '+c['name'],730,29,True)

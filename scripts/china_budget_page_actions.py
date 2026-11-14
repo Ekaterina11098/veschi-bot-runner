@@ -10,7 +10,10 @@ def owner_policy(io,bundle):
  return out
 def page_action(c,bundle):
  """A displayed reserve is a recommendation, never an implied amount approval."""
- if c.get('owner_budget_refused')or bundle.get('view_only'):return None
+ if bundle.get('view_only'):return None
+ if (c.get('financial_action')or{}).get('kind')=='recover_campaign':return dict(copy.deepcopy(c['financial_action']),selection_family='budgets')
+ if c.get('owner_budget_refused'):return None
  action=c.get('budget_action')
  return copy.deepcopy(action)if action and action.get('kind')=='topup_campaign'else None
+
 

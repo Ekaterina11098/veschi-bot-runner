@@ -6,6 +6,8 @@ PROTECTED={1473245494,1473245510}
 def finite(v):return type(v)in(int,float)and math.isfinite(v)
 def apply(io,bundle,source,minima):
  from china_advertising_v2 import http,history
+ # Legacy arithmetic/unit callers without the complete report context are not a risk scan.
+ if not bundle.get('day')or not bundle.get('days'):return copy.deepcopy(bundle)
  out=copy.deepcopy(bundle);now=datetime.now(timezone.utc);day=out['day'];days=out['days']
  states={c['id']:c for b in source['batches'].values()for c in b['campaigns']['adverts']}
  stats={c['advertId']:c for b in source['batches'].values()for c in b['stats']}

@@ -8,6 +8,7 @@ GATE='china_agent:daily_action_claim:v1:'
 GROUPS=[('up','Повысить ставки'),('add','Добавить товары'),('down','Снизить ставки'),('exclude','Исключить товары'),('archive','Завершить РК'),('pause','Приостановить РК'),('recover','Снизить ставки, пополнить и запустить РК')]
 def category(i):
  k=i['kind']
+ if k=='recover_campaign'and i.get('selection_family')=='budgets':return 'budget'
  if k=='ad_set_bid':return 'up'if i['target_minor']>i['old_minor']else'down'
  return {'ad_add_sku':'add','ad_exclude_sku':'exclude','archive_campaign':'archive','topup_campaign':'budget','pause_campaign':'pause','recover_campaign':'recover'}.get(k)
 def domain(items):return sorted({'budgets'if category(i)=='budget'else'drr'for i in items})

@@ -6,7 +6,7 @@ on:
 permissions: {contents: read}
 jobs:
   deliver:
-    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner-risk-report14] Publish checked report buttons and normal financial review'
+    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner-risk-unified14] Replace the two complete reports and remove supplement'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -34,6 +34,6 @@ jobs:
               p=root/(name+'.py');p.write_bytes(urllib.request.urlopen(base+name+'.py',timeout=45).read());tests.append(__import__(name))
           suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromModule(m)for m in tests)
           if not unittest.TextTestRunner().run(suite).wasSuccessful():raise SystemExit(1)
-          from owner_risk_report14_send import main
+          from owner_risk_report14_unify import main
           main()
           PY

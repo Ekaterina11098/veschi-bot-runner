@@ -1,8 +1,8 @@
 {
   "mode": "morning",
   "action": "run",
-  "report_date": "2026-11-12",
+  "report_date": "2026-11-14",
   "source_commit": "b90b5e83efd7c691d6a3d24b1d17b35c0e7da99c",
-  "nonce": "scheduled-only-no-owner-unrequested-recovery-20261112",
+  "nonce": "owner-existing327-buyer-precision-recovery-20261114",
   "owner_id": 5122667182
 }

@@ -132,6 +132,8 @@ class PairWorker(CoverageWorker):
         return answer,[dict(name='china_price_daily_report',report_date=str(self.day),mode='control',profit_basis='expected_order_date',products=len(value['products']))]
 
 def main():
+    from china_price_state_transport import install
+    install()
     parser=argparse.ArgumentParser()
     parser.add_argument('--verify',action='store_true')
     parser.add_argument('--send-now',action='store_true')

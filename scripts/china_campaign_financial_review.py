@@ -62,7 +62,7 @@ def apply(io,bundle,source,minima):
   if any(type(minima.get(str(c['id'])+':'+str(nm)))is not int for nm in members):continue
   contribution=sum(bynm[nm]*v[1]for nm,v in order_models.items()if v is not None);net=contribution-spend
   floor_cost=sum(costs.get(nm,0)for nm in members if st['nm_settings'][next(i for i,n in enumerate(st['nm_settings'])if n['nm_id']==nm)]['bids_kopecks'][zone]<=minima[str(c['id'])+':'+str(nm)])
-  evidence=dict(period_from=min(d['date'][:10]for d in closed),period_to=max(d['date'][:10]for d in closed),observed_at=source['observed_at'],modeled_after_ads_cny=net,spend_cny=spend,preliminary=True,unknown_costs=True,not_post_change_causal_verdict=True)
+  evidence=dict(period_from=min(d['date'][:10]for d in closed),period_to=max(d['date'][:10]for d in closed),observed_at=source['observed_at'],modeled_after_ads_cny=net,spend_cny=spend,attributed_orders=orders,fx_rub_per_cny=next(iter(member_models.values()))[0].get('fx_rub_per_cny',fx),preliminary=True,unknown_costs=True,not_post_change_causal_verdict=True)
   action=None;decision=None
   if st['status']==9 and clicks>=100 and net<0 and floor_cost>=.9*spend:
    action=dict(id='risk-pause:'+str(c['id']),kind='pause_campaign',campaign_id=c['id'],status_before=9,nm_ids=sorted(members),risk_evidence=evidence)

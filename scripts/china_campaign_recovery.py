@@ -40,7 +40,7 @@ def _execute(io,item,state,save,req,campaign,budget):
    rows=io.db('telegram_api_cache?cache_key=eq.'+quote(source,safe='')+'&select=rate:payload->full_growth_inputs->fx->rub_per_cny')
    fx=float(rows[0]['rate'])
   assert fx>0,'Verified model FX missing'
-  # Worst-case all seven historical attributions carry every positive cost delta,
+  # Worst-case all historical attributions carry every positive cost delta,
   # with buyout=100%; no credit for decreases or new orders is introduced.
   order_count=e.get('attributed_orders')
   if order_count is None:

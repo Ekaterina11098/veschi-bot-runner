@@ -23,7 +23,8 @@ def _execute(io,item,state,save,req,campaign,budget):
  zone=item['placement'];ids=sorted(map(int,actual))
  quote=req('/api/advert/v1/bids/min','POST',dict(advert_id=cid,nm_ids=ids,payment_type='cpc',placement_types=['search'if zone=='search'else'recommendation']))
  minima={r['nm_id']:next((v['value']for v in r['bids']if v['currency']=='CNY'and v['type']==('search'if zone=='search'else'recommendation')),None)for r in quote['bids']}
- assert set(minima)==set(ids) and all(type(minima[n])is int and 0<minima[n]<=item['target_minor']<actual[str(n)][zone]for n in ids),'Recovery minimum changed'
+ keep=item.get('keep_existing_bids')is True
+ assert set(minima)==set(ids) and all(type(minima[n])is int and 0<minima[n]<=item['target_minor']and (item['target_minor']==actual[str(n)][zone]if keep else item['target_minor']<actual[str(n)][zone])for n in ids),'Recovery minimum changed'
  prices=current_prices(io,ids);pub=published_stock(io,prices,ids);stock=read_stock([r['article']for r in prices['rows']]);stocks={r['article'].casefold():r for r in stock['rows']}
  assert stock['coverage_complete']and not pub['missing_nm_ids']and {r['nm_id']for r in prices['rows']}==set(ids),'Fresh recovery coverage incomplete'
  cost_increase_rub=0
@@ -74,14 +75,17 @@ def _execute(io,item,state,save,req,campaign,budget):
   except Exception:
    s['status']='uncertain';state['status']='uncertain';save();raise
  assert same(campaign(cid),11),'Campaign changed before lowering'
- for n in expected['nm_settings']:n['bids_kopecks'][zone]=item['target_minor']
- body=dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=nm,placement=zone,bid_kopecks=item['target_minor'])for nm in ids])])
- step('bids','/api/advert/v1/bids','PATCH',body,lambda:same(campaign(cid),11))
+ if keep:
+  state['steps'].append(dict(id='bids_unchanged',status='verified',read_only=True,verified_at=datetime.now(timezone.utc).isoformat()));save()
+ else:
+  for n in expected['nm_settings']:n['bids_kopecks'][zone]=item['target_minor']
+  body=dict(bids=[dict(advert_id=cid,nm_bids=[dict(nm_id=nm,placement=zone,bid_kopecks=item['target_minor'])for nm in ids])])
+  step('bids','/api/advert/v1/bids','PATCH',body,lambda:same(campaign(cid),11))
  assert budget(cid)==state['before_budget']and same(campaign(cid),11),'State changed before deposit'
  step('fund','/adv/v1/budget/deposit?id='+str(cid),'POST',dict(sum=amount,type=source),lambda:same(campaign(cid),11)and budget(cid)>=state['before_budget']+amount)
  assert same(campaign(cid),11)and budget(cid)>0,'Recovery prerequisites not verified'
  step('resume','/adv/v0/start?id='+str(cid),'GET',None,lambda:same(campaign(cid),9))
- state.update(status='verified',after=campaign(cid),after_budget=budget(cid),verified_at=datetime.now(timezone.utc).isoformat(),wb_writes=3);save()
+ state.update(status='verified',after=campaign(cid),after_budget=budget(cid),verified_at=datetime.now(timezone.utc).isoformat());save()
  # This exact human-confirmed restart replaces only its old temporary hold.
  # A newer/different owner hold remains intact; this is no standing funding grant.
  if hold:
@@ -93,4 +97,4 @@ def _execute(io,item,state,save,req,campaign,budget):
     io.put('china_agent:budget_owner_policy:v1',policy)
   except Exception:
    state['policy_reconciliation_required']=True;save()
- return 3
+ return state['wb_writes']

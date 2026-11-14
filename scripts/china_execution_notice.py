@@ -57,7 +57,7 @@ def deliver_result(io,a,p,e):
    if item['kind']=='ad_exclude_sku':out='исключён; проверено WB. Остальные товары и ставки сохранены.'
    elif item['kind']=='ad_set_bid':out='ставка '+format(item['old_minor']/100,'.2f')+' → '+format(item['target_minor']/100,'.2f')+' ¥; проверено WB.'
    elif item['kind']=='pause_campaign':out='приостановлена; проверено WB.'
-   elif item['kind']=='recover_campaign':out='все ставки → '+str(item['target_minor']/100)+' CNY; пополнена на '+str(item['amount_cny'])+' CNY и возобновлена; проверено WB.'
+   elif item['kind']=='recover_campaign':out=('ставки сохранены 'if item.get('keep_existing_bids')else'все ставки → ')+str(item['target_minor']/100)+' CNY; пополнена на '+str(item['amount_cny'])+' CNY и возобновлена; проверено WB.'
    elif item['kind']=='topup_campaign':out='пополнена на '+str(item['amount_cny'])+' CNY; проверено WB.'
    elif item['kind']=='ad_add_sku':out='добавлен в '+('поиск' if item['placement']=='search' else 'рекомендации')+' по '+format(item['target_minor']/100,'.2f')+' CNY; проверено WB.'
    else:out='действие подтверждено WB.'

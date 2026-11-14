@@ -30,6 +30,11 @@ class Recovery(unittest.TestCase):
    self.assertEqual(execute(*args),3);self.assertEqual(args[2]['status'],'verified')
    with self.assertRaises(ValueError):execute(*args)
   self.assertEqual(len(calls),3)
+ def test_keep_existing_bids_funds_and_starts_without_bid_request(self):
+  ctx,args,calls=self.fixture();args[1].update(target_minor=27,keep_existing_bids=True)
+  with ctx:self.assertEqual(execute(*args),2)
+  self.assertEqual(args[2]['status'],'verified');self.assertTrue(args[2]['steps'][0]['read_only'])
+  self.assertEqual(len(calls),2);self.assertFalse(any(path.endswith('/bids')for path in calls))
  def test_uncertain_funding_prevents_start(self):
   ctx,args,calls=self.fixture('fund')
   with ctx:

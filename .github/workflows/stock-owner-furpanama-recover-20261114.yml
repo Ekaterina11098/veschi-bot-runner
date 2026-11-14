@@ -1,0 +1,75 @@
+name: Owner fresh furpanama recovery 14Nov
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stock-owner-furpanama-recover-20261114.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bot-stock
+  cancel-in-progress: false
+jobs:
+  stock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            owner_furpanama_recovery_20261114.py
+            test_owner_furpanama_recovery_20261114.py
+            stock_deploy_support.py
+            warehouse_id_patch.py
+            scripts/moysklad_warehouses.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Ekaterina11098/VESCHI_AI
+          ref: 58bb827278f103b7884743bdbf5c84656e4dc442
+          token: ${{ secrets.SOURCE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests==2.32.5 python-dotenv==1.1.1 aiogram==3.22.0 simplejson==4.2.0 'psycopg[binary]==3.2.9' cryptography > "$RUNNER_TEMP/furpanama-install.log" 2>&1
+      - name: Offline recovery scope and no-replay tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source
+        run: |
+          python -m py_compile owner_furpanama_recovery_20261114.py
+          python test_owner_furpanama_recovery_20261114.py
+      - name: Reconcile old result then fresh scoped calculation and confirmed changes
+        env:
+          PYTHONPATH: ${{ github.workspace }}/private-source:${{ github.workspace }}
+          STOCK_DAILY_ENABLED: 'true'
+          STOCK_OZON_ENABLED: 'false'
+          STOCK_PENDING_RESERVE_ENABLED: 'true'
+          STOCK_NOTIFICATIONS_ENABLED: 'false'
+          STOCK_CLOUD_EXECUTION_ENABLED: 'true'
+          STOCK_JOURNAL_IMPORT_ACCEPTED: 'true'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_1: ${{ secrets.WB_TOKEN_1 }}
+          WB_TOKEN_2: ${{ secrets.WB_TOKEN_2 }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_FINANCE_TOKEN_1: ${{ secrets.WB_FINANCE_TOKEN_1 }}
+          WB_FINANCE_TOKEN_2: ${{ secrets.WB_FINANCE_TOKEN_2 }}
+          WB_FINANCE_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          WB_STOCK_WAREHOUSE_1: ${{ vars.WB_STOCK_WAREHOUSE_1 }}
+          WB_STOCK_WAREHOUSE_2: ${{ vars.WB_STOCK_WAREHOUSE_2 }}
+          WB_STOCK_WAREHOUSE_3: ${{ vars.WB_STOCK_WAREHOUSE_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          MOYSKLAD_STORE_NAME: МСК
+          AUTO_STOCK_FAIL_FAST: '1'
+        run: |
+          python warehouse_id_patch.py private-source
+          python owner_furpanama_recovery_20261114.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-encrypted-furpanama-recovery-20261114
+          path: ${{ runner.temp }}/stock-deploy-proof
+          retention-days: 90

@@ -41,4 +41,11 @@ class Recovery(unittest.TestCase):
   with ctx:
    with self.assertRaises(AssertionError):execute(*args)
   self.assertEqual(calls,[])
+ def test_old_temporary_hold_released_only_after_verified_restart(self):
+  ctx,args,calls=self.fixture();args=list(args);policy=dict(do_not_fund={'12':'old temporary hold'});writes=[]
+  args[0]=types.SimpleNamespace(get=lambda k:copy.deepcopy(policy),put=lambda k,v:writes.append((k,v)))
+  args[1]['supersedes_temporary_hold']='old temporary hold'
+  with ctx:execute(*args)
+  self.assertEqual(args[2]['status'],'verified');self.assertEqual(len(writes),1)
+  self.assertNotIn('12',writes[0][1]['do_not_fund']);self.assertFalse(writes[0][1]['released_temporary_hold_12']['grants_standing_funding_permission'])
 if __name__=='__main__':unittest.main()

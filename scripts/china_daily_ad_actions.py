@@ -207,7 +207,7 @@ def execute(io,a,p):
     time.sleep(8)
    save()
   except Exception as ex:
-   state.update(status='uncertain' if state['status']=='submitting' else state['status'] if state['status'] in ['accepted','uncertain'] else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__);save()
+   state.update(status='uncertain' if state['status']=='submitting' else state['status'] if state['status'] in ['accepted','uncertain','verified'] else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__);save()
  e['status']='done' if all(x['status'] in ['verified','blocked','approved_pending_conditions'] for x in e['items']) else 'attention';e['completed_at']=datetime.now(timezone.utc).isoformat();save()
  from china_execution_notice import deliver_result
  deliver_result(io,a,p,e)

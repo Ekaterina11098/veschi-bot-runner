@@ -55,4 +55,15 @@ def execute(io,item,state,save,req,campaign,budget):
  assert same(campaign(cid),11)and budget(cid)>0,'Recovery prerequisites not verified'
  step('resume','/adv/v0/start?id='+str(cid),'GET',None,lambda:same(campaign(cid),9))
  state.update(status='verified',after=campaign(cid),after_budget=budget(cid),verified_at=datetime.now(timezone.utc).isoformat(),wb_writes=3);save()
+ # This exact human-confirmed restart replaces only its old temporary hold.
+ # A newer/different owner hold remains intact; this is no standing funding grant.
+ if hold:
+  try:
+   policy=io.get('china_agent:budget_owner_policy:v1')or{}
+   if policy.get('do_not_fund',{}).get(str(cid))==hold:
+    del policy['do_not_fund'][str(cid)]
+    policy['released_temporary_hold_'+str(cid)]=dict(released_at=state['verified_at'],source='explicit_button_confirmed_recovery',before_hold=hold,verified_campaign_id=cid,grants_standing_funding_permission=False)
+    io.put('china_agent:budget_owner_policy:v1',policy)
+  except Exception:
+   state['policy_reconciliation_required']=True;save()
  return 3

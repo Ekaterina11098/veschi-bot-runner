@@ -50,7 +50,6 @@ def deliver_result(io,a,p,e):
  # A partial/blocked notice must not suppress a later verified completion.
  if old and phase=='verified' and old.get('status')=='sent' and old.get('phase') in ('partial','blocked','approved_pending_conditions'):
   key+=':verified'
- if io.get(key):return None
  lines=['Результат команды:']
  for state in states:
   item=byid[state['id']];label=(item['article']+' · ' if item.get('article') else '')+'РК '+str(item['campaign_id'])
@@ -68,6 +67,13 @@ def deliver_result(io,a,p,e):
   else:out='результат пока не подтверждён WB; повторно действие не запускаю.'
   lines.append(label+': '+out)
  text='\n'.join(lines);now=datetime.now(timezone.utc).isoformat()
+ existing=io.get(key)
+ if existing:
+  if phase in('partial','blocked')and existing.get('status')=='sent'and existing.get('text')!=text:
+   import hashlib
+   key+=':revision:'+hashlib.sha256(text.encode()).hexdigest()[:16]
+   if io.get(key):return None
+  else:return None
  record=dict(status='sending',phase=phase,text=text,plan_id=p['plan_id'],plan_sha256=p['plan_sha256'],execution_key=p.get('execution_key','china_agent:daily_ad_execution:v2:'+p['plan_id']),job_id=a['job_id'],chat_id=CHAT,bot_id=BOT,created_at=now)
  if not io.create(key,record):return None
  try:

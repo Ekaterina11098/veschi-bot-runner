@@ -48,7 +48,8 @@ jobs:
 
   analyze:
     needs: read
-    if: needs.read.result == 'success'
+    # Owner 11Nov: no scheduled model analysis; keep the read-only collector.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

@@ -6,6 +6,8 @@ from china_codex_analysis import Core,active
 ROOT='china_agent:hourly_codex_analysis:v1:'
 def main():
  db=DB()
+ if (db.get(ROOT+'policy')or{}).get('enabled')is not True:
+  print('Scheduled hourly analysis disabled by owner; collector is independent');return
  if not active(db):print('Cloud hourly analysis not activated');return
  pointer=db.get('china_agent:hourly_sales_api:v1:latest')or{};key=pointer.get('source_key')
  if not isinstance(key,str)or not key.startswith('china_agent:hourly_sales_api:v1:snapshot:'):raise ValueError('Exact hourly source missing')

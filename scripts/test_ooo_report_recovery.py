@@ -59,4 +59,14 @@ class Recovery(unittest.TestCase):
   with patch.object(ns['datetime'],'datetime',Clock),patch.dict('os.environ',{},clear=True):
    with self.assertRaises(RuntimeError):ns['run']()
   self.assertEqual(calls,['morning','midday'])
+ def test_prepared_artifact_is_not_sent_before_target_time(self):
+  def get(k):
+   if k.endswith(':policy'):return {'enabled':True}
+   if k.endswith(':report'):return {'status':'ready'}
+   return None
+  mods={'china_codex_cloud':types.SimpleNamespace(DB=lambda:types.SimpleNamespace(get=get),stamp=lambda:'now'),'ooo_daily_review':types.SimpleNamespace(review=lambda*a:None)}
+  ns={'__name__':'worker_test','__file__':str(WORKER)}
+  with patch.dict(sys.modules,mods):exec(WORKER.read_text(encoding='utf-8'),ns)
+  ns['execute']=lambda*a:(_ for _ in()).throw(AssertionError('Send attempted before target'))
+  self.assertEqual(ns['worker']('morning',day='2026-11-14',prepare_only=True)['status'],'already_prepared')
 if __name__=='__main__':unittest.main()

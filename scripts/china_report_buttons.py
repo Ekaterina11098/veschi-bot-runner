@@ -5,11 +5,11 @@ from datetime import datetime,timezone
 from china_loss_control import PLAN,APPROVAL,CHAT,BOT,digest,marker
 ROOT='china_agent:report_buttons:v1:'
 GATE='china_agent:daily_action_claim:v1:'
-GROUPS=[('up','Повысить ставки'),('add','Добавить товары'),('down','Снизить ставки'),('exclude','Исключить товары'),('archive','Завершить РК')]
+GROUPS=[('up','Повысить ставки'),('add','Добавить товары'),('down','Снизить ставки'),('exclude','Исключить товары'),('archive','Завершить РК'),('pause','Приостановить РК'),('recover','Снизить ставки, пополнить и запустить РК')]
 def category(i):
  k=i['kind']
  if k=='ad_set_bid':return 'up'if i['target_minor']>i['old_minor']else'down'
- return {'ad_add_sku':'add','ad_exclude_sku':'exclude','archive_campaign':'archive','topup_campaign':'budget'}.get(k)
+ return {'ad_add_sku':'add','ad_exclude_sku':'exclude','archive_campaign':'archive','topup_campaign':'budget','pause_campaign':'pause','recover_campaign':'recover'}.get(k)
 def domain(items):return sorted({'budgets'if category(i)=='budget'else'drr'for i in items})
 def create(io,k,v):
  return io.save(k,v,insert=True)if hasattr(io,'save')else io.create(k,v)
@@ -88,4 +88,5 @@ def execution_claim(io,a,p):
  parent=p.get('parent_plan_id')or p['plan_id']
  owner='button:'+a['button_confirmation']if a.get('button_confirmation')else'job:'+str(a['job_id'])
  claim(io,parent,domain(p['items']),owner)
+
 

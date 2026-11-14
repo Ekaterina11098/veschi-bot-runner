@@ -639,7 +639,9 @@ def prepare(io,day):
    c['budget_action']=None;c['budget_recommendation']='Без пополнения.'
    c['direction_recommendations']=['Без изменений.']
    for r in c.get('focus',[]):r['action']=None;r['decision']='Без изменений.'
- return attach_new_campaign_reporting(io,result)
+ from china_campaign_financial_review import apply as financial_review
+ return financial_review(io,attach_new_campaign_reporting(io,result),s,minimums)
+
 
 
 

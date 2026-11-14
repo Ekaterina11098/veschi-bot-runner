@@ -54,6 +54,7 @@ def assess_campaign(state,raw,economics,own,changes,days,observed,funding_refere
  coverage=covered/totals['orders']if totals['orders']else 0
  result.update(attributed_orders_by_nm={str(nm):n for nm,n in bynm.items()if n>0},period_from=wanted[0],period_to=wanted[-1],days=wanted,metrics=totals,covered_attributed_orders=covered,attributed_orders=totals['orders'],coverage=coverage,modeled_contribution_cny=contribution,modeled_after_ads_cny=contribution-totals['spend'],stress_after_ads_cny=stressed-totals['spend']-(totals['orders']-covered)*2*max_log,unknown_nm_ids=unknown,small_sample_nm_ids=small,own_cohort_after_change_verified=False)
  # Own history is a provisional buyout prior, never a closed post-change financial cohort.
+ if coverage>=.999999 and covered>0 and contribution<=totals['spend']:return dict(result,status='review',reason='Предварительная модель РК не поддерживает дополнительный расход; малая выборка не скрывает финансовый риск.')
  if coverage<.9 or covered<3:return dict(result,reason='Собственная модель покрывает недостаточно рекламных атрибуций.')
  if contribution<=totals['spend']:return dict(result,status='review',reason='Предварительная модель РК не поддерживает дополнительный расход; это не доказанный убыток.')
  if result.get('evaluation_status')=='waiting':
@@ -112,3 +113,4 @@ def validate_funding(io,item,before):
   if not finite(q)and st['price']/100>old['cost']:raise ValueError('Changed COGS with unknown own buyout; refresh review')
   if finite(q)and finite(fx)and fx>0:delta+=evidence['attributed_orders_by_nm'].get(nm,0)*q*(st['price']/100-old['cost'])/fx
  if evidence['modeled_after_ads_cny']-delta<=0:raise ValueError('Current COGS no longer supports provisional funding model')
+

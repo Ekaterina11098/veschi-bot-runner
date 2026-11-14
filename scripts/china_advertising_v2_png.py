@@ -105,12 +105,13 @@ def _render_legacy(bundle):
   totals.append(None if unapproved else dict(spend=sum(c[key]['spend'] for c in known),amount=sum(c[key]['amount'] for c in known)))
  p,day=totals
  d.rounded_rectangle((24,y+10,W-24,y+190),18,fill='white')
- d.text((44,y+30),('ИТОГО · подтверждённые данные · кроме РК '+', '.join((bundle.get('approved_statistics_exceptions')or{}))) if bundle.get('approved_statistics_exceptions') else 'ИТОГО · кабинет Китай (token_3)',font=font(29,True),fill=NAVY)
+ d.text((44,y+30),bundle.get('report_scope_label') or (('ИТОГО · подтверждённые данные · кроме РК '+', '.join((bundle.get('approved_statistics_exceptions')or{}))) if bundle.get('approved_statistics_exceptions') else 'ИТОГО · кабинет Китай (token_3)'),font=font(29,True),fill=NAVY)
  d.text((44,y+82),'Расход 3 дня: '+money(p['spend'] if p else None)+' ¥   |   Расход день: '+money(day['spend'] if day else None)+' ¥',font=font(29,True),fill=INK)
  for x,label,value in [(44,'Общая ДРР 3 дня: ',p),(1050,'Общая ДРР день: ',day)]:
   d.text((x,y+132),label,font=font(29,True),fill=INK)
   d.text((x+d.textlength(label,font=font(29,True)),y+132),pct(value),font=font(29,True),fill=color(value))
  footer='ДРР = сумма расходов / сумма рекламных заказов до скидок WB. Дни без заказов входят в расходы. Нет заказов — сумма заказов 0, ДРР не вычисляется. Исторические расходы исключённых товаров и архивных РК включены в итог. Атрибуция не равна выкупам и прибыли. Новые тесты отмечены; период может включать прежний состав. Итог относится только к кабинету Китай.'
+ if bundle.get('report_scope_label'):footer='ДРР = сумма расходов / сумма рекламных заказов до скидок WB. Показаны только три РК дополнения, не весь кабинет. Шуба: доступны 12–13.11; отсутствующая строка 11.11 не заменена нулём. Атрибуция не равна выкупам и прибыли. Все изменения — только после подтверждения.'
  if bundle.get('approved_statistics_exceptions'):footer+=' РК '+', '.join(bundle['approved_statistics_exceptions'])+': новый запуск; статистика WB не сформирована, в числовой итог не включена.'
  for j,line in enumerate(wrap(d,footer,W-88,24)):d.text((44,y+218+j*31),line,font=font(24),fill='#536b79')
  finish(im,y+240+len(wrap(d,footer,W-88,24))*31,'drr',actions)
@@ -200,6 +201,7 @@ def render(bundle):
   parts=[f for f in files if f['family']==family]
   for index,f in enumerate(parts,1):f.update(kind=family+':'+str(index).zfill(3),page=index,total=len(parts))
  return files
+
 
 
 

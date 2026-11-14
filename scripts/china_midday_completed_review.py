@@ -17,10 +17,12 @@ def merge_completed(bundle,review,source_ref):
  for c in out['campaigns']:
   c['attention']=[];r=closed.get(c['id'])
   if not r:continue
+  if r.get('financial_action'):
+   c['financial_action']=copy.deepcopy(r['financial_action']);c['financial_recommendation']=r['financial_recommendation']
   if r.get('recommendation_review_note'):c['recommendation_review_note']=r['recommendation_review_note']
   done=[]
   for row in r.get('focus',[]):
-   if row.get('already_excluded') or row.get('pending_first_day'):
+   if (row.get('already_excluded') or row.get('pending_first_day'))and not row.get('financial_risk_review'):
     if row.get('done')and row.get('done')!='Нет подтверждённых изменений':done.append(row['article']+': '+row['done'])
     continue
    if not row.get('action'):continue
@@ -41,7 +43,7 @@ def merge_completed(bundle,review,source_ref):
  out['pending_first_day_unknown_history']=copy.deepcopy(review.get('pending_first_day_unknown_history',{}))
  out['creation_holds']=copy.deepcopy(review.get('creation_holds',{}))
  for cp in out['campaigns']:
-  if str(cp['id'])in out['creation_holds']:
+  if str(cp['id'])in out['creation_holds'] and not (closed.get(cp['id'])or{}).get('financial_action'):
    cp['attention']=[];cp['owner_review_note']='Сохраняем тест до оценки полного дня после последнего подтверждённого изменения.'
  if review.get('sales_growth_review'):out['sales_growth_review']=copy.deepcopy(review['sales_growth_review'])
  for c in out['campaigns']:
@@ -203,6 +205,8 @@ def attach(io,bundle,day):
   review=review_advertising(io,review,source,'advertising:'+day+':midday',bundle)
  from china_sales_growth_review import attach as sales_review
  review=sales_review(review)
+ from china_campaign_financial_review import apply as financial_review
+ review=financial_review(io,review,source,minima)
  review=validate_recommendation_readiness(review)
  key='china_agent:advertising_midday_completed:'+day+':v1'
  from china_codex_reports import compact_source
@@ -211,6 +215,7 @@ def attach(io,bundle,day):
  states={str(c['id']):{k:c.get(k)for k in ('status','currency','bid_type','settings','nm_settings')}for batch in source['batches'].values()for c in batch['campaigns']['adverts']}
  save(io,key,dict(source_ref=evidence_key,campaign_states=states,review=review,input_review_context=bundle.get('review_context',{}),status='complete',observed_at=source['observed_at'],model_calls=0 if no_model_enabled(io)else None,wb_writes=0))
  return merge_completed(bundle,review,key)
+
 
 
 

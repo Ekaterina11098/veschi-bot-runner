@@ -85,6 +85,8 @@ def campaign_table(bundle):
    elif a.get('kind')=='archive_campaign':text='Завершить РК и перевести в архив.'
    else:continue
    if text not in c['direction_recommendations']:c['direction_recommendations'].append(text)
+ for c in out['campaigns']:
+  if c.get('financial_action'):c['direction_recommendations']=[c['financial_recommendation']]
  # Unready research stays in the private Codex analysis journal.
  return out
 
@@ -121,6 +123,7 @@ def overview(bundle):
    if a and r.get('ready'):actions.append(a)
   y+=25
  finish();return files
+
 
 
 

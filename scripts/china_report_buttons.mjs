@@ -1,6 +1,6 @@
 /** Selection only until explicit confirm. No WB requests, credentials or model calls. */
 const ROOT='china_agent:report_buttons:v1:',PLAN='china_agent:loss_plan:v1:',GATE='china_agent:daily_action_claim:v1:';
-const GROUPS=[['up','Повысить ставки'],['add','Добавить товары'],['down','Снизить ставки'],['exclude','Исключить товары'],['archive','Завершить РК']];
+const GROUPS=[['up','Повысить ставки'],['add','Добавить товары'],['down','Снизить ставки'],['exclude','Исключить товары'],['archive','Завершить РК'],['pause','Приостановить РК'],['recover','Снизить ставки, пополнить и запустить РК']];
 export function keyboard(token,p,selected=[],page=0){
  const set=new Set(selected),pre='cab1:'+token+':';let rows=[];
  if(p.family==='budgets'){
@@ -12,7 +12,7 @@ export function keyboard(token,p,selected=[],page=0){
  rows.push([{text:'Посмотреть выбранное · '+selected.length+(money?' · '+money+' CNY':''),callback_data:pre+'review'}]);rows.push([{text:'‹ Главное меню',callback_data:'cmn1:home'}]);return {inline_keyboard:rows};
 }
 export async function handleReportButtons(config,cb,updateId,deps){
- const match=/^cab1:([a-f0-9]{24}):(all|clear|review|g(?:up|add|down|exclude|archive)|i\d+|p\d+|confirm[a-f0-9]{12}|back)$/.exec(cb?.data??'');if(!match)return null;
+ const match=/^cab1:([a-f0-9]{24}):(all|clear|review|g(?:up|add|down|exclude|archive|pause|recover)|i\d+|p\d+|confirm[a-f0-9]{12}|back)$/.exec(cb?.data??'');if(!match)return null;
  const answer=(text,alert=false)=>Response.json({method:'answerCallbackQuery',callback_query_id:cb.id,text:text.slice(0,190),show_alert:alert});
  const m=cb.message,actor=cb.from,token=match[1],op=match[2];
  if(!config.active||config.chat_id!==-1004342917488||config.bot_id!==8780468043||!Number.isSafeInteger(updateId)||updateId<0||!cb.id||!Number.isSafeInteger(actor?.id)||actor.id<=0||actor.is_bot!==false||m?.chat?.id!==config.chat_id||!['supergroup','group'].includes(m.chat.type)||m.from?.id!==config.bot_id||m.from.is_bot!==true||!Number.isSafeInteger(m.message_id)||m.forward_origin||m.sender_chat)return answer('Кнопка недоступна в этом сообщении.',true);
@@ -78,7 +78,7 @@ export async function handleReportButtons(config,cb,updateId,deps){
   const old=await get(rk);if(old)return answer(old.status==='sent'?'Ваш выбор уже показан ниже в чате.':'Доставка карточки проверяется; повтор не отправляю.',old.status!=='sent');
   let text='Выбрано '+selected.length+' '+(p.family==='budgets'?'пополнений':'изменений')+':\n';
   for(const item of selected){const actual=original.items.find(i=>i.id===item.id);if(!actual)return answer('Состав плана изменился.',true);const label=(item.article?item.article+' · ':'')+'РК '+item.campaign_id;
-   const detail=item.group==='budget'?'+'+item.amount_cny+' CNY':item.group==='up'||item.group==='down'?actual.old_minor/100+' → '+actual.target_minor/100+' CNY':item.group==='add'?'добавить в '+(actual.placement==='search'?'поиск':'рекомендации')+' по '+actual.target_minor/100+' CNY':item.group==='exclude'?'исключить товар':'завершить РК';text+=label+': '+detail+'\n';}
+   const detail=item.group==='budget'?'+'+item.amount_cny+' CNY':item.group==='up'||item.group==='down'?actual.old_minor/100+' → '+actual.target_minor/100+' CNY':item.group==='add'?'добавить в '+(actual.placement==='search'?'поиск':'рекомендации')+' по '+actual.target_minor/100+' CNY':item.group==='exclude'?'исключить товар':item.group==='pause'?'приостановить РК':item.group==='recover'?'все '+actual.nm_ids.length+' ставок → '+actual.target_minor/100+' CNY; +'+actual.amount_cny+' CNY; возобновить':'завершить РК';text+=label+': '+detail+'\n';}
   const amount=selected.reduce((n,i)=>n+(i.amount_cny||0),0);if(amount)text+='\nИтого: '+amount+' CNY.';text+='\nНевыбранные пункты не выполняются.';
   if(text.length>4000)return answer('Слишком большой выбор для одной карточки. Выберите меньше категорий.',true);
   const state={status:'sending',token,actor_id:actor.id,plan_sha256:p.plan_sha256,revision:s.revision,selection_hash:sha,selected_ids:s.selected_ids,report_message_id:m.message_id,created_at:now.toISOString()};if(!await insert(rk,state))return answer('Карточка уже подготавливается.');
@@ -96,3 +96,4 @@ export async function handleReportButtons(config,cb,updateId,deps){
  await deps.telegram('editMessageReplyMarkup',{chat_id:config.chat_id,message_id:m.message_id,reply_markup:keyboard(token,p,selected,page)});
  await put(event,{status:'applied',actor_id:actor.id,token,op});return answer('Выбрано: '+selected.length+'.');
 }
+

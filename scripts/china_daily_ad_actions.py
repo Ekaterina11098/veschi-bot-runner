@@ -135,6 +135,7 @@ def execute(io,a,p):
  for item in execution_order(p['items']):
   state=next((x for x in e['items'] if x['id']==item['id']),None)
   if state:
+   if item['kind']=='recover_campaign':continue # A partially submitted recovery is never replayed automatically.
    if state['status'] in ['submitting','accepted','uncertain']:
     try:state['status']='verified' if verified(item,state) else 'uncertain'
     except Exception:state['status']='uncertain'
@@ -146,6 +147,14 @@ def execute(io,a,p):
    require(io,p)
    cid=item['campaign_id']
    if item['kind']=='approve_budget_reserve':raise ValueError('Условное согласование суммы резерва отменено владельцем; нужен готовый расчёт пополнения и новая команда')
+   if item['kind']=='recover_campaign':
+    from china_campaign_recovery import execute as recover
+    try:recover(io,item,state,save,req,campaign,budget)
+    finally:e['wb_writes']+=state.get('wb_writes',0);save()
+    child=key+':campaign:'+str(cid)
+    if not io.get(child):io.create(child,dict(state,campaign_id=cid,parent=key))
+    registry=io.get('china_agent:verified_campaign_state:v1')or{};registry[str(cid)]=child;io.put('china_agent:verified_campaign_state:v1',registry)
+    continue
    before=campaign(cid);state['before']=before;save()
    if before['status']!=9:raise ValueError('Campaign no longer active')
    kind=item['kind'];method='PATCH'
@@ -198,7 +207,7 @@ def execute(io,a,p):
     time.sleep(8)
    save()
   except Exception as ex:
-   state.update(status='uncertain' if state['status']=='submitting' else state['status'] if state['status']=='accepted' else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__);save()
+   state.update(status='uncertain' if state['status']=='submitting' else state['status'] if state['status'] in ['accepted','uncertain'] else 'blocked',reason=str(ex) if isinstance(ex,(ValueError,RuntimeError)) else type(ex).__name__);save()
  e['status']='done' if all(x['status'] in ['verified','blocked','approved_pending_conditions'] for x in e['items']) else 'attention';e['completed_at']=datetime.now(timezone.utc).isoformat();save()
  from china_execution_notice import deliver_result
  deliver_result(io,a,p,e)
@@ -211,3 +220,4 @@ def execute(io,a,p):
 def process_and_deliver(io,a,p):
  # execute always journals and delivers its own result, including direct recovery calls.
  return execute(io,a,p)
+

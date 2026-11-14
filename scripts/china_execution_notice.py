@@ -11,6 +11,10 @@ def proven(item,state):
  if before.get('settings')!=after.get('settings'):return False
  if kind=='archive_campaign':return after.get('status')==7 and before.get('nm_settings')==after.get('nm_settings')
  if kind=='pause_campaign':return after.get('status')==11 and before.get('nm_settings')==after.get('nm_settings')
+ if kind=='recover_campaign':
+  expected=copy.deepcopy(before.get('nm_settings',[]))
+  for member in expected:member['bids_kopecks'][item['placement']]=item['target_minor']
+  return before.get('status')==11 and after.get('status')==9 and expected==after.get('nm_settings') and state.get('after_budget',-1)>=state.get('before_budget',0)+item['amount_cny']-2 and [s.get('status')for s in state.get('steps',[])]==['verified']*3
  if before.get('status')!=after.get('status'):return False
  if kind=='topup_campaign':
   if sorted(before.get('nm_settings',[]),key=lambda n:n['nm_id'])!=sorted(after.get('nm_settings',[]),key=lambda n:n['nm_id']) or not isinstance(state.get('after_budget'),(int,float)):return False
@@ -53,6 +57,8 @@ def deliver_result(io,a,p,e):
   if proven(item,state):
    if item['kind']=='ad_exclude_sku':out='исключён; проверено WB. Остальные товары и ставки сохранены.'
    elif item['kind']=='ad_set_bid':out='ставка '+format(item['old_minor']/100,'.2f')+' → '+format(item['target_minor']/100,'.2f')+' ¥; проверено WB.'
+   elif item['kind']=='pause_campaign':out='приостановлена; проверено WB.'
+   elif item['kind']=='recover_campaign':out='все ставки → '+str(item['target_minor']/100)+' CNY; пополнена на '+str(item['amount_cny'])+' CNY и возобновлена; проверено WB.'
    elif item['kind']=='topup_campaign':out='пополнена на '+str(item['amount_cny'])+' CNY; проверено WB.'
    elif item['kind']=='ad_add_sku':out='добавлен в '+('поиск' if item['placement']=='search' else 'рекомендации')+' по '+format(item['target_minor']/100,'.2f')+' CNY; проверено WB.'
    else:out='действие подтверждено WB.'
@@ -89,3 +95,4 @@ def deliver_registered(io,key,e):
   raise ValueError('Completion notice authorization mismatch')
  p=dict(p,execution_key=key)
  return deliver_result(io,a,p,e)
+

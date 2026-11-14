@@ -1,0 +1,50 @@
+name: Noemi TN VED current check
+on:
+  push:
+    branches: [madison-fill-20261105]
+    paths: ['.github/workflows/noemi-tnved-check-20261114.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error,datetime
+          ARTICLES=['025-MadisonBag-zblack','026-MadisonBag-zcoffee','027-MadisonBag-zdarkred']
+          def request(url,body=None,method=None,headers=None):
+              h=headers if headers is not None else {'Authorization':os.environ['WB_TOKEN_3'],'Content-Type':'application/json'}
+              req=urllib.request.Request(url,headers=h,data=None if body is None else json.dumps(body).encode(),method=method or ('POST' if body is not None else 'GET'))
+              with urllib.request.urlopen(req,timeout=45) as f:
+                  raw=f.read()
+                  return json.loads(raw) if raw else None
+          def save(key,payload):
+              now=datetime.datetime.now(datetime.timezone.utc);k=os.environ['SUPABASE_SECRET_KEY'];h={'apikey':k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'}
+              if not k.startswith('sb_secret_'):h['Authorization']='Bearer '+k
+              return request(os.environ['SUPABASE_URL'].rstrip('/')+'/rest/v1/telegram_api_cache?on_conflict=cache_key',{'cache_key':key,'payload':payload,'updated_at':now.isoformat(),'expires_at':(now+datetime.timedelta(days=365)).isoformat()},headers=h)
+          
+          
+          KEY='noemi_tnved_check:china:20261114:v1'
+          wanted={'356-NoemiBag-black':2245828209,'357-NoemiBag-coffee':2245828150}
+          out={'status':'reading','cards':[],'maya2_codes':[]};save(KEY,out)
+          cur={'limit':100}
+          for page in range(12):
+           d=request('https://content-api.wildberries.cn/content/v2/get/cards/list',{'settings':{'sort':{'ascending':False},'cursor':cur,'filter':{'withPhoto':-1}}})
+           for c in d.get('cards',[]):
+            a=c.get('vendorCode','')
+            if wanted.get(a)==c['nmID']:out['cards'].append(c)
+            if a.split('-')[0] in [str(n) for n in list(range(338,347))+list(range(354,366))]:
+             out['maya2_codes'].append({'article':a,'nmID':c['nmID'],'tnved_fields':[x for x in (c.get('characteristics') or []) if 'тн' in x.get('name','').lower() or x['id'] in [15000001,15004139]],'top_tnved':{k:v for k,v in c.items() if 'tnved' in k.lower()}})
+           out['page']=page;save(KEY,out)
+           cursor=d.get('cursor',{})
+           if cursor.get('total',0)<100:break
+           cur={'limit':100,'updatedAt':cursor['updatedAt'],'nmID':cursor['nmID']};time.sleep(1)
+          out['schema']=[x for x in request('https://content-api.wildberries.cn/content/v2/object/charcs/50')['data'] if 'тн' in x.get('name','').lower()]
+          out['status']='received';save(KEY,out)
+          
+          PY

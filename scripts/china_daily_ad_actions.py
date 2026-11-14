@@ -81,6 +81,7 @@ def execute(io,a,p):
  from china_daily_report_validity import require
  require(io,p)
  io.daily_report_current_revalidation=p.get('validity_mode')=='until_replaced'
+ io.daily_report_plan=p;io.daily_report_approval=a
  if p.get('invalidated_at'):raise ValueError('Daily PNG plan invalidated after audit')
  if p.get('visible_from') and (not a.get('created_at') or datetime.fromisoformat(a['created_at'])<datetime.fromisoformat(p['visible_from'])):raise ValueError('Approval predates corrected PNG')
  if p['execution_kind']!='daily_ad_actions_v2' or p['plan_sha256']!=digest(p['items']) or a['plan_sha256']!=p['plan_sha256']:raise ValueError('Daily execution scope changed')

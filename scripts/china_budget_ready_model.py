@@ -92,7 +92,9 @@ def validate_funding(io,item,before):
  if evidence.get('status')!='positive'or not evidence.get('ready')or (not 0<=(now-instant(evidence['observed_at'])).total_seconds()<=2*3600 and not getattr(io,'daily_report_current_revalidation',False)):raise ValueError('Funding review unavailable or expired')
  if evidence['period_to']>=str(now.astimezone(ZoneInfo('Europe/Moscow')).date()):raise ValueError('Incomplete-day funding evidence')
  actual={str(n['nm_id']):n['bids_kopecks']for n in before['nm_settings']}
- if actual!=evidence['expected_bids']:raise ValueError('Campaign bid composition changed; refresh funding review')
+ if actual!=evidence['expected_bids']:
+  from china_confirmed_funding_context import reconcile
+  evidence=reconcile(io,evidence,before)
  prices=current_prices(io,list(map(int,actual)));pub=published_stock(io,prices,list(map(int,actual)))
  stock=read_stock([r['article']for r in prices['rows']]);rows={r['article'].casefold():r for r in stock['rows']}
  if not stock['coverage_complete']or pub['missing_nm_ids']:raise ValueError('Funding stock coverage incomplete')

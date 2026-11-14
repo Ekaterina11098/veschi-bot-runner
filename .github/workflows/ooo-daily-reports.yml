@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['.github/workflows/ooo-daily-reports.yml', 'scripts/ooo_daily_reports.py', 'scripts/ooo_daily_review.py', 'scripts/ooo_report_templates.json']
+    paths: ['.github/workflows/ooo-daily-reports.yml', 'scripts/ooo_daily_reports.py', 'scripts/ooo_daily_review.py', 'scripts/ooo_report_templates.json', 'scripts/test_ooo_report_recovery.py']
   schedule:
     - cron: '0 4 * * *'
     - cron: '30 4 * * *'

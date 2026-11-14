@@ -1,0 +1,38 @@
+name: Finish confirmed China budget job326, no replay
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/owner-finish326.yml]
+permissions: {contents: read}
+concurrency:
+  group: china-confirmed-loss-plan-execution
+  cancel-in-progress: false
+jobs:
+  finish:
+    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner-finish326] Complete only four preflight-blocked confirmed items'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - run: python3 -m pip install requests==2.32.5
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          WB_TOKEN_3: ${{ secrets.WB_TOKEN_3 }}
+          MOYSKLAD_API_TOKEN: ${{ secrets.MOYSKLAD_API_TOKEN }}
+          CHINA_TELEGRAM_BOT_TOKEN: ${{ secrets.CHINA_TELEGRAM_BOT_TOKEN }}
+          OPENAI_API_KEY: ''
+        run: |
+          python3 - <<'PY'
+          import os,sys,pathlib,urllib.request,importlib.abc,importlib.util,unittest
+          root=pathlib.Path('checked');root.mkdir();sys.path.insert(0,str(root))
+          base='https://raw.githubusercontent.com/Ekaterina11098/veschi-bot-runner/'+os.environ['GITHUB_SHA']+'/scripts/'
+          class Finder(importlib.abc.MetaPathFinder):
+              def find_spec(self,fullname,path=None,target=None):
+                  if '.' in fullname or not fullname.startswith(('china_','moysklad_','owner_finish326')):return None
+                  p=root/(fullname+'.py')
+                  if not p.exists():p.write_bytes(urllib.request.urlopen(base+fullname+'.py',timeout=45).read())
+                  return importlib.util.spec_from_file_location(fullname,p)
+          sys.meta_path.insert(0,Finder())
+          from owner_finish326 import main
+          main()
+          PY

@@ -159,6 +159,11 @@ def execute(io,a,p):
    before=campaign(cid);state['before']=before;save()
    if before['status']!=9:raise ValueError('Campaign no longer active')
    kind=item['kind'];method='PATCH'
+   if kind=='topup_campaign' and {str(n['nm_id']):n['bids_kopecks']for n in before['nm_settings']}!=(item.get('budget_evidence')or{}).get('expected_bids')and item.get('budget_evidence'):
+    from china_confirmed_funding_context import reconcile
+    evidence=reconcile(io,item['budget_evidence'],before)
+    item=copy.deepcopy(item);item.update(budget_evidence=evidence,nm_ids=sorted(n['nm_id']for n in before['nm_settings']))
+    state['funding_reconciliation']=evidence['confirmed_state_reconciliation'];save()
    if kind in ['topup_campaign','pause_campaign','archive_campaign'] and sorted(n['nm_id'] for n in before['nm_settings'])!=item['nm_ids']:raise ValueError('Campaign composition changed since PNG')
    if kind in ['ad_set_bid','ad_exclude_sku']:
     selected=next((n for n in before['nm_settings'] if n['nm_id']==item['nm_id']),None)

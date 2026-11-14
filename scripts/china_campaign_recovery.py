@@ -2,7 +2,10 @@
 import copy
 from datetime import datetime,timezone
 
-def execute(io,item,state,save,req,campaign,budget):
+def execute(*args,**kwargs):
+ try:return _execute(*args,**kwargs)
+ except AssertionError as error:raise ValueError(str(error)or'Recovery preflight failed')from None
+def _execute(io,item,state,save,req,campaign,budget):
  if state.get('steps'):raise ValueError('Existing recovery journal; readback/manual review only, no replay')
  from china_morning_readiness import current_prices,published_stock
  from china_moysklad_read import read_stock
@@ -23,9 +26,33 @@ def execute(io,item,state,save,req,campaign,budget):
  assert set(minima)==set(ids) and all(type(minima[n])is int and 0<minima[n]<=item['target_minor']<actual[str(n)][zone]for n in ids),'Recovery minimum changed'
  prices=current_prices(io,ids);pub=published_stock(io,prices,ids);stock=read_stock([r['article']for r in prices['rows']]);stocks={r['article'].casefold():r for r in stock['rows']}
  assert stock['coverage_complete']and not pub['missing_nm_ids']and {r['nm_id']for r in prices['rows']}==set(ids),'Fresh recovery coverage incomplete'
+ cost_increase_rub=0
  for r in prices['rows']:
   old=e['member_inputs'][str(r['nm_id'])];s=stocks[r['article'].casefold()]
-  assert r['seller_price']==old['price']and 0<s['price']/100<=old['cost']and s['stock']-s['reserve']>0 and pub['amounts'][str(r['nm_id'])]>0,'Recovery economics/stock changed'
+  assert r['seller_price']==old['price']and s['price']>0 and s['stock']-s['reserve']>0 and pub['amounts'][str(r['nm_id'])]>0,'Recovery price/stock changed: '+r['article']
+  cost_increase_rub+=max(0,s['price']/100-old['cost'])
+ if cost_increase_rub:
+  from urllib.parse import quote
+  fx=e.get('fx_rub_per_cny')
+  if fx is None:
+   day=datetime.fromisoformat(e['observed_at'].replace('Z','+00:00')).astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date().isoformat()
+   source='china_agent:advertising_source:'+day+':v2'
+   rows=io.db('telegram_api_cache?cache_key=eq.'+quote(source,safe='')+'&select=rate:payload->full_growth_inputs->fx->rub_per_cny')
+   fx=float(rows[0]['rate'])
+  assert fx>0,'Verified model FX missing'
+  # Worst-case all seven historical attributions carry every positive cost delta,
+  # with buyout=100%; no credit for decreases or new orders is introduced.
+  order_count=e.get('attributed_orders')
+  if order_count is None:
+   assert e.get('source_key'),'Recovery attribution source missing'
+   raw=io.db('telegram_api_cache?cache_key=eq.'+quote(e['source_key'],safe='')+'&select=stats:payload->inputs->stats')
+   matched=[r for r in raw[0]['stats']if r['advertId']==cid];assert len(matched)==1
+   days=[d for d in matched[0]['days']if e['period_from']<=d['date'][:10]<=e['period_to']]
+   assert days,'Recovery attribution window missing'
+   order_count=sum(d['orders']for d in days)
+  delta=order_count*cost_increase_rub/fx
+  assert e['modeled_after_ads_cny']-delta>0 and e['stress_after_ads_cny']-delta>0,'Current COGS no longer supports the approved stress model'
+  state['cost_revalidation']=dict(positive_increase_rub=cost_increase_rub,worst_case_model_delta_cny=delta,attributions_upper_bound=order_count,fx_rub_per_cny=fx)
  state.update(before=before,before_budget=budget(cid),steps=[]);save()
  assert state['before_budget']==item['balance_before'],'Campaign already funded; refresh recovery'
  cfg=req('/api/advert/v1/config');wallet=req('/adv/v1/balance');amount=item['amount_cny']

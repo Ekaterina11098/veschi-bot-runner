@@ -39,7 +39,7 @@ class Recovery(unittest.TestCase):
   ctx,args,calls=self.fixture('minimum')
   args[1]['target_minor']=22
   with ctx:
-   with self.assertRaises(AssertionError):execute(*args)
+   with self.assertRaises(ValueError):execute(*args)
   self.assertEqual(calls,[])
  def test_old_temporary_hold_released_only_after_verified_restart(self):
   ctx,args,calls=self.fixture();args=list(args);policy=dict(do_not_fund={'12':'old temporary hold'});writes=[]
@@ -48,4 +48,15 @@ class Recovery(unittest.TestCase):
   with ctx:execute(*args)
   self.assertEqual(args[2]['status'],'verified');self.assertEqual(len(writes),1)
   self.assertNotIn('12',writes[0][1]['do_not_fund']);self.assertFalse(writes[0][1]['released_temporary_hold_12']['grants_standing_funding_permission'])
+ def test_small_current_cost_drift_is_charged_before_recovery(self):
+  ctx,args,calls=self.fixture();args[1]['recovery_evidence'].update(attributed_orders=4,fx_rub_per_cny=12)
+  ctx.values['china_moysklad_read'].read_stock=lambda *a:dict(coverage_complete=True,rows=[dict(article='A',price=1001,stock=10,reserve=0)])
+  with ctx:execute(*args)
+  self.assertAlmostEqual(args[2]['cost_revalidation']['worst_case_model_delta_cny'],4*.01/12)
+ def test_cost_drift_that_erases_stress_margin_prevents_all_writes(self):
+  ctx,args,calls=self.fixture();args[1]['recovery_evidence'].update(attributed_orders=4,fx_rub_per_cny=12)
+  ctx.values['china_moysklad_read'].read_stock=lambda *a:dict(coverage_complete=True,rows=[dict(article='A',price=10000,stock=10,reserve=0)])
+  with ctx:
+   with self.assertRaises(ValueError):execute(*args)
+  self.assertEqual(calls,[])
 if __name__=='__main__':unittest.main()

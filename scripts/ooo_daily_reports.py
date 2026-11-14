@@ -7,16 +7,23 @@ MSK=datetime.timezone(datetime.timedelta(hours=3))
 def execute(code,path):
  path.write_text(code,encoding='utf-8');return runpy.run_path(str(path),run_name='__main__')
 def canonical(v):return json.dumps(v,sort_keys=True,separators=(',',':'))
-def worker(slot,day=None,verify=False):
+def worker(slot,day=None,verify=False,prepare_only=False):
  db=DB();day=day or datetime.datetime.now(MSK).date().isoformat();date=datetime.date.fromisoformat(day)
  root='ooo_agent:'+('morning:'+day if slot=='morning' else 'midday:'+day+':1500')
  delivery=db.get(root+':telegram:execution')or{}
  if delivery and not verify:
-  if delivery.get('status')!='verified':raise RuntimeError('Existing delivery attempt needs attention; never replay')
-  return {'status':'already_verified','root':root}
+  if delivery.get('status')=='verified':return {'status':'already_verified','root':root}
  policy=db.get('ooo_agent:daily_reports:v1:policy')or{}
  if policy.get('enabled')is not True:raise PermissionError('Report delivery policy disabled')
  assets=json.loads((Path(__file__).parent/'ooo_report_templates.json').read_text(encoding='utf-8'))
+ # Reuse immutable ready artifacts; do not recollect or rerender after preflight failures.
+ if not verify and (db.get(root+':report')or{}).get('status')=='ready':
+  if prepare_only:return {'status':'already_prepared'}
+  with tempfile.TemporaryDirectory()as temp:
+   execute(assets['sender'if slot=='morning'else'midsender'].replace('2026-11-11',day),Path(temp)/'send.py')
+  final=db.get(root+':telegram:execution')or{}
+  if final.get('status')!='verified':raise RuntimeError('Delivery pending; immutable receipts retained')
+  return {'status':'verified','receipts':final.get('receipts')}
  with tempfile.TemporaryDirectory()as temp:
   R=Path(temp);(R/'work/china_logic_review').mkdir(parents=True);(R/'outputs').mkdir()
   for name in ['china_advertising_v2_png.py','china_advertising_directions.py','china_advertising_midday.py']:(R/'work/china_logic_review'/name).write_text(assets[name],encoding='utf-8')
@@ -30,7 +37,7 @@ def worker(slot,day=None,verify=False):
   collector=collector.replace("def read(label,fn):\n  try:","def read(label,fn):\n  if state['sources'].get(label,{}).get('status')=='complete':return\n  try:")
   collector=collector.replace("not set(IDS)<={r['advertId']for r in rows}or ","")
   key='ooo_agent:morning:'+day+':evidence'
-  if slot=='morning' and not verify:execute(collector,R/'work/collector.py')
+  if not verify:execute(collector,R/'work/collector.py')
   evidence=db.get(key)or{}
   if evidence.get('status')!='finished' or any(v.get('status')!='complete'for v in evidence.get('sources',{}).values()):
    if verify:return {'status':'verification_deferred_incomplete_sources'}
@@ -85,6 +92,7 @@ def worker(slot,day=None,verify=False):
   report={'status':'ready','analysis':{'full_analysis':{'encoding':'base64-json-utf8','sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),'chunk_keys':keys}},'wb_writes':0,'model_calls':0}
   once(root+':report',report);once(root+':telegram:input',{'owner_approved':True,'chat_id':-1003987998401,'kinds':kinds,'images':images})
   once('ooo_agent:sol_dialog:v1:publication:'+plan,{'status':'prepared','plan_id':plan,'chat_id':-1003987998401,'manifest':manifest,'manifest_sha256':hashlib.sha256(canonical(manifest).encode()).hexdigest(),'expires_at':(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=17)).isoformat(),'artifact_sha256':[x['sha256']for x in images],'receipt_keys':[root+':telegram:delivery:'+k for k in kinds]})
+  if prepare_only:return {'status':'prepared','images':len(images)}
   sender=assets['sender'if slot=='morning'else'midsender'].replace('2026-11-11',day);execute(sender,R/'work/send.py')
   final=db.get(root+':telegram:execution')or{}
   if final.get('status')!='verified':raise RuntimeError('Delivery requires attention; never replay unknown attempt')
@@ -93,12 +101,21 @@ def run():
  if os.environ.get('OOO_REPORT_VERIFY_ONLY')=='1':
   print(json.dumps(worker('morning',verify=True)));return
  now=datetime.datetime.now(MSK);due=[]
- if(now.hour,now.minute)>=(7,30):due.append('morning')
- if(now.hour,now.minute)>=(15,0):due.append('midday')
+ if(now.hour,now.minute)>=(7,0):due.append('morning')
+ if(now.hour,now.minute)>=(14,50):due.append('midday')
+ failures=[]
  for slot in due:
-  try:print(json.dumps(worker(slot)))
+  prepare_only=(now.hour,now.minute)<((7,30)if slot=='morning'else(15,0))
+  retry_key='ooo_agent:daily_reports:v1:retry:'+now.date().isoformat()+':'+slot
+  retry=DB().get(retry_key)or{}
+  if retry.get('after',0)>now.timestamp():continue
+  try:print(json.dumps(worker(slot,prepare_only=prepare_only)))
   except Exception:
-   db=DB();day=now.date().isoformat();key='ooo_agent:daily_reports:v1:attention:'+day+':'+slot
+   db=DB();attempt=int(retry.get('attempt',0))+1
+   delay=min(1800,300*2**min(attempt-1,3))
+   value={'attempt':attempt,'after':now.timestamp()+delay,'status':'retry_scheduled','last_failure_at':stamp()}
+   db.update(retry_key,value)if db.get(retry_key)else db.once(retry_key,value)
+   day=now.date().isoformat();key='ooo_agent:daily_reports:v1:attention:'+day+':'+slot
    if not db.get(key):
     import requests
     binding=db.get('ooo_agent:telegram_group:v1')or{}
@@ -110,5 +127,6 @@ def run():
       receipt.update(status='sent'if type(result.get('message_id'))is int and result.get('chat',{}).get('id')==-1003987998401 else'uncertain',message_id=result.get('message_id'))
      except Exception:receipt.update(status='uncertain')
      db.update(key,receipt)
-   raise
+   failures.append(slot)
+ if failures:raise RuntimeError('Report slots pending: '+','.join(failures))
 if __name__=='__main__':run()

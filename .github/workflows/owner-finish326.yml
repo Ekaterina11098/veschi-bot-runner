@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   finish:
-    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner-keep27] Keep bids, deposit100 and resume only41325637'
+    if: github.run_attempt == 1 && github.event.head_commit.message == '[owner-keep27-2] Verify unordered composition then deposit100 and resume only41325637'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

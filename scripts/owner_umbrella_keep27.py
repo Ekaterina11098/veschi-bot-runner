@@ -6,7 +6,7 @@ from china_advertising_state import AdvertisingIO
 from china_cloud_cost_control import Cache,WB,validate_identity
 from china_campaign_recovery import execute
 from china_loss_control import digest
-ROOT='china_agent:owner_umbrella_keep27:2026-11-14:v1'
+ROOT='china_agent:owner_umbrella_keep27:2026-11-14:v1:attempt2'
 CID=41325637
 def main():
  io=AdvertisingIO();auth=io.get(ROOT+':authorization');assert auth['status']=='approved'and auth['owner_id']==5122667182 and auth['source_channel']=='codex'

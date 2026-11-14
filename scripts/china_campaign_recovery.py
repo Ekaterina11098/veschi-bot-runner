@@ -62,7 +62,8 @@ def _execute(io,item,state,save,req,campaign,budget):
  assert source is not None,'Insufficient CNY wallet'
  expected=copy.deepcopy(before)
  def same(got,status):
-  return got['status']==status and all(got[k]==expected[k]for k in ['id','currency','bid_type','settings','nm_settings'])
+  fields=['id','currency','bid_type','settings']
+  return got['status']==status and all(got[k]==expected[k]for k in fields)and sorted(got['nm_settings'],key=lambda n:n['nm_id'])==sorted(expected['nm_settings'],key=lambda n:n['nm_id'])
  def step(label,path,method,body,verify):
   s=dict(id=label,status='submitting',request=dict(path=path,method=method,body=body));state['steps'].append(s);state['status']='submitting';save()
   try:

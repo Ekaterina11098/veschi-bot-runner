@@ -35,6 +35,25 @@ class Recovery(unittest.TestCase):
   with ctx:self.assertEqual(execute(*args),2)
   self.assertEqual(args[2]['status'],'verified');self.assertTrue(args[2]['steps'][0]['read_only'])
   self.assertEqual(len(calls),2);self.assertFalse(any(path.endswith('/bids')for path in calls))
+ def test_keep_bids_accepts_unstable_wb_member_order(self):
+  ctx,args,calls=self.fixture();args=list(args);args[1].update(target_minor=27,keep_existing_bids=True)
+  args[1]['recovery_evidence']['expected_bids']['21']=dict(search=27)
+  args[1]['recovery_evidence']['member_inputs']['21']=dict(price=30,cost=10)
+  original_req=args[4];original_campaign=args[5];counter=[0]
+  def req(path,method='GET',body=None):
+   out=original_req(path,method,body)
+   if path.endswith('/bids/min'):out['bids'].append(dict(nm_id=21,bids=[dict(type='search',currency='CNY',value=23)]))
+   return out
+  def campaign(cid):
+   c=original_campaign(cid);c['nm_settings'].append(dict(nm_id=21,bids_kopecks=dict(search=27)));counter[0]+=1
+   if counter[0]%2:c['nm_settings'].reverse()
+   return c
+  args[4]=req;args[5]=campaign
+  ready=ctx.values['china_morning_readiness'];ready.current_prices=lambda *a:dict(rows=[dict(nm_id=n,article=str(n),seller_price=30)for n in(20,21)])
+  ready.published_stock=lambda *a:dict(missing_nm_ids=[],amounts={'20':10,'21':10})
+  ctx.values['china_moysklad_read'].read_stock=lambda *a:dict(coverage_complete=True,rows=[dict(article=str(n),price=1000,stock=10,reserve=0)for n in(20,21)])
+  with ctx:self.assertEqual(execute(*args),2)
+  self.assertEqual(args[2]['status'],'verified');self.assertEqual(len(calls),2)
  def test_uncertain_funding_prevents_start(self):
   ctx,args,calls=self.fixture('fund')
   with ctx:

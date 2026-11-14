@@ -25,14 +25,16 @@ def worker(slot,day=None,verify=False):
    return re.sub('|'.join(map(re.escape,mapping)),lambda m:mapping[m.group()],code)
   collector=dated(assets['collector'],'2026-11-12',{'2026-11-12':0,'2026-11-11':-1,'2026-11-09':-3,'2026-10-29':-14,'2026-10-15':-28,'2026-10-28':-15})
   # Resume only unfinished read stages; returned evidence and completed stages are immutable.
-  collector=collector.replace("if db.get(KEY):print('Existing dated collector/evidence retained');return","prior_state=db.get(KEY)\n if prior_state and prior_state.get('status')=='finished':return")
+  collector=collector.replace("if db.get(KEY):print('Existing dated collector/evidence retained');return","prior_state=db.get(KEY)\n if prior_state and prior_state.get('status')=='finished' and all(v.get('status')=='complete' for v in prior_state.get('sources',{}).values()):return")
   collector=collector.replace("db.once(KEY,state)","state=prior_state or state\n if not prior_state:db.once(KEY,state)")
   collector=collector.replace("def read(label,fn):\n  try:","def read(label,fn):\n  if state['sources'].get(label,{}).get('status')=='complete':return\n  try:")
   collector=collector.replace("not set(IDS)<={r['advertId']for r in rows}or ","")
   key='ooo_agent:morning:'+day+':evidence'
   if slot=='morning' and not verify:execute(collector,R/'work/collector.py')
   evidence=db.get(key)or{}
-  if evidence.get('status')!='finished' or any(v.get('status')!='complete'for v in evidence.get('sources',{}).values()):raise RuntimeError('Incomplete morning sources; retained for same worker recovery')
+  if evidence.get('status')!='finished' or any(v.get('status')!='complete'for v in evidence.get('sources',{}).values()):
+   if verify:return {'status':'verification_deferred_incomplete_sources'}
+   raise RuntimeError('Incomplete morning sources; retained for same worker recovery')
   (R/'work/ooo_morning_20261111.json').write_text(json.dumps(evidence),encoding='utf-8')
   model=db.get('ooo_agent:daily_reports:v1:model')or{}
   (R/'work/ooo_full_plan_model.json').write_text(json.dumps(model),encoding='utf-8')

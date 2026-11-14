@@ -1,8 +1,5 @@
 name: Owner fresh furpanama recovery 14Nov
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/stock-owner-furpanama-recover-20261114.yml']
   workflow_dispatch:
 permissions:
   contents: read

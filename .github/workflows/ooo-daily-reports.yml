@@ -5,7 +5,9 @@ on:
     branches: [main]
     paths: ['.github/workflows/ooo-daily-reports.yml', 'scripts/ooo_daily_reports.py', 'scripts/ooo_daily_review.py', 'scripts/ooo_report_templates.json']
   schedule:
+    - cron: '0 4 * * *'
     - cron: '30 4 * * *'
+    - cron: '50 11 * * *'
     - cron: '0 12 * * *'
 permissions: {contents: read}
 concurrency:
@@ -28,6 +30,8 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests==2.32.5 Pillow==12.3.0 --quiet
+      - name: Offline failure recovery checks without credentials
+        run: python scripts/test_ooo_report_recovery.py
       - name: Verify current cached report rendering without delivery
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
